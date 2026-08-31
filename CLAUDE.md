@@ -5,7 +5,7 @@
 ## 命令
 - `pnpm install` — 装 workspace（含本地 dsh CLI）
 - `pnpm dev` — 启动 dsh web（`$DSH_HOME=.dsh-home`，profile=web）
-- `pnpm dsh -- <args>` — 直接调 dsh CLI（如 `pnpm dsh plugin --profile web list`）
+- `pnpm dsh <args>` — 直接调 dsh CLI（如 `pnpm dsh plugin --profile web list`）
 - `pnpm test` — 全 workspace vitest
 
 ## 硬性规则
