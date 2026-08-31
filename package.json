@@ -1,0 +1,15 @@
+{
+  "name": "dsh-desk-studio",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "cross-env DSH_HOME=.dsh-home dsh web",
+    "dsh": "cross-env DSH_HOME=.dsh-home dsh",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh": "0.1.1-rc.2",
+    "cross-env": "7.0.3",
+    "vitest": "2.1.9"
+  }
+}
