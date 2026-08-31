@@ -18,6 +18,8 @@ importers:
         specifier: 2.1.9
         version: 2.1.9(@types/node@26.4.0)
 
+  packages/profile-web: {}
+
 packages:
 
   '@anthropic-ai/sdk@0.91.1':
