@@ -1,0 +1,20 @@
+{
+  "name": "@forge-studio/dsh-plugin-notes",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./lib/index.js",
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --out-dir lib"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.2"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.2",
+    "tsup": "8.3.5",
+    "typescript": "5.7.2"
+  },
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" }
+  }
+}

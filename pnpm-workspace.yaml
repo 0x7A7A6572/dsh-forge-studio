@@ -7,3 +7,6 @@ allowBuilds:
   koffi: true
   node-pty: true
   protobufjs: true
+minimumReleaseAgeExclude:
+  - '@deepseek-ai/cordis@4.0.2'
+  - '@deepseek-ai/cosmokit@1.8.3'
