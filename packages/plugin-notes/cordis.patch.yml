@@ -1,6 +1,0 @@
-# Minimal bundle patch for the notes plugin: a top-level YAML array of loader
-# patch entries (this runtime's format). `insert` adds a new plugin row to the
-# composed tree; the loader resolves `name` from the profile's installed deps.
-- insert:
-    - id: notes
-      name: '@forge-studio/dsh-plugin-notes'
