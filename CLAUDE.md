@@ -12,6 +12,4 @@
 - 每个功能一个 `packages/plugin-<name>`，命名 `@forge-studio/dsh-plugin-<name>`。
 - 依赖只指向 Service Definition 包；client 对跨插件值一律 type-only import。
 - 数据持久化只用 `ctx.storage`（storage-json），不自造。
-- 会话事件是 UI 唯一数据源；UI 节点只从事件流折叠渲染。
-- `$DSH_HOME=.dsh-home`（仓库内，已 gitignore）；dsh 运行时锁 0.1.1-rc.2。
-- npm 包版本显式锁死，不用 `^`/`@latest`（npmmirror 镜像 latest 标签过期）。
+
