@@ -7,6 +7,8 @@
 import { useState } from 'react'
 import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+// 载入 settings-plugins 的 SlotMap 增广（settings.plugin.item），type-only。
+import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import type { NotesConfig } from '../types.ts'
 import type { NotesCardFace, NotesField } from './notes-card-controller.ts'
 

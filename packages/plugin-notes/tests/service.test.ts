@@ -55,12 +55,12 @@ describe('NotesService', () => {
     expect(await notes.update('nope' as NoteId, { title: 'x' })).toBeUndefined()
   })
 
-  it('remove 后 list 不再包含该便签', async () => {
+  it('delete 后 list 不再包含该便签', async () => {
     const { notes } = makeService()
     const note = await notes.create({ title: 't', text: 'b' })
-    expect(await notes.remove(note.id)).toBe(true)
+    expect(await notes.delete(note.id)).toBe(true)
     expect(notes.list()).toEqual([])
-    expect(await notes.remove(note.id)).toBe(false)
+    expect(await notes.delete(note.id)).toBe(false)
   })
 
   it('setPinned 切换置顶', async () => {

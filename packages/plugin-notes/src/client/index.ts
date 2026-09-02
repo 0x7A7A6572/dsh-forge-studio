@@ -1,71 +1,69 @@
 /**
  * @forge-studio/dsh-plugin-notes —— client 入口（browser bundle）。
- * 1. 注册 note-list 会话节点定义（折叠 note/listed → 便签板卡片）
- * 2. 注册 conversation.chat.node 渲染器（key=note-list，含 /note 命令注入面）
- * 3. 注册 settings.plugin.item 设置卡片（key=forge-studio.notes）
+ * 独立 UI 设计（不经会话流）：
+ * 1. 挂载 Typert 远程命名空间 notes（host NotesService 直连，见 notes-remote.ts）
+ * 2. 注册 sidebar.footer.action 入口按钮（点开便签板）
+ * 3. 注册 shell.overlay 便签板浮层（列表 + tiptap 编辑 + 置顶/删除）
+ * 4. 注册 settings.plugin.item 设置卡片（key=forge-studio.notes）
  */
 
 import { Context } from '@deepseek-ai/cordis'
-import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
-// type-only 载入官方 client 增广（slots: SlotRegistry），不产生运行时 import ——
-// dsh-client-ui-renderer 由平台提供，bundle 不得打包它。
+import type { PropsRuntime, InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
-// 载入 settings.plugin.item 的 SlotMap 声明（ui-settings-plugins 的 slot-contract）。
-import type { SettingsPluginItemOwnerProps } from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
-import { NOTES_NAMESPACE, type NotesConfig } from '../types.ts'
-import { NOTE_LIST_KIND, noteListDefinition } from './note-list-definition.ts'
-import { NoteListView, type NoteListCardFace } from './note-list-view.tsx'
+import type { NotesConfig } from '../types.ts'
+import { NOTES_NAMESPACE } from '../types.ts'
+import { mountNotesRemote, notesOf } from './notes-remote.ts'
+import { NotesBoardEntry } from './board-entry.tsx'
+import { NotesBoardOverlay, type NotesBoardFace } from './board-overlay.tsx'
 import { NotesCardController } from './notes-card-controller.ts'
 import { NotesSettingsCard } from './settings-card.tsx'
 
 export const name = '@forge-studio/dsh-plugin-notes/client'
-export const inject = ['slots', 'uiConversation', 'sessions', 'settingsScope']
+export const inject = ['slots', 'settingsScope', 'remote', 'typert']
 
 export function apply(ctx: Context): void {
-  // 1) 会话节点定义
-  ctx.inject(['uiConversation'], (ctx) => {
-    ctx.uiConversation.events.register(noteListDefinition)
-  })
+  // 第一层：先挂载 notes 远程命名空间（self-mount，不走会话）。
+  ctx.inject(['slots', 'settingsScope', 'remote', 'typert'], async (ctx) => {
+    await mountNotesRemote(ctx)
+    // 第二层：命名空间就绪后再读 remote.notes（cordis 要求读服务必须声明在 inject 里）。
+    ctx.inject(['remote.notes', 'remote', 'slots', 'settingsScope'], (ctx) => {
+      const notes = notesOf(ctx)
 
-  // 2) 便签板渲染器：注入 /note 命令执行 + 设置中的展示上限
-  ctx.inject(['slots', 'sessions', 'settingsScope'], (ctx) => {
-    const settingsScope = ctx.settingsScope.bind<NotesConfig>({ namespace: NOTES_NAMESPACE })
-    // dsh-session（host 侧）与 client 侧都增广了 Context.sessions，类型合并结果
-    // 不可靠；运行时这里拿到的一定是 client 的 ISessions，收窄一次。
-    const sessions = ctx.sessions as unknown as ISessions
-    ctx.slots.inject('conversation.chat.node', () =>
-      ctx.slots.register(
-        {
-          name: 'conversation.chat.node',
-          key: NOTE_LIST_KIND,
-          inject: (sessionId): NoteListCardFace => ({
-            maxVisibleNotes: settingsScope.getSnapshot().value?.maxVisibleNotes,
-            async command(line) {
-              const binding = sessions.binding(sessionId)
-              if (!binding) return false
-              const result = await binding.session.command(line)
-              return result.ok === true && result.value.matched === true
-            },
-          }),
-        },
-        NoteListView,
-      ),
-    )
-  })
+      const settingsScope = ctx.settingsScope.bind<NotesConfig>({ namespace: NOTES_NAMESPACE })
+      const face = (): NotesBoardFace => ({
+        notes,
+        maxVisibleNotes: settingsScope.getSnapshot().value?.maxVisibleNotes,
+        defaultTitle: settingsScope.getSnapshot().value?.defaultTitle ?? '新便签',
+      })
 
-  // 3) 设置卡片
-  ctx.inject(['slots', 'settingsScope'], (ctx) => {
-    ctx.slots.inject('settings.plugin.item', () => {
-      const scope = ctx.settingsScope.bind<NotesConfig>({ namespace: NOTES_NAMESPACE })
-      const controller = new NotesCardController(scope)
-      return ctx.slots.register(
-        {
-          name: 'settings.plugin.item',
-          key: NOTES_NAMESPACE,
-          inject: () => controller.inject(),
-        },
-        NotesSettingsCard,
+      // 1) 入口按钮：侧栏底部「设置」旁。
+      ctx.slots.inject('sidebar.footer.action', () =>
+        ctx.slots.register(
+          { name: 'sidebar.footer.action', id: 'notes-board', order: -10, label: '便签' },
+          NotesBoardEntry,
+        ),
       )
+
+      // 2) 便签板浮层：全屏独立 UI，直连 host。
+      ctx.slots.inject('shell.overlay', () =>
+        ctx.slots.register(
+          { name: 'shell.overlay', id: 'notes-board', order: 0, inject: () => face() },
+          NotesBoardOverlay,
+        ),
+      )
+
+      // 3) 设置卡片。
+      ctx.slots.inject('settings.plugin.item', () => {
+        const controller = new NotesCardController(ctx.settingsScope.bind<NotesConfig>({ namespace: NOTES_NAMESPACE }))
+        return ctx.slots.register(
+          {
+            name: 'settings.plugin.item',
+            key: NOTES_NAMESPACE,
+            inject: () => controller.inject(),
+          },
+          NotesSettingsCard,
+        )
+      })
     })
   })
 }

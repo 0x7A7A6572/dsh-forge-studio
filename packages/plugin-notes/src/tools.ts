@@ -106,7 +106,7 @@ export function defineNoteTools(ctx: Context): ToolDefinition[] {
         render: (_args, value) => text(`已删除便签 ${value.id}`),
       },
       async execute(args, exec) {
-        const ok = await ctx.notes.remove(args.id as NoteId)
+        const ok = await ctx.notes.delete(args.id as NoteId)
         if (!ok) throw new Error(`便签不存在: ${args.id}`)
         emitListed(ctx, exec)
         return { id: args.id }

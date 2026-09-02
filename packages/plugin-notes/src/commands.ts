@@ -53,7 +53,7 @@ export function defineNoteCommand(ctx: Context): CommandDefinition {
         }
         case 'rm': {
           if (!arg) return { kind: 'error', text: '用法：/note rm <id>' }
-          const ok = await ctx.notes.remove(brandString<NoteId>(arg))
+          const ok = await ctx.notes.delete(brandString<NoteId>(arg))
           if (!ok) return { kind: 'error', text: `便签不存在: ${arg}` }
           appendNoteListed(session, ctx.notes.list())
           return { kind: 'success', text: `已删除便签 ${arg}` }
