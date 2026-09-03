@@ -1,10 +1,11 @@
 /**
  * 便签板页面（shell.overlay 挂载点）：全屏遮罩 + 居中面板，数据直连 host。
- * 页面骨架职责：开关订阅、拉取/轮询、错误条、头部（标题/计数/刷新/设置/关闭）、
- * 草稿编辑流（NoteEditor）与 busy 状态；内容区（工具栏/视图切换/搜索/色筛/
- * 活动区/归档折叠区）全部委托给 BoardMain（views/board-main.tsx）。
- * 设置弹窗（默认标题）由 header 齿轮打开，直接读写注入的命名空间 scope，
- * 不再注册到插件设置页。
+ * 本组件现在只当**数据控制器 + 路由出口**：
+ * - 数据流：开关订阅、拉取/轮询、错误条、busy 与保存流（saveDraft → run → refresh）；
+ * - 导航：显示哪个页面（列表 / 编辑）与设置弹窗开关一律读 notes-nav store，
+ *   不再持有 draft/settingsOpen 本地 state（加页面只扩 NotesRoute + 下方 switch）；
+ * - 页面内容：列表页 = BoardMain，编辑页 = EditorPage（各自独立文件），
+ *   设置弹窗（默认标题）由 header 齿轮打开，直接读写注入的命名空间 scope。
  *
  * 视觉契约：纸卡是「便签纸」语义（固定 pastel 底 + 深色文字，见 note-colors）；
  * 其余 UI 走宿主 --dsw-* 令牌（见 theme-tokens）。
@@ -21,11 +22,12 @@ import type {} from "@deepseek-ai/dsh-client-ui-layout/client";
 import type { SettingsScope } from "@deepseek-ai/dsh-client-ui-settings/client";
 import type { NoteColor, NoteRecord, NotesConfig } from "../../types.ts";
 import { boardStore } from "../core/board-store.ts";
+import { notesNav } from "../core/notes-nav.ts";
 import type { NotesRemote } from "../core/notes-remote.ts";
 import { t } from "../core/theme-tokens.ts";
-import { NoteEditor } from "../components/note-editor.tsx";
 import { NotesSettingsDialog } from "../components/settings-dialog.tsx";
 import { BoardMain } from "./board-main.tsx";
+import { EditorPage } from "./editor-page.tsx";
 import { RefreshCw, Settings, X } from "lucide-react";
 
 /** 浮层注入面（shell.overlay slot）。 */
@@ -37,10 +39,6 @@ export interface NotesBoardFace {
 
 export type NotesBoardOverlayProps = PropsRuntime<"shell.overlay"> &
   InjectFace<NotesBoardFace>;
-
-type Draft =
-  | { readonly mode: "create" }
-  | { readonly mode: "edit"; readonly note: NoteRecord };
 
 function errText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -60,6 +58,15 @@ export function NotesBoardOverlay(
     boardStore.subscribe,
     () => boardStore.open,
   );
+  // 路由出口：当前页面与设置弹窗层都由导航 store 决定（跨开关浮层保留，同改造前）。
+  const route = useSyncExternalStore(
+    notesNav.subscribe,
+    () => notesNav.route,
+  );
+  const settingsOpen = useSyncExternalStore(
+    notesNav.subscribe,
+    () => notesNav.settingsOpen,
+  );
   // 订阅命名空间 scope：默认标题在设置弹窗保存后实时生效（新建便签/弹窗展示）。
   const scope = props.scope;
   const snapshot = useSyncExternalStore(
@@ -69,11 +76,10 @@ export function NotesBoardOverlay(
   const [notes, setNotes] = useState<readonly NoteRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>();
-  const [draft, setDraft] = useState<Draft | undefined>();
   const [busy, setBusy] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const defaultTitle = snapshot.value?.defaultTitle ?? "新便签";
+  const editing = route.page === "editor";
 
   async function refresh(silent = false): Promise<void> {
     if (!silent) setLoading(true);
@@ -101,7 +107,7 @@ export function NotesBoardOverlay(
     if (!open) return;
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== "Escape") return;
-      if (settingsOpen) setSettingsOpen(false);
+      if (settingsOpen) notesNav.setSettingsOpen(false);
       else boardStore.hide();
     };
     window.addEventListener("keydown", onKey);
@@ -137,17 +143,23 @@ export function NotesBoardOverlay(
     body: string,
     color: NoteColor,
   ): Promise<void> {
-    if (!draft) return;
+    const current = notesNav.route;
+    if (current.page !== "editor") return;
+    const draft = current.draft;
     if (draft.mode === "create") {
       const ok = await run(() =>
         props.notes.create({ title, text: body, color }),
       );
-      if (ok) setDraft(undefined);
+      if (ok) notesNav.closeEditor();
     } else {
       const ok = await run(() =>
-        props.notes.update(draft.note.id, { title, text: body, color }),
+        props.notes.update(draft.note.id, {
+          title,
+          text: body,
+          color,
+        }),
       );
-      if (ok) setDraft(undefined);
+      if (ok) notesNav.closeEditor();
     }
   }
 
@@ -162,7 +174,7 @@ export function NotesBoardOverlay(
         role="dialog"
         aria-label="便签板"
       >
-        {!draft && (
+        {!editing && (
           <header style={headerStyle}>
             <span
               style={{
@@ -199,7 +211,7 @@ export function NotesBoardOverlay(
                 aria-label="便签板设置"
                 aria-pressed={settingsOpen}
                 className="fs-note-header-btn"
-                onClick={() => setSettingsOpen((v) => !v)}
+                onClick={() => notesNav.setSettingsOpen(!settingsOpen)}
                 disabled={busy}
                 style={{ ...iconBtn, ...(busy ? iconBtnDisabled : {}) }}
               >
@@ -242,25 +254,18 @@ export function NotesBoardOverlay(
           </div>
         )}
 
-        {draft ? (
-          <div style={{ padding: "4px 2px 0" }}>
-            <NoteEditor
-              key={draft.mode === "edit" ? draft.note.id : "create"}
-              initialTitle={draft.mode === "edit" ? draft.note.title : ""}
-              initialBody={draft.mode === "edit" ? draft.note.text : ""}
-              initialColor={
-                draft.mode === "edit" ? draft.note.color : undefined
-              }
-              defaultTitle={defaultTitle}
-              onCancel={() => setDraft(undefined)}
-              onSave={saveDraft}
-            />
-          </div>
+        {editing ? (
+          <EditorPage
+            target={route.draft}
+            defaultTitle={defaultTitle}
+            onCancel={() => notesNav.closeEditor()}
+            onSave={saveDraft}
+          />
         ) : (
           <BoardMain
             notes={notes}
             busy={busy}
-            onEdit={(note) => setDraft({ mode: "edit", note })}
+            onEdit={(note) => notesNav.openEditor({ mode: "edit", note })}
             onTogglePin={(note) =>
               void run(() => props.notes.setPinned(note.id, !note.pinned))
             }
@@ -270,7 +275,7 @@ export function NotesBoardOverlay(
               )
             }
             onRemove={(note) => void run(() => props.notes.delete(note.id))}
-            onCreate={() => setDraft({ mode: "create" })}
+            onCreate={() => notesNav.openEditor({ mode: "create" })}
           />
         )}
 
@@ -279,7 +284,7 @@ export function NotesBoardOverlay(
             scope={scope}
             snapshot={snapshot}
             onError={(message) => setError(message)}
-            onClose={() => setSettingsOpen(false)}
+            onClose={() => notesNav.setSettingsOpen(false)}
           />
         )}
       </div>

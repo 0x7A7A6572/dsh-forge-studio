@@ -1,7 +1,7 @@
 # @forge-studio/dsh-plugin-notes
 
-Forge Studio 便签（F1）的 dsh 插件形态：**独立便签板 UI**（侧栏入口 + 全屏浮层），
-host 侧只作为数据后端（storage-domain）与设置源，不依赖会话/命令行/agent 工具。
+Forge Studio 便签 的 dsh 插件形态：**独立便签板 UI**（侧栏入口 + 全屏浮层），
+host 侧只作为数据后端（storage-domain）与设置源。
 
 ## 能力
 
@@ -22,8 +22,10 @@ host 侧只作为数据后端（storage-domain）与设置源，不依赖会话/
   - 编辑器内直接 **Ctrl+V 粘贴图片**（剪贴板图片 → data URL 内联进正文 Markdown）
   - **便签板设置弹窗**（header 齿轮）：编辑默认标题，直接读写命名空间 scope，
     不再占用插件设置页
-  - client 结构：`views/`（页面：入口/浮层主体）、`components/`（复用组件：
-    纸卡/行/色筛/搜索与归档折叠/设置弹窗/编辑器等）、`core/`（状态/远程通道/纯函数/工具）
+  - client 结构：`views/`（页面：入口/浮层主体/编辑页，浮层仅做数据控制与
+    路由出口）、`components/`（复用组件：纸卡/行/色筛/搜索与归档折叠/设置弹窗/
+    编辑器等）、`core/`（状态/路由/远程通道/纯函数/工具）；页面切换走
+    `notes-nav` 状态路由（列表 ⇄ 编辑），设置弹窗为独立浮层层
 
 ## 开发
 

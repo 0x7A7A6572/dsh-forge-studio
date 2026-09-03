@@ -1,6 +1,6 @@
 # @forge-studio/dsh-plugin-home-studio
 
-Forge Studio 主面板（F1-F7 入口编排）的 dsh 插件形态 —— **骨架占位**，UI 待填充。
+Forge Studio 主面板的 dsh 插件形态 —— **骨架占位**，UI 待填充。
 
 ## 现状
 
