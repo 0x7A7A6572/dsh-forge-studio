@@ -7,10 +7,12 @@
 import type { ZodType } from 'zod'
 import { z } from 'zod'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
+import { DEFAULT_NOTE_COLOR, NOTE_COLORS } from './types.ts'
 import type { NoteId, NoteRecord } from './types.ts'
 
 /**
  * 便签记录 schema：存储边界校验（storage-domain 打开时全量校验）。
+ * color 带默认值：旧记录（v1 无该字段）打开时不炸，解析即回填默认黄。
  * zod 的 brand 与自有 Branded<NoteId> 符号不互通，这里用形状收窄声明，
  * 运行时校验仍覆盖全部字段。
  */
@@ -19,6 +21,9 @@ export const noteRecordSchema = z.object({
   title: z.string(),
   text: z.string(),
   pinned: z.boolean(),
+  // archived 带默认值：v1 旧记录（无该字段）打开时不炸，解析即回填 false。
+  archived: z.boolean().default(false),
+  color: z.enum(NOTE_COLORS).default(DEFAULT_NOTE_COLOR),
   createdAt: z.number(),
   updatedAt: z.number(),
 }) as unknown as ZodType<NoteRecord>

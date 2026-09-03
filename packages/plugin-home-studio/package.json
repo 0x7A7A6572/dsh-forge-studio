@@ -1,0 +1,50 @@
+{
+  "name": "@forge-studio/dsh-plugin-home-studio",
+  "version": "0.1.0",
+  "description": "Forge Studio 主面板（F1-F7 入口编排）的 dsh 插件形态：骨架包，待填充 UI。图标统一使用 lucide-react。",
+  "private": true,
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "lib/types",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.2",
+    "@types/node": "^24.0.0",
+    "esbuild": "0.28.2",
+    "lucide-react": "1.39.0",
+    "tsup": "8.5.1",
+    "typescript": "5.7.2",
+    "vitest": "2.1.9"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": []
+    }
+  }
+}

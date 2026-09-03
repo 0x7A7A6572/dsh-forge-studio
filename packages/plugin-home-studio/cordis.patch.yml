@@ -1,0 +1,6 @@
+# The @forge-studio/dsh-plugin-home-studio bundle patch placeholder.
+# 启用：把 `@forge-studio/dsh-plugin-home-studio` 加进 web profile package.json 的
+# dsh.profile.bundles 列表（见 .dsh-home/profiles/web/package.json），本行即被应用。
+- insert:
+    - id: home-studio
+      name: '@forge-studio/dsh-plugin-home-studio'

@@ -8,7 +8,7 @@ import { describe, expect, it, beforeAll } from 'vitest'
 import { createRequire } from 'node:module'
 import { Context } from '@deepseek-ai/cordis'
 import { TypertRegistry } from '@deepseek-ai/dsh-typert-registry'
-import { notesRemoteContribution, notesOf } from '../src/client/notes-remote.ts'
+import { notesRemoteContribution, notesOf } from '../src/client/core/notes-remote.ts'
 
 /** api-gateway/client 是浏览器 bundle：模拟 window.__ModuleLoader__ 截获注册，再跑 factory。 */
 let gatewayApply: (ctx: Context) => void

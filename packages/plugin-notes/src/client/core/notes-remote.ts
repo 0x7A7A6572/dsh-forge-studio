@@ -20,7 +20,8 @@ import type {
   TypertRemoteNamespace,
   TypertSchema,
 } from '@deepseek-ai/dsh-typert-protocol'
-import type { NoteCreateInput, NoteId, NoteRecord, NoteUpdateInput } from '../types.ts'
+import { NOTE_COLORS } from '../../types.ts'
+import type { NoteColor, NoteCreateInput, NoteId, NoteRecord, NoteUpdateInput } from '../../types.ts'
 
 export const NOTES_REMOTE_PACKAGE = '@forge-studio/dsh-plugin-notes'
 const SERVICE = 'notes'
@@ -50,11 +51,20 @@ const booleanSchema: TypertSchema<boolean> = {
   },
 }
 
+/** 可选 color 字段校验：undefined 放行，字符串必须是六色之一。 */
+function parseOptionalColor(value: unknown): NoteColor | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'string' || !(NOTE_COLORS as readonly string[]).includes(value)) {
+    throw new Error(`expected color in ${NOTE_COLORS.join('|')}`)
+  }
+  return value as NoteColor
+}
+
 const createInputSchema: TypertSchema<NoteCreateInput> = {
   parse(value) {
     if (!isRecord(value) || typeof value.text !== 'string') throw new Error('expected { text: string }')
     if (value.title !== undefined && typeof value.title !== 'string') throw new Error('expected title?: string')
-    return { title: value.title, text: value.text }
+    return { title: value.title, text: value.text, color: parseOptionalColor(value.color) }
   },
 }
 
@@ -64,7 +74,14 @@ const updateInputSchema: TypertSchema<NoteUpdateInput> = {
     if (value.title !== undefined && typeof value.title !== 'string') throw new Error('expected title?: string')
     if (value.text !== undefined && typeof value.text !== 'string') throw new Error('expected text?: string')
     if (value.pinned !== undefined && typeof value.pinned !== 'boolean') throw new Error('expected pinned?: boolean')
-    return { title: value.title, text: value.text, pinned: value.pinned }
+    if (value.archived !== undefined && typeof value.archived !== 'boolean') throw new Error('expected archived?: boolean')
+    return {
+      title: value.title,
+      text: value.text,
+      pinned: value.pinned,
+      archived: value.archived,
+      color: parseOptionalColor(value.color),
+    }
   },
 }
 

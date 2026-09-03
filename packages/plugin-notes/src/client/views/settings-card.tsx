@@ -2,6 +2,7 @@
  * 便签设置卡片：编辑 forge-studio.notes 的 maxVisibleNotes / defaultTitle。
  * 通过 settings.plugin.item slot（key=命名空间）注入；命名空间不可用时渲染为空。
  * 编辑走本地暂存，保存时经 saveField 提交（host 校验 + 持久化 + 镜像刷新）。
+ * 视觉走宿主 --dsw-* 令牌。
  */
 
 import { useState } from 'react'
@@ -9,8 +10,9 @@ import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // 载入 settings-plugins 的 SlotMap 增广（settings.plugin.item），type-only。
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
-import type { NotesConfig } from '../types.ts'
-import type { NotesCardFace, NotesField } from './notes-card-controller.ts'
+import type { NotesConfig } from '../../types.ts'
+import type { NotesCardFace, NotesField } from '../core/notes-card-controller.ts'
+import { t } from '../core/theme-tokens.ts'
 
 export type NotesSettingsCardProps = PropsRuntime<'settings.plugin.item'> & InjectFace<NotesCardFace>
 
@@ -61,10 +63,10 @@ export function NotesSettingsCard(props: NotesSettingsCardProps): JSX.Element | 
 
   const disabled = !snapshot.writable
   return (
-    <section style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 12, border: '1px solid #ddd', borderRadius: 8 }}>
+    <section style={cardStyle}>
       <header>
-        <h4 style={{ margin: 0 }}>便签（F1）</h4>
-        <p style={{ margin: '2px 0 0', color: '#666', fontSize: 13 }}>便签板展示数量与默认标题</p>
+        <h4 style={{ margin: 0, fontSize: 14, color: t.labelPrimary }}>便签（F1）</h4>
+        <p style={{ margin: '2px 0 0', color: t.labelSecondary, fontSize: 13 }}>便签板展示数量与默认标题；正文以 Markdown 存储</p>
       </header>
       <Field
         label="最多展示便签数"
@@ -85,10 +87,12 @@ export function NotesSettingsCard(props: NotesSettingsCardProps): JSX.Element | 
         onReset={() => clear('defaultTitle')}
       />
       <footer style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-        <button disabled={!dirty || disabled} onClick={() => setDrafts({})}>
+        <button type="button" style={{ ...btnBase, ...(disabledBtn(dirty && !disabled)) }} disabled={!dirty || disabled}
+          onClick={() => setDrafts({})}>
           放弃
         </button>
-        <button disabled={!dirty || disabled} onClick={() => void save()}>
+        <button type="button" style={{ ...btnPrimary, ...(disabledBtn(dirty && !disabled)) }} disabled={!dirty || disabled}
+          onClick={() => void save()}>
           保存
         </button>
       </footer>
@@ -107,22 +111,63 @@ function Field(props: {
 }): JSX.Element {
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <span style={{ fontWeight: 600 }}>
+      <span style={{ fontWeight: 600, fontSize: 13, color: t.labelPrimary }}>
         {props.label}
-        {props.overridden && <span style={{ color: '#c60', fontSize: 12, marginLeft: 6 }}>已覆盖</span>}
+        {props.overridden && <span style={{ color: t.stateWarn, fontSize: 12, marginLeft: 6 }}>已覆盖</span>}
       </span>
       <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <input
           value={props.value}
           disabled={props.disabled}
           onChange={(e) => props.onChange(e.target.value)}
-          style={{ flex: 1, padding: '4px 8px', boxSizing: 'border-box' }}
+          style={inputStyle}
         />
-        <button disabled={props.disabled || !props.overridden} onClick={props.onReset}>
+        <button type="button" style={{ ...btnBase, ...(disabledBtn(!props.overridden)) }} disabled={props.disabled || !props.overridden}
+          onClick={props.onReset}>
           重置
         </button>
       </span>
-      {props.hint && <span style={{ color: '#888', fontSize: 12 }}>{props.hint}</span>}
+      {props.hint && <span style={{ color: t.labelCaption, fontSize: 12 }}>{props.hint}</span>}
     </label>
   )
 }
+
+/* ---------- 样式 ---------- */
+
+const cardStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 12,
+  padding: 14,
+  border: `1px solid ${t.borderL2}`,
+  borderRadius: 12,
+}
+const inputStyle: React.CSSProperties = {
+  flex: 1,
+  boxSizing: 'border-box',
+  padding: '6px 10px',
+  fontSize: 13,
+  color: t.labelPrimary,
+  background: 'transparent',
+  border: `1px solid ${t.borderL2}`,
+  borderRadius: 8,
+  outline: 'none',
+}
+const btnBase: React.CSSProperties = {
+  height: 28,
+  padding: '0 12px',
+  border: 'none',
+  borderRadius: 14,
+  fontSize: 13,
+  lineHeight: 1,
+  cursor: 'pointer',
+  color: t.labelPrimary,
+  background: 'transparent',
+}
+const btnPrimary: React.CSSProperties = {
+  ...btnBase,
+  color: t.onPrimary,
+  background: t.primaryFill,
+  fontWeight: 600,
+}
+const disabledBtn = (active: boolean): React.CSSProperties => (active ? {} : { opacity: 0.45, cursor: 'default' })

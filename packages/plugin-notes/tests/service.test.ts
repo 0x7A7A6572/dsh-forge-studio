@@ -70,4 +70,75 @@ describe('NotesService', () => {
     expect(pinned?.pinned).toBe(true)
     expect(notes.list()[0]?.pinned).toBe(true)
   })
+
+  it('create 未传 color 时默认黄色', async () => {
+    const { notes, table } = makeService()
+    const note = await notes.create({ title: 't', text: 'b' })
+    expect(note.color).toBe('yellow')
+    expect(table.get(note.id)?.color).toBe('yellow')
+  })
+
+  it('create 可指定 color 并持久化', async () => {
+    const { notes } = makeService()
+    const note = await notes.create({ title: 't', text: 'b', color: 'pink' })
+    expect(note.color).toBe('pink')
+    expect(notes.list()[0]?.color).toBe('pink')
+  })
+
+  it('update 合并 color，未传则保留原值', async () => {
+    const { notes } = makeService()
+    const created = await notes.create({ title: 't', text: 'b' })
+    const changed = await notes.update(created.id, { color: 'blue' })
+    expect(changed?.color).toBe('blue')
+    const untouched = await notes.update(created.id, { text: 'b2' })
+    expect(untouched?.color).toBe('blue')
+    expect(untouched?.title).toBe('t')
+  })
+
+  it('setPinned 不丢 color', async () => {
+    const { notes } = makeService()
+    const note = await notes.create({ title: 't', text: 'b', color: 'purple' })
+    const pinned = await notes.setPinned(note.id, true)
+    expect(pinned?.color).toBe('purple')
+  })
+
+  it('create 默认未归档', async () => {
+    const { notes, table } = makeService()
+    const note = await notes.create({ title: 't', text: 'b' })
+    expect(note.archived).toBe(false)
+    expect(table.get(note.id)?.archived).toBe(false)
+  })
+
+  it('update 可归档/恢复并持久化', async () => {
+    const { notes, table } = makeService()
+    const note = await notes.create({ title: 't', text: 'b' })
+    const archived = await notes.update(note.id, { archived: true })
+    expect(archived?.archived).toBe(true)
+    expect(table.get(note.id)?.archived).toBe(true)
+    const restored = await notes.update(note.id, { archived: false })
+    expect(restored?.archived).toBe(false)
+    expect(table.get(note.id)?.archived).toBe(false)
+  })
+
+  it('update 未带 archived 时保留原值（含 setPinned）', async () => {
+    const { notes } = makeService()
+    const note = await notes.create({ title: 't', text: 'b' })
+    await notes.update(note.id, { archived: true })
+    const untouched = await notes.update(note.id, { text: 'b2' })
+    expect(untouched?.archived).toBe(true)
+    const pinned = await notes.setPinned(note.id, true)
+    expect(pinned?.archived).toBe(true)
+    expect(pinned?.pinned).toBe(true)
+  })
+
+  it('list 包含归档便签（由 client 分区展示）', async () => {
+    const { notes } = makeService()
+    const a = await notes.create({ title: 'a', text: '1' })
+    const b = await notes.create({ title: 'b', text: '2' })
+    await notes.update(a.id, { archived: true })
+    const all = notes.list()
+    expect(all.map((n) => n.title)).toEqual(['a', 'b'])
+    expect(all.find((n) => n.id === a.id)?.archived).toBe(true)
+    expect(all.find((n) => n.id === b.id)?.archived).toBe(false)
+  })
 })

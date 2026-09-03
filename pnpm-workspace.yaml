@@ -239,3 +239,4 @@ minimumReleaseAgeExclude:
   - '@deepseek-ai/dsh-util-time@0.1.2-alpha.3'
   - '@deepseek-ai/dsh-util-workspace-path@0.1.2-alpha.3'
   - '@deepseek-ai/dsh-workflow@0.1.2-alpha.3'
+  - lucide-react@1.39.0

@@ -9,7 +9,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import { TypertRegistry } from '@deepseek-ai/dsh-typert-registry'
 import { NotesService } from '../src/service.ts'
-import { notesRemoteContribution } from '../src/client/notes-remote.ts'
+import { notesRemoteContribution } from '../src/client/core/notes-remote.ts'
 
 /** 解析函数形参名（与 gateway methodParameterNames 同一思路）。 */
 function parameterNames(fn: (...args: never[]) => unknown): string[] {
@@ -88,5 +88,33 @@ describe('notes remote contribution', () => {
     const updateInput = byMethod.get('update')!.parameters[1]!.codec as { schema: { parse: (v: unknown) => unknown } }
     expect(() => updateInput.schema.parse({ pinned: true })).not.toThrow()
     expect(() => updateInput.schema.parse({ pinned: 'yes' })).toThrow()
+  })
+
+  it('update codec 接受 archived 布尔并拒绝字符串', () => {
+    const byMethod = new Map(notesRemoteContribution.descriptors.map((d) => [d.method, d]))
+    const updateInput = byMethod.get('update')!.parameters[1]!.codec as { schema: { parse: (v: unknown) => unknown } }
+    expect(() => updateInput.schema.parse({ archived: true })).not.toThrow()
+    expect(() => updateInput.schema.parse({ archived: false })).not.toThrow()
+    expect(() => updateInput.schema.parse({ archived: 'yes' })).toThrow()
+    const parsed = updateInput.schema.parse({ archived: true }) as { archived?: unknown }
+    expect(parsed.archived).toBe(true)
+  })
+
+  it('create/update codec 放行合法 color 并透传', () => {
+    const byMethod = new Map(notesRemoteContribution.descriptors.map((d) => [d.method, d]))
+    const createInput = byMethod.get('create')!.parameters[0]!.codec as { schema: { parse: (v: unknown) => unknown } }
+    const created = createInput.schema.parse({ text: 'hi', color: 'green' }) as { color?: unknown }
+    expect(created.color).toBe('green')
+    const updateInput = byMethod.get('update')!.parameters[1]!.codec as { schema: { parse: (v: unknown) => unknown } }
+    const patched = updateInput.schema.parse({ color: 'gray' }) as { color?: unknown }
+    expect(patched.color).toBe('gray')
+  })
+
+  it('create/update codec 拒绝非法 color', () => {
+    const byMethod = new Map(notesRemoteContribution.descriptors.map((d) => [d.method, d]))
+    const createInput = byMethod.get('create')!.parameters[0]!.codec as { schema: { parse: (v: unknown) => unknown } }
+    expect(() => createInput.schema.parse({ text: 'hi', color: 'neon' })).toThrow()
+    const updateInput = byMethod.get('update')!.parameters[1]!.codec as { schema: { parse: (v: unknown) => unknown } }
+    expect(() => updateInput.schema.parse({ color: 42 })).toThrow()
   })
 })

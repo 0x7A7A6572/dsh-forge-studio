@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "cross-env DSH_HOME=.dsh-home dsh web",
-    "dsh": "cross-env DSH_HOME=.dsh-home dsh",
+    "dev": "cross-env DSH_HOME=.dsh-home dsh web --port 3180",
+    "dsh": "cross-env DSH_HOME=.dsh-home dsh --port 3180",
     "test": "vitest run"
   },
   "devDependencies": {

@@ -1,7 +1,7 @@
 {
   "name": "@forge-studio/dsh-plugin-notes",
   "version": "0.1.0",
-  "description": "Forge Studio 便签（F1）的 dsh 插件形态：agent 工具 + /note 命令 + 独立便签板 UI（侧栏入口 + 全屏浮层，Typert 直连 host）",
+  "description": "Forge Studio 便签（F1）的 dsh 插件形态：独立便签板 UI（侧栏入口 + 全屏浮层，Markdown 编辑器，Typert 直连 host 持久化）",
   "private": true,
   "type": "module",
   "main": "./lib/index.js",
@@ -26,22 +26,19 @@
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
+    "watch": "node scripts/watch.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json",
     "test": "vitest run"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.2",
     "@deepseek-ai/dsh-brand": "0.1.2-alpha.3",
-    "@deepseek-ai/dsh-commands": "0.1.2-alpha.3",
-    "@deepseek-ai/dsh-session": "0.1.2-alpha.3",
     "@deepseek-ai/dsh-settings": "0.1.2-alpha.3",
     "@deepseek-ai/dsh-storage-domain": "0.1.2-alpha.3",
-    "@deepseek-ai/dsh-tools": "0.1.2-alpha.3",
     "@deepseek-ai/dsh-typert-protocol": "0.1.2-alpha.3",
     "@deepseek-ai/schemastery": "3.18.2"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-agent": "0.1.2-alpha.3",
     "@deepseek-ai/dsh-api-gateway": "0.1.2-alpha.3",
     "@deepseek-ai/dsh-api-session-controller": "0.1.2-alpha.3",
     "@deepseek-ai/dsh-brand": "0.1.2-alpha.3",
@@ -53,18 +50,15 @@
     "@deepseek-ai/dsh-client-ui-settings-plugins": "0.1.2-alpha.3",
     "@deepseek-ai/dsh-client-ui-sidebar": "0.1.2-alpha.3",
     "@deepseek-ai/dsh-client-ui-slots": "0.1.2-alpha.3",
-    "@deepseek-ai/dsh-commands": "0.1.2-alpha.3",
-    "@deepseek-ai/dsh-llm": "0.1.2-alpha.3",
-    "@deepseek-ai/dsh-session": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-cordis-client-runner": "0.1.2-alpha.3",
     "@deepseek-ai/dsh-settings": "0.1.2-alpha.3",
     "@deepseek-ai/dsh-storage": "0.1.2-alpha.3",
     "@deepseek-ai/dsh-storage-domain": "0.1.2-alpha.3",
-    "@deepseek-ai/dsh-tools": "0.1.2-alpha.3",
     "@deepseek-ai/dsh-typert-protocol": "0.1.2-alpha.3",
     "@deepseek-ai/dsh-typert-registry": "0.1.2-alpha.3",
-    "@deepseek-ai/dsh-util-values": "0.1.2-alpha.3",
     "@deepseek-ai/schemastery": "3.18.2",
     "@tiptap/core": "2.27.2",
+    "@tiptap/extension-image": "2.27.2",
     "@tiptap/pm": "2.27.2",
     "@tiptap/react": "2.27.2",
     "@tiptap/starter-kit": "2.27.2",
@@ -72,13 +66,14 @@
     "@types/react": "18.3.5",
     "@types/react-dom": "18.3.0",
     "esbuild": "0.28.2",
+    "lucide-react": "1.39.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
+    "tiptap-markdown": "0.8.10",
     "tsup": "8.5.1",
     "typescript": "5.7.2",
     "vitest": "2.1.9",
-    "zod": "4.4.3",
-    "@deepseek-ai/dsh-cordis-client-runner": "0.1.2-alpha.3"
+    "zod": "4.4.3"
   },
   "dsh": {
     "bundle": {

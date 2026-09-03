@@ -17,6 +17,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type { notesDomain } from './domain.ts'
+import { DEFAULT_NOTE_COLOR } from './types.ts'
 import type { NoteCreateInput, NoteId, NoteRecord, NoteUpdateInput } from './types.ts'
 
 export interface NotesServiceConfig {
@@ -37,7 +38,7 @@ export class NotesService extends TypertRemoteService {
     return Array.from(this.table.entries(), ([, note]) => note)
   }
 
-  /** 新建便签；title 缺省时使用默认标题。 */
+  /** 新建便签；title/color 缺省时使用默认值。 */
   async create(input: NoteCreateInput): Promise<NoteRecord> {
     const now = Date.now()
     const note: NoteRecord = {
@@ -45,6 +46,8 @@ export class NotesService extends TypertRemoteService {
       title: input.title?.trim() || '新便签',
       text: input.text,
       pinned: false,
+      archived: false,
+      color: input.color ?? DEFAULT_NOTE_COLOR,
       createdAt: now,
       updatedAt: now,
     }
@@ -52,7 +55,7 @@ export class NotesService extends TypertRemoteService {
     return note
   }
 
-  /** 更新便签（title/text/pinned 至少一项，缺省字段保持原值）。 */
+  /** 更新便签（title/text/pinned/archived/color 至少一项，缺省字段保持原值）。 */
   async update(id: NoteId, patch: NoteUpdateInput): Promise<NoteRecord | undefined> {
     const current = this.table.get(id)
     if (!current) return undefined
@@ -61,6 +64,10 @@ export class NotesService extends TypertRemoteService {
       ...(patch.title !== undefined ? { title: patch.title } : {}),
       ...(patch.text !== undefined ? { text: patch.text } : {}),
       ...(patch.pinned !== undefined ? { pinned: patch.pinned } : {}),
+      // archived 显式归一：patch 未带时保留原值。
+      archived: patch.archived ?? current.archived ?? false,
+      // color 显式归一：patch 未带时保留原值，原值为空（理论上不存在）回默认黄。
+      color: patch.color ?? current.color ?? DEFAULT_NOTE_COLOR,
       updatedAt: Date.now(),
     }
     await this.table.put(id, next)
@@ -71,7 +78,12 @@ export class NotesService extends TypertRemoteService {
   async setPinned(id: NoteId, pinned: boolean): Promise<NoteRecord | undefined> {
     const current = this.table.get(id)
     if (!current) return undefined
-    const next: NoteRecord = { ...current, pinned, updatedAt: Date.now() }
+    const next: NoteRecord = {
+      ...current,
+      pinned,
+      color: current.color ?? DEFAULT_NOTE_COLOR,
+      updatedAt: Date.now(),
+    }
     await this.table.put(id, next)
     return next
   }
