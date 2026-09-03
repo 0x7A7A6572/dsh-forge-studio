@@ -16,6 +16,7 @@ export const CARD_CSS = `
 .fs-note-card { transition: box-shadow 140ms ease, transform 140ms ease; }
 .fs-note-card:hover { box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18); transform: translateY(-1px); }
 .fs-note-card:focus-visible { outline: 2px solid rgba(0, 0, 0, 0.45); outline-offset: 1px; }
+.fs-note-actions { opacity: 0; pointer-events: none; transition: opacity 120ms ease; }
 .fs-note-card:hover .fs-note-actions, .fs-note-card:focus-within .fs-note-actions { opacity: 1; pointer-events: auto; }
 .fs-note-snippet { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .fs-note-card .fs-note-actions button { color: rgba(46, 42, 34, 0.55); }
@@ -182,9 +183,6 @@ const cardActions: React.CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
   gap: 2,
-  opacity: 0,
-  pointerEvents: 'none',
-  transition: 'opacity 120ms ease',
 }
 const actionBtn: React.CSSProperties = {
   display: 'inline-flex',

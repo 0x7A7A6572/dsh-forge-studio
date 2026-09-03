@@ -46,10 +46,8 @@ export interface NoteUpdateInput {
   readonly color?: NoteColor
 }
 
-/** plugin-notes 设置（forge-studio.notes 命名空间；host schema 见 settings.ts）。 */
+/** plugin-notes 设置（forge-studio-notes 命名空间；host schema 见 settings.ts）。 */
 export interface NotesConfig {
-  /** 便签板最多展示的便签数。 */
-  readonly maxVisibleNotes: number
   /** 新建便签的默认标题。 */
   readonly defaultTitle: string
 }

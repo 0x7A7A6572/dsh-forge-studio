@@ -1,8 +1,10 @@
 /**
  * client apply 全链路测试：真实 cordis ctx + TypertRegistry + api-gateway remote
  * + connection stub + 最小 slots/settingsScope stub，运行我们 client/index.ts 的
- * apply，断言三个 slot（入口/浮层/设置卡片）都完成注册、且过程不抛错。
+ * apply，断言两个 slot（入口/浮层）都完成注册、且过程不抛错。
  * 这是「入口按钮在浏览器不出现」问题的回归防线。
+ * 注：设置不再注册到插件设置页（settings.plugin.item），默认标题改为便签板内
+ * 弹窗读写（face 暴露命名空间 scope）。
  */
 
 import { describe, expect, it, beforeAll } from 'vitest'
@@ -32,7 +34,7 @@ beforeAll(async () => {
 })
 
 describe('client apply 全链路（slots 注册）', () => {
-  it('apply 后三个 slot 全部完成注册且无异常', async () => {
+  it('apply 后两个 slot 全部完成注册且无异常', async () => {
     const ctx = new Context()
     new TypertRegistry(ctx) // provides ctx.typert
 
@@ -78,11 +80,10 @@ describe('client apply 全链路（slots 注册）', () => {
     // 等嵌套 inject callback 完成（外层挂载 + 内层注册）
     await new Promise((r) => setTimeout(r, 500))
 
-    expect(slotInjects.sort()).toEqual(['settings.plugin.item', 'shell.overlay', 'sidebar.footer.action'])
+    expect(slotInjects.sort()).toEqual(['shell.overlay', 'sidebar.footer.action'])
     const byName = new Map(registrations.map((r) => [(r.options as { name: string }).name, r.options]))
     expect((byName.get('sidebar.footer.action') as { id?: string }).id).toBe('notes-board')
     expect((byName.get('shell.overlay') as { id?: string }).id).toBe('notes-board')
-    expect((byName.get('settings.plugin.item') as { key?: string }).key).toBe('forge-studio-notes')
 
     await ctx.fiber.dispose()
   })

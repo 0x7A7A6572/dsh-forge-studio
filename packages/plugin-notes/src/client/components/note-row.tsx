@@ -15,6 +15,7 @@ export const ROW_CSS = `
 .fs-note-row { transition: background 120ms ease; }
 .fs-note-row:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .fs-note-row:focus-visible { outline: 2px solid var(--dsw-static-deepseek-450); outline-offset: -1px; }
+.fs-note-actions { opacity: 0; pointer-events: none; transition: opacity 120ms ease; }
 .fs-note-row:hover .fs-note-actions, .fs-note-row:focus-within .fs-note-actions { opacity: 1; pointer-events: auto; }
 .fs-note-row .fs-note-actions button { color: var(--dsw-alias-label-secondary); }
 .fs-note-row .fs-note-actions button:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
@@ -154,9 +155,6 @@ const actionsStyle: React.CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
   gap: 2,
-  opacity: 0,
-  pointerEvents: 'none',
-  transition: 'opacity 120ms ease',
 }
 const actionBtn: React.CSSProperties = {
   display: 'inline-flex',

@@ -33,7 +33,7 @@ const newBtn: React.CSSProperties = {
   height: 30,
   padding: '0 14px',
   border: 'none',
-  borderRadius: 15,
+  borderRadius: 10,
   fontSize: 13,
   lineHeight: 1,
   cursor: 'pointer',
