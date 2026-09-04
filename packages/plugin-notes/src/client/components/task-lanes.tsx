@@ -1,22 +1,21 @@
 /**
  * 任务泳道视图（五列看板，布局参考 dsh-task-board 的多列 kanban）：
- * - 列 = 任务状态（待规划/待办/进行中/已完成/已失败），纸色即状态（见
- *   core/task-lanes.ts），本组件只读便签、不改数据；
- * - 横向五列：容器横向滚动，列内卡片区纵向滚动；列头 = 该状态纸色点 +
- *   中文标签 + 计数，空列给占位提示；
+ * - 列 = 任务状态（待规划/待办/进行中/已完成/已失败），列成员资格 = 便签
+ *   内嵌 lane 的 status（见 core/task-lanes.ts），本组件只读便签、不改数据；
+ * - 横向五列：容器横向滚动，列内卡片区纵向滚动；列头 = 中文标签 + 计数
+ *   （无状态点，纸色不再表状态），空列给占位提示；
  * - 换列 = HTML5 拖放：卡片 dragstart 写入 note.id，目标列 onDrop 回调
  *   onMove(noteId, status)（同列放下无操作），由 board-view 落
- *   notes.update({ color }) 并刷新；
- * - 归档便签不进泳道（归档即离开工作流，由 board-main 提示切列表管理）。
+ *   notes.update({ lane: { status } }) 并刷新；
+ * - 只有带 lane 的任务便签进泳道，普通便签与归档便签不进（归档即离开工作流，
+ *   由 board-main 提示切列表管理）。
  * 类选择器样式见导出的 LANES_CSS（由 board-main 统一注入一次 <style>）。
  */
 
 import { useMemo, useState } from 'react'
-import type { NoteColor, NoteId, NoteRecord } from '../../types.ts'
-import { noteColorMeta } from '../core/note-colors.ts'
+import type { NoteId, NoteRecord } from '../../types.ts'
 import {
   groupNotesByLane,
-  statusForColor,
   type TaskStatus,
 } from '../core/task-lanes.ts'
 import { TaskLaneCard } from './task-lane-card.tsx'
@@ -41,26 +40,8 @@ export interface TaskLanesProps {
   readonly onTogglePin: (note: NoteRecord) => void
   readonly onToggleArchive: (note: NoteRecord) => void
   readonly onRemove: (note: NoteRecord) => void
-  /** 拖拽换列：目标状态 ≠ 当前纸色状态时才触发。 */
+  /** 拖拽换列：目标状态 ≠ 当前 lane.status 时才触发。 */
   readonly onMove: (noteId: NoteId, status: TaskStatus) => void
-}
-
-/** 泳道列头的状态点纸色（暗示「改纸色即换列」）。 */
-function StatusDot({ color }: { color: NoteColor }): JSX.Element {
-  const meta = noteColorMeta(color)
-  return (
-    <span
-      aria-hidden="true"
-      style={{
-        flex: 'none',
-        width: 10,
-        height: 10,
-        borderRadius: 3,
-        background: meta.paper,
-        border: `1px solid ${meta.ring}`,
-      }}
-    />
-  )
 }
 
 export function TaskLanes(props: TaskLanesProps): JSX.Element {
@@ -113,13 +94,12 @@ export function TaskLanes(props: TaskLanesProps): JSX.Element {
               if (!noteId) return
               const dropped = notesById.get(noteId)
               if (!dropped) return
-              // 同列（纸色状态一致）放下 = 无操作，不触发无谓写入。
-              if (statusForColor(dropped.color) === lane.status) return
+              // 同列（lane.status 一致）放下 = 无操作，不触发无谓写入。
+              if (dropped.lane?.status === lane.status) return
               props.onMove(noteId, lane.status)
             }}
           >
             <header style={laneHeaderStyle}>
-              <StatusDot color={lane.color} />
               <h3 style={laneTitleStyle}>{lane.label}</h3>
               <span style={laneCountStyle}>{count}</span>
             </header>
