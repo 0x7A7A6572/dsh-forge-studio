@@ -15,7 +15,9 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { SettingsScope } from "@deepseek-ai/dsh-client-ui-settings/client";
-import type { NoteColor, NoteRecord, NotesConfig } from "../../types.ts";
+import type { NoteColor, NoteId, NoteRecord, NotesConfig } from "../../types.ts";
+import { colorForStatus } from "../core/task-lanes.ts";
+import type { TaskStatus } from "../core/task-lanes.ts";
 import { boardStore } from "../core/board-store.ts";
 import { notesNav } from "../core/notes-nav.ts";
 import type { NotesRemote } from "../core/notes-remote.ts";
@@ -265,6 +267,10 @@ export function NotesBoard(props: NotesBoardProps): JSX.Element {
           }
           onRemove={(note) => void run(() => props.face.notes.delete(note.id))}
           onCreate={() => notesNav.openEditor({ mode: "create" })}
+          // 泳道拖拽换列：状态 → 纸色写入（颜色是唯一真相，一次更新到处同步）。
+          onMove={(id: NoteId, status: TaskStatus) =>
+            void run(() => props.face.notes.update(id, { color: colorForStatus(status) }))
+          }
         />
       </div>
 

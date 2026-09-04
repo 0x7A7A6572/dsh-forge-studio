@@ -1,6 +1,7 @@
 /**
  * 存储 schema 兼容性测试：旧记录（无 color 字段）打开不失败并回填默认色；
- * 合法 color 透传；非法 color 被拒绝。这是 domain 打开不炸老数据的防线。
+ * 合法 color 透传；非法 color 被拒绝；历史紫色（任务泳道分类收敛前遗留）
+ * 读取时归一为灰。这是 domain 打开不炸老数据的防线。
  */
 
 import { describe, expect, it } from 'vitest'
@@ -43,5 +44,10 @@ describe('noteRecordSchema 兼容旧数据', () => {
 
   it('非法 color 值被拒绝', () => {
     expect(() => noteRecordSchema.parse({ ...LEGACY, color: 'neon' })).toThrow()
+  })
+
+  it('历史紫色记录（收敛移除前遗留）读取时归一为灰', () => {
+    const parsed = noteRecordSchema.parse({ ...LEGACY, color: 'purple' })
+    expect(parsed.color).toBe('gray')
   })
 })

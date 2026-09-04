@@ -3,13 +3,14 @@
  * （core/panel-mount）来自同一 client 插件，用这个轻量 store 互通，不依赖
  * 任何服务。组件用 useSyncExternalStore 订阅。
  *
- * 除开关外还持有面板级 UI 状态：视图（列表/grid）、颜色筛选与文字搜索。
- * 放在模块级使「打开/关闭面板」「切草稿编辑再回来」都不会丢用户选择。
+ * 除开关外还持有面板级 UI 状态：显示模式（列表/grid/任务泳道）、颜色筛选与
+ * 文字搜索。放在模块级使「打开/关闭面板」「切草稿编辑再回来」都不会丢用户选择。
  */
 
 import type { NoteColor } from '../../types.ts'
 
-export type BoardView = 'list' | 'grid'
+/** 便签板显示模式：行式列表 / grid 纸卡墙 / 任务泳道（五列看板）。 */
+export type BoardView = 'list' | 'grid' | 'lanes'
 
 type Listener = () => void
 

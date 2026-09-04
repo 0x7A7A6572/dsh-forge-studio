@@ -20,7 +20,7 @@ import type {
   TypertRemoteNamespace,
   TypertSchema,
 } from '@deepseek-ai/dsh-typert-protocol'
-import { NOTE_COLORS } from '../../types.ts'
+import { normalizeNoteColor, NOTE_COLORS } from '../../types.ts'
 import type { NoteColor, NoteCreateInput, NoteId, NoteRecord, NoteUpdateInput } from '../../types.ts'
 
 export const NOTES_REMOTE_PACKAGE = '@forge-studio/dsh-plugin-notes'
@@ -51,13 +51,14 @@ const booleanSchema: TypertSchema<boolean> = {
   },
 }
 
-/** 可选 color 字段校验：undefined 放行，字符串必须是六色之一。 */
+/** 可选 color 字段校验：undefined 放行；历史紫色归一为灰；其余必须是五色之一。 */
 function parseOptionalColor(value: unknown): NoteColor | undefined {
   if (value === undefined) return undefined
-  if (typeof value !== 'string' || !(NOTE_COLORS as readonly string[]).includes(value)) {
+  const normalized = normalizeNoteColor(value)
+  if (normalized === undefined) {
     throw new Error(`expected color in ${NOTE_COLORS.join('|')}`)
   }
-  return value as NoteColor
+  return normalized
 }
 
 const createInputSchema: TypertSchema<NoteCreateInput> = {

@@ -412,7 +412,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
         <EditorContent editor={editor} />
       </div>
 
-      {/* 便签纸色选（Win11 便签六色；选中色描边高亮）。 */}
+      {/* 便签纸色选（Win11 便签五色——紫色已随任务泳道分类收敛移除；选中色描边高亮）。 */}
       <div
         style={{
           display: "flex",

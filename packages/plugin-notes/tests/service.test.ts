@@ -97,9 +97,9 @@ describe('NotesService', () => {
 
   it('setPinned 不丢 color', async () => {
     const { notes } = makeService()
-    const note = await notes.create({ title: 't', text: 'b', color: 'purple' })
+    const note = await notes.create({ title: 't', text: 'b', color: 'pink' })
     const pinned = await notes.setPinned(note.id, true)
-    expect(pinned?.color).toBe('purple')
+    expect(pinned?.color).toBe('pink')
   })
 
   it('create 默认未归档', async () => {

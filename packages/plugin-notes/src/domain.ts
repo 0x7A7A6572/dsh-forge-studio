@@ -7,7 +7,7 @@
 import type { ZodType } from 'zod'
 import { z } from 'zod'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
-import { DEFAULT_NOTE_COLOR, NOTE_COLORS, NOTE_ORIGINS } from './types.ts'
+import { DEFAULT_NOTE_COLOR, NOTE_COLORS, NOTE_ORIGINS, normalizeNoteColor } from './types.ts'
 import type { NoteId, NoteRecord } from './types.ts'
 
 /**
@@ -23,7 +23,12 @@ export const noteRecordSchema = z.object({
   pinned: z.boolean(),
   // archived 带默认值：v1 旧记录（无该字段）打开时不炸，解析即回填 false。
   archived: z.boolean().default(false),
-  color: z.enum(NOTE_COLORS).default(DEFAULT_NOTE_COLOR),
+  // color 带默认值：旧记录（v1 无该字段）打开时不炸，解析即回填默认黄。
+  // preprocess 归一历史紫色（v1 曾含紫，任务泳道分类收敛后移除）→ 灰，防旧数据炸库。
+  color: z.preprocess(
+    (v) => normalizeNoteColor(v) ?? v,
+    z.enum(NOTE_COLORS).default(DEFAULT_NOTE_COLOR),
+  ),
   // origin 带默认值：v1 旧记录（无该字段）打开时不炸，解析即回填 'user'。
   origin: z.enum(NOTE_ORIGINS).default('user'),
   createdAt: z.number(),

@@ -1,13 +1,19 @@
 /**
- * 便签板主体视图（board-view 内容区）：工具栏（提示/视图切换/新建）+
- * 搜索行 + 颜色筛选行 + 活动便签（grid 纸卡墙或行式列表）+ 底部归档折叠区。
+ * 便签板主体视图（board-view 内容区）：工具栏（提示/显示模式切换/新建）+
+ * 搜索行 + 颜色筛选行 + 活动便签 + 底部归档折叠区。
  *
- * 数据整理全部走 core/board-filter 纯函数：分区（活动/归档）→ 排序 → 颜色过滤
- * → 文字搜索；展示做**懒加载**（首批 8 条，滚动触底逐步展开，见 nextWindow）。
- * - 颜色筛选只作用于活动区；文字搜索同时作用于活动区与归档区（展开后可见）；
- * - 归档区默认收起、展开才渲染，且同样参与懒加载；
- * - 视图/筛选/搜索变更时窗口重置回首批；
- * - 视图选择、颜色筛选、搜索词存于 board-store（模块级），开关浮层不丢。
+ * 三种显示模式（board-store 记忆，模块级）：
+ * - grid：纸卡墙（默认） / list：行式列表 —— 数据整理全部走 core/board-filter
+ *   纯函数：分区（活动/归档）→ 排序 → 颜色过滤 → 文字搜索；展示做**懒加载**
+ *   （首批 8 条，滚动触底逐步展开，见 nextWindow）；颜色筛选只作用于活动区；
+ *   文字搜索同时作用于活动区与归档区（展开后可见）；
+ * - lanes：任务泳道 —— 五列状态看板（布局参考 dsh-task-board），纸色即状态
+ *   （core/task-lanes 派生），活动便签全量渲染（泳道列内自带滚动，不做懒加载
+ *   窗口以免把后列切空）；颜色筛选行在泳道下隐藏（列本身已按色分列，语义冲突）；
+ *   归档便签不进泳道（已离开工作流），底部以细提示行引导切列表视图管理。
+ *
+ * 视图/筛选/搜索变更时窗口重置回首批；视图选择、颜色筛选、搜索词存于
+ * board-store（模块级），开关浮层不丢。
  */
 
 import {
@@ -17,7 +23,8 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import type { NoteRecord } from "../../types.ts";
+import type { NoteId, NoteRecord } from "../../types.ts";
+import type { TaskStatus } from "../core/task-lanes.ts";
 import { boardStore } from "../core/board-store.ts";
 import {
   partitionNotes,
@@ -30,13 +37,15 @@ import {
 import { t } from "../core/theme-tokens.ts";
 import { NoteCard, CARD_CSS } from "../components/note-card.tsx";
 import { NoteRow, ROW_CSS } from "../components/note-row.tsx";
+import { TaskLanes, LANES_CSS } from "../components/task-lanes.tsx";
+import { LANE_CARD_CSS } from "../components/task-lane-card.tsx";
 import { ColorFilter, FILTER_CSS } from "../components/color-filter.tsx";
 import {
   ArchivedSection,
   ARCHIVED_CSS,
 } from "../components/archived-section.tsx";
 import { EmptyState } from "../components/empty-state.tsx";
-import { LayoutGrid, Plus, Rows3, Search, SearchX, X } from "lucide-react";
+import { Kanban, LayoutGrid, Plus, Rows3, Search, SearchX, X } from "lucide-react";
 
 export interface BoardMainProps {
   readonly notes: readonly NoteRecord[];
@@ -46,10 +55,12 @@ export interface BoardMainProps {
   readonly onToggleArchive: (note: NoteRecord) => void;
   readonly onRemove: (note: NoteRecord) => void;
   readonly onCreate: () => void;
+  /** 任务泳道：拖拽换列（目标状态→纸色由 board-view 落 notes.update）。 */
+  readonly onMove: (noteId: NoteId, status: TaskStatus) => void;
 }
 
 /** board-main 覆盖的所有类选择器样式（统一注入一次）。 */
-const BOARD_CSS = `${CARD_CSS}${ROW_CSS}${FILTER_CSS}${ARCHIVED_CSS}`;
+const BOARD_CSS = `${CARD_CSS}${ROW_CSS}${FILTER_CSS}${ARCHIVED_CSS}${LANE_CARD_CSS}${LANES_CSS}`;
 
 export function BoardMain(props: BoardMainProps): JSX.Element {
   const view = useSyncExternalStore(
@@ -185,6 +196,16 @@ export function BoardMain(props: BoardMainProps): JSX.Element {
           >
             <LayoutGrid size={15} />
           </button>
+          <button
+            type="button"
+            title="任务泳道"
+            aria-label="任务泳道"
+            aria-pressed={view === "lanes"}
+            style={viewBtn(view === "lanes")}
+            onClick={() => boardStore.setView("lanes")}
+          >
+            <Kanban size={15} />
+          </button>
         </div>
         <button
           type="button"
@@ -196,7 +217,7 @@ export function BoardMain(props: BoardMainProps): JSX.Element {
         </button>
       </div>
 
-      {!noNotes && (
+      {!noNotes && view !== "lanes" && (
         <div style={filterRowStyle}>
           <ColorFilter
             colors={colors}
@@ -207,7 +228,52 @@ export function BoardMain(props: BoardMainProps): JSX.Element {
       )}
 
       <div ref={listRef} onScroll={handleScroll} style={listStyle}>
-        {noNotes ? (
+        {view === "lanes" ? (
+          // 任务泳道：活动便签按列全量渲染（不做懒加载分批，列内自带滚动）；
+          // 颜色筛选行已在上面隐藏；归档便签不进泳道，底部细提示行引导切列表。
+          noNotes ? (
+            <EmptyState onCreate={props.onCreate} />
+          ) : (
+            <>
+              {activeMatched.length === 0 ? (
+                <div style={zoneEmptyStyle}>
+                  <SearchX size={15} style={{ opacity: 0.7 }} />
+                  <span>
+                    {noMatch
+                      ? "没有匹配的便签"
+                      : archivedMatched.length > 0
+                        ? "没有活动便签（已归档见下方提示）"
+                        : "没有活动便签"}
+                  </span>
+                </div>
+              ) : (
+                <TaskLanes
+                  notes={activeMatched}
+                  busy={props.busy}
+                  onEdit={props.onEdit}
+                  onTogglePin={props.onTogglePin}
+                  onToggleArchive={props.onToggleArchive}
+                  onRemove={props.onRemove}
+                  onMove={props.onMove}
+                />
+              )}
+              {archivedMatched.length > 0 && (
+                <div style={archivedHintStyle}>
+                  <span>
+                    已归档 {archivedMatched.length} 条 · 归档便签不进任务泳道
+                  </span>
+                  <button
+                    type="button"
+                    style={clearFilterBtn}
+                    onClick={() => boardStore.setView("list")}
+                  >
+                    去列表视图管理
+                  </button>
+                </div>
+              )}
+            </>
+          )
+        ) : noNotes ? (
           <EmptyState onCreate={props.onCreate} />
         ) : (
           <>
@@ -416,6 +482,17 @@ const zoneEmptyStyle: React.CSSProperties = {
   padding: "24px 0",
   color: t.labelTertiary,
   fontSize: 13,
+};
+/** 泳道模式底部的归档提示行（归档便签不进泳道）。 */
+const archivedHintStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 10,
+  flexWrap: "wrap",
+  padding: "10px 4px 2px",
+  color: t.labelCaption,
+  fontSize: 12.5,
 };
 const noMatchStyle: React.CSSProperties = {
   display: "flex",

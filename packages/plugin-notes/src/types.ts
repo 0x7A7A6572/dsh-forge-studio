@@ -8,12 +8,28 @@ import type { Branded } from '@deepseek-ai/dsh-brand'
 /** 便签 id：跨包边界传递的品牌字符串。 */
 export type NoteId = Branded<'NoteId'>
 
-/** 便签纸颜色（Win11 便签同款六色）。 */
-export const NOTE_COLORS = ['yellow', 'blue', 'green', 'pink', 'purple', 'gray'] as const
+/**
+ * 便签纸颜色。源色板为 Win11 便签同款六色（黄/蓝/绿/粉/紫/灰）；「任务泳道」
+ * 分类落地时把紫色收敛移除 —— 剩余五色与五个任务状态一一对应（见 client
+ * core/task-lanes.ts），存量紫色记录读取时经 normalizeNoteColor 归一为灰。
+ * 将来做「可编辑分类」时在同一处放开颜色集即可。
+ */
+export const NOTE_COLORS = ['yellow', 'blue', 'green', 'pink', 'gray'] as const
 export type NoteColor = (typeof NOTE_COLORS)[number]
 
 /** 新建便签的默认纸色（Win11 同款：黄）。 */
 export const DEFAULT_NOTE_COLOR: NoteColor = 'yellow'
+
+/**
+ * 颜色值归一（历史/非法输入兜底）：旧版紫色 → 灰（待规划）；枚举内原样返回；
+ * 其余非法值返回 undefined，由调用方决定回退默认色。
+ */
+export function normalizeNoteColor(value: unknown): NoteColor | undefined {
+  if (value === 'purple') return 'gray'
+  return (NOTE_COLORS as readonly string[]).includes(value as string)
+    ? (value as NoteColor)
+    : undefined
+}
 
 /**
  * 便签来源：'user' = 用户手写（client UI / 默认），'agent' = agent 工具创建。
