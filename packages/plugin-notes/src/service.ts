@@ -38,7 +38,7 @@ export class NotesService extends TypertRemoteService {
     return Array.from(this.table.entries(), ([, note]) => note)
   }
 
-  /** 新建便签；title/color 缺省时使用默认值。 */
+  /** 新建便签；title/color/origin 缺省时使用默认值（origin 默认 'user'）。 */
   async create(input: NoteCreateInput): Promise<NoteRecord> {
     const now = Date.now()
     const note: NoteRecord = {
@@ -48,6 +48,8 @@ export class NotesService extends TypertRemoteService {
       pinned: false,
       archived: false,
       color: input.color ?? DEFAULT_NOTE_COLOR,
+      // 来源：agent 工具层显式传 'agent'；UI/缺省落 'user'。
+      origin: input.origin ?? 'user',
       createdAt: now,
       updatedAt: now,
     }
@@ -55,7 +57,7 @@ export class NotesService extends TypertRemoteService {
     return note
   }
 
-  /** 更新便签（title/text/pinned/archived/color 至少一项，缺省字段保持原值）。 */
+  /** 更新便签（title/text/pinned/archived/color 至少一项，缺省字段保持原值）。origin 不可更新。 */
   async update(id: NoteId, patch: NoteUpdateInput): Promise<NoteRecord | undefined> {
     const current = this.table.get(id)
     if (!current) return undefined
@@ -68,6 +70,8 @@ export class NotesService extends TypertRemoteService {
       archived: patch.archived ?? current.archived ?? false,
       // color 显式归一：patch 未带时保留原值，原值为空（理论上不存在）回默认黄。
       color: patch.color ?? current.color ?? DEFAULT_NOTE_COLOR,
+      // origin 永远保留原值：来源一经创建不可改写（agent 无法把自己的便签标成 user）。
+      origin: current.origin ?? 'user',
       updatedAt: Date.now(),
     }
     await this.table.put(id, next)

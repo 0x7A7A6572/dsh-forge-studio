@@ -1,44 +1,40 @@
 /**
- * 便签板内部页面导航（状态路由）：浮层内容现在由导航 store 决定，
- * board-overlay 只做数据控制器 + 路由出口，不再持有 draft/settingsOpen 本地 state。
+ * 便签板浮层弹窗导航（状态）：列表页（BoardMain）常驻内容，编辑器与设置
+ * 是叠加其上的两个互斥浮层弹窗，开关一律由本 store 决定，board-view
+ * 只做数据控制器 + 渲染出口，不再持有 draft/settingsOpen 本地 state。
  *
- * 路由 = 判别联合（类型互斥）：page 'editor' 必带 draft（create | edit+note），
- * page 'board' 必不带；设置弹窗是与页面正交的浮层层（settingsOpen，现状 UX：
- * 只从列表页 header 齿轮打开，浮在内容之上）。
+ * 弹窗 = 目标（type 互斥）：editor 弹窗带 draft（create | edit+note），
+ * settings 弹窗为布尔开关；同一时刻至多开一个弹窗（openEditor 会收掉
+ * 设置弹窗，反之亦然），列表页始终可见。
  *
  * 模块级单例（与 board-store 相同的 subscribe + useSyncExternalStore 范式）；
- * 与浮层开关（board-store.open）解耦：关掉浮层再开，停留在原页面/弹窗态，
+ * 与浮层开关（board-store.open）解耦：关掉浮层再开，停留在原弹窗态，
  * 与改造前组件 state 的语义一致（组件挂载期 state 本就跨开关保留）。
  *
- * 新增页面：扩展 NotesPage / NotesRoute 联合 → 这里补动作 → overlay 的
- * 渲染 switch 加一支。
+ * 新增弹窗：扩展弹窗联合 → 这里补动作 → board-view 的渲染处加一支。
  */
 
 import type { NoteRecord } from '../../types.ts'
 
-/** 新建/编辑草稿目标（沿用原 board-overlay Draft 语义，类型上收至此）。 */
+/** 新建/编辑草稿目标（沿用原 board-view Draft 语义，类型上收至此）。 */
 export type EditorTarget =
   | { readonly mode: 'create' }
   | { readonly mode: 'edit'; readonly note: NoteRecord }
 
-export type NotesPage = 'board' | 'editor'
-
-export type NotesRoute =
-  | { readonly page: 'board' }
-  | { readonly page: 'editor'; readonly draft: EditorTarget }
-
 export interface NotesNav {
-  readonly route: NotesRoute
+  /** 编辑器弹窗的当前目标；null = 编辑器未打开。 */
+  readonly editing: EditorTarget | null
+  /** 设置弹窗开关（与编辑器互斥）。 */
   readonly settingsOpen: boolean
   openEditor(target: EditorTarget): void
-  /** 取消/保存成功后回列表页（编辑内容丢弃由页面卸载负责，与现状一致）。 */
+  /** 取消/保存成功后关编辑器弹窗（编辑内容丢弃由弹窗卸载负责，与现状一致）。 */
   closeEditor(): void
   setSettingsOpen(open: boolean): void
   subscribe(listener: () => void): () => void
 }
 
 export function createNotesNav(): NotesNav {
-  let route: NotesRoute = { page: 'board' }
+  let editing: EditorTarget | null = null
   let settingsOpen = false
   const listeners = new Set<() => void>()
 
@@ -47,24 +43,26 @@ export function createNotesNav(): NotesNav {
   }
 
   return {
-    get route() {
-      return route
+    get editing() {
+      return editing
     },
     get settingsOpen() {
       return settingsOpen
     },
     openEditor(target) {
-      route = { page: 'editor', draft: target }
-      // 编辑页不展示 header 齿轮，设置弹窗随页面切换关闭（与现状一致）。
+      editing = target
+      // 弹窗互斥：编辑器打开时收掉设置弹窗（与现状一致）。
       settingsOpen = false
       emit()
     },
     closeEditor() {
-      route = { page: 'board' }
+      editing = null
       emit()
     },
     setSettingsOpen(open) {
       if (settingsOpen === open) return
+      // 弹窗互斥：设置弹窗打开时收掉编辑器弹窗。
+      if (open) editing = null
       settingsOpen = open
       emit()
     },

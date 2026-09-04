@@ -1,11 +1,11 @@
 /**
- * notes-nav（便签板内部状态路由）单测。
+ * notes-nav（便签板浮层弹窗导航）单测。
  * 每次测试用 createNotesNav 建独立实例，不污染模块级单例 notesNav。
- * 断言的路由不变式：
- * - 初态 = board、设置弹窗关；
- * - openEditor 进入 editor 并携带 draft，且强制关闭设置弹窗；
- * - closeEditor 回 board；
- * - 设置弹窗开/关与页面正交（editor 页可随 openEditor 关闭）；
+ * 断言的不变式：
+ * - 初态 = 列表页、无任何弹窗（editing=null、settingsOpen=false）；
+ * - openEditor 打开编辑器弹窗并携带目标，且强制关闭设置弹窗；
+ * - closeEditor 关编辑器弹窗；
+ * - 弹窗互斥：setSettingsOpen(true) 会收掉编辑器弹窗；
  * - subscribe 在动作后触发、退订后不再触发。
  */
 
@@ -22,69 +22,74 @@ function note(id: string): NoteRecord {
     pinned: false,
     archived: false,
     color: 'yellow',
+    origin: 'user',
     createdAt: 1,
     updatedAt: 1,
   }
 }
 
-describe('notes-nav 状态路由', () => {
-  it('初态：board 页、设置弹窗关', () => {
+describe('notes-nav 浮层弹窗导航', () => {
+  it('初态：无弹窗（编辑器关、设置关）', () => {
     const nav = createNotesNav()
-    expect(nav.route).toEqual({ page: 'board' })
+    expect(nav.editing).toBeNull()
     expect(nav.settingsOpen).toBe(false)
   })
 
-  it('openEditor(create) 进入 editor 并携带 create draft', () => {
+  it('openEditor(create) 打开编辑器弹窗并携带 create 目标', () => {
     const nav = createNotesNav()
     nav.openEditor({ mode: 'create' })
-    expect(nav.route).toEqual({ page: 'editor', draft: { mode: 'create' } })
+    expect(nav.editing).toEqual({ mode: 'create' })
   })
 
   it('openEditor(edit) 携带目标便签快照', () => {
     const nav = createNotesNav()
     const target: EditorTarget = { mode: 'edit', note: note('n1') }
     nav.openEditor(target)
-    expect(nav.route.page).toBe('editor')
-    if (nav.route.page === 'editor') {
-      expect(nav.route.draft).toEqual(target)
-    }
+    expect(nav.editing).toEqual(target)
   })
 
-  it('openEditor 强制关闭设置弹窗（编辑页无齿轮）', () => {
+  it('openEditor 强制关闭设置弹窗（弹窗互斥）', () => {
     const nav = createNotesNav()
     nav.setSettingsOpen(true)
     expect(nav.settingsOpen).toBe(true)
     nav.openEditor({ mode: 'create' })
     expect(nav.settingsOpen).toBe(false)
+    expect(nav.editing).not.toBeNull()
   })
 
-  it('closeEditor 回 board 页', () => {
+  it('setSettingsOpen(true) 强制关闭编辑器弹窗（弹窗互斥）', () => {
+    const nav = createNotesNav()
+    nav.openEditor({ mode: 'edit', note: note('n2') })
+    nav.setSettingsOpen(true)
+    expect(nav.editing).toBeNull()
+    expect(nav.settingsOpen).toBe(true)
+  })
+
+  it('closeEditor 关闭编辑器弹窗', () => {
     const nav = createNotesNav()
     nav.openEditor({ mode: 'edit', note: note('n2') })
     nav.closeEditor()
-    expect(nav.route).toEqual({ page: 'board' })
+    expect(nav.editing).toBeNull()
   })
 
-  it('设置弹窗开/关：动作触发订阅、退订后静默', () => {
+  it('弹窗开关：动作触发订阅、退订后静默', () => {
     const nav = createNotesNav()
     const seen: string[] = []
     const off = nav.subscribe(() => seen.push('x'))
-    nav.setSettingsOpen(true)
-    nav.setSettingsOpen(false)
-    expect(nav.settingsOpen).toBe(false)
+    nav.openEditor({ mode: 'create' })
+    nav.closeEditor()
     expect(seen.length).toBe(2)
     off()
-    nav.setSettingsOpen(true)
+    nav.openEditor({ mode: 'create' })
     expect(seen.length).toBe(2)
   })
 
-  it('路由不因开关弹窗而丢失（设置弹窗与页面正交）', () => {
+  it('设置弹窗开关不复活已关闭的编辑器弹窗', () => {
     const nav = createNotesNav()
     nav.openEditor({ mode: 'edit', note: note('n3') })
-    expect(nav.route.page).toBe('editor')
-    nav.closeEditor()
-    nav.setSettingsOpen(true)
-    expect(nav.route).toEqual({ page: 'board' })
-    expect(nav.settingsOpen).toBe(true)
+    nav.setSettingsOpen(true) // 互斥：编辑器被收掉
+    nav.setSettingsOpen(false)
+    expect(nav.editing).toBeNull()
+    expect(nav.settingsOpen).toBe(false)
   })
 })

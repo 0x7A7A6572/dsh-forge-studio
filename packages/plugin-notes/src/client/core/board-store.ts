@@ -1,10 +1,10 @@
 /**
- * 便签板 UI 的模块级存储：入口按钮（sidebar.footer.action）与浮层
- * （shell.overlay）来自同一 client 插件，用这个轻量 store 互通，不依赖
+ * 便签板 UI 的模块级存储：侧栏入口行（core/sidebar-entry）与中间列面板
+ * （core/panel-mount）来自同一 client 插件，用这个轻量 store 互通，不依赖
  * 任何服务。组件用 useSyncExternalStore 订阅。
  *
  * 除开关外还持有面板级 UI 状态：视图（列表/grid）、颜色筛选与文字搜索。
- * 放在模块级使「打开/关闭浮层」「切草稿编辑再回来」都不会丢用户选择。
+ * 放在模块级使「打开/关闭面板」「切草稿编辑再回来」都不会丢用户选择。
  */
 
 import type { NoteColor } from '../../types.ts'

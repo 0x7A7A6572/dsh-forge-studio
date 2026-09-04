@@ -1,5 +1,5 @@
 /**
- * 便签板主体视图（board-overlay 内容区）：工具栏（提示/视图切换/新建）+
+ * 便签板主体视图（board-view 内容区）：工具栏（提示/视图切换/新建）+
  * 搜索行 + 颜色筛选行 + 活动便签（grid 纸卡墙或行式列表）+ 底部归档折叠区。
  *
  * 数据整理全部走 core/board-filter 纯函数：分区（活动/归档）→ 排序 → 颜色过滤
@@ -386,6 +386,8 @@ const filterRowStyle: React.CSSProperties = {
   gap: 8,
 };
 const listStyle: React.CSSProperties = {
+  flex: 1,
+  minHeight: 0,
   overflow: "auto",
   padding: "6px 16px 16px",
 };
@@ -404,7 +406,7 @@ const rowListStyle: React.CSSProperties = {
   listStyle: "none",
   display: "flex",
   flexDirection: "column",
-  gap: 2,
+  gap: 8,
 };
 const zoneEmptyStyle: React.CSSProperties = {
   display: "flex",

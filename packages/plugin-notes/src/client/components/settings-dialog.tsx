@@ -99,7 +99,6 @@ const overlayStyle: React.CSSProperties = {
   alignItems: 'center',
   justifyContent: 'center',
   background: t.mask,
-  borderRadius: 16,
 }
 const cardStyle: React.CSSProperties = {
   width: 'min(420px, 88%)',

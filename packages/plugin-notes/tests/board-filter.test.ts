@@ -24,6 +24,7 @@ function note(partial: Partial<NoteRecord> & { id: string }): NoteRecord {
     pinned: false,
     archived: false,
     color: 'yellow',
+    origin: 'user',
     createdAt: 1,
     updatedAt: 1,
     ...partial,
