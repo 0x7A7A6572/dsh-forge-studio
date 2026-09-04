@@ -28,14 +28,12 @@ export interface EditorPageDialogProps {
 
 export function EditorPageDialog(props: EditorPageDialogProps): JSX.Element {
   const editing = props.target.mode === 'edit' ? props.target.note : undefined
-  // 编辑器初值任务身份：编辑态带出便签既有 lane；新建态普通则 undefined，列头
-  // 「＋新建任务」（laneStatus 非空）时合成 `{ status }` 以预填开关 + 状态。
+  // 编辑态带出便签既有 lane（驱动开关预选 + 只读结果区）；新建态不合成 lane（M4：
+  // 结果区仅编辑模式），列头「＋新建任务」改用 initialLaneStatus 只预填开关 + 状态。
   const initialLane: NoteLane | undefined =
-    props.target.mode === 'edit'
-      ? props.target.note.lane
-      : props.target.laneStatus !== undefined
-        ? { status: props.target.laneStatus }
-        : undefined
+    props.target.mode === 'edit' ? props.target.note.lane : undefined
+  const initialLaneStatus: TaskStatus | undefined =
+    props.target.mode === 'create' ? props.target.laneStatus : undefined
   return (
     <div style={overlayStyle} onClick={props.onCancel}>
       <div
@@ -64,6 +62,7 @@ export function EditorPageDialog(props: EditorPageDialogProps): JSX.Element {
           initialBody={editing ? editing.text : ''}
           initialColor={editing ? editing.color : undefined}
           initialLane={initialLane}
+          initialLaneStatus={initialLaneStatus}
           defaultTitle={props.defaultTitle}
           onCancel={props.onCancel}
           onSave={props.onSave}

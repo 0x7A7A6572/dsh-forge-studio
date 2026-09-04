@@ -164,16 +164,25 @@ describe('makeLane / beginRun / settleRun / isRunOpen', () => {
 })
 
 describe('lanePatchForSave（编辑器「设为任务」开关 → lane patch）', () => {
-  it('开关开 → { status }（含普通便签转任务与任务改状态）', () => {
-    expect(lanePatchForSave(true, 'todo', false)).toEqual({ status: 'todo' })
-    expect(lanePatchForSave(true, 'done', true)).toEqual({ status: 'done' })
+  it('开关开且状态未改 → undefined（防陈旧快照回滚宿主 settle 态）', () => {
+    // running 对话框打开期间宿主已 settle 成 done/failed：仅存正文时不得再发
+    // { status: 'running' }，否则会把宿主最新状态静默回滚。
+    expect(lanePatchForSave(true, 'running', { status: 'running' })).toBeUndefined()
+  })
+
+  it('开关开且状态已改 → { status }（手动改状态，宿主撤销租约）', () => {
+    expect(lanePatchForSave(true, 'done', { status: 'todo' })).toEqual({ status: 'done' })
+  })
+
+  it('开关开且原本非任务（普通便签转任务）→ { status }', () => {
+    expect(lanePatchForSave(true, 'todo', undefined)).toEqual({ status: 'todo' })
   })
 
   it('开关关且原本是任务 → { clear: true }（取消任务）', () => {
-    expect(lanePatchForSave(false, 'todo', true)).toEqual({ clear: true })
+    expect(lanePatchForSave(false, 'todo', { status: 'todo' })).toEqual({ clear: true })
   })
 
   it('开关关且原本非任务 → undefined（纯内容更新，不改 lane）', () => {
-    expect(lanePatchForSave(false, 'todo', false)).toBeUndefined()
+    expect(lanePatchForSave(false, 'todo', undefined)).toBeUndefined()
   })
 })

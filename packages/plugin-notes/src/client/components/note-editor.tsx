@@ -60,12 +60,16 @@ export interface NoteEditorProps {
   /** 便签纸颜色（缺省默认黄）。 */
   readonly initialColor?: NoteColor;
   /**
-   * 既有便签的任务泳道身份（编辑态带出，新建态缺省 undefined）。存在即任务，
+   * 既有便签的任务泳道身份（编辑态带出，新建态恒 undefined）。存在即任务，
    * 用于预选「设为任务」开关/状态，并渲染只读「任务与结果」区（含 run 执行结果）。
-   * 列头「＋新建任务」由 EditorPageDialog 以 `{ status }` 合成预填；running
-   * （isRunOpen）时开关与状态选择只读（改状态请先在泳道重置）。
+   * running（isRunOpen）时开关与状态选择只读（改状态请先在泳道重置）。
    */
   readonly initialLane?: NoteLane;
+  /**
+   * 新建态任务预填状态（列头「＋新建任务」，仅创建态使用）：非空即预填「设为任务」
+   * 开关开 + 该状态；不渲染只读结果区（新建无既有 run）。编辑态恒 undefined。
+   */
+  readonly initialLaneStatus?: TaskStatus;
   /** 标题留空时使用的默认标题（来自设置）。 */
   readonly defaultTitle: string;
   readonly onCancel: () => void;
@@ -279,11 +283,13 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
   const [color, setColor] = useState<NoteColor>(
     props.initialColor ?? DEFAULT_NOTE_COLOR,
   );
-  /** 「设为任务」开关：既有任务（initialLane 存在）初始即开，否则关。 */
-  const [taskOn, setTaskOn] = useState(props.initialLane !== undefined);
-  /** 任务状态选择：编辑态预选当前状态，新建态默认待办。 */
+  /** 「设为任务」开关：既有任务（initialLane）或列头新建预填（initialLaneStatus）即开。 */
+  const [taskOn, setTaskOn] = useState(
+    props.initialLane !== undefined || props.initialLaneStatus !== undefined,
+  );
+  /** 任务状态选择：编辑态预选当前状态，新建态预填列状态，否则默认待办。 */
   const [taskStatus, setTaskStatus] = useState<TaskStatus>(
-    props.initialLane?.status ?? "todo",
+    props.initialLane?.status ?? props.initialLaneStatus ?? "todo",
   );
   /** 编辑 running 任务（isRunOpen）：开关与状态只读（改状态请先在泳道重置）。 */
   const runningReadOnly =

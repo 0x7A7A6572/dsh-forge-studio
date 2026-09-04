@@ -198,11 +198,12 @@ export function NotesBoard(props: NotesBoardProps): JSX.Element {
       );
       if (ok) notesNav.closeEditor();
     } else {
-      const wasTask = current.note.lane !== undefined;
-      // 编辑：开 → lane.status patch（覆盖「普通便签转任务」与「任务改状态」）；
-      // 关且原本是任务 → clear（取消任务）；关且原本非任务 → 纯内容更新。
-      // running 任务的开关在编辑器里只读，故这里不会对 running lane 发 clear。
-      const laneForUpdate = lanePatchForSave(lanePatch.on, lanePatch.status, wasTask);
+      // 编辑：仅当用户在对话框内实际改了任务状态才发 lane.status（含「普通便签转
+      // 任务」）；状态未改不携带 lane——否则编辑器打开期间陈旧快照会把宿主已 settle
+      // / 已执行的最新状态回滚；开关关且原本是任务 → clear（取消任务）；关且非任务
+      // → 纯内容更新。running 任务的开关在编辑器里只读（状态不可能改），故不会对
+      // running lane 发任何 patch。
+      const laneForUpdate = lanePatchForSave(lanePatch.on, lanePatch.status, current.note.lane);
       const patch: NoteUpdateInput = {
         title,
         text: body,
