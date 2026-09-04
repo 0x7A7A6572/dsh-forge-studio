@@ -1,6 +1,6 @@
 /**
- * 便签纸色板（Win11 便签同款五色，紫色已随「任务泳道」分类收敛移除；
- * 五色与泳道五个状态一一对应，见 core/task-lanes.ts）：卡片纸色 + 选中描边色。
+ * 便签纸色板（Win11 便签同款六色，含回归的紫色；颜色与任务状态已解耦，
+ * 纸色只是卡片底色，见 core/task-lanes.ts）：卡片纸色 + 选中描边色。
  * 卡片是「便签纸」语义，固定 pastel 底 + 深色文字，不随宿主明暗主题变化
  * （类似宿主 --dsw-static-* 的刻意例外）；文字对比度在浅底上恒成立。
  */
@@ -18,12 +18,13 @@ export interface NoteColorMeta {
   readonly ring: string
 }
 
-/** 五色表，顺序即色板展示顺序（默认黄在最前）。 */
+/** 六色表，顺序即色板展示顺序（默认黄在最前；与 NOTE_COLORS 顺序一致）。 */
 export const NOTE_COLOR_PALETTE: readonly NoteColorMeta[] = [
   { id: 'yellow', label: '黄', paper: '#FFF1A6', ring: '#E3B341' },
   { id: 'blue', label: '蓝', paper: '#BBD8F7', ring: '#5A8FD6' },
   { id: 'green', label: '绿', paper: '#C3E6B0', ring: '#6DAE52' },
   { id: 'pink', label: '粉', paper: '#F9C6D6', ring: '#D9799A' },
+  { id: 'purple', label: '紫', paper: '#D9C6F5', ring: '#9B6FD6' },
   { id: 'gray', label: '灰', paper: '#E2E2E2', ring: '#9A9A9A' },
 ]
 

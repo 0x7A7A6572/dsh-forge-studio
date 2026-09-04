@@ -12,7 +12,6 @@ import {
   statusForColor,
 } from '../src/client/core/task-lanes.ts'
 import type { TaskStatus } from '../src/client/core/task-lanes.ts'
-import { NOTE_COLORS } from '../src/types.ts'
 import type { NoteColor, NoteId, NoteRecord } from '../src/types.ts'
 
 function note(partial: Partial<NoteRecord> & { id: string }): NoteRecord {
@@ -55,15 +54,16 @@ describe('任务泳道：状态 ↔ 纸色映射', () => {
     }
   })
 
-  it('每种纸色恰好映射到一个状态，且覆盖全部五列（紫色移除后无缺口）', () => {
-    const covered = new Set<TaskStatus>(NOTE_COLORS.map((color) => statusForColor(color)))
-    expect(covered.size).toBe(NOTE_COLORS.length)
+  it('每种泳道纸色恰好映射到一个状态，覆盖全部五列（紫色为自由色，不参与状态映射）', () => {
+    const laneColors = TASK_LANES.map((lane) => lane.color)
+    const covered = new Set<TaskStatus>(laneColors.map((color) => statusForColor(color)))
+    expect(covered.size).toBe(TASK_LANES.length)
     expect(covered).toEqual(new Set(TASK_LANES.map((lane) => lane.status)))
   })
 
-  it('statusForColor 与 colorForStatus 双向往返一致', () => {
-    for (const color of NOTE_COLORS) {
-      expect(colorForStatus(statusForColor(color))).toBe(color)
+  it('statusForColor 与 colorForStatus 双向往返一致（仅泳道五色）', () => {
+    for (const lane of TASK_LANES) {
+      expect(colorForStatus(statusForColor(lane.color))).toBe(lane.color)
     }
   })
 

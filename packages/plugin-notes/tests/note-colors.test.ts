@@ -1,11 +1,11 @@
 /**
- * 便签色板模块（note-colors.ts）契约测试：五色齐全（紫色已收敛移除）、id 唯一、色值合法、
+ * 便签色板模块（note-colors.ts）契约测试：六色齐全（紫色回归）、id 唯一、色值合法、
  * 默认黄兜底、任意 NoteColor 都能解析出元数据。
  */
 
 import { describe, expect, it } from 'vitest'
 import { NOTE_COLOR_PALETTE, noteColorMeta } from '../src/client/core/note-colors.ts'
-import { NOTE_COLORS } from '../src/types.ts'
+import { NOTE_COLORS, normalizeNoteColor } from '../src/types.ts'
 import type { NoteColor } from '../src/types.ts'
 
 describe('NOTE_COLOR_PALETTE', () => {
@@ -21,6 +21,12 @@ describe('NOTE_COLOR_PALETTE', () => {
       expect(c.paper).toMatch(/^#[0-9a-fA-F]{6}$/)
       expect(c.ring).toMatch(/^#[0-9a-fA-F]{6}$/)
     }
+  })
+
+  it('紫色回归为合法纸色', () => {
+    expect(NOTE_COLORS).toContain('purple')
+    expect(normalizeNoteColor('purple')).toBe('purple')
+    expect(NOTE_COLOR_PALETTE.map((c) => c.id)).toEqual([...NOTE_COLORS])
   })
 })
 

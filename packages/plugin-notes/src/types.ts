@@ -9,26 +9,47 @@ import type { Branded } from '@deepseek-ai/dsh-brand'
 export type NoteId = Branded<'NoteId'>
 
 /**
- * 便签纸颜色。源色板为 Win11 便签同款六色（黄/蓝/绿/粉/紫/灰）；「任务泳道」
- * 分类落地时把紫色收敛移除 —— 剩余五色与五个任务状态一一对应（见 client
- * core/task-lanes.ts），存量紫色记录读取时经 normalizeNoteColor 归一为灰。
- * 将来做「可编辑分类」时在同一处放开颜色集即可。
+ * 便签纸颜色。源色板为 Win11 便签同款六色（黄/蓝/绿/粉/紫/灰），紫色回归为
+ * 自由分类色；任务状态与颜色解耦后，颜色只是卡片底色，不再表任务状态
+ * （任务泳道按 note.lane.status 分列，见 client core/task-lanes.ts）。
  */
-export const NOTE_COLORS = ['yellow', 'blue', 'green', 'pink', 'gray'] as const
+export const NOTE_COLORS = ['yellow', 'blue', 'green', 'pink', 'purple', 'gray'] as const
 export type NoteColor = (typeof NOTE_COLORS)[number]
 
 /** 新建便签的默认纸色（Win11 同款：黄）。 */
 export const DEFAULT_NOTE_COLOR: NoteColor = 'yellow'
 
 /**
- * 颜色值归一（历史/非法输入兜底）：旧版紫色 → 灰（待规划）；枚举内原样返回；
+ * 颜色值归一（历史/非法输入兜底）：枚举成员（含回归的紫色）原样返回；
  * 其余非法值返回 undefined，由调用方决定回退默认色。
  */
 export function normalizeNoteColor(value: unknown): NoteColor | undefined {
-  if (value === 'purple') return 'gray'
   return (NOTE_COLORS as readonly string[]).includes(value as string)
     ? (value as NoteColor)
     : undefined
+}
+
+/**
+ * 任务状态（与 dsh-task-board 五列语义一致，稳定 id 供拖拽/回调传递）。
+ * 泳道数据模型去耦后，状态不再由纸色派生，而是内嵌于便签的 lane 对象。
+ */
+export type TaskStatus = 'backlog' | 'todo' | 'running' | 'done' | 'failed'
+
+/** 单次任务执行帧：开始/结束时间、成败与 AI 结果摘要（markdown，短）。 */
+export interface NoteRun {
+  readonly startedAt: number
+  readonly finishedAt?: number
+  readonly ok?: boolean
+  readonly summary?: string
+}
+
+/**
+ * 便签的任务泳道身份（D1/D3：显式标记，存在即任务）。普通便签无此字段
+ * （缺省 undefined），不进泳道。结果 run 不污染正文。
+ */
+export interface NoteLane {
+  readonly status: TaskStatus
+  readonly run?: NoteRun
 }
 
 /**
@@ -51,6 +72,8 @@ export interface NoteRecord {
   readonly color: NoteColor
   /** 便签来源（user 手写 / agent 创建）；schema 缺省回填 'user'。 */
   readonly origin: NoteOrigin
+  /** 任务泳道身份（可选）：存在即任务；缺省 undefined = 普通便签。 */
+  readonly lane?: NoteLane
   readonly createdAt: number
   readonly updatedAt: number
 }
@@ -65,6 +88,8 @@ export interface NoteCreateInput {
    * client UI 不透传（codec 丢弃该字段），host 默认落 'user'。
    */
   readonly origin?: NoteOrigin
+  /** 新建即任务：初始泳道状态（列头「＋新建任务」用，缺省不落 lane）。 */
+  readonly laneStatus?: TaskStatus
 }
 
 /** 更新便签入参（全部可选，至少一项）。origin 不可经 update 修改。 */
@@ -75,6 +100,8 @@ export interface NoteUpdateInput {
   /** 归档/取消归档。 */
   readonly archived?: boolean
   readonly color?: NoteColor
+  /** 任务泳道 patch（partial）：status/run 均可选，逐字段合并。 */
+  readonly lane?: { readonly status?: TaskStatus; readonly run?: NoteRun }
 }
 
 /**
