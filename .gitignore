@@ -4,3 +4,5 @@ packages/*/lib/
 packages/*/node_modules/
 .research/
 *.log
+
+.superpowers/
