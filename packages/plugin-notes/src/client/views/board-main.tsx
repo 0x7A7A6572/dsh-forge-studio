@@ -65,6 +65,12 @@ export interface BoardMainProps {
   readonly onCreate: () => void;
   /** 任务泳道：拖拽换列（目标状态→纸色由 board-view 落 notes.update）。 */
   readonly onMove: (noteId: NoteId, status: TaskStatus) => void;
+  /** 任务泳道：执行/重跑（非 running 卡主入口）。 */
+  readonly onExecute: (note: NoteRecord) => void;
+  /** 任务泳道：重置为待办（running 卡主入口，手动接管）。 */
+  readonly onReset: (note: NoteRecord) => void;
+  /** 任务泳道：列头「＋」新建任务（初始 lane.status = 列状态）。 */
+  readonly onCreateTask: (status: TaskStatus) => void;
 }
 
 /** board-main 覆盖的所有类选择器样式（统一注入一次）。 */
@@ -263,6 +269,9 @@ export function BoardMain(props: BoardMainProps): JSX.Element {
                   onToggleArchive={props.onToggleArchive}
                   onRemove={props.onRemove}
                   onMove={props.onMove}
+                  onExecute={props.onExecute}
+                  onReset={props.onReset}
+                  onCreateTask={props.onCreateTask}
                 />
               )}
               {archivedMatched.length > 0 && (

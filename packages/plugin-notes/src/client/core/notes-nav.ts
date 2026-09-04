@@ -14,11 +14,11 @@
  * 新增弹窗：扩展弹窗联合 → 这里补动作 → board-view 的渲染处加一支。
  */
 
-import type { NoteRecord } from '../../types.ts'
+import type { NoteRecord, TaskStatus } from '../../types.ts'
 
 /** 新建/编辑草稿目标（沿用原 board-view Draft 语义，类型上收至此）。 */
 export type EditorTarget =
-  | { readonly mode: 'create' }
+  | { readonly mode: 'create'; readonly laneStatus?: TaskStatus }
   | { readonly mode: 'edit'; readonly note: NoteRecord }
 
 export interface NotesNav {

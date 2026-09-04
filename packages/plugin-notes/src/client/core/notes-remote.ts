@@ -66,6 +66,14 @@ const booleanSchema: TypertSchema<boolean> = {
   },
 }
 
+/** sessionId 字段校验：非空字符串（任务执行投递会话标识）。 */
+const sessionIdSchema: TypertSchema<string> = {
+  parse(value) {
+    if (typeof value !== 'string') throw new Error('expected non-empty sessionId string')
+    return value
+  },
+}
+
 /** 可选 color 字段校验：undefined 放行；历史紫色归一为灰；其余必须是五色之一。 */
 function parseOptionalColor(value: unknown): NoteColor | undefined {
   if (value === undefined) return undefined
@@ -147,6 +155,14 @@ const updateInputSchema: TypertSchema<NoteUpdateInput> = {
 /** 结果一律 src-json（client 不解析返回值，host SRC 模式同样透传）。 */
 const json: TypertCodec = { mode: 'src-json' }
 
+/** 任务执行事务结果（与 host NotesService.taskExecute 返回值一致，client 不解析）。 */
+export type TaskExecuteResult =
+  | { readonly ok: true; readonly note: NoteRecord }
+  | { readonly ok: false; readonly reason: 'missing' | 'busy' | 'no-dispatch' | 'dispatch-failed' }
+
+/** 任务重置结果（与 host NotesService.taskReset 返回值一致，client 不解析）。 */
+export type TaskResetResult = { readonly ok: true; readonly note: NoteRecord } | { readonly ok: false }
+
 /* ---------- 端点 descriptors（与 host NotesService 方法一一对应） ---------- */
 
 function descriptor(
@@ -182,6 +198,13 @@ export const notesRemoteContribution: TypertRemoteContribution = {
     descriptor('delete', [
       { name: 'id', wire: 'id', source: 'json', codec: strict('NoteId', idSchema) },
     ]),
+    descriptor('taskExecute', [
+      { name: 'id', wire: 'id', source: 'json', codec: strict('NoteId', idSchema) },
+      { name: 'sessionId', wire: 'sessionId', source: 'json', codec: strict('sessionId', sessionIdSchema) },
+    ]),
+    descriptor('taskReset', [
+      { name: 'id', wire: 'id', source: 'json', codec: strict('NoteId', idSchema) },
+    ]),
   ],
 }
 
@@ -194,6 +217,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'notes/update': (id: NoteId, patch: NoteUpdateInput) => Promise<RemoteResult<NoteRecord | undefined>>
     'notes/setPinned': (id: NoteId, pinned: boolean) => Promise<RemoteResult<NoteRecord | undefined>>
     'notes/delete': (id: NoteId) => Promise<RemoteResult<boolean>>
+    'notes/taskExecute': (id: NoteId, sessionId: string) => Promise<RemoteResult<TaskExecuteResult>>
+    'notes/taskReset': (id: NoteId) => Promise<RemoteResult<TaskResetResult>>
   }
   interface TypertRemoteNamespaceMap {
     notes: TypertRemoteNamespace<'notes'>
@@ -207,6 +232,8 @@ export interface NotesRemote {
   update(id: NoteId, patch: NoteUpdateInput): Promise<RemoteResult<NoteRecord | undefined>>
   setPinned(id: NoteId, pinned: boolean): Promise<RemoteResult<NoteRecord | undefined>>
   delete(id: NoteId): Promise<RemoteResult<boolean>>
+  taskExecute(id: NoteId, sessionId: string): Promise<RemoteResult<TaskExecuteResult>>
+  taskReset(id: NoteId): Promise<RemoteResult<TaskResetResult>>
 }
 
 /**

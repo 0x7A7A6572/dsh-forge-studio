@@ -33,9 +33,9 @@ describe('notes remote contribution', () => {
     }
   })
 
-  it('覆盖 host 的五个公开方法端点', () => {
+  it('覆盖 host 的七个公开方法端点', () => {
     const methods = notesRemoteContribution.descriptors.map((d) => d.method).sort()
-    expect(methods).toEqual(['create', 'delete', 'list', 'setPinned', 'update'])
+    expect(methods).toEqual(['create', 'delete', 'list', 'setPinned', 'taskExecute', 'taskReset', 'update'])
     const ids = notesRemoteContribution.descriptors.map((d) => d.id)
     expect(new Set(ids).size).toBe(ids.length)
   })
@@ -50,6 +50,18 @@ describe('notes remote contribution', () => {
     const prototype = NotesService.prototype as unknown as Record<string, (...args: never[]) => unknown>
     expect(parameterNames(prototype.taskExecute)).toEqual(['id', 'sessionId'])
     expect(parameterNames(prototype.taskReset)).toEqual(['id'])
+  })
+
+  it('taskExecute/taskReset 描述符存在且 wire 名 = id/sessionId、id', () => {
+    const byMethod = new Map(notesRemoteContribution.descriptors.map((d) => [d.method, d]))
+    const execute = byMethod.get('taskExecute')
+    expect(execute).toBeDefined()
+    expect(execute!.parameters.map((p) => p.wire)).toEqual(['id', 'sessionId'])
+    expect(execute!.result.mode).toBe('src-json')
+    const reset = byMethod.get('taskReset')
+    expect(reset).toBeDefined()
+    expect(reset!.parameters.map((p) => p.wire)).toEqual(['id'])
+    expect(reset!.result.mode).toBe('src-json')
   })
 
   it('参数 wire 名与 host 方法形参名一致且 codec 为 strict', () => {
@@ -72,12 +84,14 @@ describe('notes remote contribution', () => {
     new TypertRegistry(ctx) // provides ctx.typert
     const dispose = await ctx.typert.remotes.register(notesRemoteContribution)
     const list = ctx.typert.remotes.list()
-    expect(list.length).toBe(5)
+    expect(list.length).toBe(7)
     expect(list.map((d) => `${d.namespace}/${d.method}`).sort()).toEqual([
       'notes/create',
       'notes/delete',
       'notes/list',
       'notes/setPinned',
+      'notes/taskExecute',
+      'notes/taskReset',
       'notes/update',
     ])
     await dispose()

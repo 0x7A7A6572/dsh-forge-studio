@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { fmtDateTime, fmtRelative } from '../src/client/core/time-text.ts'
+import { fmtDateTime, fmtElapsed, fmtRelative } from '../src/client/core/time-text.ts'
 
 describe('fmtRelative', () => {
   const now = new Date('2025-06-01T12:00:00').getTime()
@@ -31,5 +31,19 @@ describe('fmtRelative', () => {
 describe('fmtDateTime', () => {
   it('补零的完整日期时间', () => {
     expect(fmtDateTime(new Date('2025-01-02T03:04:00').getTime())).toBe('2025-01-02 03:04')
+  })
+})
+
+describe('fmtElapsed', () => {
+  it('秒 / 分钟 / 小时（含分钟余数）', () => {
+    expect(fmtElapsed(0)).toBe('0 秒')
+    expect(fmtElapsed(45_000)).toBe('45 秒')
+    expect(fmtElapsed(5 * 60_000)).toBe('5 分钟')
+    expect(fmtElapsed(60 * 60_000)).toBe('1 小时')
+    expect(fmtElapsed(90 * 60_000)).toBe('1 小时 30 分钟')
+  })
+
+  it('负值按 0 处理（不抛错）', () => {
+    expect(fmtElapsed(-5_000)).toBe('0 秒')
   })
 })

@@ -39,6 +39,8 @@ export interface NotesBoardFace {
   readonly notes: NotesRemote;
   /** forge-studio-notes 命名空间 scope（默认标题读写，见 settings-dialog）。 */
   readonly scope: SettingsScope<NotesConfig>;
+  /** 当前承载便签板的会话 id（执行投递目标）；不可得时返回空串。 */
+  readonly currentSessionId: () => string;
 }
 
 export interface NotesBoardProps {
@@ -47,6 +49,22 @@ export interface NotesBoardProps {
 
 function errText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** §8 提示：执行需便签板所在会话（no-dispatch / dispatch-failed 共用，见 T6 minor）。 */
+const EXECUTE_NEEDS_SESSION_HINT = '执行需要便签板所在会话（先在会话里打开便签板）';
+
+/** 任务执行事务失败 reason → 用户提示。 */
+function executeError(reason: 'missing' | 'busy' | 'no-dispatch' | 'dispatch-failed'): string {
+  switch (reason) {
+    case 'missing':
+      return '便签不存在，无法执行';
+    case 'busy':
+      return '任务正在执行中或不可执行';
+    case 'no-dispatch':
+    case 'dispatch-failed':
+      return EXECUTE_NEEDS_SESSION_HINT;
+  }
 }
 
 /** 头部按钮 hover 与加载 spinner。 */
@@ -100,13 +118,19 @@ export function NotesBoard(props: NotesBoardProps): JSX.Element {
     if (!silent) setLoading(false);
   }
 
+  // 轮询加速（spec §9）：面板内存在运行中任务（status running 且 run 未收尾）
+  // 时 1500ms，否则 5000ms；hasRunning 变化时 effect 重算并重建 interval。
+  const hasRunning = notes.some(
+    (n) => n.lane && n.lane.status === 'running' && !n.lane.run?.finishedAt,
+  );
+
   useEffect(() => {
     if (!open) return;
     void refresh();
-    const timer = setInterval(() => void refresh(true), 5000);
+    const timer = setInterval(() => void refresh(true), hasRunning ? 1500 : 5000);
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, hasRunning]);
 
   // Esc：按弹窗层级收 —— 使用说明 → 设置弹窗 → 编辑器弹窗 → 整个面板
   // （编辑器内的 Esc 由 NoteEditor 处理并 stopPropagation，不会走到这里）。
@@ -154,7 +178,13 @@ export function NotesBoard(props: NotesBoardProps): JSX.Element {
     if (!current) return;
     if (current.mode === "create") {
       const ok = await run(() =>
-        props.face.notes.create({ title, text: body, color }),
+        props.face.notes.create({
+          title,
+          text: body,
+          color,
+          // 泳道列头「＋新建任务」：初始 lane.status = 该列状态（缺省不落 lane）。
+          ...(current.laneStatus !== undefined ? { laneStatus: current.laneStatus } : {}),
+        }),
       );
       if (ok) notesNav.closeEditor();
     } else {
@@ -167,6 +197,56 @@ export function NotesBoard(props: NotesBoardProps): JSX.Element {
       );
       if (ok) notesNav.closeEditor();
     }
+  }
+
+  /** 泳道卡执行/重跑：busy 守卫 → taskExecute → 失败提示 → 刷新。 */
+  async function onExecute(note: NoteRecord): Promise<void> {
+    if (busy) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      const sessionId = props.face.currentSessionId();
+      const result = await props.face.notes.taskExecute(note.id, sessionId);
+      if (!result.ok) {
+        setError(errText(result.error));
+        return;
+      }
+      if (!result.value.ok) {
+        setError(executeError(result.value.reason));
+      }
+      await refresh(true);
+    } catch (cause) {
+      setError(errText(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** 泳道卡重置为待办（手动接管）：busy 守卫 → taskReset → 刷新。 */
+  async function onReset(note: NoteRecord): Promise<void> {
+    if (busy) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      const result = await props.face.notes.taskReset(note.id);
+      if (!result.ok) {
+        setError(errText(result.error));
+        return;
+      }
+      if (!result.value.ok) {
+        setError('重置失败：便签不存在或非任务');
+      }
+      await refresh(true);
+    } catch (cause) {
+      setError(errText(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** 泳道列头「＋」：打开新建编辑器，预置 lane 状态为当前列。 */
+  function onCreateTask(status: TaskStatus): void {
+    notesNav.openEditor({ mode: 'create', laneStatus: status });
   }
 
   const activeCount = notes.filter((n) => !n.archived).length;
@@ -295,6 +375,10 @@ export function NotesBoard(props: NotesBoardProps): JSX.Element {
           onMove={(id: NoteId, status: TaskStatus) =>
             void run(() => props.face.notes.update(id, { lane: { status } }))
           }
+          // 泳道执行/重置/列头新建任务（Task 7）。
+          onExecute={(note) => void onExecute(note)}
+          onReset={(note) => void onReset(note)}
+          onCreateTask={onCreateTask}
         />
       </div>
 

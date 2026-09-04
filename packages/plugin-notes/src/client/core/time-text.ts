@@ -32,3 +32,17 @@ export function fmtRelative(ts: number, now: number = Date.now()): string {
   if (days < 7) return `${days} 天前`
   return fmtDate(ts)
 }
+
+/**
+ * 执行耗时（运行中任务相对 startedAt 的已耗时）：毫秒 → 中文时长。
+ * 负值按 0 处理，永不抛错。用于泳道 running 卡的 elapsed 文本。
+ */
+export function fmtElapsed(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000))
+  if (total < 60) return `${total} 秒`
+  const minutes = Math.floor(total / 60)
+  if (minutes < 60) return `${minutes} 分钟`
+  const hours = Math.floor(minutes / 60)
+  const rem = minutes % 60
+  return rem > 0 ? `${hours} 小时 ${rem} 分钟` : `${hours} 小时`
+}

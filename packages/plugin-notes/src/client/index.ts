@@ -13,6 +13,8 @@ import { createElement } from 'react'
 import { Context } from '@deepseek-ai/cordis'
 // 载入 renderer 的 Context 增广（ctx.slots），type-only，无运行时依赖。
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+// 载入会话控制器的 client 面类型（ctx.sessions），type-only，无运行时依赖。
+import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { NotesConfig } from '../types.ts'
 import { NOTES_NAMESPACE } from '../types.ts'
 import { mountNotesRemote, notesOf } from './core/notes-remote.ts'
@@ -33,7 +35,17 @@ export function apply(ctx: Context): void {
       // 命名空间 scope：设置弹窗读写 defaultTitle（便签板内，不再走插件设置页）。
       const scope = ctx.settingsScope.bind<NotesConfig>({ namespace: NOTES_NAMESPACE })
 
-      const face = (): NotesBoardFace => ({ notes, scope })
+      const face = (): NotesBoardFace => ({
+        notes,
+        scope,
+        // 会话 id（执行投递目标）：惰性读 ctx.sessions 的当前选中会话
+        // （session-controller client 在宿主 Web shell 恒装配；不可得时降级空串，
+        // 由 board-view 的 §8 提示兜底，见 board-view.currentSessionId）。
+        currentSessionId: () => {
+          const sessions = ctx.get('sessions') as ISessions | undefined
+          return sessions?.list.getSnapshot().current ?? ''
+        },
+      })
 
       // DOM 挂载失败只降级便签板，绝不能把整个 GUI 拖垮（web shell 在插件
       // apply 抛错时会整体 boot 失败）。disposer 随 fiber 卸载回收。

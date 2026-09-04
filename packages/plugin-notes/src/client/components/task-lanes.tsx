@@ -20,6 +20,7 @@ import {
 } from '../core/task-lanes.ts'
 import { TaskLaneCard } from './task-lane-card.tsx'
 import { t } from '../core/theme-tokens.ts'
+import { Plus } from 'lucide-react'
 
 /** 拖拽经过列的高亮与列内滚动条。 */
 export const LANES_CSS = `
@@ -42,6 +43,12 @@ export interface TaskLanesProps {
   readonly onRemove: (note: NoteRecord) => void
   /** 拖拽换列：目标状态 ≠ 当前 lane.status 时才触发。 */
   readonly onMove: (noteId: NoteId, status: TaskStatus) => void
+  /** 执行/重跑（非 running 卡主入口）。 */
+  readonly onExecute: (note: NoteRecord) => void
+  /** 重置为待办（running 卡主入口，手动接管）。 */
+  readonly onReset: (note: NoteRecord) => void
+  /** 列头「＋」新建任务：初始 lane.status = 该列状态。 */
+  readonly onCreateTask: (status: TaskStatus) => void
 }
 
 export function TaskLanes(props: TaskLanesProps): JSX.Element {
@@ -102,6 +109,16 @@ export function TaskLanes(props: TaskLanesProps): JSX.Element {
             <header style={laneHeaderStyle}>
               <h3 style={laneTitleStyle}>{lane.label}</h3>
               <span style={laneCountStyle}>{count}</span>
+              <button
+                type="button"
+                title={`在「${lane.label}」列新建任务`}
+                aria-label={`在「${lane.label}」列新建任务`}
+                disabled={props.busy}
+                onClick={() => props.onCreateTask(lane.status)}
+                style={{ ...laneAddBtn, ...(props.busy ? laneAddBtnDisabled : {}) }}
+              >
+                <Plus size={13} />
+              </button>
             </header>
             {count === 0 ? (
               <div style={laneEmptyStyle}>此列暂无便签</div>
@@ -116,6 +133,8 @@ export function TaskLanes(props: TaskLanesProps): JSX.Element {
                     onTogglePin={() => props.onTogglePin(note)}
                     onToggleArchive={() => props.onToggleArchive(note)}
                     onRemove={() => props.onRemove(note)}
+                    onExecute={() => props.onExecute(note)}
+                    onReset={() => props.onReset(note)}
                   />
                 ))}
               </ul>
@@ -182,6 +201,24 @@ const laneCountStyle: React.CSSProperties = {
   fontSize: 11,
   color: t.labelSecondary,
   background: t.hoverBg,
+}
+const laneAddBtn: React.CSSProperties = {
+  flex: 'none',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 20,
+  height: 20,
+  padding: 0,
+  border: 'none',
+  borderRadius: 6,
+  background: 'transparent',
+  color: t.labelSecondary,
+  cursor: 'pointer',
+}
+const laneAddBtnDisabled: React.CSSProperties = {
+  opacity: 0.45,
+  cursor: 'default',
 }
 const laneListStyle: React.CSSProperties = {
   flex: 1,

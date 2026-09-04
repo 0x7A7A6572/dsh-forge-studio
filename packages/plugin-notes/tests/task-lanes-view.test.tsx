@@ -40,6 +40,9 @@ function renderLanes(notes: readonly NoteRecord[]): string {
       onToggleArchive={noop}
       onRemove={noop}
       onMove={noop}
+      onExecute={noop}
+      onReset={noop}
+      onCreateTask={noop}
     />,
   )
 }
@@ -115,6 +118,44 @@ describe('TaskLanes 泳道视图渲染', () => {
     // 其余列计数 0。
     for (const label of ['待规划（0 张便签）', '进行中（0 张便签）', '已完成（0 张便签）', '已失败（0 张便签）']) {
       expect(html).toContain(label)
+    }
+  })
+
+  it('running 卡有重置入口（重置为待办）且带 running 视觉', () => {
+    const notes = [
+      note({ id: id('r'), lane: { status: 'running', run: { startedAt: Date.now() - 60_000 } }, title: '进行中任务' }),
+    ]
+    const html = renderLanes(notes)
+    // running 卡：重置入口 + running 边框类。
+    expect(html).toContain('重置为待办')
+    expect(html).toContain('fs-lane-running')
+    // 执行主入口对 running 卡不出现（改为重置）。
+    expect(html.match(/aria-label="执行"/g) ?? []).toHaveLength(0)
+  })
+
+  it('done 卡显示 run.summary 首行摘要', () => {
+    const notes = [
+      note({ id: id('d'), lane: { status: 'done', run: { startedAt: 1, finishedAt: 9, ok: true, summary: 'AI 已完成：生成报告' } }, title: '完成任务' }),
+    ]
+    const html = renderLanes(notes)
+    expect(html).toContain('AI 已完成：生成报告')
+    // done 卡主入口为「重跑」。
+    expect(html).toContain('重跑')
+  })
+
+  it('failed 卡显示 run.summary 摘要且主入口为重跑', () => {
+    const notes = [
+      note({ id: id('f'), lane: { status: 'failed', run: { startedAt: 1, finishedAt: 9, ok: false, summary: '执行失败：超时' } }, title: '失败任务' }),
+    ]
+    const html = renderLanes(notes)
+    expect(html).toContain('执行失败：超时')
+    expect(html).toContain('重跑')
+  })
+
+  it('每列 header 有「＋新建任务」按钮（aria-label 带列标签）', () => {
+    const html = renderLanes([])
+    for (const label of LANE_LABELS) {
+      expect(html).toContain(`在「${label}」列新建任务`)
     }
   })
 })
