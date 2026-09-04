@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { NotesService } from '../src/service.ts'
+import type { NotesServiceConfig } from '../src/service.ts'
 import type { TaskLease } from '../src/domain.ts'
 import type { NoteId, NoteRecord } from '../src/types.ts'
 
@@ -24,7 +25,7 @@ function fakeTable<V>(): KvTable<NoteId, V> {
   }
 }
 
-function makeService(): {
+function makeService(dispatch?: NotesServiceConfig['dispatch']): {
   notes: NotesService
   table: KvTable<NoteId, NoteRecord>
   leases: KvTable<NoteId, TaskLease>
@@ -35,7 +36,7 @@ function makeService(): {
   const domain = {
     table: (name: string) => (name === 'notes' ? table : name === 'leases' ? leases : undefined),
   } as never
-  const notes = new NotesService(ctx, { domain })
+  const notes = new NotesService(ctx, { domain, ...(dispatch ? { dispatch } : {}) })
   return { notes, table, leases }
 }
 
@@ -285,5 +286,78 @@ describe('NotesService 执行租约（grant/revoke）', () => {
     await notes.grantTaskLease(n.id, 's1')
     await notes.delete(n.id)
     expect(leases.get(n.id)).toBeUndefined()
+  })
+})
+
+describe('NotesService 执行事务（taskExecute/taskReset）', () => {
+  it('taskExecute 成功：租约 + 投递；运行中再次执行 busy', async () => {
+    const calls: string[] = []
+    const { notes } = makeService(async (input) => { calls.push(input.noteId) })
+    const n = await notes.create({ text: 't', laneStatus: 'todo' })
+    const r1 = await notes.taskExecute(n.id, 'sess1')
+    expect(r1).toMatchObject({ ok: true })
+    expect((r1 as { note: NoteRecord }).note.lane?.status).toBe('running')
+    expect((r1 as { note: NoteRecord }).note.lane?.run).toBeDefined()
+    expect(calls).toEqual([n.id])
+    // 第二次执行：已有 active lease（运行中）→ busy
+    expect(await notes.taskExecute(n.id, 'sess1')).toMatchObject({ ok: false, reason: 'busy' })
+  })
+
+  it('dispatch 抛错 → dispatch-failed 且回滚原 lane（含 run）', async () => {
+    const { notes, leases } = makeService(async () => { throw new Error('boom') })
+    const n = await notes.create({ text: 'x', laneStatus: 'todo' })
+    const priorRun = { startedAt: 1, finishedAt: 2, ok: true, summary: 'prior' }
+    await notes.update(n.id, { lane: { status: 'done', run: priorRun } })
+    const r = await notes.taskExecute(n.id, 'sess1')
+    expect(r).toMatchObject({ ok: false, reason: 'dispatch-failed' })
+    expect(leases.get(n.id)).toBeUndefined()
+    // 回滚：lane 精确恢复 grant 前的 status + run
+    expect(notes.list().find((x) => x.id === n.id)!.lane).toEqual({ status: 'done', run: priorRun })
+  })
+
+  it('无 dispatch → no-dispatch 且回滚原状态', async () => {
+    const { notes, leases } = makeService() // 未注入 dispatch
+    const n = await notes.create({ text: 'x', laneStatus: 'todo' })
+    const r = await notes.taskExecute(n.id, 'sess1')
+    expect(r).toMatchObject({ ok: false, reason: 'no-dispatch' })
+    expect(leases.get(n.id)).toBeUndefined()
+    expect(notes.list().find((x) => x.id === n.id)!.lane).toEqual({ status: 'todo' })
+  })
+
+  it('不存在的便签 → missing', async () => {
+    const { notes } = makeService(async () => {})
+    expect(await notes.taskExecute('nope' as NoteId, 's1')).toMatchObject({ ok: false, reason: 'missing' })
+  })
+
+  it('归档便签 → busy（T4 forward-minor b）', async () => {
+    const { notes } = makeService(async () => {})
+    const n = await notes.create({ text: 'x', laneStatus: 'todo' })
+    await notes.update(n.id, { archived: true })
+    expect(await notes.taskExecute(n.id, 's1')).toMatchObject({ ok: false, reason: 'busy' })
+  })
+
+  it('无 lane 普通便签 → busy', async () => {
+    const { notes } = makeService(async () => {})
+    const n = await notes.create({ text: 'x' })
+    expect(await notes.taskExecute(n.id, 's1')).toMatchObject({ ok: false, reason: 'busy' })
+  })
+
+  it('taskReset 撤销租约 + 收尾 run + 状态回 todo', async () => {
+    const { notes, leases } = makeService()
+    const n = await notes.create({ text: 'x', laneStatus: 'todo' })
+    await notes.grantTaskLease(n.id, 's1') // → running + 新 run 帧
+    const r = await notes.taskReset(n.id)
+    expect(r).toMatchObject({ ok: true })
+    expect(leases.get(n.id)).toBeUndefined()
+    const lane = notes.list().find((x) => x.id === n.id)!.lane
+    expect(lane?.status).toBe('todo')
+    expect(lane?.run).toMatchObject({ ok: false, summary: '用户手动接管' })
+    expect(lane?.run?.finishedAt).toBeGreaterThan(0)
+    expect((r as { note: NoteRecord }).note.lane?.status).toBe('todo')
+  })
+
+  it('taskReset 不存在便签 → ok:false', async () => {
+    const { notes } = makeService()
+    expect(await notes.taskReset('nope' as NoteId)).toEqual({ ok: false })
   })
 })

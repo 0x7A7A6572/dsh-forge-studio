@@ -25,16 +25,28 @@ import { beginRun, settleRun } from './client/core/task-lanes.ts'
 export interface NotesServiceConfig {
   /** 已打开的 notes 域。 */
   readonly domain: Domain<typeof notesDomain>
+  /**
+   * 任务执行投递回调（host 注入，可缺省）：把「泳道卡执行」投成对承载便签板会话的
+   * 一次 prompt（见 index.ts 装配 / spec §8 缝 1）。未注入时 taskExecute 在 grant 后
+   * 立即回滚并返回 no-dispatch；注入后抛错则同样回滚并返回 dispatch-failed。
+   */
+  readonly dispatch?: (input: {
+    readonly noteId: NoteId
+    readonly sessionId: string
+    readonly title: string
+  }) => Promise<void>
 }
 
 export class NotesService extends TypertRemoteService {
   private readonly table: KvTable<NoteId, NoteRecord>
   private readonly leases: KvTable<NoteId, TaskLease>
+  private readonly dispatch: NotesServiceConfig['dispatch']
 
   constructor(ctx: Context, config: NotesServiceConfig) {
     super(ctx, 'notes')
     this.table = config.domain.table('notes')
     this.leases = config.domain.table('leases')
+    this.dispatch = config.dispatch
   }
 
   /** 全量便签（未删除），同步读自内存。 */
@@ -193,6 +205,74 @@ export class NotesService extends TypertRemoteService {
     await this.table.put(id, next)
     return next
   }
+
+  /**
+   * 执行事务（host 投递会话，spec §7/§8）：
+   * 1. 快照当前便签（回滚基准）；missing = 无此便签；busy = 归档 / 无 lane / 已有 lease。
+   * 2. grantTaskLease（置 running + 新 run 帧 + 写 lease）；非 granted 按对应 reason 返回。
+   * 3. 无 dispatch → 回滚（revoke + 直写快照）→ no-dispatch。
+   * 4. await dispatch(...)；抛错 → 同样回滚 → dispatch-failed。
+   * 5. 成功 → 返回投递后最新便签（running + run 帧）。
+   *
+   * 回滚语义：grant 是「写 lease + 直写 running」两次独立 put（非原子），故回滚 =
+   * revokeTaskLease（只删 lease 行）+ 直写恢复快照 lane——不经 update（update 的「手动
+   * 改状态即撤销租约」钩子面向用户侧 UI，此处直写避免触发，且幂等无碍）。快照存的是
+   * grant 前的整张便签，直写即彻底清掉 grant 造出的 running/run 帧。
+   */
+  async taskExecute(
+    id: NoteId,
+    sessionId: string,
+  ): Promise<{ ok: true; note: NoteRecord } | { ok: false; reason: 'missing' | 'busy' | 'no-dispatch' | 'dispatch-failed' }> {
+    const current = this.table.get(id)
+    if (!current) return { ok: false, reason: 'missing' }
+    // T4 forward-minor b：归档便签不得执行（归档即离开工作流）。
+    if (current.archived || !current.lane || this.leases.get(id)) {
+      return { ok: false, reason: 'busy' }
+    }
+    const snapshot = current
+
+    const granted = await this.grantTaskLease(id, sessionId)
+    if (granted !== 'granted') {
+      return { ok: false, reason: granted === 'missing' ? 'missing' : 'busy' }
+    }
+
+    if (this.dispatch === undefined) {
+      await this.rollbackTaskExecute(id, snapshot)
+      return { ok: false, reason: 'no-dispatch' }
+    }
+
+    try {
+      await this.dispatch({ noteId: id, sessionId, title: current.title })
+    } catch {
+      await this.rollbackTaskExecute(id, snapshot)
+      return { ok: false, reason: 'dispatch-failed' }
+    }
+
+    const fresh = this.table.get(id)
+    if (!fresh) return { ok: false, reason: 'missing' }
+    return { ok: true, note: fresh }
+  }
+
+  /**
+   * 手动接管（重置为待办，spec M3）：撤销租约 + settleRun(ok:false, '用户手动接管') +
+   * 状态置 'todo'，直写（不经 update 的接管钩子）。无此便签 / 非任务（无 lane）→ ok:false。
+   */
+  async taskReset(id: NoteId): Promise<{ ok: true; note: NoteRecord } | { ok: false }> {
+    const current = this.table.get(id)
+    if (!current?.lane) return { ok: false }
+    await this.revokeTaskLease(id)
+    const now = Date.now()
+    const lane: NoteLane = { ...settleRun(current.lane, false, '用户手动接管', now), status: 'todo' }
+    const next: NoteRecord = { ...current, lane, updatedAt: now }
+    await this.table.put(id, next)
+    return { ok: true, note: next }
+  }
+
+  /** 执行事务回滚：删 lease 行 + 直写恢复 grant 前的整张便签（含原 lane/run/updatedAt）。 */
+  private async rollbackTaskExecute(id: NoteId, snapshot: NoteRecord): Promise<void> {
+    await this.revokeTaskLease(id)
+    await this.table.put(id, snapshot)
+  }
 }
 
 /**
@@ -217,7 +297,7 @@ function markRemoteMethods(prototype: object, methods: readonly string[]): void 
   })
 }
 
-markRemoteMethods(NotesService.prototype, ['list', 'create', 'update', 'setPinned', 'delete'])
+markRemoteMethods(NotesService.prototype, ['list', 'create', 'update', 'setPinned', 'delete', 'taskExecute', 'taskReset'])
 
 declare module '@deepseek-ai/cordis' {
   interface Context {

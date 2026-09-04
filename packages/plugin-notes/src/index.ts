@@ -23,9 +23,11 @@
 import { Context } from '@deepseek-ai/cordis'
 import { notesDomain } from './domain.ts'
 import { NotesService } from './service.ts'
+import type { NotesServiceConfig } from './service.ts'
 import { installNotesSettings } from './settings.ts'
 import { installNotesReferencePrompt } from './agent/reference.ts'
 import { installNotesTools } from './agent/tools.ts'
+import { installTaskDispatch } from './agent/task-dispatch.ts'
 
 export const name = '@forge-studio/dsh-plugin-notes'
 export const inject = ['storageDomain']
@@ -36,7 +38,9 @@ export function apply(ctx: Context) {
     try {
       // 域由本 fiber 负责 close。
       ctx.effect(() => () => { void domain.close() })
-      ctx.plugin(NotesService, { domain })
+      // 执行投递（泳道卡执行 → 会话 prompt）为可选增强：装配失败只降级 bridge（dispatch
+      // 缺省 → taskExecute 返回 no-dispatch），绝不拖垮 NotesService 注册。
+      ctx.plugin(NotesService, { domain, dispatch: installTaskDispatchSafely(ctx) })
       // 设置命名空间（client 设置卡片读写）。
       installNotesSettings(ctx)
       // agent 桥是可选增强：tools/systemPrompt 服务注册后（或已注册）挂载。
@@ -49,6 +53,20 @@ export function apply(ctx: Context) {
       throw error
     }
   })
+}
+
+/**
+ * 装配 taskExecute 的 dispatch 回调（降级安全）：任何抛错都只降级 bridge——记录
+ * warn 并返回 undefined（taskExecute 走 no-dispatch），绝不破坏 NotesService 注册。
+ * dispatch 本身惰性解析 sessionController（见 task-dispatch.ts），装配时无副作用。
+ */
+export function installTaskDispatchSafely(ctx: Context): NotesServiceConfig['dispatch'] | undefined {
+  try {
+    return installTaskDispatch(ctx)
+  } catch (error) {
+    ctx.logger.warn('[plugin-notes] task dispatch disabled:', error)
+    return undefined
+  }
 }
 
 /**

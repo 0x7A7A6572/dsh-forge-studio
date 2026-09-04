@@ -43,7 +43,13 @@ describe('notes remote contribution', () => {
   it('host 服务已挂 Typert SRC 标记（remoteMethods 可发现）', () => {
     // 不跑构造函数（避免触碰 domain/table），仅验证原型上的 marker。
     const markers = remoteMethods(Object.create(NotesService.prototype)).map((m) => m.method)
-    expect(markers.sort()).toEqual(['create', 'delete', 'list', 'setPinned', 'update'])
+    expect(markers.sort()).toEqual(['create', 'delete', 'list', 'setPinned', 'taskExecute', 'taskReset', 'update'])
+  })
+
+  it('taskExecute/taskReset 形参 wire 名 = id/sessionId', () => {
+    const prototype = NotesService.prototype as unknown as Record<string, (...args: never[]) => unknown>
+    expect(parameterNames(prototype.taskExecute)).toEqual(['id', 'sessionId'])
+    expect(parameterNames(prototype.taskReset)).toEqual(['id'])
   })
 
   it('参数 wire 名与 host 方法形参名一致且 codec 为 strict', () => {
