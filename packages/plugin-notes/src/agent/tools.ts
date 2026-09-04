@@ -47,6 +47,13 @@ export function isNotesWriteTool(name: string): boolean {
 
 /* ---------- 渲染（model-facing 文本） ---------- */
 
+/**
+ * 任务状态枚举（与 types.ts 的 TaskStatus 保持同步）。agent 工具层写死以避免对
+ * domain.ts（host 域，依赖 storage-domain/zod）的运行时 import；改动 TaskStatus
+ * 时须同步此处。
+ */
+const TASK_STATUSES = ['backlog', 'todo', 'running', 'done', 'failed'] as const
+
 function noteText(note: NoteRecord): string {
   const flags = [
     note.pinned ? 'pinned' : '',
@@ -54,8 +61,35 @@ function noteText(note: NoteRecord): string {
     note.origin === 'agent' ? 'agent-created' : 'user-created',
   ].filter(Boolean).join(', ')
   const meta = flags.length > 0 ? `\n(${flags})` : ''
-  return `${note.title || '(untitled)'}\n${note.text || ''}${meta}`
+  // lane 透出：任务便签标注状态与 run（startedAt 必带，summary 有则给）。
+  const lane = note.lane
+  const laneLine = lane
+    ? `\n(task: ${lane.status}` +
+      (lane.run ? ` · run@${lane.run.startedAt}` : '') +
+      (lane.run?.summary ? ` · ${lane.run.summary}` : '') +
+      ')'
+    : ''
+  return `${note.title || '(untitled)'}\n${note.text || ''}${meta}${laneLine}`
 }
+
+/** 读工具输出里 lane 字段的 schema 形状（与 domain.ts lane 校验一致）。 */
+const LANE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    status: { type: 'string', required: true, enum: [...TASK_STATUSES] },
+    run: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        startedAt: { type: 'number', required: true },
+        finishedAt: { type: 'number' },
+        ok: { type: 'boolean' },
+        summary: { type: 'string' },
+      },
+    },
+  },
+} as const
 
 /* ---------- guard（单调拒绝，同步） ---------- */
 
@@ -110,6 +144,7 @@ export function installNotesTools(ctx: Context): void {
                 color: { type: 'string', required: true, enum: [...NOTE_COLORS] },
                 origin: { type: 'string', required: true, enum: ['user', 'agent'] },
                 updatedAt: { type: 'number', required: true },
+                lane: LANE_SCHEMA,
               },
             },
           },
@@ -151,6 +186,7 @@ export function installNotesTools(ctx: Context): void {
           origin: { type: 'string', required: true, enum: ['user', 'agent'] },
           createdAt: { type: 'number', required: true },
           updatedAt: { type: 'number', required: true },
+          lane: LANE_SCHEMA,
         },
       },
       render: (_args, value) => [{ type: 'text', text: noteText(value as NoteRecord) }],

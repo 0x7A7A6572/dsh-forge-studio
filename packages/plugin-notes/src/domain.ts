@@ -11,6 +11,12 @@ import { DEFAULT_NOTE_COLOR, NOTE_COLORS, NOTE_ORIGINS, normalizeNoteColor } fro
 import type { NoteId, NoteRecord } from './types.ts'
 
 /**
+ * 任务状态枚举（与 types.ts 的 TaskStatus 保持同步）。写死字面量数组以防
+ * domain ↔ types 出现 import 环；改动 types.ts 的 TaskStatus 时须同步此处。
+ */
+const NOTE_TASK_STATUSES = ['backlog', 'todo', 'running', 'done', 'failed'] as const
+
+/**
  * 便签记录 schema：存储边界校验（storage-domain 打开时全量校验）。
  * color 带默认值：旧记录（v1 无该字段）打开时不炸，解析即回填默认黄。
  * zod 的 brand 与自有 Branded<NoteId> 符号不互通，这里用形状收窄声明，
@@ -31,6 +37,22 @@ export const noteRecordSchema = z.object({
   ),
   // origin 带默认值：v1 旧记录（无该字段）打开时不炸，解析即回填 'user'。
   origin: z.enum(NOTE_ORIGINS).default('user'),
+  // lane 可选（无默认、不回填）：存在即任务（进泳道），缺省 = 普通便签。
+  // 旧记录天然无该字段，解析不炸；status 用五状态字面量枚举，run 帧
+  // startedAt 必填、finishedAt/ok/summary 可选。
+  lane: z
+    .object({
+      status: z.enum(NOTE_TASK_STATUSES),
+      run: z
+        .object({
+          startedAt: z.number(),
+          finishedAt: z.number().optional(),
+          ok: z.boolean().optional(),
+          summary: z.string().optional(),
+        })
+        .optional(),
+    })
+    .optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
 }) as unknown as ZodType<NoteRecord>

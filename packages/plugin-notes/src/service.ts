@@ -18,7 +18,7 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type { notesDomain } from './domain.ts'
 import { DEFAULT_NOTE_COLOR } from './types.ts'
-import type { NoteCreateInput, NoteId, NoteRecord, NoteUpdateInput } from './types.ts'
+import type { NoteCreateInput, NoteId, NoteLane, NoteRecord, NoteUpdateInput } from './types.ts'
 
 export interface NotesServiceConfig {
   /** 已打开的 notes 域。 */
@@ -50,6 +50,9 @@ export class NotesService extends TypertRemoteService {
       color: input.color ?? DEFAULT_NOTE_COLOR,
       // 来源：agent 工具层显式传 'agent'；UI/缺省落 'user'。
       origin: input.origin ?? 'user',
+      // 新建即任务：列头「＋新建任务」传 laneStatus → 落 lane: { status }；
+      // 缺省不落 lane（普通便签，不进泳道）。
+      ...(input.laneStatus !== undefined ? { lane: { status: input.laneStatus } } : {}),
       createdAt: now,
       updatedAt: now,
     }
@@ -61,6 +64,18 @@ export class NotesService extends TypertRemoteService {
   async update(id: NoteId, patch: NoteUpdateInput): Promise<NoteRecord | undefined> {
     const current = this.table.get(id)
     if (!current) return undefined
+    // lane patch：与顶层同语义——缺省字段保留、逐字段合并（next.lane =
+    // { ...current.lane, ...patch.lane }）；run 提供即整体替换（非逐字段合并）；
+    // 空 patch 对象（既无 status 也无 run）= no-op，不改动 lane（含不凭空造 lane）。
+    const lane: NoteLane | undefined =
+      patch.lane !== undefined &&
+      (patch.lane.status !== undefined || patch.lane.run !== undefined)
+        ? ({
+            ...current.lane,
+            ...(patch.lane.status !== undefined ? { status: patch.lane.status } : {}),
+            ...(patch.lane.run !== undefined ? { run: patch.lane.run } : {}),
+          } as NoteLane)
+        : current.lane
     const next: NoteRecord = {
       ...current,
       ...(patch.title !== undefined ? { title: patch.title } : {}),
@@ -73,6 +88,7 @@ export class NotesService extends TypertRemoteService {
       // origin 永远保留原值：来源一经创建不可改写（agent 无法把自己的便签标成 user）。
       origin: current.origin ?? 'user',
       updatedAt: Date.now(),
+      ...(lane !== undefined ? { lane } : {}),
     }
     await this.table.put(id, next)
     return next

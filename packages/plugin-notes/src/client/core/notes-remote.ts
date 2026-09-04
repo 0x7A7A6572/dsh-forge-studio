@@ -21,11 +21,26 @@ import type {
   TypertSchema,
 } from '@deepseek-ai/dsh-typert-protocol'
 import { normalizeNoteColor, NOTE_COLORS } from '../../types.ts'
-import type { NoteColor, NoteCreateInput, NoteId, NoteRecord, NoteUpdateInput } from '../../types.ts'
+import type {
+  NoteColor,
+  NoteCreateInput,
+  NoteId,
+  NoteRecord,
+  NoteRun,
+  NoteUpdateInput,
+  TaskStatus,
+} from '../../types.ts'
 
 export const NOTES_REMOTE_PACKAGE = '@forge-studio/dsh-plugin-notes'
 const SERVICE = 'notes'
 const NAMESPACE = 'notes'
+
+/**
+ * 任务状态枚举（与 types.ts 的 TaskStatus 保持同步）。client 侧写死以避开对
+ * host 域（domain.ts，依赖 storage-domain/zod）的运行时 import；改动 TaskStatus
+ * 时须同步此处。
+ */
+const TASK_STATUSES = ['backlog', 'todo', 'running', 'done', 'failed'] as const
 
 /* ---------- 手写 strict codec（无需 zod；只做形状校验） ---------- */
 
@@ -61,11 +76,53 @@ function parseOptionalColor(value: unknown): NoteColor | undefined {
   return normalized
 }
 
+/** 可选 lane.status 字段校验：undefined 放行；必须是五状态之一。 */
+function parseOptionalTaskStatus(value: unknown): TaskStatus | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'string' || !(TASK_STATUSES as readonly string[]).includes(value)) {
+    throw new Error(`expected status in ${TASK_STATUSES.join('|')}`)
+  }
+  return value as TaskStatus
+}
+
+/** 可选 run 帧校验：startedAt number 必填，finishedAt/ok/summary 可选（strict）。 */
+function parseOptionalRun(value: unknown): NoteRun | undefined {
+  if (value === undefined) return undefined
+  if (!isRecord(value)) throw new Error('expected run object')
+  if (typeof value.startedAt !== 'number') throw new Error('expected run.startedAt: number')
+  if (value.finishedAt !== undefined && typeof value.finishedAt !== 'number') throw new Error('expected run.finishedAt?: number')
+  if (value.ok !== undefined && typeof value.ok !== 'boolean') throw new Error('expected run.ok?: boolean')
+  if (value.summary !== undefined && typeof value.summary !== 'string') throw new Error('expected run.summary?: string')
+  return {
+    startedAt: value.startedAt,
+    ...(value.finishedAt !== undefined ? { finishedAt: value.finishedAt } : {}),
+    ...(value.ok !== undefined ? { ok: value.ok } : {}),
+    ...(value.summary !== undefined ? { summary: value.summary } : {}),
+  }
+}
+
+/** 可选 lane patch 校验：status/run 均可选；undefined 字段被丢弃（run: undefined 不出现）。 */
+function parseOptionalLane(value: unknown): { status?: TaskStatus; run?: NoteRun } | undefined {
+  if (value === undefined) return undefined
+  if (!isRecord(value)) throw new Error('expected lane object')
+  const status = parseOptionalTaskStatus(value.status)
+  const run = parseOptionalRun(value.run)
+  return {
+    ...(status !== undefined ? { status } : {}),
+    ...(run !== undefined ? { run } : {}),
+  }
+}
+
 const createInputSchema: TypertSchema<NoteCreateInput> = {
   parse(value) {
     if (!isRecord(value) || typeof value.text !== 'string') throw new Error('expected { text: string }')
     if (value.title !== undefined && typeof value.title !== 'string') throw new Error('expected title?: string')
-    return { title: value.title, text: value.text, color: parseOptionalColor(value.color) }
+    return {
+      title: value.title,
+      text: value.text,
+      color: parseOptionalColor(value.color),
+      ...(value.laneStatus !== undefined ? { laneStatus: parseOptionalTaskStatus(value.laneStatus) } : {}),
+    }
   },
 }
 
@@ -82,6 +139,7 @@ const updateInputSchema: TypertSchema<NoteUpdateInput> = {
       pinned: value.pinned,
       archived: value.archived,
       color: parseOptionalColor(value.color),
+      ...(value.lane !== undefined ? { lane: parseOptionalLane(value.lane) } : {}),
     }
   },
 }

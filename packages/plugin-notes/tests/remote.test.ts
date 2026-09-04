@@ -117,4 +117,32 @@ describe('notes remote contribution', () => {
     const updateInput = byMethod.get('update')!.parameters[1]!.codec as { schema: { parse: (v: unknown) => unknown } }
     expect(() => updateInput.schema.parse({ color: 42 })).toThrow()
   })
+
+  it('create codec 接受 laneStatus 并透传，拒绝非法状态', () => {
+    const byMethod = new Map(notesRemoteContribution.descriptors.map((d) => [d.method, d]))
+    const createInput = byMethod.get('create')!.parameters[0]!.codec as { schema: { parse: (v: unknown) => unknown } }
+    const parsed = createInput.schema.parse({ text: 'hi', laneStatus: 'todo' }) as { laneStatus?: unknown }
+    expect(parsed.laneStatus).toBe('todo')
+    expect(() => createInput.schema.parse({ text: 'hi', laneStatus: 'nope' })).toThrow()
+    expect(() => createInput.schema.parse({ text: 'hi', laneStatus: 42 })).toThrow()
+  })
+
+  it('update codec 接受 lane patch（status + run）并透传', () => {
+    const byMethod = new Map(notesRemoteContribution.descriptors.map((d) => [d.method, d]))
+    const updateInput = byMethod.get('update')!.parameters[1]!.codec as { schema: { parse: (v: unknown) => unknown } }
+    const run = { startedAt: 1, ok: true, summary: 's' }
+    const parsed = updateInput.schema.parse({ lane: { status: 'running', run } }) as { lane?: { status?: unknown; run?: unknown } }
+    expect(parsed.lane).toEqual({ status: 'running', run })
+    const statusOnly = updateInput.schema.parse({ lane: { status: 'done' } }) as { lane?: { status?: unknown; run?: unknown } }
+    expect(statusOnly.lane).toEqual({ status: 'done' })
+  })
+
+  it('update codec 拒绝非法 lane 形状', () => {
+    const byMethod = new Map(notesRemoteContribution.descriptors.map((d) => [d.method, d]))
+    const updateInput = byMethod.get('update')!.parameters[1]!.codec as { schema: { parse: (v: unknown) => unknown } }
+    expect(() => updateInput.schema.parse({ lane: { status: 'nope' } })).toThrow()
+    expect(() => updateInput.schema.parse({ lane: { run: { startedAt: 'x' } } })).toThrow()
+    expect(() => updateInput.schema.parse({ lane: { run: { startedAt: 1, ok: 'yes' } } })).toThrow()
+    expect(() => updateInput.schema.parse({ lane: 'running' })).toThrow()
+  })
 })

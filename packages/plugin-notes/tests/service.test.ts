@@ -142,3 +142,51 @@ describe('NotesService', () => {
     expect(all.find((n) => n.id === b.id)?.archived).toBe(false)
   })
 })
+
+describe('NotesService lane 写入通道', () => {
+  it('create 带 laneStatus 落 lane: { status } 并持久化', async () => {
+    const { notes, table } = makeService()
+    const note = await notes.create({ text: 'x', laneStatus: 'todo' })
+    expect(note.lane).toEqual({ status: 'todo' })
+    expect(table.get(note.id)?.lane).toEqual({ status: 'todo' })
+  })
+
+  it('create 不带 laneStatus 不落 lane 字段', async () => {
+    const { notes } = makeService()
+    const note = await notes.create({ text: 'x' })
+    expect(note.lane).toBeUndefined()
+  })
+
+  it('update 可 patch lane.status 且保留 lane.run', async () => {
+    const { notes } = makeService()
+    const created = await notes.create({ text: 'x', laneStatus: 'todo' })
+    expect(created.lane).toEqual({ status: 'todo' })
+    const run = { startedAt: 1 }
+    const withRun = await notes.update(created.id, { lane: { status: 'running', run } })
+    expect(withRun?.lane).toEqual({ status: 'running', run })
+    const statusOnly = await notes.update(created.id, { lane: { status: 'done' } })
+    expect(statusOnly?.lane).toEqual({ status: 'done', run }) // run 保留
+  })
+
+  it('update lane.run 整体替换且保留 status', async () => {
+    const { notes } = makeService()
+    const created = await notes.create({ text: 'x', laneStatus: 'running' })
+    const run1 = { startedAt: 1, ok: false }
+    await notes.update(created.id, { lane: { run: run1 } })
+    expect(notes.list()[0]?.lane).toEqual({ status: 'running', run: run1 })
+    const run2 = { startedAt: 2, summary: 'done' }
+    await notes.update(created.id, { lane: { run: run2 } })
+    expect(notes.list()[0]?.lane).toEqual({ status: 'running', run: run2 }) // 整体替换，非逐字段合并
+  })
+
+  it('update lane 空 patch 对象为 no-op（不改动 lane）', async () => {
+    const { notes } = makeService()
+    const task = await notes.create({ text: 'x', laneStatus: 'todo' })
+    const after = await notes.update(task.id, { lane: {} })
+    expect(after?.lane).toEqual({ status: 'todo' })
+    // 无 lane 的普通便签：空 patch 不凭空造 lane
+    const plain = await notes.create({ text: 'y' })
+    const plainAfter = await notes.update(plain.id, { lane: {} })
+    expect(plainAfter?.lane).toBeUndefined()
+  })
+})

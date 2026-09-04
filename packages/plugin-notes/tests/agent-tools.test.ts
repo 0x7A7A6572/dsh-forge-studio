@@ -43,7 +43,8 @@ function fakeTable(): KvTable<NoteId, NoteRecord> {
 type FakeDefinition = {
   name: string
   description: string
-  output: { render: (...args: unknown[]) => unknown }
+  parameters: Record<string, unknown>
+  output: { schema: Record<string, unknown>; render: (...args: unknown[]) => unknown }
   execute: (...args: unknown[]) => Promise<unknown>
 }
 
@@ -203,5 +204,29 @@ describe('notes 工具 execute 语义', () => {
     const result = await tool!.execute({ note_id: note.id }, {})
     expect(result).toEqual({ deleted: true, id: note.id })
     expect(h.notes.list()).toHaveLength(0)
+  })
+})
+
+describe('notes 读工具 lane 透出', () => {
+  it('notes_list / notes_get 输出 schema 含 lane 字段', () => {
+    const h = makeHarness()
+    const list = h.registered.find(d => d.name === `${NOTES_TOOL_PREFIX}list`)!
+    const listSchema = list.output.schema as { properties: { notes: { items: { properties: Record<string, unknown> } } } }
+    expect(listSchema.properties.notes.items.properties.lane).toBeDefined()
+    const get = h.registered.find(d => d.name === `${NOTES_TOOL_PREFIX}get`)!
+    const getSchema = get.output.schema as { properties: Record<string, unknown> }
+    expect(getSchema.properties.lane).toBeDefined()
+  })
+
+  it('noteText 渲染携带 lane 状态与 run（startedAt/summary）', async () => {
+    const h = makeHarness()
+    const note = await h.notes.create({ title: 't', text: 'body', laneStatus: 'todo' })
+    await h.notes.update(note.id, { lane: { status: 'running', run: { startedAt: 42, summary: 'almost there' } } })
+    const updated = h.notes.list().find(n => n.id === note.id)!
+    const get = h.registered.find(d => d.name === `${NOTES_TOOL_PREFIX}get`)!
+    const rendered = get.output.render({}, updated) as Array<{ type: string; text: string }>
+    expect(rendered[0].text).toContain('(task: running')
+    expect(rendered[0].text).toContain('run@42')
+    expect(rendered[0].text).toContain('almost there')
   })
 })

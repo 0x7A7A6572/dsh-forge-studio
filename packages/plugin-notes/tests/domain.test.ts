@@ -51,3 +51,34 @@ describe('noteRecordSchema 兼容旧数据', () => {
     expect(parsed.color).toBe('purple')
   })
 })
+
+describe('noteRecordSchema lane 校验', () => {
+  it('无 lane 的旧记录解析后 lane 为 undefined', () => {
+    const parsed = noteRecordSchema.parse(LEGACY)
+    expect(parsed.lane).toBeUndefined()
+  })
+
+  it('合法 lane（status + 完整 run）原样透传', () => {
+    const lane = { status: 'running', run: { startedAt: 1, finishedAt: 2, ok: true, summary: 'ok' } }
+    const parsed = noteRecordSchema.parse({ ...LEGACY, lane })
+    expect(parsed.lane).toEqual(lane)
+  })
+
+  it('lane 仅 status（无 run）可解析', () => {
+    const parsed = noteRecordSchema.parse({ ...LEGACY, lane: { status: 'backlog' } })
+    expect(parsed.lane).toEqual({ status: 'backlog' })
+  })
+
+  it('run 缺省字段（仅 startedAt）可解析', () => {
+    const parsed = noteRecordSchema.parse({ ...LEGACY, lane: { status: 'done', run: { startedAt: 1 } } })
+    expect(parsed.lane?.run).toEqual({ startedAt: 1 })
+  })
+
+  it('非法 lane.status 被拒绝', () => {
+    expect(() => noteRecordSchema.parse({ ...LEGACY, lane: { status: 'nope' } })).toThrow()
+  })
+
+  it('非法 run.startedAt 类型被拒绝', () => {
+    expect(() => noteRecordSchema.parse({ ...LEGACY, lane: { status: 'running', run: { startedAt: 'x' } } })).toThrow()
+  })
+})
