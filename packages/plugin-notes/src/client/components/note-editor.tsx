@@ -15,8 +15,10 @@ import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import type { Editor } from "@tiptap/core";
 import type { MarkdownStorage } from "tiptap-markdown";
 import { DEFAULT_NOTE_COLOR } from "../../types.ts";
-import type { NoteColor } from "../../types.ts";
+import type { NoteColor, NoteLane, TaskStatus } from "../../types.ts";
 import { NOTE_COLOR_PALETTE } from "../core/note-colors.ts";
+import { TASK_LANES, isRunOpen, laneLabel } from "../core/task-lanes.ts";
+import { fmtDateTime } from "../core/time-text.ts";
 import { fileToDataUrl, pickImageFiles } from "../core/paste-image.ts";
 import { t } from "../core/theme-tokens.ts";
 import { buildNoteRichTextExtensions } from "../core/note-richtext.ts";
@@ -57,6 +59,13 @@ export interface NoteEditorProps {
   readonly initialBody: string;
   /** 便签纸颜色（缺省默认黄）。 */
   readonly initialColor?: NoteColor;
+  /**
+   * 既有便签的任务泳道身份（编辑态带出，新建态缺省 undefined）。存在即任务，
+   * 用于预选「设为任务」开关/状态，并渲染只读「任务与结果」区（含 run 执行结果）。
+   * 列头「＋新建任务」由 EditorPageDialog 以 `{ status }` 合成预填；running
+   * （isRunOpen）时开关与状态选择只读（改状态请先在泳道重置）。
+   */
+  readonly initialLane?: NoteLane;
   /** 标题留空时使用的默认标题（来自设置）。 */
   readonly defaultTitle: string;
   readonly onCancel: () => void;
@@ -64,6 +73,7 @@ export interface NoteEditorProps {
     title: string,
     body: string,
     color: NoteColor,
+    lanePatch: { readonly on: boolean; readonly status: TaskStatus },
   ) => void | Promise<void>;
 }
 
@@ -269,6 +279,15 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
   const [color, setColor] = useState<NoteColor>(
     props.initialColor ?? DEFAULT_NOTE_COLOR,
   );
+  /** 「设为任务」开关：既有任务（initialLane 存在）初始即开，否则关。 */
+  const [taskOn, setTaskOn] = useState(props.initialLane !== undefined);
+  /** 任务状态选择：编辑态预选当前状态，新建态默认待办。 */
+  const [taskStatus, setTaskStatus] = useState<TaskStatus>(
+    props.initialLane?.status ?? "todo",
+  );
+  /** 编辑 running 任务（isRunOpen）：开关与状态只读（改状态请先在泳道重置）。 */
+  const runningReadOnly =
+    props.initialLane !== undefined && isRunOpen(props.initialLane);
   const [saving, setSaving] = useState(false);
   /** 当前打开的工具栏弹层：link（链接）/ table（表格）。 */
   const [popup, setPopup] = useState<"link" | "table" | null>(null);
@@ -317,7 +336,10 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
     }
     setSaving(true);
     try {
-      await props.onSave(trimmed || props.defaultTitle, body, color);
+      await props.onSave(trimmed || props.defaultTitle, body, color, {
+        on: taskOn,
+        status: taskStatus,
+      });
     } finally {
       setSaving(false);
     }
@@ -844,6 +866,44 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
         <EditorContent editor={editor} />
       </div>
 
+      {/* 只读「任务与结果」区（编辑已有任务，spec M4）：正文下方渲染当前状态 + run
+          执行结果全文；新建态无此区。读的是 initialLane（本次编辑前的既有状态），
+          不随开关临时状态变化。 */}
+      {props.initialLane !== undefined && (
+        <div style={laneResultStyle} aria-label="任务与结果">
+          <div style={laneResultHead}>
+            <span style={laneResultLabel}>任务状态</span>
+            <span style={laneStatusPill}>
+              {laneLabel(props.initialLane.status)}
+            </span>
+          </div>
+          {props.initialLane.run !== undefined ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <div style={laneRunRow}>
+                开始：{fmtDateTime(props.initialLane.run.startedAt)}
+              </div>
+              {props.initialLane.run.finishedAt !== undefined && (
+                <div style={laneRunRow}>
+                  结束：{fmtDateTime(props.initialLane.run.finishedAt)}
+                </div>
+              )}
+              {props.initialLane.run.ok !== undefined && (
+                <div style={laneRunRow}>
+                  结果：{props.initialLane.run.ok ? "成功" : "失败"}
+                </div>
+              )}
+              {props.initialLane.run.summary !== undefined && (
+                <div style={laneRunSummary}>
+                  {props.initialLane.run.summary}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={laneRunMuted}>尚未执行</div>
+          )}
+        </div>
+      )}
+
       {/* 便签纸色选（Win11 便签五色——紫色已随任务泳道分类收敛移除；选中色描边高亮）。 */}
       <div
         style={{
@@ -874,6 +934,42 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
             }}
           />
         ))}
+      </div>
+
+      {/* 任务开关（M2）：「设为任务」checkbox + 状态 select（新建默认待办；编辑预选当前
+          状态；running 时只读并提示改状态先重置）。 */}
+      <div style={laneToggleRow}>
+        <label style={laneToggleLabel}>
+          <input
+            type="checkbox"
+            checked={taskOn}
+            disabled={saving || runningReadOnly}
+            onChange={(e) => setTaskOn(e.target.checked)}
+            style={{
+              accentColor: t.pinAccent,
+              cursor: saving || runningReadOnly ? "default" : "pointer",
+            }}
+          />
+          设为任务
+        </label>
+        {taskOn && (
+          <select
+            value={taskStatus}
+            disabled={saving || runningReadOnly}
+            onChange={(e) => setTaskStatus(e.target.value as TaskStatus)}
+            aria-label="任务状态"
+            style={laneSelect}
+          >
+            {TASK_LANES.map((lane) => (
+              <option key={lane.status} value={lane.status}>
+                {lane.label}
+              </option>
+            ))}
+          </select>
+        )}
+        {runningReadOnly && (
+          <span style={laneHint}>执行中：改状态请先在泳道重置</span>
+        )}
       </div>
 
       <div
@@ -1035,4 +1131,82 @@ const popPrimary: React.CSSProperties = {
   color: t.onPrimary,
   background: t.primaryFill,
   fontWeight: 600,
+};
+
+/* ---------- 任务开关 / 只读结果区 ---------- */
+
+const laneResultStyle: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 6,
+  padding: "8px 10px",
+  border: `1px solid ${t.borderL2}`,
+  borderRadius: 8,
+  background: t.surfaceRaised,
+};
+const laneResultHead: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 6,
+  flexWrap: "wrap",
+};
+const laneResultLabel: React.CSSProperties = {
+  fontSize: 12,
+  color: t.labelSecondary,
+};
+const laneStatusPill: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  height: 20,
+  padding: "0 8px",
+  borderRadius: 10,
+  fontSize: 12,
+  fontWeight: 600,
+  color: t.labelPrimary,
+  background: t.hoverBg,
+};
+const laneRunRow: React.CSSProperties = {
+  fontSize: 12.5,
+  color: t.labelSecondary,
+  lineHeight: 1.6,
+};
+const laneRunSummary: React.CSSProperties = {
+  fontSize: 12.5,
+  color: t.labelPrimary,
+  lineHeight: 1.6,
+  whiteSpace: "pre-wrap",
+  wordBreak: "break-word",
+};
+const laneRunMuted: React.CSSProperties = {
+  fontSize: 12.5,
+  color: t.labelCaption,
+};
+const laneToggleRow: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  flexWrap: "wrap",
+};
+const laneToggleLabel: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 5,
+  fontSize: 13,
+  color: t.labelPrimary,
+  cursor: "pointer",
+};
+const laneSelect: React.CSSProperties = {
+  height: 26,
+  padding: "0 6px",
+  fontSize: 12.5,
+  color: t.labelSecondary,
+  background: "transparent",
+  border: `1px solid ${t.borderL2}`,
+  borderRadius: 7,
+  outline: "none",
+  cursor: "pointer",
+};
+const laneHint: React.CSSProperties = {
+  fontSize: 12,
+  color: t.stateWarn,
 };

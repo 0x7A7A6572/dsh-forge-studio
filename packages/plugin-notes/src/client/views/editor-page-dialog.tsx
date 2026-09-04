@@ -6,7 +6,7 @@
  * 新建/每条便签各一个编辑器实例由 key 保证（编辑器的初值即草稿内容）。
  */
 
-import type { NoteColor } from '../../types.ts'
+import type { NoteColor, NoteLane, TaskStatus } from '../../types.ts'
 import { NoteEditor } from '../components/note-editor.tsx'
 import type { EditorTarget } from '../core/notes-nav.ts'
 import { t } from '../core/theme-tokens.ts'
@@ -22,11 +22,20 @@ export interface EditorPageDialogProps {
     title: string,
     body: string,
     color: NoteColor,
+    lanePatch: { readonly on: boolean; readonly status: TaskStatus },
   ) => void | Promise<void>
 }
 
 export function EditorPageDialog(props: EditorPageDialogProps): JSX.Element {
   const editing = props.target.mode === 'edit' ? props.target.note : undefined
+  // 编辑器初值任务身份：编辑态带出便签既有 lane；新建态普通则 undefined，列头
+  // 「＋新建任务」（laneStatus 非空）时合成 `{ status }` 以预填开关 + 状态。
+  const initialLane: NoteLane | undefined =
+    props.target.mode === 'edit'
+      ? props.target.note.lane
+      : props.target.laneStatus !== undefined
+        ? { status: props.target.laneStatus }
+        : undefined
   return (
     <div style={overlayStyle} onClick={props.onCancel}>
       <div
@@ -54,6 +63,7 @@ export function EditorPageDialog(props: EditorPageDialogProps): JSX.Element {
           initialTitle={editing ? editing.title : ''}
           initialBody={editing ? editing.text : ''}
           initialColor={editing ? editing.color : undefined}
+          initialLane={initialLane}
           defaultTitle={props.defaultTitle}
           onCancel={props.onCancel}
           onSave={props.onSave}

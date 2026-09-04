@@ -12,6 +12,7 @@ import {
   groupNotesByLane,
   isRunOpen,
   laneLabel,
+  lanePatchForSave,
   makeLane,
   settleRun,
 } from '../src/client/core/task-lanes.ts'
@@ -159,5 +160,20 @@ describe('makeLane / beginRun / settleRun / isRunOpen', () => {
     expect(isRunOpen({ status: 'running', run: { startedAt: 1 } })).toBe(true)
     expect(isRunOpen({ status: 'todo' })).toBe(false)
     expect(isRunOpen({ status: 'done', run: { startedAt: 1, finishedAt: 9, ok: true } })).toBe(false)
+  })
+})
+
+describe('lanePatchForSave（编辑器「设为任务」开关 → lane patch）', () => {
+  it('开关开 → { status }（含普通便签转任务与任务改状态）', () => {
+    expect(lanePatchForSave(true, 'todo', false)).toEqual({ status: 'todo' })
+    expect(lanePatchForSave(true, 'done', true)).toEqual({ status: 'done' })
+  })
+
+  it('开关关且原本是任务 → { clear: true }（取消任务）', () => {
+    expect(lanePatchForSave(false, 'todo', true)).toEqual({ clear: true })
+  })
+
+  it('开关关且原本非任务 → undefined（纯内容更新，不改 lane）', () => {
+    expect(lanePatchForSave(false, 'todo', false)).toBeUndefined()
   })
 })

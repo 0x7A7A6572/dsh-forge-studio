@@ -91,3 +91,20 @@ export function settleRun(
 export function isRunOpen(lane: NoteLane): boolean {
   return Boolean(lane.run && lane.run.finishedAt === undefined)
 }
+
+/**
+ * 编辑器「设为任务」开关 → 保存时的 lane patch 决策（M2）：
+ * - 开关开 → `{ status }`（开启任务 / 改状态，含「普通便签转任务」）；
+ * - 开关关且原本是任务 → `{ clear: true }`（取消任务，删除 lane 身份）；
+ * - 开关关且原本非任务 → undefined（纯内容更新，不改 lane）。
+ * 纯函数，供 board-view.saveDraft 复用与单测。
+ */
+export function lanePatchForSave(
+  on: boolean,
+  status: TaskStatus,
+  wasTask: boolean,
+): { readonly status: TaskStatus } | { readonly clear: true } | undefined {
+  if (on) return { status }
+  if (wasTask) return { clear: true }
+  return undefined
+}

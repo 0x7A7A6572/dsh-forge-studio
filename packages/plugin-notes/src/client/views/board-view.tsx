@@ -16,8 +16,15 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { SettingsScope } from "@deepseek-ai/dsh-client-ui-settings/client";
-import type { NoteColor, NoteId, NoteRecord, NotesConfig } from "../../types.ts";
+import type {
+  NoteColor,
+  NoteId,
+  NoteRecord,
+  NotesConfig,
+  NoteUpdateInput,
+} from "../../types.ts";
 import type { TaskStatus } from "../core/task-lanes.ts";
+import { lanePatchForSave } from "../core/task-lanes.ts";
 import { boardStore } from "../core/board-store.ts";
 import { notesNav } from "../core/notes-nav.ts";
 import type { NotesRemote } from "../core/notes-remote.ts";
@@ -173,28 +180,36 @@ export function NotesBoard(props: NotesBoardProps): JSX.Element {
     title: string,
     body: string,
     color: NoteColor,
+    lanePatch: { on: boolean; status: TaskStatus },
   ): Promise<void> {
     const current = notesNav.editing;
     if (!current) return;
     if (current.mode === "create") {
+      // 新建：开关开 → 以 laneStatus 落任务身份；关 → 普通便签（原路径不变）。
+      // 列头「＋新建任务」的初始状态已由 EditorPageDialog 合成进编辑器初值，此处
+      // 开关是唯一真相（用户可在弹窗内改状态/取消任务）。
       const ok = await run(() =>
         props.face.notes.create({
           title,
           text: body,
           color,
-          // 泳道列头「＋新建任务」：初始 lane.status = 该列状态（缺省不落 lane）。
-          ...(current.laneStatus !== undefined ? { laneStatus: current.laneStatus } : {}),
+          ...(lanePatch.on ? { laneStatus: lanePatch.status } : {}),
         }),
       );
       if (ok) notesNav.closeEditor();
     } else {
-      const ok = await run(() =>
-        props.face.notes.update(current.note.id, {
-          title,
-          text: body,
-          color,
-        }),
-      );
+      const wasTask = current.note.lane !== undefined;
+      // 编辑：开 → lane.status patch（覆盖「普通便签转任务」与「任务改状态」）；
+      // 关且原本是任务 → clear（取消任务）；关且原本非任务 → 纯内容更新。
+      // running 任务的开关在编辑器里只读，故这里不会对 running lane 发 clear。
+      const laneForUpdate = lanePatchForSave(lanePatch.on, lanePatch.status, wasTask);
+      const patch: NoteUpdateInput = {
+        title,
+        text: body,
+        color,
+        ...(laneForUpdate !== undefined ? { lane: laneForUpdate } : {}),
+      };
+      const ok = await run(() => props.face.notes.update(current.note.id, patch));
       if (ok) notesNav.closeEditor();
     }
   }
