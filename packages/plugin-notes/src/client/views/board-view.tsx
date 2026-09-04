@@ -2,10 +2,11 @@
  * 便签板页面（中间列面板挂载点，与 dsh-task-board 同构）：占满中间列的
  * 面板框架，数据直连 host。本组件只当**数据控制器 + 渲染出口**：
  * - 数据流：开关订阅、拉取/轮询、错误条、busy 与保存流（saveDraft → run → refresh）；
- * - 弹窗层：编辑器/设置是两个互斥浮层弹窗，开关一律读 notes-nav store，
+ * - 弹窗层：编辑器/设置/使用说明是互斥浮层弹窗，开关一律读 notes-nav store，
  *   不再持有 draft/settingsOpen 本地 state（加弹窗只扩 notes-nav + 下方渲染处）；
  * - 内容：列表页 BoardMain 常驻，编辑器弹窗 = EditorPageDialog（独立文件），
- *   设置弹窗（默认标题）由 header 齿轮打开，直接读写注入的命名空间 scope。
+ *   设置弹窗（默认标题）由 header 齿轮打开，直接读写注入的命名空间 scope；
+ *   使用说明弹窗（只读 markdown）由 header 说明按钮打开。
  *
  * 视觉契约：纸卡是「便签纸」语义（固定 pastel 底 + 深色文字，见 note-colors）；
  * 其余 UI 走宿主 --dsw-* 令牌（见 theme-tokens）。面板开关由 panel-mount 经
@@ -23,9 +24,16 @@ import { notesNav } from "../core/notes-nav.ts";
 import type { NotesRemote } from "../core/notes-remote.ts";
 import { t } from "../core/theme-tokens.ts";
 import { NotesSettingsDialog } from "../components/settings-dialog.tsx";
+import { NotesHelpDialog } from "../components/notes-help-dialog.tsx";
 import { BoardMain } from "./board-main.tsx";
 import { EditorPageDialog } from "./editor-page-dialog.tsx";
-import { RefreshCw, Settings, X, ChevronLeft } from "lucide-react";
+import {
+  BadgeInfo,
+  RefreshCw,
+  Settings,
+  X,
+  ChevronLeft,
+} from "lucide-react";
 
 /** 面板注入面：由 client 入口在挂载时提供。 */
 export interface NotesBoardFace {
@@ -55,7 +63,7 @@ export function NotesBoard(props: NotesBoardProps): JSX.Element {
     boardStore.subscribe,
     () => boardStore.open,
   );
-  // 弹窗层：编辑器（目标）与设置开关都由导航 store 决定（跨开关浮层保留）。
+  // 弹窗层：编辑器（目标）与设置/说明开关都由导航 store 决定（跨开关浮层保留）。
   const editing = useSyncExternalStore(
     notesNav.subscribe,
     () => notesNav.editing,
@@ -63,6 +71,10 @@ export function NotesBoard(props: NotesBoardProps): JSX.Element {
   const settingsOpen = useSyncExternalStore(
     notesNav.subscribe,
     () => notesNav.settingsOpen,
+  );
+  const helpOpen = useSyncExternalStore(
+    notesNav.subscribe,
+    () => notesNav.helpOpen,
   );
   // 订阅命名空间 scope：默认标题在设置弹窗保存后实时生效（新建便签/弹窗展示）。
   const scope = props.face.scope;
@@ -97,19 +109,20 @@ export function NotesBoard(props: NotesBoardProps): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // Esc：按弹窗层级收 —— 设置弹窗 → 编辑器弹窗 → 整个面板
+  // Esc：按弹窗层级收 —— 使用说明 → 设置弹窗 → 编辑器弹窗 → 整个面板
   // （编辑器内的 Esc 由 NoteEditor 处理并 stopPropagation，不会走到这里）。
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== "Escape") return;
-      if (settingsOpen) notesNav.setSettingsOpen(false);
+      if (helpOpen) notesNav.setHelpOpen(false);
+      else if (settingsOpen) notesNav.setSettingsOpen(false);
       else if (editing) notesNav.closeEditor();
       else boardStore.hide();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, settingsOpen, editing]);
+  }, [open, settingsOpen, editing, helpOpen]);
 
   async function run(action: () => Promise<unknown>): Promise<boolean> {
     setBusy(true);
@@ -206,6 +219,18 @@ export function NotesBoard(props: NotesBoardProps): JSX.Element {
           )}
           <button
             type="button"
+            title="使用说明"
+            aria-label="使用说明"
+            aria-pressed={helpOpen}
+            className="fs-note-header-btn"
+            onClick={() => notesNav.setHelpOpen(!helpOpen)}
+            disabled={busy}
+            style={{ ...iconBtn, ...(busy ? iconBtnDisabled : {}) }}
+          >
+            <BadgeInfo size={15} />
+          </button>
+          <button
+            type="button"
             title="便签板设置"
             aria-label="便签板设置"
             aria-pressed={settingsOpen}
@@ -290,6 +315,10 @@ export function NotesBoard(props: NotesBoardProps): JSX.Element {
           onError={(message) => setError(message)}
           onClose={() => notesNav.setSettingsOpen(false)}
         />
+      )}
+
+      {helpOpen && (
+        <NotesHelpDialog onClose={() => notesNav.setHelpOpen(false)} />
       )}
     </div>
   );

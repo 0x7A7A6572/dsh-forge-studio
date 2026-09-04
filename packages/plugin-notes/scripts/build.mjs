@@ -68,7 +68,7 @@ async function buildClient() {
     platform: 'browser',
     target: 'es2022',
     external: CLIENT_EXTERNAL,
-    loader: { '.css': 'text' },
+    loader: { '.css': 'text', '.png': 'dataurl', '.webp': 'dataurl' },
     jsx: 'automatic',
     define: { 'process.env.NODE_ENV': '"production"' },
     minify: true,

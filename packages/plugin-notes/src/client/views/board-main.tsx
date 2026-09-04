@@ -45,7 +45,15 @@ import {
   ARCHIVED_CSS,
 } from "../components/archived-section.tsx";
 import { EmptyState } from "../components/empty-state.tsx";
-import { Kanban, LayoutGrid, Plus, Rows3, Search, SearchX, X } from "lucide-react";
+import {
+  Kanban,
+  LayoutGrid,
+  Plus,
+  Rows3,
+  Search,
+  SearchX,
+  X,
+} from "lucide-react";
 
 export interface BoardMainProps {
   readonly notes: readonly NoteRecord[];
@@ -178,16 +186,6 @@ export function BoardMain(props: BoardMainProps): JSX.Element {
         <div role="group" aria-label="视图切换" style={viewGroup}>
           <button
             type="button"
-            title="行式列表"
-            aria-label="行式列表"
-            aria-pressed={view === "list"}
-            style={viewBtn(view === "list")}
-            onClick={() => boardStore.setView("list")}
-          >
-            <Rows3 size={15} />
-          </button>
-          <button
-            type="button"
             title="纸卡墙"
             aria-label="纸卡墙"
             aria-pressed={view === "grid"}
@@ -205,6 +203,16 @@ export function BoardMain(props: BoardMainProps): JSX.Element {
             onClick={() => boardStore.setView("lanes")}
           >
             <Kanban size={15} />
+          </button>
+          <button
+            type="button"
+            title="行式列表"
+            aria-label="行式列表"
+            aria-pressed={view === "list"}
+            style={viewBtn(view === "list")}
+            onClick={() => boardStore.setView("list")}
+          >
+            <Rows3 size={15} />
           </button>
         </div>
         <button

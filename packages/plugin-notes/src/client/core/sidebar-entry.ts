@@ -123,14 +123,14 @@ function createEntry(): { entry: HTMLButtonElement } {
   entry.setAttribute('data-dsh-notes-entry', '')
   entry.setAttribute('data-dsh-plugin', 'notes')
   entry.setAttribute('data-dsh-part', 'sidebar-entry')
-  entry.setAttribute('aria-label', '便签')
-  entry.setAttribute('title', '便签')
+  entry.setAttribute('aria-label', '智能便签')
+  entry.setAttribute('title', '智能便签')
   const iconSpan = document.createElement('span')
   iconSpan.className = 'fs-notes-entry-icon'
   iconSpan.innerHTML = ICON
   const labelSpan = document.createElement('span')
   labelSpan.className = 'fs-notes-entry-label'
-  labelSpan.textContent = '便签'
+  labelSpan.textContent = '智能便签'
   entry.append(iconSpan, labelSpan)
   entry.addEventListener('click', () => { boardStore.toggle() })
   return { entry }

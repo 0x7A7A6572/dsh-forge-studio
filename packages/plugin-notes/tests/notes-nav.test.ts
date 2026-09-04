@@ -92,4 +92,57 @@ describe('notes-nav 浮层弹窗导航', () => {
     expect(nav.editing).toBeNull()
     expect(nav.settingsOpen).toBe(false)
   })
+
+  it('初态：说明弹窗关闭', () => {
+    const nav = createNotesNav()
+    expect(nav.helpOpen).toBe(false)
+  })
+
+  it('setHelpOpen(true) 打开说明弹窗并收掉编辑器弹窗（弹窗互斥）', () => {
+    const nav = createNotesNav()
+    nav.openEditor({ mode: 'edit', note: note('n1') })
+    nav.setHelpOpen(true)
+    expect(nav.helpOpen).toBe(true)
+    expect(nav.editing).toBeNull()
+  })
+
+  it('setHelpOpen(true) 收掉已打开的设置弹窗（弹窗互斥）', () => {
+    const nav = createNotesNav()
+    nav.setSettingsOpen(true)
+    nav.setHelpOpen(true)
+    expect(nav.helpOpen).toBe(true)
+    expect(nav.settingsOpen).toBe(false)
+  })
+
+  it('openEditor / setSettingsOpen(true) 会收掉已打开的说明弹窗', () => {
+    const nav = createNotesNav()
+    nav.setHelpOpen(true)
+    nav.openEditor({ mode: 'create' })
+    expect(nav.helpOpen).toBe(false)
+
+    nav.setHelpOpen(true)
+    nav.setSettingsOpen(true)
+    expect(nav.helpOpen).toBe(false)
+  })
+
+  it('说明弹窗开关不复活已关闭的编辑器弹窗', () => {
+    const nav = createNotesNav()
+    nav.openEditor({ mode: 'edit', note: note('n2') })
+    nav.setHelpOpen(true) // 互斥：编辑器被收掉
+    nav.setHelpOpen(false)
+    expect(nav.helpOpen).toBe(false)
+    expect(nav.editing).toBeNull()
+  })
+
+  it('说明弹窗开关：动作触发订阅、退订后静默', () => {
+    const nav = createNotesNav()
+    const seen: string[] = []
+    const off = nav.subscribe(() => seen.push('x'))
+    nav.setHelpOpen(true)
+    nav.setHelpOpen(false)
+    expect(seen.length).toBe(2)
+    off()
+    nav.setHelpOpen(true)
+    expect(seen.length).toBe(2)
+  })
 })

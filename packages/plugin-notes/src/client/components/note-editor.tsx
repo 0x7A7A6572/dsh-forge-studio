@@ -1,25 +1,34 @@
 /**
  * 便签编辑器（tiptap + Markdown）：标题输入 + 富文本正文 + 格式操作栏。
  * - 正文经 tiptap-markdown 序列化保存为真实 Markdown（不再丢格式）；
- * - 操作栏：粗体/斜体/删除线/标题H1-H3/无序·有序列表/引用/代码块/分隔线/撤销/重做；
+ * - 操作栏：粗体/斜体/删除线/标题H1-H3/无序·有序列表/引用/行内代码/代码块
+ *   （+ 语言选择）/分隔线/链接（弹层设置）/表格（插入·行列操作）/撤销/重做；
+ * - 代码块语言高亮、链接与表格能力来自共享扩展层 core/note-richtext.ts
+ *   （note-preview 只读渲染复用同一套，保证编辑与展示一致）；
  * - 粘贴图片：剪贴板图片文件 → data URL 内联插入正文（![图](data:...)）；
- * - 快捷键：Ctrl/Cmd+Enter 保存，Esc 取消。
+ * - 快捷键：Ctrl/Cmd+Enter 保存，Esc 关闭弹层或取消，Ctrl/Cmd+K 插入链接。
  * 父组件用 key 控制实例重建（新建/每条便签各一个编辑器），初值即草稿内容。
  */
 
 import { useEffect, useState } from "react";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import type { Editor } from "@tiptap/core";
-import StarterKit from "@tiptap/starter-kit";
-import Image from "@tiptap/extension-image";
-import { Markdown } from "tiptap-markdown";
 import type { MarkdownStorage } from "tiptap-markdown";
 import { DEFAULT_NOTE_COLOR } from "../../types.ts";
 import type { NoteColor } from "../../types.ts";
 import { NOTE_COLOR_PALETTE } from "../core/note-colors.ts";
 import { fileToDataUrl, pickImageFiles } from "../core/paste-image.ts";
 import { t } from "../core/theme-tokens.ts";
+import { buildNoteRichTextExtensions } from "../core/note-richtext.ts";
 import {
+  CODE_LANGUAGES,
+  codeLanguageLabel,
+} from "../core/code-languages.ts";
+import {
+  ArrowDownToLine,
+  ArrowLeftToLine,
+  ArrowRightToLine,
+  ArrowUpToLine,
   Bold,
   Check,
   Code,
@@ -28,14 +37,20 @@ import {
   Heading2,
   Heading3,
   Italic,
+  Link2,
   List,
   ListOrdered,
   Minus,
   Quote,
   Redo2,
   Strikethrough,
+  Table2,
+  Trash2,
   Undo2,
 } from "lucide-react";
+
+// 图片扩展定义挪至共享层 core/note-richtext.ts，此处仅再导出保持兼容。
+export { NoteImage } from "../core/note-richtext.ts";
 
 export interface NoteEditorProps {
   readonly initialTitle: string;
@@ -52,8 +67,11 @@ export interface NoteEditorProps {
   ) => void | Promise<void>;
 }
 
-/** 编辑器内容区排版（tiptap 生成的 HTML 在此样式化；令牌取色，明暗自适应）。 */
-const EDITOR_CSS = `
+/**
+ * 编辑器内容区排版（tiptap 生成的 HTML 在此样式化；令牌取色，明暗自适应）。
+ * 导出供只读渲染（note-preview.tsx）复用同一套便签正文排版。
+ */
+export const EDITOR_CSS = `
 .fs-note-editor { position: relative; font-size: 14px; line-height: 1.7; color: var(--dsw-alias-label-primary); padding: 10px; }
 .fs-note-editor .ProseMirror { outline: none; min-height: 200px; caret-color: var(--dsw-static-deepseek-400); }
 .fs-note-editor .ProseMirror p { margin: 0 0 4px; }
@@ -67,7 +85,10 @@ const EDITOR_CSS = `
 .fs-note-editor .ProseMirror pre { background: var(--dsw-alias-markdown-code-block); border: 1px solid var(--dsw-alias-border-l1); border-radius: 8px; padding: 8px 10px; overflow-x: auto; margin: 6px 0; }
 .fs-note-editor .ProseMirror pre code { background: none; padding: 0; font-size: 13px; }
 .fs-note-editor .ProseMirror hr { border: none; border-top: 1px solid var(--dsw-alias-border-l2); margin: 10px 0; }
-.fs-note-editor .ProseMirror a { color: var(--dsw-static-deepseek-450); }
+.fs-note-editor .ProseMirror a { color: var(--dsw-static-deepseek-450); cursor: pointer; text-decoration: none; }
+.fs-note-editor .ProseMirror a:hover { text-decoration: underline; text-underline-offset: 2px; }
+/* 只读展示态（.fs-note-preview）链接默认带下划线，可直接点开（openOnClick）。 */
+.fs-note-editor.fs-note-preview .ProseMirror a { text-decoration: underline; text-underline-offset: 2px; }
 .fs-note-editor .ProseMirror img { max-width: 66.67%; height: auto; border-radius: 6px; }
 .fs-note-editor .ProseMirror p:has(> img) {  }
 .fs-note-editor .ProseMirror img.ProseMirror-selectednode { outline: 2px solid var(--dsw-static-deepseek-450); }
@@ -79,6 +100,40 @@ const EDITOR_CSS = `
 .fs-note-color { transition: transform 100ms ease; }
 .fs-note-color:hover:not(:disabled) { transform: scale(1.15); }
 .fs-note-color:focus-visible { outline: 2px solid var(--dsw-static-deepseek-450); outline-offset: 1px; }
+
+/* ---------- 表格 ---------- */
+.fs-note-editor .ProseMirror table { border-collapse: collapse; table-layout: fixed; width: 100%; margin: 6px 0; overflow: hidden; }
+.fs-note-editor .ProseMirror th, .fs-note-editor .ProseMirror td { border: 1px solid var(--dsw-alias-border-l3); padding: 5px 8px; vertical-align: top; min-width: 40px; position: relative; word-break: break-word; }
+.fs-note-editor .ProseMirror th { font-weight: 600; text-align: left; background: color-mix(in srgb, var(--dsw-alias-label-secondary) 10%, transparent); }
+.fs-note-editor .ProseMirror .selectedCell::after { content: ""; position: absolute; inset: 0; background: color-mix(in srgb, var(--dsw-static-deepseek-400) 18%, transparent); pointer-events: none; }
+
+/* ---------- 代码语法高亮 token（映射宿主 --shiki-token-*，带字面量回退） ---------- */
+.fs-note-editor .ProseMirror .hljs-comment, .fs-note-editor .ProseMirror .hljs-quote { color: var(--shiki-token-comment, #868e96); font-style: italic; }
+.fs-note-editor .ProseMirror .hljs-keyword, .fs-note-editor .ProseMirror .hljs-selector-tag, .fs-note-editor .ProseMirror .hljs-name, .fs-note-editor .ProseMirror .hljs-doctag, .fs-note-editor .ProseMirror .hljs-meta { color: var(--shiki-token-keyword, #d6336c); }
+.fs-note-editor .ProseMirror .hljs-string, .fs-note-editor .ProseMirror .hljs-regexp, .fs-note-editor .ProseMirror .hljs-addition, .fs-note-editor .ProseMirror .hljs-attr, .fs-note-editor .ProseMirror .hljs-attribute, .fs-note-editor .ProseMirror .hljs-selector-attr, .fs-note-editor .ProseMirror .hljs-template-variable { color: var(--shiki-token-string, #2f9e44); }
+.fs-note-editor .ProseMirror .hljs-number, .fs-note-editor .ProseMirror .hljs-literal, .fs-note-editor .ProseMirror .hljs-constant, .fs-note-editor .ProseMirror .hljs-symbol, .fs-note-editor .ProseMirror .hljs-bullet { color: var(--shiki-token-constant, #1c7ed6); }
+.fs-note-editor .ProseMirror .hljs-title, .fs-note-editor .ProseMirror .hljs-function, .fs-note-editor .ProseMirror .hljs-type, .fs-note-editor .ProseMirror .hljs-section, .fs-note-editor .ProseMirror .hljs-class { color: var(--shiki-token-function, #6741d9); }
+.fs-note-editor .ProseMirror .hljs-params, .fs-note-editor .ProseMirror .hljs-operator { color: var(--shiki-token-parameter, #e8590c); }
+.fs-note-editor .ProseMirror .hljs-link { color: var(--shiki-token-link, #1971c2); text-decoration: underline; }
+
+/* ---------- 工具栏弹层（链接 / 表格）与代码语言下拉 ---------- */
+.fs-note-editor .fs-note-pop { position: absolute; top: 100%; left: 0; z-index: 40; margin-top: 6px; min-width: 236px; max-width: 320px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; padding: 10px; background: var(--dsw-alias-bg-layer-3, var(--dsw-alias-bg-layer-2)); border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; box-shadow: var(--dsw-shadow-lv3); }
+.fs-note-editor .fs-note-pop-title { margin: 0; font-size: 12px; font-weight: 600; color: var(--dsw-alias-label-secondary); }
+.fs-note-editor .fs-note-field { box-sizing: border-box; width: 100%; padding: 6px 8px; font-size: 13px; color: var(--dsw-alias-label-primary); background: transparent; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; outline: none; }
+.fs-note-editor .fs-note-field:focus { border-color: var(--dsw-static-deepseek-450); }
+.fs-note-editor .fs-note-field[disabled] { opacity: 0.6; }
+.fs-note-editor .fs-note-pop-row { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
+.fs-note-editor .fs-note-pop-item { display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box; padding: 6px 8px; border: none; border-radius: 7px; background: transparent; color: var(--dsw-alias-label-primary); font-size: 12.5px; cursor: pointer; text-align: left; }
+.fs-note-editor .fs-note-pop-item:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.fs-note-editor .fs-note-pop-item:disabled { opacity: 0.4; cursor: default; }
+.fs-note-editor .fs-note-pop-grid { display: inline-flex; flex-direction: column; gap: 3px; align-self: flex-start; }
+.fs-note-editor .fs-note-pop-grid-row { display: flex; gap: 3px; }
+.fs-note-editor .fs-note-pop-grid-cell { width: 17px; height: 17px; padding: 0; border: 1px solid var(--dsw-alias-border-l3); border-radius: 3px; background: transparent; cursor: pointer; box-sizing: border-box; }
+.fs-note-editor .fs-note-pop-grid-cell.on { background: color-mix(in srgb, var(--dsw-static-deepseek-450) 55%, transparent); border-color: var(--dsw-static-deepseek-450); }
+.fs-note-editor .fs-note-pop-grid-cell:hover:not(:disabled) { background: color-mix(in srgb, var(--dsw-static-deepseek-450) 30%, transparent); }
+.fs-note-lang-select { max-width: 150px; height: 28px; padding: 0 6px; font-size: 12.5px; color: var(--dsw-alias-label-secondary); background: transparent; border: 1px solid var(--dsw-alias-border-l2); border-radius: 7px; outline: none; cursor: pointer; }
+.fs-note-lang-select:focus { border-color: var(--dsw-static-deepseek-450); }
+.fs-note-lang-select:disabled { opacity: 0.35; cursor: default; }
 `;
 
 type FormatState = {
@@ -93,17 +148,17 @@ type FormatState = {
   quote: boolean;
   code: boolean;
   codeBlock: boolean;
+  /** 光标所在代码块的语言标记（'' = 无语言）。 */
+  codeLang: string;
+  /** 光标在表格内。 */
+  inTable: boolean;
+  /** 选区（或光标处）是否命中链接。 */
+  linkActive: boolean;
+  /** 当前链接 href（命中链接时）。 */
+  linkHref: string;
   canUndo: boolean;
   canRedo: boolean;
 };
-
-/**
- * 便签图片节点：官方 @tiptap/extension-image。
- * - allowBase64: true —— 粘贴的图片以 base64 data URL 进正文，官方扩展默认
- *   parseHTML 是 img[src]:not([src^="data:"])，不开此选项 data URL 图会被跳过；
- * - inline: true —— 图片作为行内原子插在段落文字中，随 Markdown 一起保存/加载。
- */
-const NoteImage = Image.configure({ inline: true, allowBase64: true });
 
 /**
  * 图片粘贴守卫。
@@ -156,6 +211,8 @@ const liveEditors = new WeakMap<Element, Editor>();
 function formatOf(editor: Editor | null): FormatState {
   if (!editor) return EMPTY_FORMAT;
   const h = (level: 1 | 2 | 3) => editor.isActive("heading", { level });
+  const linkAttrs = editor.getAttributes("link");
+  const codeAttrs = editor.getAttributes("codeBlock");
   return {
     bold: editor.isActive("bold"),
     italic: editor.isActive("italic"),
@@ -168,6 +225,13 @@ function formatOf(editor: Editor | null): FormatState {
     quote: editor.isActive("blockquote"),
     code: editor.isActive("code"),
     codeBlock: editor.isActive("codeBlock"),
+    codeLang:
+      typeof codeAttrs.language === "string" && codeAttrs.language !== ""
+        ? codeAttrs.language
+        : "",
+    inTable: editor.isActive("table"),
+    linkActive: editor.isActive("link"),
+    linkHref: typeof linkAttrs.href === "string" ? linkAttrs.href : "",
     canUndo: editor.can().undo(),
     canRedo: editor.can().redo(),
   };
@@ -185,6 +249,10 @@ const EMPTY_FORMAT: FormatState = {
   quote: false,
   code: false,
   codeBlock: false,
+  codeLang: "",
+  inTable: false,
+  linkActive: false,
+  linkHref: "",
   canUndo: false,
   canRedo: false,
 };
@@ -202,9 +270,19 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
     props.initialColor ?? DEFAULT_NOTE_COLOR,
   );
   const [saving, setSaving] = useState(false);
+  /** 当前打开的工具栏弹层：link（链接）/ table（表格）。 */
+  const [popup, setPopup] = useState<"link" | "table" | null>(null);
+  /** 链接弹层草稿（textLocked=选区非空，文字由选中内容决定）。 */
+  const [linkDraft, setLinkDraft] = useState<{
+    text: string;
+    url: string;
+    textLocked: boolean;
+  }>({ text: "", url: "", textLocked: false });
+  /** 表格插入网格当前选择（列 × 行，各至少 1）。 */
+  const [gridSize, setGridSize] = useState({ cols: 3, rows: 2 });
 
   const editor = useEditor({
-    extensions: [StarterKit, Markdown, NoteImage],
+    extensions: buildNoteRichTextExtensions(),
     content: props.initialBody,
   });
   const fmt =
@@ -249,6 +327,162 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
     if (editor) fn(editor);
   }
 
+  function closePopup(): void {
+    setPopup(null);
+  }
+
+  /** 点弹层之外的任意处即关闭（捕获阶段；触发按钮带 data-fs-tool-pop 豁免）。 */
+  useEffect(() => {
+    if (!popup) return;
+    const onPointerDown = (event: PointerEvent): void => {
+      const el = event.target;
+      if (!(el instanceof Element)) return;
+      if (el.closest(".fs-note-pop, [data-fs-tool-pop]")) return;
+      closePopup();
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [popup]);
+
+  /* ---------- 链接 ---------- */
+
+  /** 打开链接弹层：预填当前链接地址与选中文字。 */
+  function openLinkPopup(): void {
+    if (!editor) return;
+    const href = fmt.linkHref;
+    const { from, to, empty } = editor.state.selection;
+    const selected = empty ? "" : editor.state.doc.textBetween(from, to, " ");
+    setLinkDraft({
+      text: selected,
+      url: href || "",
+      textLocked: !empty && selected !== "",
+    });
+    setPopup((p) => (p === "link" ? null : "link"));
+  }
+
+  /** 规范化地址：无 scheme 时补 https://（mailto:/note:/file: 等保留）。 */
+  function normalizeUrl(raw: string): string {
+    const value = raw.trim();
+    if (!value) return "";
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(value)) return value;
+    return `https://${value}`;
+  }
+
+  /** 应用链接草稿。 */
+  function applyLink(): void {
+    if (!editor) return;
+    const url = normalizeUrl(linkDraft.url);
+    const text = linkDraft.text.trim();
+    const { empty } = editor.state.selection;
+    if (!url) {
+      // 地址为空 → 视为移除链接（文字保留）
+      editor.chain().focus().extendMarkRange("link").unsetLink().run();
+      closePopup();
+      return;
+    }
+    if (!empty) {
+      // 已有选中文字：原地包成链接 / 更新其地址
+      editor
+        .chain()
+        .focus()
+        .extendMarkRange("link")
+        .setLink({ href: url })
+        .run();
+    } else if (text) {
+      // 空光标 + 给了文字：插入「文字 + 链接」
+      editor
+        .chain()
+        .focus()
+        .insertContent({
+          type: "text",
+          text,
+          marks: [{ type: "link", attrs: { href: url } }],
+        })
+        .run();
+    } else if (fmt.linkActive) {
+      // 光标在既有链接内：整链改地址
+      editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
+    }
+    closePopup();
+  }
+
+  /** 移除选区/光标处的链接。 */
+  function unlinkAtSelection(): void {
+    if (!editor) return;
+    editor.chain().focus().extendMarkRange("link").unsetLink().run();
+    closePopup();
+  }
+
+  /** 链接弹层输入框：Enter 应用 / Esc 只关弹层（不再触发整卡取消）。 */
+  const linkFieldKeyDown = (event: React.KeyboardEvent): void => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      applyLink();
+    } else if (event.key === "Escape") {
+      event.stopPropagation();
+      closePopup();
+    }
+  };
+
+  /* ---------- 表格 ---------- */
+
+  function toggleTablePopup(): void {
+    setPopup((p) => (p === "table" ? null : "table"));
+  }
+
+  /** 插入 cols 列 × dataRows 数据行的表格（含表头行）。 */
+  function insertTableGrid(cols: number, dataRows: number): void {
+    if (!editor) return;
+    editor
+      .chain()
+      .focus()
+      .insertTable({ rows: dataRows + 1, cols, withHeaderRow: true })
+      .run();
+    setPopup(null);
+  }
+
+  function tableOp(
+    op:
+      | "addRowBefore"
+      | "addRowAfter"
+      | "deleteRow"
+      | "addColumnBefore"
+      | "addColumnAfter"
+      | "deleteColumn"
+      | "deleteTable",
+  ): void {
+    if (!editor) return;
+    const chain = editor.chain().focus();
+    if (op === "addRowBefore") chain.addRowBefore().run();
+    else if (op === "addRowAfter") chain.addRowAfter().run();
+    else if (op === "deleteRow") chain.deleteRow().run();
+    else if (op === "addColumnBefore") chain.addColumnBefore().run();
+    else if (op === "addColumnAfter") chain.addColumnAfter().run();
+    else if (op === "deleteColumn") chain.deleteColumn().run();
+    else {
+      chain.deleteTable().run();
+      setPopup(null);
+    }
+  }
+
+  /* ---------- 代码语言 ---------- */
+
+  /** 当前代码块语言是否在候选列表内（未知语言也允许保留展示）。 */
+  const codeLangKnown = CODE_LANGUAGES.some((o) => o.value === fmt.codeLang);
+  const selectLang = fmt.codeLang && codeLangKnown ? fmt.codeLang : "";
+  const unknownLang = fmt.codeLang && !codeLangKnown ? fmt.codeLang : null;
+
+  /** 给光标所在代码块设语言；空值 = 移除语言（无高亮）。 */
+  function setCodeLanguage(lang: string): void {
+    if (!editor) return;
+    editor
+      .chain()
+      .focus()
+      .updateAttributes("codeBlock", { language: lang || null })
+      .run();
+  }
+
   return (
     <div
       className="fs-note-editor"
@@ -257,10 +491,20 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
         if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
           e.preventDefault();
           void save();
-        } else if (e.key === "Escape") {
+        } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
           e.preventDefault();
-          e.stopPropagation();
-          props.onCancel();
+          openLinkPopup();
+        } else if (e.key === "Escape") {
+          if (popup) {
+            // 弹层开启时：Esc 先关弹层，再按一次才取消编辑
+            e.preventDefault();
+            e.stopPropagation();
+            closePopup();
+          } else {
+            e.preventDefault();
+            e.stopPropagation();
+            props.onCancel();
+          }
         }
       }}
     >
@@ -381,6 +625,194 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
         >
           <CodeXml size={16} />
         </ToolButton>
+        {fmt.codeBlock && (
+          <select
+            className="fs-note-lang-select"
+            title="代码语言（语法高亮）"
+            aria-label="代码语言"
+            disabled={saving}
+            value={selectLang}
+            onChange={(e) => setCodeLanguage(e.target.value)}
+          >
+            {CODE_LANGUAGES.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+            {unknownLang !== null && (
+              <option key={unknownLang} value={unknownLang}>
+                {codeLanguageLabel(unknownLang)}（未收录）
+              </option>
+            )}
+          </select>
+        )}
+        <ToolDivider />
+        <span style={popAnchor} data-fs-tool-pop>
+          <ToolButton
+            title="链接 (Ctrl+K)"
+            active={fmt.linkActive}
+            disabled={saving}
+            onClick={openLinkPopup}
+          >
+            <Link2 size={16} />
+          </ToolButton>
+          {popup === "link" && (
+            <div className="fs-note-pop" role="dialog" aria-label="插入链接">
+              <p className="fs-note-pop-title">链接（Ctrl+K）</p>
+              <input
+                className="fs-note-field"
+                placeholder={
+                  linkDraft.textLocked ? "将包裹选中文字" : "链接文字"
+                }
+                value={linkDraft.text}
+                disabled={saving || linkDraft.textLocked}
+                onChange={(e) =>
+                  setLinkDraft((d) => ({ ...d, text: e.target.value }))
+                }
+                onKeyDown={linkFieldKeyDown}
+              />
+              <input
+                className="fs-note-field"
+                placeholder="https://…"
+                value={linkDraft.url}
+                disabled={saving}
+                autoFocus
+                onChange={(e) =>
+                  setLinkDraft((d) => ({ ...d, url: e.target.value }))
+                }
+                onKeyDown={linkFieldKeyDown}
+                onFocus={(e) => e.currentTarget.select()}
+              />
+              <div className="fs-note-pop-row">
+                {fmt.linkActive && (
+                  <button
+                    type="button"
+                    style={popGhost}
+                    onClick={unlinkAtSelection}
+                    title="移除链接，保留文字"
+                  >
+                    移除链接
+                  </button>
+                )}
+                <span style={{ flex: 1 }} />
+                <button type="button" style={popGhost} onClick={closePopup}>
+                  取消
+                </button>
+                <button type="button" style={popPrimary} onClick={applyLink}>
+                  确定
+                </button>
+              </div>
+            </div>
+          )}
+        </span>
+        <span style={popAnchor} data-fs-tool-pop>
+          <ToolButton
+            title="表格"
+            active={fmt.inTable}
+            disabled={saving}
+            onClick={toggleTablePopup}
+          >
+            <Table2 size={16} />
+          </ToolButton>
+          {popup === "table" && (
+            <div className="fs-note-pop" role="dialog" aria-label="表格">
+              {fmt.inTable ? (
+                <>
+                  <p className="fs-note-pop-title">表格操作</p>
+                  <button
+                    type="button"
+                    className="fs-note-pop-item"
+                    onClick={() => tableOp("addRowBefore")}
+                  >
+                    <ArrowUpToLine size={14} />
+                    在上方插入行
+                  </button>
+                  <button
+                    type="button"
+                    className="fs-note-pop-item"
+                    onClick={() => tableOp("addRowAfter")}
+                  >
+                    <ArrowDownToLine size={14} />
+                    在下方插入行
+                  </button>
+                  <button
+                    type="button"
+                    className="fs-note-pop-item"
+                    onClick={() => tableOp("addColumnBefore")}
+                  >
+                    <ArrowLeftToLine size={14} />
+                    在左侧插入列
+                  </button>
+                  <button
+                    type="button"
+                    className="fs-note-pop-item"
+                    onClick={() => tableOp("addColumnAfter")}
+                  >
+                    <ArrowRightToLine size={14} />
+                    在右侧插入列
+                  </button>
+                  <button
+                    type="button"
+                    className="fs-note-pop-item"
+                    onClick={() => tableOp("deleteRow")}
+                  >
+                    <Trash2 size={14} />
+                    删除当前行
+                  </button>
+                  <button
+                    type="button"
+                    className="fs-note-pop-item"
+                    onClick={() => tableOp("deleteColumn")}
+                  >
+                    <Trash2 size={14} />
+                    删除当前列
+                  </button>
+                  <button
+                    type="button"
+                    className="fs-note-pop-item"
+                    onClick={() => tableOp("deleteTable")}
+                  >
+                    <Trash2 size={14} />
+                    删除整个表格
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="fs-note-pop-title">
+                    插入表格：{gridSize.cols} 列 × {gridSize.rows} 行
+                  </p>
+                  <div
+                    className="fs-note-pop-grid"
+                    onMouseLeave={() => setGridSize({ cols: 3, rows: 2 })}
+                  >
+                    {Array.from({ length: 6 }, (_, row) => (
+                      <div className="fs-note-pop-grid-row" key={row}>
+                        {Array.from({ length: 6 }, (_, col) => (
+                          <button
+                            key={col}
+                            type="button"
+                            className={`fs-note-pop-grid-cell${
+                              col < gridSize.cols && row < gridSize.rows
+                                ? " on"
+                                : ""
+                            }`}
+                            onMouseEnter={() =>
+                              setGridSize({ cols: col + 1, rows: row + 1 })
+                            }
+                            onClick={() => insertTableGrid(col + 1, row + 1)}
+                            aria-label={`插入 ${col + 1} 列 × ${
+                              row + 1
+                            } 行表格`}
+                          />
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </span>
         <ToolDivider />
         <ToolButton
           title="分隔线"
@@ -581,3 +1013,26 @@ const btnPrimary: React.CSSProperties = {
   fontWeight: 600,
 };
 const disabledBtn: React.CSSProperties = { opacity: 0.5, cursor: "default" };
+
+/* 工具栏弹层锚点与弹层内按钮。 */
+const popAnchor: React.CSSProperties = {
+  position: "relative",
+  display: "inline-flex",
+};
+const popGhost: React.CSSProperties = {
+  ...btnBase,
+  height: 26,
+  padding: "0 10px",
+  fontSize: 12.5,
+  color: t.labelPrimary,
+  background: "transparent",
+};
+const popPrimary: React.CSSProperties = {
+  ...btnBase,
+  height: 26,
+  padding: "0 10px",
+  fontSize: 12.5,
+  color: t.onPrimary,
+  background: t.primaryFill,
+  fontWeight: 600,
+};
