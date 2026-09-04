@@ -2,13 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { NotesService } from '../src/service.ts'
+import type { TaskLease } from '../src/domain.ts'
 import type { NoteId, NoteRecord } from '../src/types.ts'
 
-function fakeTable(): KvTable<NoteId, NoteRecord> {
-  const map = new Map<string, NoteRecord>()
+function fakeTable<V>(): KvTable<NoteId, V> {
+  const map = new Map<string, V>()
   return {
     get: (k) => map.get(k),
-    entries: () => map.entries() as IterableIterator<[NoteId, NoteRecord]>,
+    entries: () => map.entries() as IterableIterator<[NoteId, V]>,
     keys: () => map.keys() as IterableIterator<NoteId>,
     get size() { return map.size },
     put: async (k, v) => { map.set(k, v) },
@@ -23,12 +24,19 @@ function fakeTable(): KvTable<NoteId, NoteRecord> {
   }
 }
 
-function makeService(): { notes: NotesService; table: KvTable<NoteId, NoteRecord> } {
+function makeService(): {
+  notes: NotesService
+  table: KvTable<NoteId, NoteRecord>
+  leases: KvTable<NoteId, TaskLease>
+} {
   const ctx = new Context()
-  const table = fakeTable()
-  const domain = { table: (name: string) => (name === 'notes' ? table : undefined) } as never
+  const table = fakeTable<NoteRecord>()
+  const leases = fakeTable<TaskLease>()
+  const domain = {
+    table: (name: string) => (name === 'notes' ? table : name === 'leases' ? leases : undefined),
+  } as never
   const notes = new NotesService(ctx, { domain })
-  return { notes, table }
+  return { notes, table, leases }
 }
 
 describe('NotesService', () => {
@@ -188,5 +196,94 @@ describe('NotesService lane 写入通道', () => {
     const plain = await notes.create({ text: 'y' })
     const plainAfter = await notes.update(plain.id, { lane: {} })
     expect(plainAfter?.lane).toBeUndefined()
+  })
+
+  it('update 仅给 run 无 status 且无当前 lane 时抛错（防无 status 的 lane）', async () => {
+    const { notes } = makeService()
+    const n = await notes.create({ text: 'x' }) // 无 lane
+    await expect(notes.update(n.id, { lane: { run: { startedAt: 1 } } })).rejects.toThrow(/status/)
+    expect(notes.list()[0]?.lane).toBeUndefined()
+  })
+})
+
+describe('NotesService 执行租约（grant/revoke）', () => {
+  it('grant/revoke 与 busy 冲突', async () => {
+    const { notes } = makeService()
+    const n = await notes.create({ text: 't', laneStatus: 'todo' })
+    expect(await notes.grantTaskLease(n.id, 's1')).toBe('granted')
+    expect(notes.list().find((x) => x.id === n.id)!.lane?.status).toBe('running')
+    expect(await notes.grantTaskLease(n.id, 's2')).toBe('busy')
+    expect(await notes.revokeTaskLease(n.id)).toBe(true)
+    expect(await notes.revokeTaskLease(n.id)).toBe(false)
+    expect(await notes.grantTaskLease(n.id, 's3')).toBe('granted')
+  })
+
+  it('grantTaskLease 对不存在的便签返回 missing', async () => {
+    const { notes } = makeService()
+    expect(await notes.grantTaskLease('nope' as NoteId, 's1')).toBe('missing')
+  })
+
+  it('grantTaskLease 对无 lane 的普通便签返回 busy', async () => {
+    const { notes } = makeService()
+    const n = await notes.create({ text: 'x' })
+    expect(await notes.grantTaskLease(n.id, 's1')).toBe('busy')
+  })
+
+  it('grant 写 leases 行并置 running + 新 run 帧', async () => {
+    const { notes, leases } = makeService()
+    const n = await notes.create({ text: 'x', laneStatus: 'todo' })
+    await notes.grantTaskLease(n.id, 's1')
+    expect(leases.get(n.id)).toEqual({
+      noteId: n.id,
+      sessionId: 's1',
+      grantedAt: expect.any(Number),
+    })
+    expect(notes.list().find((x) => x.id === n.id)!.lane).toEqual({
+      status: 'running',
+      run: { startedAt: expect.any(Number) },
+    })
+  })
+
+  it('revoke 只删 lease、不改 lane 状态', async () => {
+    const { notes, leases } = makeService()
+    const n = await notes.create({ text: 'x', laneStatus: 'todo' })
+    await notes.grantTaskLease(n.id, 's1')
+    expect(await notes.revokeTaskLease(n.id)).toBe(true)
+    expect(leases.get(n.id)).toBeUndefined()
+    // lane 仍为 running（revoke 不改状态，由调用方决定）
+    expect(notes.list().find((x) => x.id === n.id)!.lane?.status).toBe('running')
+  })
+
+  it('手动 update lane.status 变更撤销租约', async () => {
+    const { notes, leases } = makeService()
+    const n = await notes.create({ text: 'x', laneStatus: 'todo' })
+    await notes.grantTaskLease(n.id, 's1')
+    expect(leases.get(n.id)).toBeDefined()
+    await notes.update(n.id, { lane: { status: 'done' } })
+    expect(leases.get(n.id)).toBeUndefined()
+  })
+
+  it('update lane.status 与当前相同不撤销租约', async () => {
+    const { notes, leases } = makeService()
+    const n = await notes.create({ text: 'x', laneStatus: 'todo' })
+    await notes.grantTaskLease(n.id, 's1') // 置 running
+    await notes.update(n.id, { lane: { status: 'running' } }) // 状态未变
+    expect(leases.get(n.id)).toBeDefined()
+  })
+
+  it('归档撤销租约', async () => {
+    const { notes, leases } = makeService()
+    const n = await notes.create({ text: 'x', laneStatus: 'todo' })
+    await notes.grantTaskLease(n.id, 's1')
+    await notes.update(n.id, { archived: true })
+    expect(leases.get(n.id)).toBeUndefined()
+  })
+
+  it('删除撤销租约', async () => {
+    const { notes, leases } = makeService()
+    const n = await notes.create({ text: 'x', laneStatus: 'todo' })
+    await notes.grantTaskLease(n.id, 's1')
+    await notes.delete(n.id)
+    expect(leases.get(n.id)).toBeUndefined()
   })
 })

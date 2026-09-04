@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { NotesService } from '../src/service.ts'
+import type { TaskLease } from '../src/domain.ts'
 import type { NoteId, NoteRecord } from '../src/types.ts'
 import {
   installNotesTools,
@@ -21,11 +22,11 @@ import {
   NOTES_TOOL_PREFIX,
 } from '../src/agent/tools.ts'
 
-function fakeTable(): KvTable<NoteId, NoteRecord> {
-  const map = new Map<string, NoteRecord>()
+function fakeTable<V>(): KvTable<NoteId, V> {
+  const map = new Map<string, V>()
   return {
     get: (k) => map.get(k),
-    entries: () => map.entries() as IterableIterator<[NoteId, NoteRecord]>,
+    entries: () => map.entries() as IterableIterator<[NoteId, V]>,
     keys: () => map.keys() as IterableIterator<NoteId>,
     get size() { return map.size },
     put: async (k, v) => { map.set(k, v) },
@@ -66,8 +67,11 @@ interface Harness {
 
 function makeHarness(): Harness {
   const ctx = new Context()
-  const table = fakeTable()
-  const domain = { table: (name: string) => (name === 'notes' ? table : undefined) } as never
+  const table = fakeTable<NoteRecord>()
+  const leases = fakeTable<TaskLease>()
+  const domain = {
+    table: (name: string) => (name === 'notes' ? table : name === 'leases' ? leases : undefined),
+  } as never
   const notes = new NotesService(ctx, { domain })
   const registered: FakeDefinition[] = []
   const guards: Harness['guards'] = []

@@ -58,7 +58,27 @@ export const noteRecordSchema = z.object({
 }) as unknown as ZodType<NoteRecord>
 
 /**
- * notes 域：单一 notes 表，per-record 布局（每条便签一份文档，便于增删）。
+ * 执行租约记录：每张任务便签至多一条 active lease（key = noteId，随撤销即删，
+ * 无状态机）。sessionId 为发起执行的会话标识；grantedAt 为授权时刻。
+ */
+export interface TaskLease {
+  readonly noteId: NoteId
+  readonly sessionId: string
+  readonly grantedAt: number
+}
+
+/**
+ * 租约记录 schema：存储边界校验。noteId 在介质上是普通字符串，接口层才品牌化为
+ * NoteId（与 noteRecordSchema 的 id 同款收窄）；zod 形状校验仍覆盖全部字段。
+ */
+export const taskLeaseSchema = z.object({
+  noteId: z.string(),
+  sessionId: z.string(),
+  grantedAt: z.number(),
+}) as unknown as ZodType<TaskLease>
+
+/**
+ * notes 域：notes 与 leases 两张表，per-record 布局（每条记录一份文档，便于增删）。
  * 格式版本 1；介质版本不符会在 open 时拒绝。
  */
 export const notesDomain = defineDomain({
@@ -67,5 +87,6 @@ export const notesDomain = defineDomain({
   layout: 'per-record',
   tables: {
     notes: domainTable<NoteId, NoteRecord>(noteRecordSchema),
+    leases: domainTable<NoteId, TaskLease>(taskLeaseSchema),
   },
 })

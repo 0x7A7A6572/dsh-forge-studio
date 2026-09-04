@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { noteRecordSchema } from '../src/domain.ts'
+import { noteRecordSchema, notesDomain, taskLeaseSchema } from '../src/domain.ts'
 import type { NoteId } from '../src/types.ts'
 
 const LEGACY = {
@@ -80,5 +80,31 @@ describe('noteRecordSchema lane 校验', () => {
 
   it('非法 run.startedAt 类型被拒绝', () => {
     expect(() => noteRecordSchema.parse({ ...LEGACY, lane: { status: 'running', run: { startedAt: 'x' } } })).toThrow()
+  })
+})
+
+describe('taskLeaseSchema 校验', () => {
+  it('合法租约记录原样透传', () => {
+    const lease = { noteId: 'n1', sessionId: 's1', grantedAt: 1 }
+    expect(taskLeaseSchema.parse(lease)).toEqual(lease)
+  })
+
+  it('缺 sessionId 被拒绝', () => {
+    expect(() => taskLeaseSchema.parse({ noteId: 'n1', grantedAt: 1 })).toThrow()
+  })
+
+  it('非法 grantedAt 类型被拒绝', () => {
+    expect(() => taskLeaseSchema.parse({ noteId: 'n1', sessionId: 's1', grantedAt: 'x' })).toThrow()
+  })
+})
+
+describe('notesDomain leases 表', () => {
+  it('域声明同时含 notes 与 leases 两张表', () => {
+    expect(Object.keys(notesDomain.tables)).toEqual(['notes', 'leases'])
+  })
+
+  it('leases 表 schema 能校验租约记录', () => {
+    const parsed = notesDomain.tables.leases.valueSchema.parse({ noteId: 'n1', sessionId: 's1', grantedAt: 1 })
+    expect(parsed).toEqual({ noteId: 'n1', sessionId: 's1', grantedAt: 1 })
   })
 })

@@ -17,8 +17,10 @@ import type { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type { notesDomain } from './domain.ts'
+import type { TaskLease } from './domain.ts'
 import { DEFAULT_NOTE_COLOR } from './types.ts'
-import type { NoteCreateInput, NoteId, NoteLane, NoteRecord, NoteUpdateInput } from './types.ts'
+import type { NoteCreateInput, NoteId, NoteLane, NoteRecord, NoteUpdateInput, TaskStatus } from './types.ts'
+import { beginRun } from './client/core/task-lanes.ts'
 
 export interface NotesServiceConfig {
   /** 已打开的 notes 域。 */
@@ -27,10 +29,12 @@ export interface NotesServiceConfig {
 
 export class NotesService extends TypertRemoteService {
   private readonly table: KvTable<NoteId, NoteRecord>
+  private readonly leases: KvTable<NoteId, TaskLease>
 
   constructor(ctx: Context, config: NotesServiceConfig) {
     super(ctx, 'notes')
     this.table = config.domain.table('notes')
+    this.leases = config.domain.table('leases')
   }
 
   /** 全量便签（未删除），同步读自内存。 */
@@ -67,15 +71,21 @@ export class NotesService extends TypertRemoteService {
     // lane patch：与顶层同语义——缺省字段保留、逐字段合并（next.lane =
     // { ...current.lane, ...patch.lane }）；run 提供即整体替换（非逐字段合并）；
     // 空 patch 对象（既无 status 也无 run）= no-op，不改动 lane（含不凭空造 lane）。
-    const lane: NoteLane | undefined =
-      patch.lane !== undefined &&
-      (patch.lane.status !== undefined || patch.lane.run !== undefined)
-        ? ({
-            ...current.lane,
-            ...(patch.lane.status !== undefined ? { status: patch.lane.status } : {}),
-            ...(patch.lane.run !== undefined ? { run: patch.lane.run } : {}),
-          } as NoteLane)
-        : current.lane
+    let lane: NoteLane | undefined = current.lane
+    if (patch.lane !== undefined && (patch.lane.status !== undefined || patch.lane.run !== undefined)) {
+      // 合成 status：patch 未给则沿用当前 lane 的 status。
+      const status: TaskStatus | undefined = patch.lane.status ?? current.lane?.status
+      // 守卫：patch 仅给 run 没给 status 且当前无 lane 时，会拼出无 status 的 lane，
+      // 下次打开 domain 会因 schema 校验失败炸库。拒绝而非静默落库。
+      if (status === undefined) {
+        throw new Error('lane patch 缺 status：便签无 lane 时须同时提供 status，不能仅凭 run 造 lane')
+      }
+      lane = {
+        ...current.lane,
+        status,
+        ...(patch.lane.run !== undefined ? { run: patch.lane.run } : {}),
+      }
+    }
     const next: NoteRecord = {
       ...current,
       ...(patch.title !== undefined ? { title: patch.title } : {}),
@@ -89,6 +99,14 @@ export class NotesService extends TypertRemoteService {
       origin: current.origin ?? 'user',
       updatedAt: Date.now(),
       ...(lane !== undefined ? { lane } : {}),
+    }
+    // 撤销租约（D5 手动接管）：任何用户侧 lane.status 变更即接管；归档同样撤销。
+    // 与当前状态相同则不算接管，不撤销。
+    if (
+      (patch.lane?.status !== undefined && patch.lane.status !== current.lane?.status) ||
+      patch.archived === true
+    ) {
+      await this.revokeTaskLease(id)
     }
     await this.table.put(id, next)
     return next
@@ -108,9 +126,32 @@ export class NotesService extends TypertRemoteService {
     return next
   }
 
-  /** 删除便签；返回是否确实删除。 */
+  /** 删除便签；返回是否确实删除。删除前先撤销其执行租约（若有）。 */
   async delete(id: NoteId): Promise<boolean> {
+    await this.revokeTaskLease(id)
     return this.table.delete(id)
+  }
+
+  /**
+   * 授权任务执行：写 leases 行并把该便签 lane 置 running + 新 run 帧（重跑时
+   * 新帧覆盖旧帧），其余字段不动。'missing' = 无此便签；'busy' = 便签无 lane
+   * （非任务）或已有 active lease（防双跑）。便签必须先有 lane（今日唯一路径：
+   * create 时带 laneStatus）。此为 host 内部方法，不经 Typert remote 暴露。
+   */
+  async grantTaskLease(id: NoteId, sessionId: string): Promise<'granted' | 'missing' | 'busy'> {
+    const note = this.table.get(id)
+    if (!note) return 'missing'
+    if (!note.lane || this.leases.get(id)) return 'busy'
+    const now = Date.now()
+    await this.leases.put(id, { noteId: id, sessionId, grantedAt: now })
+    // beginRun 首参按签名透传当前 lane（其实现未使用该参），返回 { status:'running', run:{ startedAt } }。
+    await this.table.put(id, { ...note, lane: beginRun(note.lane, now), updatedAt: now })
+    return 'granted'
+  }
+
+  /** 撤销执行租约：只删 leases 行（幂等），不改 lane——状态由调用方决定。 */
+  async revokeTaskLease(id: NoteId): Promise<boolean> {
+    return this.leases.delete(id)
   }
 }
 
