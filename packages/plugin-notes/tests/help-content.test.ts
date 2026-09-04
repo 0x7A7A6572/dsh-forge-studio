@@ -1,8 +1,9 @@
 /**
  * 使用说明 markdown（help-content.ts 的 HELP_MARKDOWN）覆盖性测试。
  * 内容本身即需求：四块说明（入口与快捷键 / 基础使用 / 对话使用 / 任务泳道），
- * 并须写全与产品事实一致的要点 —— 工具名、note:// 引用语法、五列状态-颜色
- * 映射、快捷键。任何与真实实现脱节的文案漂移都应让这些断言失败。
+ * 并须写全与产品事实一致的要点 —— 工具名、note:// 引用语法、五列任务状态、
+ * 六色纸卡与状态解耦、执行/接管交互、快捷键。任何与真实实现脱节的文案漂移
+ * 都应让这些断言失败。
  */
 
 import { describe, expect, it } from 'vitest'
@@ -21,7 +22,7 @@ describe('HELP_MARKDOWN 使用说明覆盖', () => {
     expect(HELP_MARKDOWN).toContain('任务泳道')
   })
 
-  it('对话使用块列全六个 agent 工具名', () => {
+  it('对话使用块列全八个 agent 工具名（六 CRUD + 两任务工具）', () => {
     for (const tool of [
       'notes_list',
       'notes_get',
@@ -29,6 +30,8 @@ describe('HELP_MARKDOWN 使用说明覆盖', () => {
       'notes_update',
       'notes_set_pinned',
       'notes_delete',
+      'notes_task_set_status',
+      'notes_task_report',
     ]) {
       expect(HELP_MARKDOWN).toContain(tool)
     }
@@ -39,7 +42,7 @@ describe('HELP_MARKDOWN 使用说明覆盖', () => {
     expect(HELP_MARKDOWN).toContain('user')
   })
 
-  it('任务泳道块写全五列状态及其纸色映射', () => {
+  it('任务泳道块写全五列任务状态，且颜色与状态解耦', () => {
     // 状态名必须与 TASK_LANES 文案一致（顺序即列顺序）。
     const lanes = ['待规划', '待办', '进行中', '已完成', '已失败']
     let last = -1
@@ -48,10 +51,20 @@ describe('HELP_MARKDOWN 使用说明覆盖', () => {
       expect(at).toBeGreaterThan(last)
       last = at
     }
-    // 每列都标注了纸色（灰/黄/蓝/绿/粉），保证读者能按色识列。
-    for (const color of ['灰', '黄', '蓝', '绿', '粉']) {
+    // 颜色不再表状态：六色纸卡全列举，且明示「与任务状态无关」。
+    for (const color of ['黄', '蓝', '绿', '粉', '紫', '灰']) {
       expect(HELP_MARKDOWN).toContain(color)
     }
+    expect(HELP_MARKDOWN).toContain('与任务状态无关')
+  })
+
+  it('任务泳道块说明执行/接管交互（执行=一次性授权，手动改状态=接管）', () => {
+    expect(HELP_MARKDOWN).toContain('设为任务')
+    expect(HELP_MARKDOWN).toContain('取消任务')
+    expect(HELP_MARKDOWN).toContain('执行')
+    expect(HELP_MARKDOWN).toContain('重置为待办')
+    expect(HELP_MARKDOWN).toContain('任务与结果')
+    expect(HELP_MARKDOWN).toContain('接管')
   })
 
   it('快捷键速查含 Esc 与 Ctrl+Enter', () => {

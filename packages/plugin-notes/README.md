@@ -19,17 +19,22 @@ Forge Studio 便签 的 dsh 插件形态：**独立便签板 UI**（侧栏入口
   - 便签板面板（中间列接管，`<html>` data 属性开关，会话子树保持挂载）：
     **三种显示模式**切换（纸卡墙 / 行式列表 / 任务泳道，选择记忆在模块级
     store，开关浮层不丢）：
-    - **grid 纸卡墙 / list 行式列表**（Win11 便签式**五色**纸卡，置顶优先）：
+    - **grid 纸卡墙 / list 行式列表**（Win11 便签式**六色**纸卡，置顶优先）：
       双视图共用 **文字搜索**（标题+正文纯文本，实时过滤）+ **按颜色多选筛选**
       （只作用于活动区）+ 底部**归档折叠区**（默认收起，展开才渲染）；列表
       **懒加载**：首批 8 条，滚动触底分批展开（活动区优先，归档区展开后同样
       分批），全部便签最终可见
     - **任务泳道**（五列状态看板，布局对齐 dsh-task-board 待规划→待办→进行中
-      →已完成→已失败）：**纸色即任务状态**（灰→待规划、黄→待办、蓝→进行中、
-      绿→已完成、粉→已失败；紫色已随该分类收敛移除，旧紫色记录读取归一为灰），
-      **跨列拖拽即换状态**（等价写入便签 color，列表/纸卡墙/编辑器同步可见），
-      活动便签按列全量渲染、列内滚动；色筛行隐藏（列本身已按色分列）、搜索
+      →已完成→已失败）：按 `note.lane.status` 分列，**颜色不再表状态**（六色
+      仅为纸色；任务身份 = 便签内嵌 `lane` 对象，存在即任务，普通便签不进泳道），
+      **跨列拖拽即换状态**（等价写入 `lane.status`，列表/纸卡墙/编辑器同步可见），
+      活动任务按列全量渲染、列内滚动；色筛行隐藏（列本身已按状态分列）、搜索
       仍可用；归档便签不进泳道，底部提示行一键切回列表管理
+    - **泳道任务执行（AI 联动）**：非 running 卡 hover「执行」（done/failed 为
+      「重跑」）→ 一次性授权当前会话 AI 执行任务（读全文 → 置 running → 干活 →
+      落结果），running 卡常驻 spinner + 已耗时、hover「重置为待办」（超 30min
+      弱提示「执行可能已中断，可重置」）；结果写回 run.summary，卡片首行摘要 +
+      编辑器只读「任务与结果」区全文；手动改状态/取消任务即收回授权（接管）
   - 便签可**归档**：归档后移出活动区、折叠在列表底部，可恢复/编辑/删除
   - 正文以 Markdown 存储：格式操作栏（加粗/标题/列表/引用/代码/撤销重做），
     `Ctrl+Enter` 保存；卡片展示 Markdown 摘要
@@ -47,17 +52,25 @@ Forge Studio 便签 的 dsh 插件形态：**独立便签板 UI**（侧栏入口
 
 ## Agent harness 联动（设计）
 
-三条联动线，全部插件内自包含（不改 harness）：
+四条联动线，全部插件内自包含（不改 harness）：
 
-1. **工具化**（`src/agent/tools.ts`）：6 个 `notes_*` 工具注册到 `ctx.tools`，
+1. **工具化**（`src/agent/tools.ts`）：8 个 `notes_*` 工具注册到 `ctx.tools`，
    宿主有 `tools` 服务时生效：
    - 读：`notes_list`（摘要列表）、`notes_get`（全文）；
-   - 写：`notes_create` / `notes_update` / `notes_set_pinned` / `notes_delete`。
+   - 写：`notes_create` / `notes_update` / `notes_set_pinned` / `notes_delete`；
+   - 任务：`notes_task_set_status`（置状态）/ `notes_task_report`（收尾写结果），
+     窄权限、无 ask，仅泳道「执行」授权后可用（lease guard 兜底）。
    - agent 创建的便签标记 `origin='agent'`；UI/用户创建才是 `origin='user'`。
 2. **引用化**（`src/agent/reference.ts` + client 引用按钮）：会话文本出现
    `@[标题](note://<id>)` 时，系统提示（systemPrompt section）引导 agent 用
    `notes_get` 读取全文再作答；client 卡片/行提供「引用到会话」一键复制按钮。
 3. **权限边界**（工具注册时的两层守卫，见下）。
+4. **执行租约（lease）**（`src/service.ts` + `src/agent/task-dispatch.ts`）：
+   泳道卡「执行」由 host 服务 `taskExecute` 一次性授予该任务 lease（绑定发起
+   会话），并投递结构化任务消息进当前会话；agent 经 `notes_task_set_status`
+   置 running → 执行 → `notes_task_report` 收尾写 run + 撤销 lease；guard 校验
+   租约存在且与调用会话一致。手动改状态/取消任务即撤销 lease（接管），agent
+   后续调用被拒（无 lease / 会话不符）。
 
 ### 写操作审批与 guard
 
@@ -65,17 +78,21 @@ Forge Studio 便签 的 dsh 插件形态：**独立便签板 UI**（侧栏入口
   `notes_create/update/set_pinned/delete` 在 `tools/pre-execute` 返回
   `{ kind: 'ask' }`，由 user-approval 弹确认后才执行（未批准即拒绝，
   fail-closed）。宿主无 approval seam 时放行（无 policy 即 unconditional，
-  与 tool-fs 同款）。读工具从不 ask。
+  与 tool-fs 同款）。读工具从不 ask；任务工具（`notes_task_*`）也不 ask
+  （点击执行即一次性授权，guard 兜底）。
 - **guard（单调拒绝）**：agent 永远不能删除 `origin='user'` 的便签 —— 即便
   pre-execute 放行/ask 批准，guard 层仍拒绝（保护用户手写内容）；agent 只能
   删除自己（`origin='agent'`）创建的便签。`update` 不改写 origin（来源一经
   创建不可变）。
+- **任务 guard（单调拒绝）**：`notes_task_*` 仅在目标便签是任务、且持有与
+  调用会话一致的 active lease 时才放行；无 lane / 无 lease / 会话不符一律
+  拒绝（fail-closed）。
 
 ### 集成点清单（brainstorm 结论）
 
 | # | 集成点 | 落地状态 |
 |---|--------|----------|
-| 1 | 工具化：agent 会话内读写便签 | ✅ `notes_*` 6 工具 + systemPrompt 分区 |
+| 1 | 工具化：agent 会话内读写便签 | ✅ `notes_*` 8 工具（含 2 任务工具）+ systemPrompt 分区 |
 | 6 | 引用化：会话 `@便签` mention + 列表「引用到会话」按钮 | ✅ mention 语法 + host 引导 + client 复制按钮 |
 | 8 | 权限边界：origin 字段 + ask/guard 双层 | ✅ 记录带 origin、写操作 ask、guard 拒绝删 user 便签 |
 
