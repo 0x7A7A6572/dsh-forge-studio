@@ -177,13 +177,12 @@ interface TaskLease {
   control.ts 内核对，UI 有现成调用用例）；若 host 直调不便，备选 client 侧
   `ctx.remote.session`（需 gateway 权限/描述符验证）——二选一，协议不变。
 
-## 9. 自动刷新（缝 3 结论：轻量轮询）
+## 9. 自动刷新（缝 3 结论：加速既有轮询）
 
-- notes/* 无推送：client 只在自己操作后刷新。
-- **有 active lease 的泳道**（面板可见且租约存活）→ 每 ~2s `notes.list()` 轮询
-  （host 内存同步读，代价可忽略），直到租约消失/面板不可见；其余时间不轮询。
-- agent `report` 撤销租约 → 下一次轮询看到终态并停止。
-- 轮询由 client 侧统一（`board-store` 加 subscribe 层），不进 host 服务。
+- notes/* 无推送，但 board-view **已内置 open 时每 5s 轮询** `notes.list()`（host 内存
+  同步读，代价可忽略）—— agent 改状态后 ≤5s 内泳道可见。
+- 增强：面板内存在「运行中任务」（`lane.status==='running'` 且 `run.finishedAt` 缺省）
+  时轮询间隔降到 ~1.5s，结束后恢复 5s；其余时间不额外开通道。
 
 ## 10. 错误处理与边界
 
