@@ -100,8 +100,16 @@ export interface NoteUpdateInput {
   /** 归档/取消归档。 */
   readonly archived?: boolean
   readonly color?: NoteColor
-  /** 任务泳道 patch（partial）：status/run 均可选，逐字段合并。 */
-  readonly lane?: { readonly status?: TaskStatus; readonly run?: NoteRun }
+  /**
+   * 任务泳道 patch（partial）：status/run 均可选，逐字段合并；`clear: true`
+   * 为「取消任务」——删除 lane 身份（next.lane = undefined），与 status/run
+   * 互斥，并存时 clear 优先（status/run 被忽略）。
+   */
+  readonly lane?: {
+    readonly status?: TaskStatus
+    readonly run?: NoteRun
+    readonly clear?: true
+  }
 }
 
 /**

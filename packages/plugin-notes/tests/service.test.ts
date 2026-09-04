@@ -207,6 +207,35 @@ describe('NotesService lane 写入通道', () => {
   })
 })
 
+describe('NotesService lane.clear（取消任务）', () => {
+  it('update lane.clear 移除 lane 并撤销租约', async () => {
+    const { notes, leases } = makeService()
+    const n = await notes.create({ text: 'x', laneStatus: 'todo' })
+    await notes.grantTaskLease(n.id, 's1') // → running + lease
+    expect(leases.get(n.id)).toBeDefined()
+    const after = await notes.update(n.id, { lane: { clear: true } })
+    expect(after?.lane).toBeUndefined()
+    expect(notes.list().find((x) => x.id === n.id)!.lane).toBeUndefined()
+    expect(leases.get(n.id)).toBeUndefined()
+  })
+
+  it('lane.clear 与 status 并存时 clear 优先（status 被忽略）', async () => {
+    const { notes } = makeService()
+    const n = await notes.create({ text: 'x', laneStatus: 'todo' })
+    const after = await notes.update(n.id, { lane: { clear: true, status: 'done' } })
+    expect(after?.lane).toBeUndefined()
+    expect(notes.list().find((x) => x.id === n.id)!.lane).toBeUndefined()
+  })
+
+  it('无 lane 便签 + clear 为 no-op 不报错', async () => {
+    const { notes } = makeService()
+    const n = await notes.create({ text: 'x' })
+    const after = await notes.update(n.id, { lane: { clear: true } })
+    expect(after?.lane).toBeUndefined()
+    expect(notes.list().find((x) => x.id === n.id)!.lane).toBeUndefined()
+  })
+})
+
 describe('NotesService 执行租约（grant/revoke）', () => {
   it('grant/revoke 与 busy 冲突', async () => {
     const { notes } = makeService()

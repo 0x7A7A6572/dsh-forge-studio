@@ -165,4 +165,18 @@ describe('notes remote contribution', () => {
     expect(() => updateInput.schema.parse({ lane: { run: { startedAt: 1, ok: 'yes' } } })).toThrow()
     expect(() => updateInput.schema.parse({ lane: 'running' })).toThrow()
   })
+
+  it('update codec 接受 lane.clear: true 透传', () => {
+    const byMethod = new Map(notesRemoteContribution.descriptors.map((d) => [d.method, d]))
+    const updateInput = byMethod.get('update')!.parameters[1]!.codec as { schema: { parse: (v: unknown) => unknown } }
+    const parsed = updateInput.schema.parse({ lane: { clear: true } }) as { lane?: { clear?: unknown } }
+    expect(parsed.lane).toEqual({ clear: true })
+  })
+
+  it('update codec 拒绝 lane.clear: false（仅允许布尔字面量 true）', () => {
+    const byMethod = new Map(notesRemoteContribution.descriptors.map((d) => [d.method, d]))
+    const updateInput = byMethod.get('update')!.parameters[1]!.codec as { schema: { parse: (v: unknown) => unknown } }
+    expect(() => updateInput.schema.parse({ lane: { clear: false } })).toThrow()
+    expect(() => updateInput.schema.parse({ lane: { clear: 1 } })).toThrow()
+  })
 })

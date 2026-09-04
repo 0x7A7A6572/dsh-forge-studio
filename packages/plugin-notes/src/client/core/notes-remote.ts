@@ -109,15 +109,25 @@ function parseOptionalRun(value: unknown): NoteRun | undefined {
   }
 }
 
-/** 可选 lane patch 校验：status/run 均可选；undefined 字段被丢弃（run: undefined 不出现）。 */
-function parseOptionalLane(value: unknown): { status?: TaskStatus; run?: NoteRun } | undefined {
+/**
+ * 可选 lane patch 校验：status/run/clear 均可选；undefined 字段被丢弃
+ * （run: undefined 不出现）。clear 只接受布尔字面量 true（取消任务）；false /
+ * 其它值一律拒绝（避免「clear: false」被误当成取消，或静默吞掉歧义输入）。
+ */
+function parseOptionalLane(value: unknown): { status?: TaskStatus; run?: NoteRun; clear?: true } | undefined {
   if (value === undefined) return undefined
   if (!isRecord(value)) throw new Error('expected lane object')
   const status = parseOptionalTaskStatus(value.status)
   const run = parseOptionalRun(value.run)
+  let clear: true | undefined
+  if (value.clear !== undefined) {
+    if (value.clear !== true) throw new Error('expected lane.clear === true')
+    clear = true
+  }
   return {
     ...(status !== undefined ? { status } : {}),
     ...(run !== undefined ? { run } : {}),
+    ...(clear !== undefined ? { clear } : {}),
   }
 }
 

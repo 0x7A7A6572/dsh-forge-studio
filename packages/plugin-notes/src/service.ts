@@ -82,13 +82,20 @@ export class NotesService extends TypertRemoteService {
     if (!current) return undefined
     // lane patch：与顶层同语义——缺省字段保留、逐字段合并（next.lane =
     // { ...current.lane, ...patch.lane }）；run 提供即整体替换（非逐字段合并）；
-    // 空 patch 对象（既无 status 也无 run）= no-op，不改动 lane（含不凭空造 lane）。
+    // 空 patch 对象（既无 status 也无 run 且无 clear）= no-op，不改动 lane
+    // （含不凭空造 lane）。
+    // `clear: true` 优先（取消任务）：删除 lane 身份（next.lane = undefined），
+    // 与 status/run 互斥、并存时 clear 胜出（status/run 被忽略）。移除任务身份
+    // 即手动接管，随后的 revoke 一并撤销租约。
     let lane: NoteLane | undefined = current.lane
-    if (patch.lane !== undefined && (patch.lane.status !== undefined || patch.lane.run !== undefined)) {
+    if (patch.lane?.clear === true) {
+      lane = undefined
+    } else if (patch.lane !== undefined && (patch.lane.status !== undefined || patch.lane.run !== undefined)) {
       // 合成 status：patch 未给则沿用当前 lane 的 status。
       const status: TaskStatus | undefined = patch.lane.status ?? current.lane?.status
       // 守卫：patch 仅给 run 没给 status 且当前无 lane 时，会拼出无 status 的 lane，
-      // 下次打开 domain 会因 schema 校验失败炸库。拒绝而非静默落库。
+      // 下次打开 domain 会因 schema 校验失败炸库。拒绝而非静默落库。（clear 走上面
+      // 分支，不会误触发本守卫。）
       if (status === undefined) {
         throw new Error('lane patch 缺 status：便签无 lane 时须同时提供 status，不能仅凭 run 造 lane')
       }
@@ -98,8 +105,12 @@ export class NotesService extends TypertRemoteService {
         ...(patch.lane.run !== undefined ? { run: patch.lane.run } : {}),
       }
     }
+    // 剥离 current 的 lane，最后按合并结果显式写回（clear 时 lane=undefined 即删除
+    // 身份；否则维持「缺省字段保留」）。若不剥离，...current 会带出旧 lane，导致
+    // 「取消任务」后旧 lane 残留。
+    const { lane: _currentLane, ...currentWithoutLane } = current
     const next: NoteRecord = {
-      ...current,
+      ...currentWithoutLane,
       ...(patch.title !== undefined ? { title: patch.title } : {}),
       ...(patch.text !== undefined ? { text: patch.text } : {}),
       ...(patch.pinned !== undefined ? { pinned: patch.pinned } : {}),
@@ -112,9 +123,10 @@ export class NotesService extends TypertRemoteService {
       updatedAt: Date.now(),
       ...(lane !== undefined ? { lane } : {}),
     }
-    // 撤销租约（D5 手动接管）：任何用户侧 lane.status 变更即接管；归档同样撤销。
-    // 与当前状态相同则不算接管，不撤销。
+    // 撤销租约（D5 手动接管）：任何用户侧 lane.status 变更即接管；取消任务
+    // （clear）同样接管；归档同样撤销。与当前状态相同则不算接管，不撤销。
     if (
+      patch.lane?.clear === true ||
       (patch.lane?.status !== undefined && patch.lane.status !== current.lane?.status) ||
       patch.archived === true
     ) {
