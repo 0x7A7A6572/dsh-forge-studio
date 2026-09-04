@@ -400,12 +400,15 @@ export function installNotesTools(ctx: Context): void {
   ctx.tools.register(defineTool({
     name: TOOL_TASK_SET_STATUS,
     description:
-      'Set a task note\'s lane status. Protocol: at the start of a run, set status to "running" ' +
-      'before doing the work; the five statuses are backlog / todo / running / done / failed. ' +
-      'Only works while this note holds an active execution lease for the calling session.',
+      'Set a task note\'s lane status to "running" (the ONLY value this tool accepts). ' +
+      'Protocol: at the start of a run, assert "running" before doing the work — this is optional ' +
+      'since the host already grants "running" at dispatch and re-asserting it is a harmless no-op. ' +
+      'To end the run, do NOT use this tool: call notes_task_report instead (it writes the result ' +
+      'summary and settles the run to done/failed automatically). Only works while this note holds ' +
+      'an active execution lease for the calling session.',
     parameters: {
       note_id: { type: 'string', required: true, description: 'The task note id from notes_list.' },
-      status: { type: 'string', required: true, enum: [...TASK_STATUSES], description: 'The task status to set (one of the five).' },
+      status: { type: 'string', required: true, enum: [...TASK_STATUSES], description: 'Must be "running" (the only accepted value); done/failed go through notes_task_report.' },
     },
     output: {
       schema: TASK_NOTE_OUTPUT_SCHEMA,
@@ -413,7 +416,11 @@ export function installNotesTools(ctx: Context): void {
     },
     async execute(args, _exec) {
       const id = args.note_id as NoteId
-      const note = await notes.setTaskStatus(id, args.status as TaskStatus)
+      const status = args.status as TaskStatus
+      if (status !== 'running') {
+        throw new Error('任务状态变更请用执行中的 report 结束：set_status 仅允许置为 running')
+      }
+      const note = await notes.setTaskStatus(id, status)
       if (note === undefined) throw new Error(`task note ${id} not found or has no lane`)
       return note
     },

@@ -80,6 +80,7 @@ export class NotesService extends TypertRemoteService {
   async update(id: NoteId, patch: NoteUpdateInput): Promise<NoteRecord | undefined> {
     const current = this.table.get(id)
     if (!current) return undefined
+    const now = Date.now()
     // lane patch：与顶层同语义——缺省字段保留、逐字段合并（next.lane =
     // { ...current.lane, ...patch.lane }）；run 提供即整体替换（非逐字段合并）；
     // 空 patch 对象（既无 status 也无 run 且无 clear）= no-op，不改动 lane
@@ -105,6 +106,18 @@ export class NotesService extends TypertRemoteService {
         ...(patch.lane.run !== undefined ? { run: patch.lane.run } : {}),
       }
     }
+    // M3 手动接管收尾：仅「改到不同状态」的接管路径、且当前 lane 有开着（未
+    // finishedAt）的 run 帧时，先把该帧收尾为「用户手动接管」（closed as
+    // interrupted）。否则状态变了但 run.finishedAt 仍缺，client isRunOpen 恒真、
+    // 编辑器误锁「执行中」。clear（取消任务）删除整段 lane，run 随 lane 一并消失，
+    // 无需收尾（settle 无意义）；归档不改状态，也不在此收尾。status 由用户 patch
+    // 决定——收尾只关闭 run 帧（标记为中断），不覆盖用户选定的结果状态。
+    const statusChanged = patch.lane?.status !== undefined && patch.lane.status !== current.lane?.status
+    const currentRunOpen = current.lane?.run !== undefined && current.lane.run.finishedAt === undefined
+    if (statusChanged && currentRunOpen) {
+      const settled = settleRun(current.lane!, false, '用户手动接管', now)
+      lane = { ...lane!, run: settled.run }
+    }
     // 剥离 current 的 lane，最后按合并结果显式写回（clear 时 lane=undefined 即删除
     // 身份；否则维持「缺省字段保留」）。若不剥离，...current 会带出旧 lane，导致
     // 「取消任务」后旧 lane 残留。
@@ -120,7 +133,7 @@ export class NotesService extends TypertRemoteService {
       color: patch.color ?? current.color ?? DEFAULT_NOTE_COLOR,
       // origin 永远保留原值：来源一经创建不可改写（agent 无法把自己的便签标成 user）。
       origin: current.origin ?? 'user',
-      updatedAt: Date.now(),
+      updatedAt: now,
       ...(lane !== undefined ? { lane } : {}),
     }
     // 撤销租约（D5 手动接管）：任何用户侧 lane.status 变更即接管；取消任务
@@ -184,17 +197,22 @@ export class NotesService extends TypertRemoteService {
   }
 
   /**
-   * agent 工具专用：置任务状态（note 须有 lane；无则返回 undefined）。直接写
-   * 内存表、不经 update——update 的「手动改状态即撤销租约」钩子面向用户侧 UI
-   * 改动，agent 写 lane 由 lease 授权，不得触发该撤销。置 running 且无 run 帧
-   * 时补 beginRun 初始帧。
+   * agent 工具专用：置任务状态。通道已收窄（M6 裁定）：仅允许 status='running'
+   * ——完成/失败是 notes_task_report 的职责（自动写结果 + settle + 撤销租约）。
+   * 直接写内存表、不经 update——update 的「手动改状态即撤销租约」钩子面向用户侧
+   * UI 改动，agent 写 lane 由 lease 授权，不得触发该撤销。置 running 且无 run 帧
+   * 时补 beginRun 初始帧；已 running 时 re-assert 为无害 no-op（不重建帧）。
    */
   async setTaskStatus(id: NoteId, status: TaskStatus): Promise<NoteRecord | undefined> {
+    // 防御性拒绝（host 内部方法，双保险：agent 工具层已先行校验，此处兜底）。
+    if (status !== 'running') {
+      throw new Error('任务状态变更请用执行中的 report 结束：set_status 仅允许置为 running')
+    }
     const current = this.table.get(id)
     if (!current?.lane) return undefined
     const now = Date.now()
     const lane: NoteLane =
-      status === 'running' && current.lane.run === undefined
+      current.lane.run === undefined
         ? beginRun(current.lane, now)
         : { ...current.lane, status }
     const next: NoteRecord = { ...current, lane, updatedAt: now }

@@ -258,6 +258,29 @@ describe('notes_task 工具：guard 与 execute', () => {
     expect((failed as NoteRecord).lane).toMatchObject({ status: 'failed', run: { ok: false, summary: 'boom' } })
   })
 
+  it('set_status 置非 running（done/failed/todo/backlog）被拒：中文原因，且不动租约', async () => {
+    const h = makeHarness()
+    const note = await h.notes.create({ text: 't', laneStatus: 'todo' })
+    await h.notes.grantTaskLease(note.id, 's1')
+    const tool = h.registered.find(d => d.name === `${NOTES_TOOL_PREFIX}task_set_status`)!
+    for (const status of ['done', 'failed', 'todo', 'backlog']) {
+      await expect(tool.execute({ note_id: note.id, status }, {})).rejects.toThrow(/set_status 仅允许置为 running/)
+    }
+    // 拒绝发生在服务调用前，不得误撤销租约
+    expect(h.notes.getTaskLease(note.id)).toBeDefined()
+  })
+
+  it('set_status(running) 在已 running 时为无害 no-op（不改 run 帧、不撤租约）', async () => {
+    const h = makeHarness()
+    const note = await h.notes.create({ text: 't', laneStatus: 'todo' })
+    await h.notes.grantTaskLease(note.id, 's1') // → running + run 帧
+    const before = h.notes.list().find(n => n.id === note.id)!
+    const tool = h.registered.find(d => d.name === `${NOTES_TOOL_PREFIX}task_set_status`)!
+    const updated = await tool.execute({ note_id: note.id, status: 'running' }, {})
+    expect((updated as NoteRecord).lane).toEqual(before.lane)
+    expect(h.notes.getTaskLease(note.id)).toBeDefined()
+  })
+
   it('无 lane 便签被 guard 拒绝', async () => {
     const h = makeHarness()
     const note = await h.notes.create({ text: 't' }) // 无 laneStatus → 普通便签

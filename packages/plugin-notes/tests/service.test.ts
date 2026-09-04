@@ -166,11 +166,12 @@ describe('NotesService lane 写入通道', () => {
     expect(note.lane).toBeUndefined()
   })
 
-  it('update 可 patch lane.status 且保留 lane.run', async () => {
+  it('update 可 patch lane.status 且保留 lane.run（已收尾的 run）', async () => {
     const { notes } = makeService()
     const created = await notes.create({ text: 'x', laneStatus: 'todo' })
     expect(created.lane).toEqual({ status: 'todo' })
-    const run = { startedAt: 1 }
+    // 已收尾的 run（finishedAt 已落）：改状态不触发接管收尾，run 原样保留。
+    const run = { startedAt: 1, finishedAt: 2, ok: true, summary: 'prior' }
     const withRun = await notes.update(created.id, { lane: { status: 'running', run } })
     expect(withRun?.lane).toEqual({ status: 'running', run })
     const statusOnly = await notes.update(created.id, { lane: { status: 'done' } })
@@ -388,5 +389,67 @@ describe('NotesService 执行事务（taskExecute/taskReset）', () => {
   it('taskReset 不存在便签 → ok:false', async () => {
     const { notes } = makeService()
     expect(await notes.taskReset('nope' as NoteId)).toEqual({ ok: false })
+  })
+})
+
+describe('NotesService update 手动接管收尾（M3：status 变更 + 开 run → settle）', () => {
+  it('接管到 done：收尾开着 run 的帧并撤销租约', async () => {
+    const { notes, leases } = makeService()
+    const n = await notes.create({ text: 'x', laneStatus: 'todo' })
+    await notes.grantTaskLease(n.id, 's1') // → running + 新 run 帧（open）+ lease
+    const before = notes.list().find((x) => x.id === n.id)!
+    expect(before.lane?.run?.finishedAt).toBeUndefined() // 开着
+    const after = await notes.update(n.id, { lane: { status: 'done' } })
+    expect(after?.lane?.status).toBe('done')
+    expect(after?.lane?.run?.finishedAt).toBeGreaterThan(0)
+    expect(after?.lane?.run?.ok).toBe(false)
+    expect(after?.lane?.run?.summary).toBe('用户手动接管')
+    expect(after?.lane?.run?.startedAt).toBe(before.lane?.run?.startedAt) // 原帧 startedAt 保留
+    expect(leases.get(n.id)).toBeUndefined()
+  })
+
+  it('接管不改动已收尾的 run（finishedAt 已落）', async () => {
+    const { notes } = makeService()
+    const n = await notes.create({ text: 'x', laneStatus: 'todo' })
+    const run = { startedAt: 1, finishedAt: 2, ok: true, summary: 'prior' }
+    await notes.update(n.id, { lane: { status: 'running', run } })
+    const after = await notes.update(n.id, { lane: { status: 'done' } })
+    expect(after?.lane).toEqual({ status: 'done', run })
+  })
+
+  it('接管不改动无 run 的 lane（不凭空造 run）', async () => {
+    const { notes } = makeService()
+    const n = await notes.create({ text: 'x', laneStatus: 'todo' })
+    const after = await notes.update(n.id, { lane: { status: 'done' } })
+    expect(after?.lane).toEqual({ status: 'done' })
+  })
+
+  it('clear 仍删除 lane（开着 run 的便签不炸，run 随 lane 消失）', async () => {
+    const { notes, leases } = makeService()
+    const n = await notes.create({ text: 'x', laneStatus: 'todo' })
+    await notes.grantTaskLease(n.id, 's1') // → running + open run + lease
+    const after = await notes.update(n.id, { lane: { clear: true } })
+    expect(after?.lane).toBeUndefined()
+    expect(notes.list().find((x) => x.id === n.id)!.lane).toBeUndefined()
+    expect(leases.get(n.id)).toBeUndefined()
+  })
+})
+
+describe('NotesService agent 任务助手（setTaskStatus 通道收窄）', () => {
+  it('setTaskStatus 非 running 抛错（defense in depth）', async () => {
+    const { notes } = makeService()
+    const n = await notes.create({ text: 'x', laneStatus: 'todo' })
+    await notes.grantTaskLease(n.id, 's1')
+    await expect(notes.setTaskStatus(n.id, 'done')).rejects.toThrow(/set_status 仅允许置为 running/)
+    await expect(notes.setTaskStatus(n.id, 'failed')).rejects.toThrow(/set_status 仅允许置为 running/)
+  })
+
+  it('setTaskStatus(running) 已 running 时为 no-op（不新建 run 帧）', async () => {
+    const { notes } = makeService()
+    const n = await notes.create({ text: 'x', laneStatus: 'todo' })
+    await notes.grantTaskLease(n.id, 's1') // → running + run 帧
+    const before = notes.list().find((x) => x.id === n.id)!.lane
+    const after = await notes.setTaskStatus(n.id, 'running')
+    expect(after?.lane).toEqual(before)
   })
 })
