@@ -20,7 +20,7 @@ import type { notesDomain } from './domain.ts'
 import type { TaskLease } from './domain.ts'
 import { DEFAULT_NOTE_COLOR } from './types.ts'
 import type { NoteCreateInput, NoteId, NoteLane, NoteRecord, NoteUpdateInput, TaskStatus } from './types.ts'
-import { beginRun } from './client/core/task-lanes.ts'
+import { beginRun, settleRun } from './client/core/task-lanes.ts'
 
 export interface NotesServiceConfig {
   /** 已打开的 notes 域。 */
@@ -152,6 +152,46 @@ export class NotesService extends TypertRemoteService {
   /** 撤销执行租约：只删 leases 行（幂等），不改 lane——状态由调用方决定。 */
   async revokeTaskLease(id: NoteId): Promise<boolean> {
     return this.leases.delete(id)
+  }
+
+  /** 同步读当前 active lease（agent guard 判定用；无则 undefined）。 */
+  getTaskLease(id: NoteId): TaskLease | undefined {
+    return this.leases.get(id)
+  }
+
+  /**
+   * agent 工具专用：置任务状态（note 须有 lane；无则返回 undefined）。直接写
+   * 内存表、不经 update——update 的「手动改状态即撤销租约」钩子面向用户侧 UI
+   * 改动，agent 写 lane 由 lease 授权，不得触发该撤销。置 running 且无 run 帧
+   * 时补 beginRun 初始帧。
+   */
+  async setTaskStatus(id: NoteId, status: TaskStatus): Promise<NoteRecord | undefined> {
+    const current = this.table.get(id)
+    if (!current?.lane) return undefined
+    const now = Date.now()
+    const lane: NoteLane =
+      status === 'running' && current.lane.run === undefined
+        ? beginRun(current.lane, now)
+        : { ...current.lane, status }
+    const next: NoteRecord = { ...current, lane, updatedAt: now }
+    await this.table.put(id, next)
+    return next
+  }
+
+  /**
+   * agent 工具专用：收尾本次执行 —— settleRun 补 finishedAt/ok/summary，status
+   * 置 done（ok）/ failed（!ok），并撤销 lease。note 无 lane 时返回 undefined。
+   */
+  async settleTaskRun(id: NoteId, ok: boolean, summary: string): Promise<NoteRecord | undefined> {
+    const current = this.table.get(id)
+    if (!current?.lane) return undefined
+    const now = Date.now()
+    const status: TaskStatus = ok ? 'done' : 'failed'
+    const lane: NoteLane = { ...settleRun(current.lane, ok, summary, now), status }
+    await this.revokeTaskLease(id)
+    const next: NoteRecord = { ...current, lane, updatedAt: now }
+    await this.table.put(id, next)
+    return next
   }
 }
 

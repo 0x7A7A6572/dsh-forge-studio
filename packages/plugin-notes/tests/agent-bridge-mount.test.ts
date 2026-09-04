@@ -79,6 +79,8 @@ const TOOL_NAMES = [
   `${NOTES_TOOL_PREFIX}update`,
   `${NOTES_TOOL_PREFIX}set_pinned`,
   `${NOTES_TOOL_PREFIX}delete`,
+  `${NOTES_TOOL_PREFIX}task_set_status`,
+  `${NOTES_TOOL_PREFIX}task_report`,
 ].sort()
 
 describe('agent 桥挂载时序（tools 晚于插件就绪）', () => {

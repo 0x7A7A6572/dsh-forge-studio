@@ -19,7 +19,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolExecution } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import type {} from '../service.ts'
-import type { NoteId, NoteRecord } from '../types.ts'
+import type { NoteId, NoteRecord, TaskStatus } from '../types.ts'
 import { NOTE_COLORS } from '../types.ts'
 
 /** 工具名前缀：注册/guard/ask 全部按此前缀路由，避免误伤宿主其他工具。 */
@@ -32,6 +32,10 @@ const TOOL_UPDATE = `${NOTES_TOOL_PREFIX}update`
 const TOOL_SET_PINNED = `${NOTES_TOOL_PREFIX}set_pinned`
 const TOOL_DELETE = `${NOTES_TOOL_PREFIX}delete`
 
+/** 任务工具：独立于写工具 ask 集合（点击执行即一次性授权，guard 兜底）。 */
+const TOOL_TASK_SET_STATUS = `${NOTES_TOOL_PREFIX}task_set_status`
+const TOOL_TASK_REPORT = `${NOTES_TOOL_PREFIX}task_report`
+
 /** 写工具集合（决定 ask 范围）。 */
 const WRITE_TOOLS = new Set<string>([TOOL_CREATE, TOOL_UPDATE, TOOL_SET_PINNED, TOOL_DELETE])
 
@@ -43,6 +47,11 @@ export function isNotesTool(name: string): boolean {
 /** 写工具判定。 */
 export function isNotesWriteTool(name: string): boolean {
   return WRITE_TOOLS.has(name)
+}
+
+/** 任务工具判定（notes_task_*）。 */
+export function isNotesTaskTool(name: string): boolean {
+  return name === TOOL_TASK_SET_STATUS || name === TOOL_TASK_REPORT
 }
 
 /* ---------- 渲染（model-facing 文本） ---------- */
@@ -91,6 +100,24 @@ const LANE_SCHEMA = {
   },
 } as const
 
+/** 任务工具输出 schema：返回整张便签（含 lane；report 后 run 带结果）。 */
+const TASK_NOTE_OUTPUT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'string', required: true },
+    title: { type: 'string', required: true },
+    text: { type: 'string', required: true },
+    pinned: { type: 'boolean', required: true },
+    archived: { type: 'boolean', required: true },
+    color: { type: 'string', required: true, enum: [...NOTE_COLORS] },
+    origin: { type: 'string', required: true, enum: ['user', 'agent'] },
+    createdAt: { type: 'number', required: true },
+    updatedAt: { type: 'number', required: true },
+    lane: LANE_SCHEMA,
+  },
+} as const
+
 /* ---------- guard（单调拒绝，同步） ---------- */
 
 /**
@@ -106,6 +133,33 @@ export function notesDeleteGuard(ctx: Context, exec: ToolExecution): string | un
   const note = ctx.notes.list().find(n => n.id === id)
   if (note?.origin === 'user') {
     return `cannot delete note ${id}: it was written by the user (origin=user). Agents may only delete notes they created themselves (origin=agent).`
+  }
+  return undefined
+}
+
+/**
+ * notes_task_* 的 guard 判定（同步、单调，任何宿主生效）。拒绝条件（任一）：
+ * 目标便签不存在；便签无 lane（非任务）；无 active lease；lease.sessionId 与
+ * 调用会话身份不符。会话身份取自 exec.agent.id（SessionId，见 dsh-tools
+ * ToolExecution.agent —— 有稳定身份字段，故按 sessionId 匹配；agent 缺省时
+ * 视为身份不可核验 → 拒绝，fail-closed）。
+ * @returns 中文拒绝原因；不拒绝返回 undefined。
+ */
+export function notesTaskGuard(ctx: Context, exec: ToolExecution): string | undefined {
+  if (!isNotesTaskTool(exec.name)) return undefined
+  const args = exec.arguments as { note_id?: unknown } | undefined
+  const id = args?.note_id
+  if (typeof id !== 'string') return undefined
+  const note = ctx.notes.list().find((n) => n.id === id)
+  if (note === undefined) return `任务便签 ${id} 不存在`
+  if (note.lane === undefined) return `便签 ${id} 不是任务（无 lane），notes_task_* 只能操作任务便签`
+  const lease = ctx.notes.getTaskLease(id as NoteId)
+  if (lease === undefined) {
+    return `便签 ${id} 无有效执行租约：任务可能已被手动接管或已收尾，如需继续请重新执行`
+  }
+  const caller = exec.agent?.id
+  if (caller !== lease.sessionId) {
+    return `便签 ${id} 的执行租约属于会话 ${lease.sessionId}，与当前调用会话不符`
   }
   return undefined
 }
@@ -341,13 +395,66 @@ export function installNotesTools(ctx: Context): void {
     },
   }))
 
+  /* ----- 任务工具（窄权限，无 ask，lease guard 兜底） ----- */
+
+  ctx.tools.register(defineTool({
+    name: TOOL_TASK_SET_STATUS,
+    description:
+      'Set a task note\'s lane status. Protocol: at the start of a run, set status to "running" ' +
+      'before doing the work; the five statuses are backlog / todo / running / done / failed. ' +
+      'Only works while this note holds an active execution lease for the calling session.',
+    parameters: {
+      note_id: { type: 'string', required: true, description: 'The task note id from notes_list.' },
+      status: { type: 'string', required: true, enum: [...TASK_STATUSES], description: 'The task status to set (one of the five).' },
+    },
+    output: {
+      schema: TASK_NOTE_OUTPUT_SCHEMA,
+      render: (_args, value) => [{ type: 'text', text: noteText(value as NoteRecord) }],
+    },
+    async execute(args, _exec) {
+      const id = args.note_id as NoteId
+      const note = await notes.setTaskStatus(id, args.status as TaskStatus)
+      if (note === undefined) throw new Error(`task note ${id} not found or has no lane`)
+      return note
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: TOOL_TASK_REPORT,
+    description:
+      'End a task run and record its result. Writes the run summary, sets status to "done" ' +
+      '(ok=true) or "failed" (ok=false), and releases the execution lease (after which another ' +
+      'notes_task_* call is rejected until the task is executed again). Protocol: first ' +
+      'notes_task_set_status(running), do the work, then report ok=true + summary on success or ' +
+      'ok=false + reason on failure.',
+    parameters: {
+      note_id: { type: 'string', required: true, description: 'The task note id from notes_list.' },
+      ok: { type: 'boolean', required: true, description: 'true if the task succeeded, false if it failed.' },
+      summary: { type: 'string', required: true, description: 'Short markdown summary of the result, or the failure reason.' },
+    },
+    output: {
+      schema: TASK_NOTE_OUTPUT_SCHEMA,
+      render: (_args, value) => [{ type: 'text', text: noteText(value as NoteRecord) }],
+    },
+    async execute(args, _exec) {
+      const id = args.note_id as NoteId
+      const note = await notes.settleTaskRun(id, args.ok, args.summary)
+      if (note === undefined) throw new Error(`task note ${id} not found or has no lane`)
+      return note
+    },
+  }))
+
   // 单调 guard：任何调用（含被 pre-execute 放行的）都不能删 user 便签。
   ctx.tools.guard((exec) => notesDeleteGuard(ctx, exec))
 
+  // 单调 guard：notes_task_* 必须持有匹配 lease（无 lane / 无 lease / 会话不符 → 拒绝）。
+  ctx.tools.guard((exec) => notesTaskGuard(ctx, exec))
+
   // pre-execute ask：宿主有 approval seam 时，写工具先弹确认；没有则放行
-  // （无 policy 即 unconditional，guard 仍兜底 user 便签）。
+  // （无 policy 即 unconditional，guard 仍兜底 user 便签）。任务工具不放 ask。
   ctx.on('tools/pre-execute', async (exec, next) => {
     if (!isNotesTool(exec.name)) return next()
+    if (isNotesTaskTool(exec.name)) return next()
     if (!WRITE_TOOLS.has(exec.name)) return next()
     if (ctx.get('approval') === undefined) return next()
     return { kind: 'ask', reason: `The agent wants to ${describeAction(exec.name)} a sticky note.` }

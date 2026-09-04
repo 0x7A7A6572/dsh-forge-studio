@@ -1,7 +1,7 @@
 /**
  * agent/tools —— 便签 agent 工具层单测。
  * 用 stub ctx（真 NotesService + 假 tools/on/get）验证：
- * - 6 个工具定义注册（list/get/create/update/set_pinned/delete）；
+ * - 8 个工具定义注册（list/get/create/update/set_pinned/delete + notes_task_set_status/report）；
  * - guard 拒绝删除 origin='user' 的便签，放行 origin='agent' 与其它工具；
  * - pre-execute ask：写工具 + 宿主有 approval → ask；无 approval → next() 放行；
  *   读工具永远放行；
@@ -10,15 +10,18 @@
 
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import type { ToolExecution } from '@deepseek-ai/dsh-tools'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { NotesService } from '../src/service.ts'
 import type { TaskLease } from '../src/domain.ts'
 import type { NoteId, NoteRecord } from '../src/types.ts'
 import {
   installNotesTools,
+  isNotesTaskTool,
   isNotesTool,
   isNotesWriteTool,
   notesDeleteGuard,
+  notesTaskGuard,
   NOTES_TOOL_PREFIX,
 } from '../src/agent/tools.ts'
 
@@ -107,7 +110,7 @@ function makeHarness(): Harness {
 const execOf = (name: string, args: unknown) => ({ name, arguments: args })
 
 describe('notes agent 工具注册', () => {
-  it('注册 6 个 notes_* 工具（读 2 + 写 4）', () => {
+  it('注册 8 个 notes_* 工具（读 2 + 写 4 + 任务 2）', () => {
     const { registered } = makeHarness()
     const names = registered.map(d => d.name).sort()
     expect(names).toEqual([
@@ -116,6 +119,8 @@ describe('notes agent 工具注册', () => {
       `${NOTES_TOOL_PREFIX}get`,
       `${NOTES_TOOL_PREFIX}list`,
       `${NOTES_TOOL_PREFIX}set_pinned`,
+      `${NOTES_TOOL_PREFIX}task_report`,
+      `${NOTES_TOOL_PREFIX}task_set_status`,
       `${NOTES_TOOL_PREFIX}update`,
     ])
   })
@@ -123,10 +128,17 @@ describe('notes agent 工具注册', () => {
   it('读工具放行、写工具需审批的判定函数', () => {
     expect(isNotesTool('notes_list')).toBe(true)
     expect(isNotesTool('notes_create')).toBe(true)
+    expect(isNotesTool('notes_task_set_status')).toBe(true)
     expect(isNotesTool('other_tool')).toBe(false)
     expect(isNotesWriteTool('notes_list')).toBe(false)
     expect(isNotesWriteTool('notes_create')).toBe(true)
     expect(isNotesWriteTool('notes_delete')).toBe(true)
+    // 任务工具不在写工具 ask 集合（pre-execute 直通，guard 兜底）
+    expect(isNotesWriteTool('notes_task_set_status')).toBe(false)
+    expect(isNotesWriteTool('notes_task_report')).toBe(false)
+    expect(isNotesTaskTool('notes_task_set_status')).toBe(true)
+    expect(isNotesTaskTool('notes_task_report')).toBe(true)
+    expect(isNotesTaskTool('notes_update')).toBe(false)
   })
 })
 
@@ -176,6 +188,9 @@ describe('notes pre-execute ask 策略', () => {
     }
     expect(await decide(h, 'notes_list', {})).toBe('next')
     expect(await decide(h, 'notes_get', {})).toBe('next')
+    // 任务工具不放 ask（点击执行即一次性授权，guard 兜底）
+    expect(await decide(h, 'notes_task_set_status', {})).toBe('next')
+    expect(await decide(h, 'notes_task_report', {})).toBe('next')
   })
 
   it('宿主无 approval seam：写工具放行（unconditional，guard 兜底）', async () => {
@@ -188,6 +203,74 @@ describe('notes pre-execute ask 策略', () => {
     const h = makeHarness()
     h.approval = true
     expect(await decide(h, 'bash', {})).toBe('next')
+  })
+})
+
+describe('notes_task 工具：guard 与 execute', () => {
+  /** 组装带会话身份的 exec（agent.id 即 SessionId，guard 据此匹配 lease.sessionId）。 */
+  const taskExec = (name: string, args: unknown, sessionId?: string) =>
+    ({ name, arguments: args, agent: sessionId !== undefined ? { id: sessionId } : undefined }) as unknown as ToolExecution
+
+  it('无租约时被 guard 拒绝（中文原因文本）', async () => {
+    const h = makeHarness()
+    const note = await h.notes.create({ text: 't', laneStatus: 'todo' })
+    const reason = notesTaskGuard(h.ctx, taskExec('notes_task_set_status', { note_id: note.id }, 's1'))
+    expect(reason).toMatch(/无有效执行租约/)
+  })
+
+  it('会话不符时被 guard 拒绝', async () => {
+    const h = makeHarness()
+    const note = await h.notes.create({ text: 't', laneStatus: 'todo' })
+    await h.notes.grantTaskLease(note.id, 's1')
+    const reason = notesTaskGuard(h.ctx, taskExec('notes_task_set_status', { note_id: note.id }, 's2'))
+    expect(reason).toMatch(/会话/)
+  })
+
+  it('有匹配租约时放行，set_status 置 lane.status=running', async () => {
+    const h = makeHarness()
+    const note = await h.notes.create({ text: 't', laneStatus: 'todo' })
+    await h.notes.grantTaskLease(note.id, 's1')
+    expect(notesTaskGuard(h.ctx, taskExec('notes_task_set_status', { note_id: note.id }, 's1'))).toBeUndefined()
+    const tool = h.registered.find(d => d.name === `${NOTES_TOOL_PREFIX}task_set_status`)!
+    const updated = await tool.execute({ note_id: note.id, status: 'running' }, {})
+    expect((updated as NoteRecord).lane?.status).toBe('running')
+  })
+
+  it('report 收尾写 run 摘要 + 状态 done + 撤销租约（随后 set_status 被拒）', async () => {
+    const h = makeHarness()
+    const note = await h.notes.create({ text: 't', laneStatus: 'todo' })
+    await h.notes.grantTaskLease(note.id, 's1')
+    expect(notesTaskGuard(h.ctx, taskExec('notes_task_report', { note_id: note.id }, 's1'))).toBeUndefined()
+    const tool = h.registered.find(d => d.name === `${NOTES_TOOL_PREFIX}task_report`)!
+    const done = await tool.execute({ note_id: note.id, ok: true, summary: 'done it' }, {})
+    expect((done as NoteRecord).lane).toMatchObject({ status: 'done', run: { ok: true, summary: 'done it' } })
+    // lease 已撤销 → 第二次 set_status 被拒
+    const reason = notesTaskGuard(h.ctx, taskExec('notes_task_set_status', { note_id: note.id }, 's1'))
+    expect(reason).toMatch(/无有效执行租约/)
+  })
+
+  it('report ok=false 置 failed', async () => {
+    const h = makeHarness()
+    const note = await h.notes.create({ text: 't', laneStatus: 'todo' })
+    await h.notes.grantTaskLease(note.id, 's1')
+    const tool = h.registered.find(d => d.name === `${NOTES_TOOL_PREFIX}task_report`)!
+    const failed = await tool.execute({ note_id: note.id, ok: false, summary: 'boom' }, {})
+    expect((failed as NoteRecord).lane).toMatchObject({ status: 'failed', run: { ok: false, summary: 'boom' } })
+  })
+
+  it('无 lane 便签被 guard 拒绝', async () => {
+    const h = makeHarness()
+    const note = await h.notes.create({ text: 't' }) // 无 laneStatus → 普通便签
+    const reason = notesTaskGuard(h.ctx, taskExec('notes_task_report', { note_id: note.id }, 's1'))
+    expect(reason).toMatch(/不是任务/)
+  })
+
+  it('guard 已注册到宿主（与 origin guard 同挂 tools.guard）', async () => {
+    const h = makeHarness()
+    expect(h.guards.length).toBeGreaterThanOrEqual(2)
+    const note = await h.notes.create({ text: 't', laneStatus: 'todo' })
+    const reason = h.guards[1]!(taskExec('notes_task_set_status', { note_id: note.id }, 's1'))
+    expect(reason).toMatch(/无有效执行租约/)
   })
 })
 
