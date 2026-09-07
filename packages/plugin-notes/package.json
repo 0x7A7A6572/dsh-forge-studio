@@ -1,5 +1,5 @@
 {
-  "name": "@forge-studio/dsh-plugin-notes",
+  "name": "@zzerx/dsh-plugin-notes",
   "version": "0.1.0",
   "description": "Forge Studio 便签的 dsh 插件形态：独立便签板 UI（侧栏入口 + 中间列面板，Markdown 编辑器，Typert 直连 host 持久化）",
   "private": true,

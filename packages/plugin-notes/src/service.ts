@@ -15,6 +15,7 @@ import { randomUUID } from 'node:crypto'
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
+import { bridgeWaiting, type NotesAgentBridgeState } from './agent/bridge-state.ts'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type { notesDomain } from './domain.ts'
 import type { TaskLease } from './domain.ts'
@@ -41,12 +42,30 @@ export class NotesService extends TypertRemoteService {
   private readonly table: KvTable<NoteId, NoteRecord>
   private readonly leases: KvTable<NoteId, TaskLease>
   private readonly dispatch: NotesServiceConfig['dispatch']
+  /**
+   * agent 桥装配状态（见 agent/bridge-state.ts）。默认 waiting：tools 服务出现后由
+   * index.ts 的桥装配器推进为 installed/failed；纯 UI 宿主保持 waiting。
+   */
+  private agentBridge: NotesAgentBridgeState = bridgeWaiting()
 
   constructor(ctx: Context, config: NotesServiceConfig) {
     super(ctx, 'notes')
     this.table = config.domain.table('notes')
     this.leases = config.domain.table('leases')
     this.dispatch = config.dispatch
+  }
+
+  /** 当前 agent 桥装配状态快照（同步；client 经 notes/getAgentBridgeState 端点可读）。 */
+  getAgentBridgeState(): NotesAgentBridgeState {
+    return this.agentBridge
+  }
+
+  /**
+   * 仅供 host 侧 agent 桥装配器（index.ts installNotes*WhenReady）推进桥状态。
+   * 不参与 Typert remote（markRemoteMethods 白名单不包含本方法）。
+   */
+  setAgentBridgeState(next: NotesAgentBridgeState): void {
+    this.agentBridge = next
   }
 
   /** 全量便签（未删除），同步读自内存。 */
@@ -327,7 +346,7 @@ function markRemoteMethods(prototype: object, methods: readonly string[]): void 
   })
 }
 
-markRemoteMethods(NotesService.prototype, ['list', 'create', 'update', 'setPinned', 'delete', 'taskExecute', 'taskReset'])
+markRemoteMethods(NotesService.prototype, ['list', 'create', 'update', 'setPinned', 'delete', 'getAgentBridgeState', 'taskExecute', 'taskReset'])
 
 declare module '@deepseek-ai/cordis' {
   interface Context {

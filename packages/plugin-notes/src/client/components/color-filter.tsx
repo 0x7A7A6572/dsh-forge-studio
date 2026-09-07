@@ -9,9 +9,9 @@ import type { NoteColor } from '../../types.ts'
 import { NOTE_COLOR_PALETTE } from '../core/note-colors.ts'
 import { t } from '../core/theme-tokens.ts'
 
-/** 色块 hover/focus 态。 */
+/** 色块 hover/focus 态；ring 选中描边与淡化过渡。 */
 export const FILTER_CSS = `
-.fs-note-filter-chip { transition: transform 100ms ease; }
+.fs-note-filter-chip { transition: transform 120ms ease, box-shadow 160ms ease, opacity 140ms ease; }
 .fs-note-filter-chip:hover:not(:disabled) { transform: scale(1.12); }
 .fs-note-filter-chip:focus-visible { outline: 2px solid var(--dsw-static-deepseek-450); outline-offset: 1px; }
 `

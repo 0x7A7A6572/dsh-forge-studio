@@ -22,12 +22,8 @@ import { TaskLaneCard } from './task-lane-card.tsx'
 import { t } from '../core/theme-tokens.ts'
 import { Plus } from 'lucide-react'
 
-/** 拖拽经过列的高亮与列内滚动条。 */
+/** 拖拽经过列的高亮（内联样式 + transition 实现淡入淡出）与列内滚动条。 */
 export const LANES_CSS = `
-.fs-note-lane[data-dropping='true'] {
-  box-shadow: inset 0 0 0 2px var(--dsw-alias-state-business-primary);
-  background: var(--dsw-alias-interactive-bg-hover);
-}
 .fs-note-lane-cards::-webkit-scrollbar { width: 8px; }
 .fs-note-lane-cards::-webkit-scrollbar-thumb { background: var(--dsw-alias-border-l3); border-radius: 4px; }
 .fs-note-lane-cards::-webkit-scrollbar-track { background: transparent; }
@@ -74,7 +70,14 @@ export function TaskLanes(props: TaskLanesProps): JSX.Element {
             key={lane.status}
             className="fs-note-lane"
             data-dropping={dropping}
-            style={laneStyle}
+            style={{
+              ...laneStyle,
+              // 拖拽高亮淡入淡出（inline，避免被内联 background 覆盖失效）。
+              transition: 'box-shadow 160ms ease, background-color 160ms ease',
+              ...(dropping
+                ? { background: t.hoverBg, boxShadow: 'inset 0 0 0 2px var(--dsw-alias-state-business-primary)' }
+                : {}),
+            }}
             aria-label={`${lane.label}（${count} 张便签）`}
             onDragEnter={(e) => {
               e.preventDefault()

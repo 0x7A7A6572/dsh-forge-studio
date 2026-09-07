@@ -11,17 +11,18 @@ import { NOTE_INK, NOTE_INK_MUTED, noteColorMeta } from '../core/note-colors.ts'
 import { mdSnippet, firstImageUrl } from '../core/markdown-text.ts'
 import { fmtDateTime, fmtRelative } from '../core/time-text.ts'
 import { copyNoteMention } from '../core/note-clipboard.ts'
+import { TaskBadge } from './task-badge.tsx'
 import { Archive, ArchiveRestore, Check, Link2, Pencil, Pin, Trash2, AtSign } from 'lucide-react'
 
 /** 纸卡 hover/焦点态与两行截断（:hover 无法用行内样式表达）。 */
 export const CARD_CSS = `
-.fs-note-card { transition: box-shadow 140ms ease, transform 140ms ease; }
+.fs-note-card { transition: box-shadow 140ms ease, transform 140ms ease; animation: fs-note-in 220ms ease-out backwards; }
 .fs-note-card:hover { box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18); transform: translateY(-1px); }
 .fs-note-card:focus-visible { outline: 2px solid rgba(0, 0, 0, 0.45); outline-offset: 1px; }
 .fs-note-actions { opacity: 0; pointer-events: none; transition: opacity 120ms ease; }
 .fs-note-card:hover .fs-note-actions, .fs-note-card:focus-within .fs-note-actions { opacity: 1; pointer-events: auto; }
 .fs-note-snippet { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.fs-note-card .fs-note-actions button { color: rgba(46, 42, 34, 0.55); }
+.fs-note-card .fs-note-actions button { color: rgba(46, 42, 34, 0.55); transition: background 110ms ease, color 110ms ease; }
 .fs-note-card .fs-note-actions button:hover:not(:disabled) { background: rgba(0, 0, 0, 0.1); color: #2e2a22; }
 .fs-note-card .fs-note-actions button[data-danger]:hover:not(:disabled) { background: rgba(197, 48, 48, 0.18); color: #b3261e; }
 `
@@ -70,6 +71,7 @@ export function NoteCard(props: NoteCardProps): JSX.Element {
           <span style={cardTitle} title={note.title || '（无标题）'}>
             {note.title || <span style={{ color: NOTE_INK_MUTED }}>（无标题）</span>}
           </span>
+          {note.lane && <TaskBadge lane={note.lane} />}
           {note.pinned && !note.archived && <Pin size={14} style={{ flex: 'none', color: meta.ring }} aria-label="已置顶" />}
         </span>
         {thumb && (

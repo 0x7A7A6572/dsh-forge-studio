@@ -9,7 +9,7 @@
 - `pnpm test` — 全 workspace vitest
 
 ## 硬性规则
-- 每个功能一个 `packages/plugin-<name>`，命名 `@forge-studio/dsh-plugin-<name>`。
+- 每个功能一个 `packages/plugin-<name>`，命名 `@zzerx/dsh-plugin-<name>`。
 - 依赖只指向 Service Definition 包；client 对跨插件值一律 type-only import。
 - 数据持久化只用 `ctx.storage`（storage-json），不自造。
 - 任何 `*.log`（调试/安装/构建/测试输出、控制台重定向 `*> x.log 2>&1` 等）一律落盘到 `.research/logs/`，禁止放在仓库根目录或 `packages/` 源码目录里。

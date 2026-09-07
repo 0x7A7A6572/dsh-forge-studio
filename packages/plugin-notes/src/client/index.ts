@@ -1,5 +1,5 @@
 /**
- * @forge-studio/dsh-plugin-notes —— client 入口（browser bundle）。
+ * @zzerx/dsh-plugin-notes —— client 入口（browser bundle）。
  * 独立 UI 设计（不经会话流），显示形式对齐 dsh-task-board：
  * 1. 挂载 Typert 远程命名空间 notes（host NotesService 直连，见 notes-remote.ts）
  * 2. 侧栏 DOM 入口行（新建会话按钮与工作区浏览器之间，见 core/sidebar-entry.ts）
@@ -22,7 +22,7 @@ import { mountNotesSidebarEntry } from './core/sidebar-entry.ts'
 import { mountNotesPanel } from './core/panel-mount.ts'
 import { NotesBoard, type NotesBoardFace } from './views/board-view.tsx'
 
-export const name = '@forge-studio/dsh-plugin-notes/client'
+export const name = '@zzerx/dsh-plugin-notes/client'
 export const inject = ['slots', 'settingsScope', 'remote', 'typert']
 
 export function apply(ctx: Context): void {

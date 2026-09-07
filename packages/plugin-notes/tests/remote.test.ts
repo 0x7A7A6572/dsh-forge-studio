@@ -24,7 +24,7 @@ function parameterNames(fn: (...args: never[]) => unknown): string[] {
 
 describe('notes remote contribution', () => {
   it('贡献包名与命名空间/服务 key 正确', () => {
-    expect(notesRemoteContribution.package).toBe('@forge-studio/dsh-plugin-notes')
+    expect(notesRemoteContribution.package).toBe('@zzerx/dsh-plugin-notes')
     for (const d of notesRemoteContribution.descriptors) {
       expect(d.namespace).toBe('notes')
       expect(d.service).toBe('notes')
@@ -33,9 +33,9 @@ describe('notes remote contribution', () => {
     }
   })
 
-  it('覆盖 host 的七个公开方法端点', () => {
+  it('覆盖 host 的八个公开方法端点（含只读桥状态）', () => {
     const methods = notesRemoteContribution.descriptors.map((d) => d.method).sort()
-    expect(methods).toEqual(['create', 'delete', 'list', 'setPinned', 'taskExecute', 'taskReset', 'update'])
+    expect(methods).toEqual(['create', 'delete', 'getAgentBridgeState', 'list', 'setPinned', 'taskExecute', 'taskReset', 'update'])
     const ids = notesRemoteContribution.descriptors.map((d) => d.id)
     expect(new Set(ids).size).toBe(ids.length)
   })
@@ -43,7 +43,7 @@ describe('notes remote contribution', () => {
   it('host 服务已挂 Typert SRC 标记（remoteMethods 可发现）', () => {
     // 不跑构造函数（避免触碰 domain/table），仅验证原型上的 marker。
     const markers = remoteMethods(Object.create(NotesService.prototype)).map((m) => m.method)
-    expect(markers.sort()).toEqual(['create', 'delete', 'list', 'setPinned', 'taskExecute', 'taskReset', 'update'])
+    expect(markers.sort()).toEqual(['create', 'delete', 'getAgentBridgeState', 'list', 'setPinned', 'taskExecute', 'taskReset', 'update'])
   })
 
   it('taskExecute/taskReset 形参 wire 名 = id/sessionId', () => {
@@ -84,10 +84,11 @@ describe('notes remote contribution', () => {
     new TypertRegistry(ctx) // provides ctx.typert
     const dispose = await ctx.typert.remotes.register(notesRemoteContribution)
     const list = ctx.typert.remotes.list()
-    expect(list.length).toBe(7)
+    expect(list.length).toBe(8)
     expect(list.map((d) => `${d.namespace}/${d.method}`).sort()).toEqual([
       'notes/create',
       'notes/delete',
+      'notes/getAgentBridgeState',
       'notes/list',
       'notes/setPinned',
       'notes/taskExecute',

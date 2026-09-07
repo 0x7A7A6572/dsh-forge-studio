@@ -1,4 +1,4 @@
-# @forge-studio/dsh-plugin-home-studio
+# @zzerx/dsh-plugin-home-studio
 
 Forge Studio 主面板的 dsh 插件形态 —— **骨架占位**，UI 待填充。
 
@@ -10,11 +10,11 @@ Forge Studio 主面板的 dsh 插件形态 —— **骨架占位**，UI 待填�
 
 ## 启用进 web profile（骨架阶段勿启用）
 
-把 `@forge-studio/dsh-plugin-home-studio` 加进 `.dsh-home/profiles/web/package.json`
+把 `@zzerx/dsh-plugin-home-studio` 加进 `.dsh-home/profiles/web/package.json`
 的 `dsh.profile.bundles` 列表后执行：
 
 ```bash
-pnpm --filter @forge-studio/dsh-plugin-home-studio build
+pnpm --filter @zzerx/dsh-plugin-home-studio build
 pnpm install   # 更新 profile 锁文件
 pnpm dev
 ```
@@ -22,10 +22,10 @@ pnpm dev
 ## 开发
 
 ```bash
-pnpm --filter @forge-studio/dsh-plugin-home-studio typecheck   # tsc --noEmit
-pnpm --filter @forge-studio/dsh-plugin-home-studio test        # vitest
-pnpm --filter @forge-studio/dsh-plugin-home-studio build       # lib/index.js + lib/client.js + lib/types
+pnpm --filter @zzerx/dsh-plugin-home-studio typecheck   # tsc --noEmit
+pnpm --filter @zzerx/dsh-plugin-home-studio test        # vitest
+pnpm --filter @zzerx/dsh-plugin-home-studio build       # lib/index.js + lib/client.js + lib/types
 ```
 
-范式参照 `@forge-studio/dsh-plugin-notes`：host 侧 storage-domain 数据后端 +
+范式参照 `@zzerx/dsh-plugin-notes`：host 侧 storage-domain 数据后端 +
 Typert remote 直连 client UI；依赖只指向 Service Definition 包。

@@ -1,6 +1,6 @@
-# The @forge-studio/dsh-plugin-notes bundle patch: one insert over the base/web
+# The @zzerx/dsh-plugin-notes bundle patch: one insert over the base/web
 # layers. `storageDomain` / `storage` / `tools` / `commands` / `settings` come
 # from the dsh-base layer; this row only mounts the notes feature plugin.
 - insert:
     - id: notes
-      name: '@forge-studio/dsh-plugin-notes'
+      name: '@zzerx/dsh-plugin-notes'

@@ -11,7 +11,7 @@ export interface EmptyStateProps {
 
 export function EmptyState(props: EmptyStateProps): JSX.Element {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, padding: '48px 0', color: t.labelTertiary }}>
+    <div className="fs-note-empty" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, padding: '48px 0', color: t.labelTertiary }}>
       <FileText size={38} style={{ opacity: 0.55 }} />
       <span style={{ color: t.labelSecondary, fontSize: 14, fontWeight: 500 }}>还没有便签</span>
       <span style={{ color: t.labelCaption, fontSize: 13, textAlign: 'center', maxWidth: 380 }}>

@@ -31,7 +31,7 @@ import type {
   TaskStatus,
 } from '../../types.ts'
 
-export const NOTES_REMOTE_PACKAGE = '@forge-studio/dsh-plugin-notes'
+export const NOTES_REMOTE_PACKAGE = '@zzerx/dsh-plugin-notes'
 const SERVICE = 'notes'
 const NAMESPACE = 'notes'
 
@@ -41,6 +41,17 @@ const NAMESPACE = 'notes'
  * 时须同步此处。
  */
 const TASK_STATUSES = ['backlog', 'todo', 'running', 'done', 'failed'] as const
+
+/**
+ * host 侧 agent 桥装配状态镜像（手写以避免 import host 的 agent 模块）。
+ * 与 src/agent/bridge-state.ts 的 NotesAgentBridgeState 形状保持一致；改动需同步。
+ * waiting：tools 服务未就绪（纯 UI 宿主）；installed：notes_* 工具已注册；
+ * failed：注册失败（reason 人类可读），此时会话侧无 notes_* 工具、引用提示未挂载。
+ */
+export type ClientNotesAgentBridgeState =
+  | { readonly status: 'waiting' }
+  | { readonly status: 'installed'; readonly at: number }
+  | { readonly status: 'failed'; readonly at: number; readonly reason: string }
 
 /* ---------- 手写 strict codec（无需 zod；只做形状校验） ---------- */
 
@@ -194,6 +205,7 @@ export const notesRemoteContribution: TypertRemoteContribution = {
   package: NOTES_REMOTE_PACKAGE,
   descriptors: [
     descriptor('list', []),
+    descriptor('getAgentBridgeState', []),
     descriptor('create', [
       { name: 'input', wire: 'input', source: 'json', codec: strict('NoteCreateInput', createInputSchema) },
     ]),
@@ -223,6 +235,7 @@ export const notesRemoteContribution: TypertRemoteContribution = {
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteMap {
     'notes/list': () => Promise<RemoteResult<readonly NoteRecord[]>>
+    'notes/getAgentBridgeState': () => Promise<RemoteResult<ClientNotesAgentBridgeState>>
     'notes/create': (input: NoteCreateInput) => Promise<RemoteResult<NoteRecord>>
     'notes/update': (id: NoteId, patch: NoteUpdateInput) => Promise<RemoteResult<NoteRecord | undefined>>
     'notes/setPinned': (id: NoteId, pinned: boolean) => Promise<RemoteResult<NoteRecord | undefined>>
@@ -238,6 +251,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
 /** 供 UI 使用的窄接口（与增广的 ctx.remote.notes 形状一致）。 */
 export interface NotesRemote {
   list(): Promise<RemoteResult<readonly NoteRecord[]>>
+  getAgentBridgeState(): Promise<RemoteResult<ClientNotesAgentBridgeState>>
   create(input: NoteCreateInput): Promise<RemoteResult<NoteRecord>>
   update(id: NoteId, patch: NoteUpdateInput): Promise<RemoteResult<NoteRecord | undefined>>
   setPinned(id: NoteId, pinned: boolean): Promise<RemoteResult<NoteRecord | undefined>>

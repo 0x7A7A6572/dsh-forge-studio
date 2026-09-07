@@ -1,7 +1,7 @@
 /**
  * plugin-notes 源码 watch：监听 src/** 变化，自动重新构建。
  *
- * 用法：pnpm --filter @forge-studio/dsh-plugin-notes run watch   （Ctrl+C 停止）
+ * 用法：pnpm --filter @zzerx/dsh-plugin-notes run watch   （Ctrl+C 停止）
  *
  * 开发循环：改 src → 存盘 → 本脚本自动 build（约 1s）→ 浏览器 Ctrl+F5 强刷。
  * 3180/3080 的 web app 每次请求都动态读取最新的 lib/client.js，故无需重启服务；

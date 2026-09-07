@@ -8,13 +8,14 @@
 import { Archive, ChevronRight } from 'lucide-react'
 import { t } from '../core/theme-tokens.ts'
 
-/** 标题行 hover/箭头旋转。 */
+/** 标题行 hover/箭头旋转；展开内容淡入（fs-note-in 由 board-main 的 MOTION_CSS 注入）。 */
 export const ARCHIVED_CSS = `
 .fs-note-archived-toggle { transition: background 120ms ease; }
 .fs-note-archived-toggle:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .fs-note-archived-toggle:hover .fs-note-archived-chevron { transform: rotate(90deg); }
 .fs-note-archived-chevron { transition: transform 140ms ease; }
 .fs-note-archived-open .fs-note-archived-chevron { transform: rotate(90deg); }
+.fs-note-archived-body { animation: fs-note-in 220ms ease-out backwards; }
 `
 
 export interface ArchivedSectionProps {
@@ -42,7 +43,7 @@ export function ArchivedSection(props: ArchivedSectionProps): JSX.Element {
         <span style={{ flex: 1, textAlign: 'left', minWidth: 0 }}>已归档（{props.count}）</span>
         <ChevronRight size={14} className="fs-note-archived-chevron" style={{ flex: 'none', color: t.labelTertiary }} />
       </button>
-      {props.open && <div style={contentStyle}>{props.renderContent()}</div>}
+      {props.open && <div className="fs-note-archived-body" style={contentStyle}>{props.renderContent()}</div>}
     </section>
   )
 }

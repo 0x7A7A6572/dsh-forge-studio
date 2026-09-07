@@ -73,8 +73,36 @@ export interface BoardMainProps {
   readonly onCreateTask: (status: TaskStatus) => void;
 }
 
+/** 动效基础层：入场 keyframes、工具栏按压、搜索聚焦与 reduced-motion 降级。
+ *  fs-note-in 被纸卡/行/泳道卡/归档展开/空状态共同引用（同注入一次 <style>）。 */
+const MOTION_CSS = `
+@keyframes fs-note-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+/* 任务徽章 running 呼吸点（task-badge.tsx 引用，纸卡/行/泳道共用一次注入）。 */
+@keyframes fs-task-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+.fs-task-live-dot { animation: fs-task-pulse 1.3s ease-in-out infinite; }
+.fs-note-tool { transition: background 130ms ease, color 130ms ease, transform 90ms ease; }
+.fs-note-tool:active:not(:disabled) { transform: scale(0.95); }
+.fs-note-search-row { transition: border-color 160ms ease, box-shadow 160ms ease; }
+.fs-note-search-row:focus-within { border-color: var(--dsw-static-deepseek-450); box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-static-deepseek-450) 18%, transparent); }
+.fs-note-search-clear { animation: fs-note-in 160ms ease-out backwards; }
+.fs-note-empty { animation: fs-note-in 240ms ease-out backwards; }
+@media (prefers-reduced-motion: reduce) {
+  .fs-note-card, .fs-note-row, .fs-lane-card, .fs-note-archived-body,
+  .fs-note-search-clear, .fs-note-empty, .fs-note-archived-toggle,
+  .fs-note-archived-chevron, .fs-note-filter-chip, .fs-note-tool,
+  .fs-note-search-row, .fs-note-lane, .fs-task-live-dot { animation: none !important; transition: none !important; }
+  .fs-lane-card.fs-lane-running::after { animation: none !important; opacity: 0 !important; }
+}
+`;
+
 /** board-main 覆盖的所有类选择器样式（统一注入一次）。 */
-const BOARD_CSS = `${CARD_CSS}${ROW_CSS}${FILTER_CSS}${ARCHIVED_CSS}${LANE_CARD_CSS}${LANES_CSS}`;
+const BOARD_CSS = `${MOTION_CSS}${CARD_CSS}${ROW_CSS}${FILTER_CSS}${ARCHIVED_CSS}${LANE_CARD_CSS}${LANES_CSS}`;
 
 export function BoardMain(props: BoardMainProps): JSX.Element {
   const view = useSyncExternalStore(
@@ -154,7 +182,7 @@ export function BoardMain(props: BoardMainProps): JSX.Element {
 
       <div style={toolbarStyle}>
         {!noNotes && (
-          <div style={searchRowStyle}>
+          <div className="fs-note-search-row" style={searchRowStyle}>
             <Search
               size={14}
               style={{ flex: "none", color: t.labelTertiary }}
@@ -171,6 +199,7 @@ export function BoardMain(props: BoardMainProps): JSX.Element {
                 type="button"
                 title="清除搜索"
                 aria-label="清除搜索"
+                className="fs-note-search-clear"
                 style={clearBtn}
                 onClick={() => boardStore.setQuery("")}
               >
@@ -195,6 +224,7 @@ export function BoardMain(props: BoardMainProps): JSX.Element {
             title="纸卡墙"
             aria-label="纸卡墙"
             aria-pressed={view === "grid"}
+            className="fs-note-tool"
             style={viewBtn(view === "grid")}
             onClick={() => boardStore.setView("grid")}
           >
@@ -205,6 +235,7 @@ export function BoardMain(props: BoardMainProps): JSX.Element {
             title="任务泳道"
             aria-label="任务泳道"
             aria-pressed={view === "lanes"}
+            className="fs-note-tool"
             style={viewBtn(view === "lanes")}
             onClick={() => boardStore.setView("lanes")}
           >
@@ -215,6 +246,7 @@ export function BoardMain(props: BoardMainProps): JSX.Element {
             title="行式列表"
             aria-label="行式列表"
             aria-pressed={view === "list"}
+            className="fs-note-tool"
             style={viewBtn(view === "list")}
             onClick={() => boardStore.setView("list")}
           >
@@ -223,6 +255,7 @@ export function BoardMain(props: BoardMainProps): JSX.Element {
         </div>
         <button
           type="button"
+          className="fs-note-tool"
           style={{ ...btnPrimary, ...(props.busy ? disabledStyle : {}) }}
           disabled={props.busy}
           onClick={props.onCreate}

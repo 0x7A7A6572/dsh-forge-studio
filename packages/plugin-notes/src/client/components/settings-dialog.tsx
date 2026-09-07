@@ -50,8 +50,8 @@ export function NotesSettingsDialog(props: NotesSettingsDialogProps): JSX.Elemen
   }
 
   return (
-    <div style={overlayStyle} onClick={props.onClose}>
-      <div style={cardStyle} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="便签板设置">
+    <div className="fs-note-overlay" style={overlayStyle} onClick={props.onClose}>
+      <div className="fs-note-dialog" style={cardStyle} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="便签板设置">
         <header style={headerStyle}>
           <span style={{ fontWeight: 600, fontSize: 14, color: t.labelPrimary }}>便签板设置</span>
           <button type="button" title="关闭" aria-label="关闭" onClick={props.onClose} style={iconBtn}>

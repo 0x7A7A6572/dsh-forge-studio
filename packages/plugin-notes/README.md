@@ -1,4 +1,4 @@
-# @forge-studio/dsh-plugin-notes
+# @zzerx/dsh-plugin-notes
 
 Forge Studio 便签 的 dsh 插件形态：**独立便签板 UI**（侧栏入口 + 中间列面板，
 显示形式对齐 dsh-task-board），host 侧作为数据后端（storage-domain）与设置源，
@@ -99,15 +99,15 @@ Forge Studio 便签 的 dsh 插件形态：**独立便签板 UI**（侧栏入口
 ## 开发
 
 ```bash
-pnpm --filter @forge-studio/dsh-plugin-notes typecheck   # tsc --noEmit
-pnpm --filter @forge-studio/dsh-plugin-notes test        # vitest
-pnpm --filter @forge-studio/dsh-plugin-notes build       # lib/index.js + lib/client.js + lib/types
+pnpm --filter @zzerx/dsh-plugin-notes typecheck   # tsc --noEmit
+pnpm --filter @zzerx/dsh-plugin-notes test        # vitest
+pnpm --filter @zzerx/dsh-plugin-notes build       # lib/index.js + lib/client.js + lib/types
 ```
 
 ## 安装进 web profile
 
 ```bash
-pnpm --filter @forge-studio/dsh-plugin-notes build
+pnpm --filter @zzerx/dsh-plugin-notes build
 pnpm dsh -- plugin --profile web add "D:/codes/dsh-desk-studio/packages/plugin-notes"
 pnpm dev
 ```

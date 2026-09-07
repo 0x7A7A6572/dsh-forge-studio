@@ -19,8 +19,9 @@ export interface NotesHelpDialogProps {
 
 export function NotesHelpDialog(props: NotesHelpDialogProps): JSX.Element {
   return (
-    <div style={overlayStyle} onClick={props.onClose}>
+    <div className="fs-note-overlay" style={overlayStyle} onClick={props.onClose}>
       <div
+        className="fs-note-dialog"
         style={cardStyle}
         onClick={(e) => e.stopPropagation()}
         role="dialog"

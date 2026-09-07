@@ -31,7 +31,7 @@ import {
 
 /** 泳道卡 hover/焦点/拖拽态、running 强调、单行摘要截断与 spinner。 */
 export const LANE_CARD_CSS = `
-.fs-lane-card { transition: box-shadow 140ms ease, transform 140ms ease; }
+.fs-lane-card { transition: box-shadow 140ms ease, transform 140ms ease, opacity 150ms ease; animation: fs-note-in 200ms ease-out backwards; }
 .fs-lane-card:hover { box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16); transform: translateY(-1px); }
 .fs-lane-card:focus-visible { outline: 2px solid rgba(0, 0, 0, 0.45); outline-offset: 1px; }
 .fs-lane-card[draggable='true'] { cursor: grab; }
@@ -40,11 +40,41 @@ export const LANE_CARD_CSS = `
 .fs-lane-card:hover .fs-lane-actions, .fs-lane-card:focus-within .fs-lane-actions { opacity: 1; pointer-events: auto; }
 .fs-lane-snippet { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .fs-lane-summary { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
-.fs-lane-card .fs-lane-actions button { color: rgba(46, 42, 34, 0.55); }
+.fs-lane-card .fs-lane-actions button { color: rgba(46, 42, 34, 0.55); transition: background 110ms ease, color 110ms ease; }
 .fs-lane-card .fs-lane-actions button:hover:not(:disabled) { background: rgba(0, 0, 0, 0.1); color: #2e2a22; }
 .fs-lane-card .fs-lane-actions button[data-danger]:hover:not(:disabled) { background: rgba(197, 48, 48, 0.18); color: #b3261e; }
 @keyframes fs-lane-spin { to { transform: rotate(360deg); } }
 .fs-lane-spinner { border: 2px solid rgba(0, 0, 0, 0.12); border-top-color: rgba(46, 42, 34, 0.55); border-radius: 50%; animation: fs-lane-spin 0.8s linear infinite; }
+/* running 斜向扫光（光栅扫描）：一道柔光带以约 -18° 倾角从卡片左外斜穿到右外
+   （替代原蓝色 inset 状态边框，见组件 JSX —— running 卡不再加
+   var(--dsw-alias-state-business-primary) 描边）。
+   形态要点：整卡 overflow hidden 收圆角；带子做 skewX 倾斜 + 上下各超伸 30%，
+   保证过卡全程覆盖；渐变两端大段透明、峰值柔化（避免硬边「突兀」）；起止点都在
+   卡片可视区外，循环无闪跳。::after 盖在内容上但 pointer-events 放行交互。 */
+@keyframes fs-lane-diag {
+  0% { transform: translateX(-300%) skewX(-18deg); }
+  100% { transform: translateX(300%) skewX(-18deg); }
+}
+.fs-lane-card.fs-lane-running { position: relative; overflow: hidden; }
+.fs-lane-card.fs-lane-running::after {
+  content: "";
+  position: absolute;
+  top: -30%;
+  bottom: -30%;
+  left: 0;
+  width: 46%;
+  pointer-events: none;
+  background: linear-gradient(
+    to right,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.14) 24%,
+    rgba(255, 255, 255, 0.52) 50%,
+    rgba(255, 255, 255, 0.14) 76%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  animation: fs-lane-diag 2.6s cubic-bezier(0.33, 0, 0.67, 1) infinite;
+  will-change: transform;
+}
 `
 
 /** 超过该耗时（30min）running 卡弱提示「执行可能已中断」。 */
@@ -118,9 +148,7 @@ export function TaskLaneCard(props: TaskLaneCardProps): JSX.Element {
           ...cardStyle,
           background: meta.paper,
           opacity: dragging ? 0.45 : 1,
-          ...(running
-            ? { boxShadow: 'inset 0 0 0 2px var(--dsw-alias-state-business-primary), 0 1px 5px rgba(0, 0, 0, 0.07)' }
-            : {}),
+          ...(running ? { boxShadow: '0 2px 8px rgba(0, 0, 0, 0.12)' } : {}),
         }}
       >
         <span style={cardTitleRow}>

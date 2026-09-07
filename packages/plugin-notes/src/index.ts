@@ -1,5 +1,5 @@
 /**
- * @forge-studio/dsh-plugin-notes —— host 入口。
+ * @zzerx/dsh-plugin-notes —— host 入口。
  * 打开 notes 域（storage-domain）→ 提供 ctx.notes 服务（client UI 经 Typert
  * remote 直连）→ 注册设置命名空间 → 挂载 agent 桥（便签工具 + 引用引导）。
  *
@@ -28,8 +28,9 @@ import { installNotesSettings } from './settings.ts'
 import { installNotesReferencePrompt } from './agent/reference.ts'
 import { installNotesTools } from './agent/tools.ts'
 import { installTaskDispatch } from './agent/task-dispatch.ts'
+import { bridgeErrorMessage, bridgeFailed, bridgeInstalled, type NotesAgentBridgeSettled, type NotesAgentBridgeState } from './agent/bridge-state.ts'
 
-export const name = '@forge-studio/dsh-plugin-notes'
+export const name = '@zzerx/dsh-plugin-notes'
 export const inject = ['storageDomain']
 
 export function apply(ctx: Context) {
@@ -46,8 +47,7 @@ export function apply(ctx: Context) {
       // agent 桥是可选增强：tools/systemPrompt 服务注册后（或已注册）挂载。
       // 它绝不能把核心的 NotesService 一起拖垮——任何一步抛错都只降级桥本身，
       // 服务照常注册。
-      installNotesToolsWhenReady(ctx)
-      installNotesReferencePromptWhenReady(ctx)
+      installNotesAgentBridgeWhenReady(ctx)
     } catch (error) {
       void domain.close()
       throw error
@@ -70,29 +70,82 @@ export function installTaskDispatchSafely(ctx: Context): NotesServiceConfig['dis
 }
 
 /**
- * 在 tools 服务可用后注册 notes_* 工具。
+ * agent 桥装配状态写入 ctx.notes（缺省安全：宿主无 NotesService 时跳过，仅日志）。
+ */
+function recordBridgeState(ctx: Context, state: NotesAgentBridgeState): void {
+  if (ctx.notes?.setAgentBridgeState !== undefined) {
+    try {
+      ctx.notes.setAgentBridgeState(state)
+    } catch (error) {
+      ctx.logger.warn('[plugin-notes] bridge state write failed:', error)
+    }
+  }
+}
+
+/**
+ * 在 tools 服务可用后注册 notes_* 工具，并把结果推入桥状态。
  * 用 ctx.inject 而非 ctx.get 判存：tools 行与插件行的激活次序由服务可用性驱动
  * （base 装配注释：row order 不承载加载语义），插件先于 tools 就绪时一次性判存
  * 会永久漏挂。ctx.inject 在服务注册时被 cordis notify 唤醒，任何到达次序都能
- * 挂上；宿主从不提供 tools 时 fiber 挂起、随 ctx 卸载清理，不阻塞也不报错。
+ * 挂上；宿主从不提供 tools 时返回的 promise 永不收束（fiber 挂起、随 ctx 卸载
+ * 清理），reference 门控随之保持不挂——纯 UI 宿主本就不该出现引用提示。
+ *
+ * 返回收束态：installed（8 个工具注册完成）或 failed（含人类可读原因）。
+ * failed 以 logger.error 级别告警（旧实现仅 warn，会话侧无任何可见信号），并
+ * 记录进 ctx.notes.agentBridge——host 可查、经 notes/getAgentBridgeState 端点
+ * 透出给 client（后续 UI 渲染点）。
  */
-export function installNotesToolsWhenReady(ctx: Context): void {
-  void ctx.inject(['tools'], (toolsCtx) => {
-    try {
-      installNotesTools(toolsCtx)
-    } catch (error) {
-      toolsCtx.logger.warn('[plugin-notes] agent tools disabled:', error)
-    }
+export function installNotesToolsWhenReady(ctx: Context): Promise<NotesAgentBridgeSettled> {
+  return new Promise((resolve) => {
+    void ctx.inject(['tools'], (toolsCtx) => {
+      try {
+        installNotesTools(toolsCtx)
+        const settled = bridgeInstalled()
+        recordBridgeState(toolsCtx, settled)
+        resolve(settled)
+      } catch (error) {
+        const settled = bridgeFailed(bridgeErrorMessage(error))
+        toolsCtx.logger.error('[plugin-notes] agent tools install failed — notes_* unavailable to sessions:', error)
+        recordBridgeState(toolsCtx, settled)
+        resolve(settled)
+      }
+    })
   })
 }
 
-/** systemPrompt 可用后注册 note:// mention 的引用引导（策略同上）。 */
-export function installNotesReferencePromptWhenReady(ctx: Context): void {
+/**
+ * systemPrompt 可用后挂载 note:// mention 的引用引导——但只在 tools 注册成功
+ * （桥收束为 installed）之后。tools 失败时不再挂载：agent 不应被告知“存在
+ * notes_* 工具”却调不到（unknown tool 会让泳道任务执行协议全线失败），宁可让
+ * 会话不知道 notes_* 存在；失败原因由桥状态 + error 日志暴露。
+ */
+export function installNotesReferencePromptWhenReady(
+  ctx: Context,
+  toolsInstall: Promise<NotesAgentBridgeSettled>,
+): void {
   void ctx.inject(['systemPrompt'], (promptCtx) => {
-    try {
-      installNotesReferencePrompt(promptCtx)
-    } catch (error) {
-      promptCtx.logger.warn('[plugin-notes] reference prompt disabled:', error)
-    }
+    // 不用 await 悬住 inject fiber：tools 永不收束（纯 UI 宿主）时，fiber 若停在
+    // await 上会阻塞 ctx.fiber.dispose()（测试里 dispose 即挂死）。改在收束后
+    // 由 .then 决定挂载：tools 失败 → 跳过（警告一次）；成功 → 立即挂引用分区。
+    toolsInstall.then((settled) => {
+      if (settled.status !== 'installed') {
+        promptCtx.logger.warn('[plugin-notes] reference hint skipped (agent tools unavailable):', settled.reason)
+        return
+      }
+      try {
+        installNotesReferencePrompt(promptCtx)
+      } catch (error) {
+        promptCtx.logger.warn('[plugin-notes] reference prompt disabled:', error)
+      }
+    })
   })
+}
+
+/**
+ * agent 桥整体装配（apply 与测试共用）：先注册工具并推桥状态，成功后才挂
+ * 引用提示——顺序保证“提示可用 ⇒ 工具必可用”，reference 不再领先于 tools。
+ */
+export function installNotesAgentBridgeWhenReady(ctx: Context): void {
+  const toolsInstall = installNotesToolsWhenReady(ctx)
+  installNotesReferencePromptWhenReady(ctx, toolsInstall)
 }

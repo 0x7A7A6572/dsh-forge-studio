@@ -74,12 +74,22 @@ function executeError(reason: 'missing' | 'busy' | 'no-dispatch' | 'dispatch-fai
   }
 }
 
-/** 头部按钮 hover 与加载 spinner。 */
+/** 头部按钮 hover/按压过渡、加载 spinner 与弹窗入场动效。 */
 const FRAME_CSS = `
+.fs-note-header-btn { transition: background 130ms ease, color 130ms ease, transform 90ms ease; }
+.fs-note-header-btn:active:not(:disabled) { transform: scale(0.94); }
 .fs-note-header-btn:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.fs-note-back-btn { transition: background 130ms ease, color 130ms ease; }
 .fs-note-back-btn:hover { display: flex; algin-items: center; background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
 @keyframes fs-note-spin { to { transform: rotate(360deg); } }
 .fs-note-spinner { border: 2px solid var(--dsw-alias-border-l2); border-top-color: var(--dsw-alias-label-tertiary); border-radius: 50%; animation: fs-note-spin 0.8s linear infinite; }
+@keyframes fs-note-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fs-note-pop { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+.fs-note-overlay { animation: fs-note-fade 160ms ease-out backwards; }
+.fs-note-dialog { animation: fs-note-pop 200ms cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+@media (prefers-reduced-motion: reduce) {
+  .fs-note-header-btn, .fs-note-back-btn, .fs-note-overlay, .fs-note-dialog { animation: none !important; transition: none !important; }
+}
 `;
 
 export function NotesBoard(props: NotesBoardProps): JSX.Element {

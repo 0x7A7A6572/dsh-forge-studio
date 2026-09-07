@@ -16,7 +16,12 @@ import type { Editor } from "@tiptap/core";
 import type { MarkdownStorage } from "tiptap-markdown";
 import { DEFAULT_NOTE_COLOR } from "../../types.ts";
 import type { NoteColor, NoteLane, TaskStatus } from "../../types.ts";
-import { NOTE_COLOR_PALETTE } from "../core/note-colors.ts";
+import {
+  NOTE_COLOR_PALETTE,
+  NOTE_INK,
+  NOTE_INK_MUTED,
+  noteColorMeta,
+} from "../core/note-colors.ts";
 import { TASK_LANES, isRunOpen, laneLabel } from "../core/task-lanes.ts";
 import { fmtDateTime } from "../core/time-text.ts";
 import { fileToDataUrl, pickImageFiles } from "../core/paste-image.ts";
@@ -49,6 +54,7 @@ import {
   Table2,
   Trash2,
   Undo2,
+  X,
 } from "lucide-react";
 
 // 图片扩展定义挪至共享层 core/note-richtext.ts，此处仅再导出保持兼容。
@@ -70,6 +76,11 @@ export interface NoteEditorProps {
    * 开关开 + 该状态；不渲染只读结果区（新建无既有 run）。编辑态恒 undefined。
    */
   readonly initialLaneStatus?: TaskStatus;
+  /**
+   * 纸色切换回调：弹窗整卡背景随所选纸色实时变化（新建/编辑的初值分别由
+   * initialColor / 宿主传入，切换发生在底部取色器）。
+   */
+  readonly onColorChange?: (color: NoteColor) => void;
   /** 标题留空时使用的默认标题（来自设置）。 */
   readonly defaultTitle: string;
   readonly onCancel: () => void;
@@ -148,7 +159,42 @@ export const EDITOR_CSS = `
 .fs-note-lang-select { max-width: 150px; height: 28px; padding: 0 6px; font-size: 12.5px; color: var(--dsw-alias-label-secondary); background: transparent; border: 1px solid var(--dsw-alias-border-l2); border-radius: 7px; outline: none; cursor: pointer; }
 .fs-note-lang-select:focus { border-color: var(--dsw-static-deepseek-450); }
 .fs-note-lang-select:disabled { opacity: 0.35; cursor: default; }
+
+/* ---------- 弹窗纸态覆盖（.fs-note-editor--paper） ----------
+   编辑器所在弹窗整卡是浅 pastel 便签纸（纸色实时随取色器变化），正文与控件统一
+   转 NOTE_INK 墨迹族（明暗自适应无效，纸底恒浅）；只读预览（.fs-note-preview）
+   不带该修饰类，仍走宿主令牌自适应。弹层（链接/表格）是悬浮控件，保持主题表面。 */
+.fs-note-editor--paper { color: #2E2A22; }
+.fs-note-editor--paper .ProseMirror { color: #2E2A22; caret-color: rgba(46, 42, 34, 0.8); }
+.fs-note-editor--paper .ProseMirror blockquote { border-left-color: rgba(46, 42, 34, 0.32); color: rgba(46, 42, 34, 0.6); }
+.fs-note-editor--paper .ProseMirror code { background: rgba(46, 42, 34, 0.1); color: #2E2A22; }
+.fs-note-editor--paper .ProseMirror pre { background: rgba(46, 42, 34, 0.07); border-color: rgba(46, 42, 34, 0.14); color: #2E2A22; }
+.fs-note-editor--paper .ProseMirror pre code { background: none; color: #2E2A22; }
+.fs-note-editor--paper .ProseMirror hr { border-top-color: rgba(46, 42, 34, 0.22); }
+.fs-note-editor--paper .ProseMirror a { color: #1458a0; }
+.fs-note-editor--paper .ProseMirror a:hover { color: #0d3f75; }
+.fs-note-editor--paper .ProseMirror th, .fs-note-editor--paper .ProseMirror td { border-color: rgba(46, 42, 34, 0.26); }
+.fs-note-editor--paper .ProseMirror th { background: rgba(46, 42, 34, 0.06); }
+.fs-note-editor--paper input::placeholder { color: rgba(46, 42, 34, 0.45); }
+.fs-note-editor--paper input:focus { border-color: rgba(46, 42, 34, 0.5); }
+/* 便签标题（header 直写）：无边框输入，聚焦仅淡墨染底，保持「写在纸上」观感。 */
+.fs-note-editor--paper .fs-note-title { border-radius: 7px; }
+.fs-note-editor--paper .fs-note-title:hover { background: rgba(46, 42, 34, 0.045); }
+.fs-note-editor--paper .fs-note-title:focus { background: rgba(46, 42, 34, 0.08); outline: none; }
+.fs-note-editor--paper .fs-note-tool { color: rgba(46, 42, 34, 0.75); }
+.fs-note-editor--paper .fs-note-tool:hover:not(:disabled) { background: rgba(46, 42, 34, 0.09); color: #2E2A22; }
+.fs-note-editor--paper .fs-note-color:focus-visible { outline: 2px solid rgba(46, 42, 34, 0.55); }
+.fs-note-editor--paper .fs-note-btn-primary:hover:not(:disabled) { background: #100e08; }
+.fs-note-editor--paper .fs-note-lang-select { color: rgba(46, 42, 34, 0.85); border: none; background: rgba(46, 42, 34, 0.06); }
 `;
+
+/**
+ * 弹窗纸态墨迹常量：编辑器所在弹窗整卡是固定浅 pastel 纸底（纸色由
+ * editor-page-dialog 按当前颜色提供），明暗主题无关 —— 文字/边框一律用
+ * NOTE_INK 墨迹族（与纸卡/行同款深字对比），不再取宿主 --dsw-* 令牌。
+ */
+const PAPER_DEEP_TINT = "rgba(46, 42, 34, 0.06)";
+const PAPER_SOFT_FILL = "rgba(46, 42, 34, 0.1)";
 
 type FormatState = {
   bold: boolean;
@@ -283,6 +329,8 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
   const [color, setColor] = useState<NoteColor>(
     props.initialColor ?? DEFAULT_NOTE_COLOR,
   );
+  /** 当前纸色元信息（取色器高亮 / 强调色跟随纸色）。 */
+  const colorMeta = noteColorMeta(color);
   /** 「设为任务」开关：既有任务（initialLane）或列头新建预填（initialLaneStatus）即开。 */
   const [taskOn, setTaskOn] = useState(
     props.initialLane !== undefined || props.initialLaneStatus !== undefined,
@@ -513,7 +561,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
 
   return (
     <div
-      className="fs-note-editor"
+      className="fs-note-editor fs-note-editor--paper"
       style={{ display: "flex", flexDirection: "column", gap: 10 }}
       onKeyDown={(e) => {
         if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
@@ -538,14 +586,28 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
     >
       <style>{EDITOR_CSS}</style>
 
-      <input
-        autoFocus={!props.initialBody.trim()}
-        placeholder="标题（留空使用默认标题）"
-        value={title}
-        disabled={saving}
-        onChange={(e) => setTitle(e.target.value)}
-        style={titleStyle}
-      />
+      {/* 头部行：便签标题直接放在 header（可编辑），省去单独的「新建便签」标题行 */}
+      <div style={headRowStyle}>
+        <input
+          className="fs-note-title"
+          autoFocus={!props.initialBody.trim()}
+          placeholder={props.initialTitle.trim() ? undefined : "标题（留空使用默认标题）"}
+          value={title}
+          disabled={saving}
+          onChange={(e) => setTitle(e.target.value)}
+          aria-label="便签标题"
+          style={headTitleStyle}
+        />
+        <button
+          type="button"
+          title="关闭编辑器"
+          aria-label="关闭编辑器"
+          onClick={props.onCancel}
+          style={headCloseBtn}
+        >
+          <X size={15} />
+        </button>
+      </div>
 
       <div
         style={{
@@ -872,43 +934,86 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
         <EditorContent editor={editor} />
       </div>
 
-      {/* 只读「任务与结果」区（编辑已有任务，spec M4）：正文下方渲染当前状态 + run
-          执行结果全文；新建态无此区。读的是 initialLane（本次编辑前的既有状态），
-          不随开关临时状态变化。 */}
-      {props.initialLane !== undefined && (
-        <div style={laneResultStyle} aria-label="任务与结果">
-          <div style={laneResultHead}>
-            <span style={laneResultLabel}>任务状态</span>
-            <span style={laneStatusPill}>
+      {/* 任务状态区（合并版）：开关 + 状态选择 + 执行记录/摘要合成底部一块。
+          普通便签仅显示开关；已是任务（编辑态）时同块内给状态选择（running 只读
+          胶囊 + 提示）与 run 记录；新建任务（initialLaneStatus）只带开关与状态。 */}
+      <div style={taskAreaStyle} aria-label="任务状态">
+        <div style={taskHeadRow}>
+          <label style={laneToggleLabel}>
+            <input
+              type="checkbox"
+              checked={taskOn}
+              disabled={saving || runningReadOnly}
+              onChange={(e) => setTaskOn(e.target.checked)}
+              style={{
+                accentColor: colorMeta.ring,
+                cursor: saving || runningReadOnly ? "default" : "pointer",
+              }}
+            />
+            设为任务
+          </label>
+          {taskOn && !runningReadOnly && (
+            <select
+              value={taskStatus}
+              disabled={saving}
+              onChange={(e) => setTaskStatus(e.target.value as TaskStatus)}
+              aria-label="任务状态"
+              style={laneSelect}
+            >
+              {TASK_LANES.map((lane) => (
+                <option key={lane.status} value={lane.status}>
+                  {lane.label}
+                </option>
+              ))}
+            </select>
+          )}
+          {taskOn && runningReadOnly && props.initialLane !== undefined && (
+            <span style={laneStatusPill} title="当前状态（执行中不可改）">
               {laneLabel(props.initialLane.status)}
             </span>
-          </div>
-          {props.initialLane.run !== undefined ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              <div style={laneRunRow}>
-                开始：{fmtDateTime(props.initialLane.run.startedAt)}
+          )}
+          {runningReadOnly && (
+            <span style={laneHint}>执行中：改状态请先在泳道重置</span>
+          )}
+        </div>
+        {taskOn &&
+          props.initialLane !== undefined &&
+          props.initialLane.run !== undefined && (
+            <div style={taskRunArea}>
+              <div style={laneMetaRow}>
+                <span>
+                  开始：{fmtDateTime(props.initialLane.run.startedAt)}
+                </span>
+                {props.initialLane.run.finishedAt !== undefined && (
+                  <>
+                    <span style={metaDot}>·</span>
+                    <span>
+                      结束：{fmtDateTime(props.initialLane.run.finishedAt)}
+                    </span>
+                  </>
+                )}
+                {props.initialLane.run.ok !== undefined && (
+                  <>
+                    <span style={metaDot}>·</span>
+                    <span>
+                      结果：{props.initialLane.run.ok ? "成功" : "失败"}
+                    </span>
+                  </>
+                )}
               </div>
-              {props.initialLane.run.finishedAt !== undefined && (
-                <div style={laneRunRow}>
-                  结束：{fmtDateTime(props.initialLane.run.finishedAt)}
-                </div>
-              )}
-              {props.initialLane.run.ok !== undefined && (
-                <div style={laneRunRow}>
-                  结果：{props.initialLane.run.ok ? "成功" : "失败"}
-                </div>
-              )}
               {props.initialLane.run.summary !== undefined && (
                 <div style={laneRunSummary}>
                   {props.initialLane.run.summary}
                 </div>
               )}
             </div>
-          ) : (
+          )}
+        {taskOn &&
+          props.initialLane !== undefined &&
+          props.initialLane.run === undefined && (
             <div style={laneRunMuted}>尚未执行</div>
           )}
-        </div>
-      )}
+      </div>
 
       {/* 便签纸色选（Win11 便签五色——紫色已随任务泳道分类收敛移除；选中色描边高亮）。 */}
       <div
@@ -931,7 +1036,10 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
             aria-label={`设为${c.label}色`}
             aria-pressed={color === c.id}
             disabled={saving}
-            onClick={() => setColor(c.id)}
+            onClick={() => {
+              setColor(c.id);
+              props.onColorChange?.(c.id);
+            }}
             style={{
               ...colorDot,
               background: c.paper,
@@ -940,42 +1048,6 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
             }}
           />
         ))}
-      </div>
-
-      {/* 任务开关（M2）：「设为任务」checkbox + 状态 select（新建默认待办；编辑预选当前
-          状态；running 时只读并提示改状态先重置）。 */}
-      <div style={laneToggleRow}>
-        <label style={laneToggleLabel}>
-          <input
-            type="checkbox"
-            checked={taskOn}
-            disabled={saving || runningReadOnly}
-            onChange={(e) => setTaskOn(e.target.checked)}
-            style={{
-              accentColor: t.pinAccent,
-              cursor: saving || runningReadOnly ? "default" : "pointer",
-            }}
-          />
-          设为任务
-        </label>
-        {taskOn && (
-          <select
-            value={taskStatus}
-            disabled={saving || runningReadOnly}
-            onChange={(e) => setTaskStatus(e.target.value as TaskStatus)}
-            aria-label="任务状态"
-            style={laneSelect}
-          >
-            {TASK_LANES.map((lane) => (
-              <option key={lane.status} value={lane.status}>
-                {lane.label}
-              </option>
-            ))}
-          </select>
-        )}
-        {runningReadOnly && (
-          <span style={laneHint}>执行中：改状态请先在泳道重置</span>
-        )}
       </div>
 
       <div
@@ -1029,7 +1101,7 @@ function ToolButton(props: {
       style={{
         ...toolBtn,
         ...(props.active
-          ? { background: t.activeBg, color: t.labelPrimary }
+          ? { background: "rgba(46, 42, 34, 0.14)", color: "#2E2A22" }
           : {}),
         ...(props.disabled ? { cursor: "default", opacity: 0.35 } : {}),
       }}
@@ -1042,33 +1114,56 @@ function ToolButton(props: {
 function ToolDivider(): JSX.Element {
   return (
     <span
-      style={{ width: 1, height: 16, background: t.borderL2, margin: "0 2px" }}
+      style={{ width: 1, height: 16, background: "rgba(46, 42, 34, 0.22)", margin: "0 2px" }}
     />
   );
 }
 
 /* ---------- 样式 ---------- */
 
-const titleStyle: React.CSSProperties = {
-  width: "100%",
+/** 头部行：便签标题直接放 header（纸面墨迹、无输入框边框），右侧关闭钮。 */
+const headRowStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 6,
+  minWidth: 0,
+};
+/** 便签标题输入（纸卡 header 直写，无边框无底色，像写在纸上）。 */
+const headTitleStyle: React.CSSProperties = {
+  flex: 1,
+  minWidth: 0,
   boxSizing: "border-box",
-  padding: "7px 10px",
-  fontSize: 15,
+  padding: "2px 4px",
+  fontSize: 17,
   fontWeight: 600,
-  color: t.labelPrimary,
+  lineHeight: 1.4,
+  color: NOTE_INK,
   background: "transparent",
-  border: `1px solid ${t.borderL2}`,
-  borderRadius: 8,
+  border: "none",
   outline: "none",
 };
+/** 头部关闭钮（右上角）。 */
+const headCloseBtn: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  flex: "none",
+  width: 26,
+  height: 26,
+  padding: 0,
+  border: "none",
+  borderRadius: 6,
+  background: "transparent",
+  color: NOTE_INK_MUTED,
+  cursor: "pointer",
+};
+/** 正文书写区：不再有边框/底框 —— 直接写在便签纸上。 */
 const contentStyle: React.CSSProperties = {
-  border: `1px solid ${t.borderL2}`,
-  borderRadius: 10,
-  padding: "8px 12px",
-  background: t.surfaceRaised,
-  maxHeight: '70Vh',
-  minWidth: '400PX',
-  overflow: 'scroll'
+  padding: "0 4px",
+  color: NOTE_INK,
+  background: "transparent",
+  maxHeight: "70vh",
+  overflowY: "auto",
 };
 const toolBtn: React.CSSProperties = {
   display: "inline-flex",
@@ -1080,7 +1175,7 @@ const toolBtn: React.CSSProperties = {
   border: "none",
   borderRadius: 7,
   background: "transparent",
-  color: t.labelSecondary,
+  color: "rgba(46, 42, 34, 0.75)",
   cursor: "pointer",
 };
 const btnBase: React.CSSProperties = {
@@ -1097,7 +1192,7 @@ const btnBase: React.CSSProperties = {
 };
 const btnGhost: React.CSSProperties = {
   ...btnBase,
-  color: t.labelPrimary,
+  color: NOTE_INK,
   background: "transparent",
 };
 const colorDot: React.CSSProperties = {
@@ -1110,8 +1205,8 @@ const colorDot: React.CSSProperties = {
 };
 const btnPrimary: React.CSSProperties = {
   ...btnBase,
-  color: t.onPrimary,
-  background: t.primaryFill,
+  color: "#FFFDF4",
+  background: NOTE_INK,
   fontWeight: 600,
 };
 const disabledBtn: React.CSSProperties = { opacity: 0.5, cursor: "default" };
@@ -1139,55 +1234,19 @@ const popPrimary: React.CSSProperties = {
   fontWeight: 600,
 };
 
-/* ---------- 任务开关 / 只读结果区 ---------- */
+/* ---------- 任务状态区（合并版，纸面无边框） ---------- */
 
-const laneResultStyle: React.CSSProperties = {
+/** 任务区整块：纸底淡墨染层、无边框圆角（不做输入框的盒子感）。 */
+const taskAreaStyle: React.CSSProperties = {
   display: "flex",
   flexDirection: "column",
-  gap: 6,
+  gap: 8,
   padding: "8px 10px",
-  border: `1px solid ${t.borderL2}`,
-  borderRadius: 8,
-  background: t.surfaceRaised,
-};
-const laneResultHead: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 6,
-  flexWrap: "wrap",
-};
-const laneResultLabel: React.CSSProperties = {
-  fontSize: 12,
-  color: t.labelSecondary,
-};
-const laneStatusPill: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  height: 20,
-  padding: "0 8px",
   borderRadius: 10,
-  fontSize: 12,
-  fontWeight: 600,
-  color: t.labelPrimary,
-  background: t.hoverBg,
+  background: PAPER_DEEP_TINT,
 };
-const laneRunRow: React.CSSProperties = {
-  fontSize: 12.5,
-  color: t.labelSecondary,
-  lineHeight: 1.6,
-};
-const laneRunSummary: React.CSSProperties = {
-  fontSize: 12.5,
-  color: t.labelPrimary,
-  lineHeight: 1.6,
-  whiteSpace: "pre-wrap",
-  wordBreak: "break-word",
-};
-const laneRunMuted: React.CSSProperties = {
-  fontSize: 12.5,
-  color: t.labelCaption,
-};
-const laneToggleRow: React.CSSProperties = {
+/** 任务区头部行：开关 + 状态选择（或 running 胶囊）+ 提示。 */
+const taskHeadRow: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
   gap: 8,
@@ -1198,21 +1257,61 @@ const laneToggleLabel: React.CSSProperties = {
   alignItems: "center",
   gap: 5,
   fontSize: 13,
-  color: t.labelPrimary,
+  color: NOTE_INK,
   cursor: "pointer",
+};
+const laneStatusPill: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  height: 20,
+  padding: "0 8px",
+  borderRadius: 10,
+  fontSize: 12,
+  fontWeight: 600,
+  color: NOTE_INK,
+  background: PAPER_SOFT_FILL,
 };
 const laneSelect: React.CSSProperties = {
   height: 26,
   padding: "0 6px",
   fontSize: 12.5,
-  color: t.labelSecondary,
+  color: "rgba(46, 42, 34, 0.85)",
   background: "transparent",
-  border: `1px solid ${t.borderL2}`,
+  border: "none",
   borderRadius: 7,
   outline: "none",
   cursor: "pointer",
 };
 const laneHint: React.CSSProperties = {
   fontSize: 12,
-  color: t.stateWarn,
+  color: "#b3261e",
+};
+/** 执行记录区：开始/结束/结果一行（· 分隔）+ 摘要。 */
+const taskRunArea: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 4,
+};
+const laneMetaRow: React.CSSProperties = {
+  display: "flex",
+  alignItems: "baseline",
+  flexWrap: "wrap",
+  gap: 5,
+  fontSize: 12.5,
+  color: NOTE_INK_MUTED,
+  lineHeight: 1.6,
+};
+const metaDot: React.CSSProperties = {
+  color: "rgba(46, 42, 34, 0.32)",
+};
+const laneRunSummary: React.CSSProperties = {
+  fontSize: 12.5,
+  color: NOTE_INK,
+  lineHeight: 1.6,
+  whiteSpace: "pre-wrap",
+  wordBreak: "break-word",
+};
+const laneRunMuted: React.CSSProperties = {
+  fontSize: 12.5,
+  color: "rgba(46, 42, 34, 0.45)",
 };

@@ -14,6 +14,7 @@ import {
 import { mdSnippet } from "../core/markdown-text.ts";
 import { fmtRelative } from "../core/time-text.ts";
 import { copyNoteMention } from "../core/note-clipboard.ts";
+import { TaskBadge } from "./task-badge.tsx";
 import {
   Archive,
   ArchiveRestore,
@@ -26,12 +27,12 @@ import {
 
 /** 行 hover/焦点态与操作浮现。 */
 export const ROW_CSS = `
-.fs-note-row { transition: box-shadow 120ms ease; }
+.fs-note-row { transition: box-shadow 120ms ease; animation: fs-note-in 240ms ease-out backwards; }
 .fs-note-row:hover { box-shadow: inset 0 0 0 999px rgba(0, 0, 0, 0.06); }
 .fs-note-row:focus-visible { outline: 2px solid var(--dsw-static-deepseek-450); outline-offset: -1px; }
 .fs-note-actions { opacity: 0; pointer-events: none; transition: opacity 120ms ease; }
 .fs-note-row:hover .fs-note-actions, .fs-note-row:focus-within .fs-note-actions { opacity: 1; pointer-events: auto; }
-.fs-note-row .fs-note-actions button { color: rgba(46, 42, 34, 0.55); }
+.fs-note-row .fs-note-actions button { color: rgba(46, 42, 34, 0.55); transition: background 110ms ease, color 110ms ease; }
 .fs-note-row .fs-note-actions button:hover:not(:disabled) { background: rgba(0, 0, 0, 0.1); color: #2e2a22; }
 .fs-note-row .fs-note-actions button[data-danger]:hover:not(:disabled) { background: rgba(197, 48, 48, 0.18); color: #b3261e; }
 `;
@@ -83,6 +84,7 @@ export function NoteRow(props: NoteRowProps): JSX.Element {
                 <span style={{ color: NOTE_INK_MUTED }}>（无标题）</span>
               )}
             </span>
+            {note.lane && <TaskBadge lane={note.lane} />}
             {note.pinned && !note.archived && (
               <Pin
                 size={12}
