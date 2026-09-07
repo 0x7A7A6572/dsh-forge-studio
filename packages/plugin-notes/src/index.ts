@@ -16,10 +16,13 @@
  * 无论服务先到还是后到都能挂上；宿主从不提供该服务时 fiber 静默挂起、随 ctx
  * 卸载清理，不阻塞核心。
  *
- * apply 返回 ctx.inject 的 fiber（PromiseLike）：loader 会 await 整个异步链，
- * 保证域打开、服务注册、设置挂载全部完成之后条目才算激活。
+ * apply 是 async 函数（storageDomain 已在静态 inject 中声明，apply 时已就绪）：
+ * loader 会 await 异步 setup（域打开 → NotesService 注册 → 设置挂载）完成之后
+ * 条目才算激活。不能把 `ctx.inject(['storageDomain'], ...)` 的 fiber 作为 apply
+ * 的返回值——cordis 会把 thenable 返回值当作「effect/disposer」收集，fiber 收束
+ * 后触发 `safeCollect(fiber)` → 抛 `TypeError("Invalid effect")`，整个插件（含
+ * NotesService、设置、agent 工具）都无法加载。
  */
-
 import { Context } from '@deepseek-ai/cordis'
 import { notesDomain } from './domain.ts'
 import { NotesService } from './service.ts'
@@ -33,26 +36,29 @@ import { bridgeErrorMessage, bridgeFailed, bridgeInstalled, type NotesAgentBridg
 export const name = '@zzerx/dsh-plugin-notes'
 export const inject = ['storageDomain']
 
-export function apply(ctx: Context) {
-  return ctx.inject(['storageDomain'], async (ctx) => {
-    const domain = await ctx.storageDomain.open(notesDomain)
-    try {
-      // 域由本 fiber 负责 close。
-      ctx.effect(() => () => { void domain.close() })
-      // 执行投递（泳道卡执行 → 会话 prompt）为可选增强：装配失败只降级 bridge（dispatch
-      // 缺省 → taskExecute 返回 no-dispatch），绝不拖垮 NotesService 注册。
-      ctx.plugin(NotesService, { domain, dispatch: installTaskDispatchSafely(ctx) })
-      // 设置命名空间（client 设置卡片读写）。
-      installNotesSettings(ctx)
-      // agent 桥是可选增强：tools/systemPrompt 服务注册后（或已注册）挂载。
-      // 它绝不能把核心的 NotesService 一起拖垮——任何一步抛错都只降级桥本身，
-      // 服务照常注册。
-      installNotesAgentBridgeWhenReady(ctx)
-    } catch (error) {
-      void domain.close()
-      throw error
-    }
-  })
+export async function apply(ctx: Context): Promise<void> {
+  // storageDomain 已在静态 inject 声明，apply 时可用，无需再包一层 ctx.inject。
+  const domain = await ctx.storageDomain.open(notesDomain)
+  try {
+    // 域由本 fiber 负责 close。
+    ctx.effect(() => () => { void domain.close() })
+    // 执行投递（泳道卡执行 → 会话 prompt）为可选增强：装配失败只降级 bridge（dispatch
+    // 缺省 → taskExecute 返回 no-dispatch），绝不拖垮 NotesService 注册。
+    // 注意用 `new NotesService(ctx, …)` 而非 `ctx.plugin(NotesService, …)`：前者把
+    // `notes` 服务 provide 在本 apply 的 fiber 上，后续 `ctx.inject(['tools'], …)`
+    // 的子 fiber 才能沿祖先链读到 `ctx.notes`（`ctx.plugin` 会把 notes 挂到兄弟
+    // fiber，祖先链读不到 → "cannot get property notes without inject"，工具装不上）。
+    new NotesService(ctx, { domain, dispatch: installTaskDispatchSafely(ctx) })
+    // 设置命名空间（client 设置卡片读写）。
+    installNotesSettings(ctx)
+    // agent 桥是可选增强：tools/systemPrompt 服务注册后（或已注册）挂载。
+    // 它绝不能把核心的 NotesService 一起拖垮——任何一步抛错都只降级桥本身，
+    // 服务照常注册。
+    installNotesAgentBridgeWhenReady(ctx)
+  } catch (error) {
+    void domain.close()
+    throw error
+  }
 }
 
 /**
