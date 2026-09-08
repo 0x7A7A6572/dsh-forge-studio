@@ -71,8 +71,9 @@ PLAN.md 的愿景是复刻原项目 `D:/codes/commit-log-daily` 的「对话式�
   （**偏离原版说明**：原版对 default 不注入、结构全靠 GENERATE prompt；本插件模板页始终展示 default 记录，
   统一注入其骨架作基线章节，避免页面所见与生成所依不一致。映射规则常驻提示分区 §4，default 骨架只是排版参考）。
 - **`prepareReport(input)`**（取代 generate）：返回
-  `{ templateName, promptSection?, skeletonSection, range, reportType, sourceCount, entryCount }`
-  即给 LLM 的结构引导 + 数据统计快照；不做任何正文渲染。入参含 reportType/dateRange/sourceIds?/templateId?/title?/authorName?/authorEmail?。
+  `{ templateName, promptSection?, skeletonSection, range, reportType, sourceCount }`
+  即给 LLM 的结构引导 + 选定源计数；**不重新扫描**（agent 的 scan 结果已在对话上下文，这里只解析模板、
+  不重复取数）。入参含 reportType/dateRange/sourceIds?/templateId?。
 - **`saveReport(input)`**（取代公开 createReport 语义）：入参 = LLM 产出的
   `{ title, markdown, dateRange, sourceIds, templateId?, reportType? }` → 写 `reports` 表。
   `createReport` 降为内部私有/仅内部调用（保留但不出 remote 描述符对外暴露）。
