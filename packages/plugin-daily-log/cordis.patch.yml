@@ -1,0 +1,6 @@
+# The @zzerx/dsh-plugin-daily-log bundle patch: one insert over the base/web
+# layers. storageDomain / storage / tools / commands / settings come from the
+# dsh-base layer; this row only mounts the daily-log feature plugin.
+- insert:
+    - id: daily-log
+      name: '@zzerx/dsh-plugin-daily-log'
