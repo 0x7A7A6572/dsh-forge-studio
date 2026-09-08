@@ -148,6 +148,23 @@ const errorStyle: CSSProperties = { color: 'var(--dsw-alias-state-error-primary)
 
 const hintStyle: CSSProperties = { color: 'var(--dsw-alias-label-secondary)', fontSize: 12 }
 
+const segmentBtnStyle: CSSProperties = {
+  padding: '4px 14px',
+  fontSize: 13,
+  border: 'none',
+  borderRadius: 4,
+  cursor: 'pointer',
+  background: 'transparent',
+  color: 'var(--dsw-alias-label-secondary)',
+}
+
+const segmentActiveBtnStyle: CSSProperties = {
+  ...segmentBtnStyle,
+  background: 'var(--dsw-alias-button-primary-fill)',
+  color: 'var(--dsw-alias-label-primary-foreground)',
+  fontWeight: 600,
+}
+
 /* ---------- 主组件 ---------- */
 
 export function DailyLogBoard({ face }: { face: DailyLogBoardFace }): JSX.Element {
@@ -656,10 +673,6 @@ function TemplateEditDialog(props: {
   const [prompt, setPrompt] = useState(initial?.promptSection ?? '')
   const [skeleton, setSkeleton] = useState(initial?.skeletonSection ?? '')
   const [preview, setPreview] = useState(false)
-  const joinedDoc =
-    (prompt.trim() !== '' ? prompt.trim() + '\n\n' : '') +
-    DATA_MARKER +
-    (skeleton.trim() !== '' ? '\n\n' + skeleton.trim() : '')
 
   async function save(): Promise<void> {
     if (name.trim() === '' || skeleton.trim() === '') return
@@ -681,17 +694,28 @@ function TemplateEditDialog(props: {
           <strong style={{ fontSize: 14 }}>{props.editing !== null ? '编辑模板' : '新增模板'}</strong>
           <span style={hintStyle}>指令段（可选） + {DATA_MARKER} + 骨架段；内容作为结构引导喂给生成 AI</span>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <button type='button' style={btnStyle} onClick={() => setPreview((v) => !v)}>
-            {preview ? '返回编辑' : '预览渲染'}
-          </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input style={{ ...inputStyle, flex: 1 }} placeholder='模板名' value={name} onChange={(e) => setName(e.target.value)} />
+          <div style={{ display: 'flex', gap: 2, padding: 2, border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 6, background: 'var(--dsw-alias-bg-base)' }}>
+            <button type='button' style={preview ? segmentBtnStyle : segmentActiveBtnStyle} onClick={() => setPreview(false)}>编辑</button>
+            <button type='button' style={preview ? segmentActiveBtnStyle : segmentBtnStyle} onClick={() => setPreview(true)}>预览</button>
+          </div>
         </div>
-        <input style={inputStyle} placeholder='模板名' value={name} onChange={(e) => setName(e.target.value)} />
         {preview ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <span style={hintStyle}>渲染预览（{DATA_MARKER} 为指令段/骨架段分隔符；供参考，不构成正文章节）</span>
-            <div style={{ border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 6, padding: '8px 12px', minHeight: 340, maxHeight: 420, overflowY: 'auto', background: 'var(--dsw-alias-bg-base)' }}>
-              <MarkdownText text={joinedDoc} labels={TEMPLATE_MD_LABELS} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <span style={hintStyle}>指令段（可选）预览{prompt.trim() === '' ? ' —— 未填写' : ''}</span>
+              {prompt.trim() !== '' && (
+                <div style={{ border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 6, padding: '8px 12px', minHeight: 60, maxHeight: 140, overflowY: 'auto', background: 'var(--dsw-alias-bg-base)' }}>
+                  <MarkdownText text={prompt} labels={TEMPLATE_MD_LABELS} />
+                </div>
+              )}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <span style={hintStyle}>骨架段（必填）预览</span>
+              <div style={{ border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 6, padding: '8px 12px', minHeight: 180, maxHeight: 320, overflowY: 'auto', background: 'var(--dsw-alias-bg-base)' }}>
+                <MarkdownText text={skeleton} labels={TEMPLATE_MD_LABELS} />
+              </div>
             </div>
           </div>
         ) : (
