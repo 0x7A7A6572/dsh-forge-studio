@@ -1,0 +1,83 @@
+{
+  "name": "@zzerx/dsh-plugin-daily-log",
+  "version": "0.1.0",
+  "description": "每日工作日志：聚合 Git 提交与本地 agent 对话（deepseek/claude/codex），按自定义模板生成日报/周报/月报。",
+  "private": true,
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "lib/types",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.2",
+    "@deepseek-ai/dsh-agent": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-brand": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-settings": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-storage-domain": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-system-prompt": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-tools": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-typert-protocol": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-user-approval": "0.1.2-alpha.3",
+    "@deepseek-ai/schemastery": "3.18.2"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-agent": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-api-gateway": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-api-session-controller": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-brand": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-client-store": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-client-ui-renderer": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-client-ui-slots": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-cordis-client-runner": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-settings": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-storage": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-storage-domain": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-system-prompt": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-tools": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-typert-protocol": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-typert-registry": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-user-approval": "0.1.2-alpha.3",
+    "@deepseek-ai/schemastery": "3.18.2",
+    "@types/node": "^24.0.0",
+    "@types/react": "18.3.5",
+    "@types/react-dom": "18.3.0",
+    "esbuild": "0.28.2",
+    "lucide-react": "1.39.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "tsup": "8.5.1",
+    "typescript": "5.7.2",
+    "vitest": "2.1.9",
+    "zod": "4.4.3"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": []
+    }
+  }
+}
