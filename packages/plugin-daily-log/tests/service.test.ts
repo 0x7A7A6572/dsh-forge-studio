@@ -279,7 +279,7 @@ describe('DailyLogService 类型与候选发现', () => {
     }
   })
 
-  it('listWorkspaceCandidates：type 判定 + dsh 命中 + git 徽标 + added', async () => {
+  it('listWorkspaceCandidates：type 判定 + git 徽标 + dsh 未接入 + added', async () => {
     const repo = await makeTempDir(true)
     const plain = await makeTempDir(false)
     try {
@@ -295,10 +295,10 @@ describe('DailyLogService 类型与候选发现', () => {
         expect.objectContaining({
           type: 'code',
           title: 'myapp',
-          detail: '3 个 DSH 会话',
+          detail: '3 个 DSH 会话（DSH 源未接入）',
           added: false,
-          // 工作区项目 dsh 徽标恒亮；.git 存在 → git 亮；claude/codex 随机临时路径 → 暗。
-          channels: expect.objectContaining({ dsh: true, git: true, claude: false, codex: false }),
+          // dsh 渠道未接入 → 徽标如实置暗；.git 存在 → git 亮；claude/codex 随机临时路径 → 暗。
+          channels: expect.objectContaining({ dsh: false, git: true, claude: false, codex: false }),
         }),
       )
       expect(before[1]).toEqual(
@@ -307,7 +307,7 @@ describe('DailyLogService 类型与候选发现', () => {
           title: 'docs',
           detail: undefined,
           added: false,
-          channels: expect.objectContaining({ dsh: true, git: false }),
+          channels: expect.objectContaining({ dsh: false, git: false }),
         }),
       )
       // 手动添加 repo（带尾斜杠）后，候选 added=true（路径归一化对比）。
@@ -319,6 +319,15 @@ describe('DailyLogService 类型与候选发现', () => {
       await rm(repo, { recursive: true, force: true })
       await rm(plain, { recursive: true, force: true })
     }
+  })
+
+  it('工作区候选 dsh 徽标如实为 false（源未接入，不误导）', async () => {
+    const { svc } = makeService({
+      workspaceProjects: async () => [{ path: '/ws/proj', title: 'p', sessionIds: ['s1'] }],
+    })
+    const before = await svc.listWorkspaceCandidates()
+    expect(before[0]?.channels.dsh).toBe(false)
+    expect(before[0]?.detail).toContain('DSH 源未接入')
   })
 
   it('listWorkspaceCandidates：无 workspaceProjects → 空候选', async () => {

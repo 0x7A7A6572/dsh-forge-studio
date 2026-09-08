@@ -200,14 +200,14 @@ export class DailyLogService extends TypertRemoteService {
     const out: ProjectCandidate[] = []
     for (const p of projects) {
       const channels = await this.probeChannels(p.path)
-      // 候选来自 DSH 工作区 → dsh 渠道命中（该路径有工作区会话）。
-      channels.dsh = true
+      // dsh 会话渠道尚未实现：徽标如实置暗，detail 注明未接入（接入后改回 true）。
+      // channels.dsh = true
       out.push({
         path: p.path,
         title: p.title || defaultSourceLabel(p.path),
         type: await detectProjectType(p.path),
         channels,
-        detail: p.sessionIds.length > 0 ? `${p.sessionIds.length} 个 DSH 会话` : undefined,
+        detail: p.sessionIds.length > 0 ? p.sessionIds.length + ' 个 DSH 会话（DSH 源未接入）' : undefined,
         added: this.hasSourcePath(p.path),
       })
     }
