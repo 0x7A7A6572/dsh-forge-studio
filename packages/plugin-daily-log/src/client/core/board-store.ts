@@ -3,13 +3,13 @@
  * 用这个轻量 store 互通（开/关 + 当前 tab），不依赖任何服务。组件用 useSyncExternalStore 订阅。
  */
 
-export type DailyLogTab = 'board' | 'sources' | 'reports' | 'templates'
+export type DailyLogTab = 'sources' | 'reports' | 'templates'
 
 type Listener = () => void
 
 const state = {
   open: false,
-  tab: 'board' as DailyLogTab,
+  tab: 'reports' as DailyLogTab,
 }
 const listeners = new Set<Listener>()
 

@@ -191,69 +191,15 @@ export function DailyLogBoard({ face }: { face: DailyLogBoardFace }): JSX.Elemen
         <button type="button" style={btnStyle} onClick={() => boardStore.hide()}>关闭</button>
       </header>
       <nav style={navStyle}>
-        <button type="button" style={tabStyle(tab === 'board')} onClick={() => boardStore.setTab('board')}>指南</button>
         <button type="button" style={tabStyle(tab === 'sources')} onClick={() => boardStore.setTab('sources')}>数据源（{sources.length}）</button>
         <button type="button" style={tabStyle(tab === 'reports')} onClick={() => boardStore.setTab('reports')}>报告（{reports.length}）</button>
         <button type="button" style={tabStyle(tab === 'templates')} onClick={() => boardStore.setTab('templates')}>模板（{templates.length}）</button>
       </nav>
       {error !== '' && <div style={errorStyle}>{error}</div>}
       <div style={panelStyle}>
-        {tab === 'board' && <GuidanceTab sources={sources} templates={templates} />}
         {tab === 'sources' && <SourcesTab dailyLog={dailyLog} sources={sources} busy={busy} run={run} />}
         {tab === 'reports' && <ReportsTab dailyLog={dailyLog} reports={reports} busy={busy} run={run} />}
         {tab === 'templates' && <TemplatesTab dailyLog={dailyLog} templates={templates} busy={busy} run={run} />}
-      </div>
-    </div>
-  )
-}
-
-/* ---------- 指南（对话式生成入口，替代原「扫描并生成」按钮） ---------- */
-
-function GuidanceTab(props: {
-  sources: readonly SourceRecord[]
-  templates: readonly TemplateRecord[]
-}): JSX.Element {
-  const defaultTemplate = props.templates.find((t) => t.isDefault) ?? props.templates.find((t) => t.isBuiltin)
-  const [copied, setCopied] = useState(false)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  useEffect(() => () => { if (timerRef.current !== null) clearTimeout(timerRef.current) }, [])
-  const EXAMPLE = '帮我生成本周周报'
-  async function copyExample(): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(EXAMPLE)
-      setCopied(true)
-      if (timerRef.current !== null) clearTimeout(timerRef.current)
-      timerRef.current = setTimeout(() => { setCopied(false); timerRef.current = null }, 1600)
-    } catch {
-      // 剪贴板不可用时静默忽略
-    }
-  }
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={cardStyle}>
-        <strong>对话式生成报告</strong>
-        <div style={hintStyle}>
-          在本窗口左侧的聊天里对 AI 说一句话。AI 会先确认时间范围与项目、扫描数据，
-          再亲自把提交/会话归纳成业务化报告（合并同功能提交、按模板结构归类），
-          经你确认后保存到「报告」页并可按需导出。
-        </div>
-        <div style={{ fontSize: 13 }}>示例：「{EXAMPLE}」「汇总最近 3 天的工作」</div>
-        <div style={rowStyle}>
-          <button type='button' style={primaryBtnStyle} onClick={() => void copyExample()}>
-            {copied ? '已复制 ✓' : '复制示例到聊天'}
-          </button>
-        </div>
-      </div>
-      <div style={cardStyle}>
-        <strong>当前状态</strong>
-        <div style={rowStyle}>
-          <span style={hintStyle}>默认模板：</span>
-          <span>{defaultTemplate?.name ?? '无'}{defaultTemplate?.isBuiltin ? '（内置）' : ''}</span>
-        </div>
-        <div style={rowStyle}>
-          <span style={hintStyle}>数据源：</span>
-          <span>{props.sources.length === 0 ? '0 个 —— 请先到「数据源」页添加项目' : props.sources.map((s) => s.label).join('、')}</span>
-        </div>
       </div>
     </div>
   )
