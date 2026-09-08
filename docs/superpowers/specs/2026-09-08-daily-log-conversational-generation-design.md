@@ -131,9 +131,10 @@ order 2950）但内容分三节：
 ### 5.4 模板页 / 编辑弹窗
 - 模板内容改为两段式编辑：指令段（可选，位于 <!-- DATA --> 之上）+ 骨架段；
   弹窗内提供两栏 textarea 与示例，保存时以 <!-- DATA --> 拼接为一个 content 字段。
-- **写/预览**：dsh 平台无现成 Markdown 编辑器组件（ui-primitives 仅提供只读渲染 MarkdownText，
-  会话渲染体系外的插件没有 labels 管道），故自建轻量双模式：编辑态为两段 monospace textarea；
-  「预览渲染」切换把拼接文档交给 MarkdownText（自备引用稳定 labels）渲染整页效果。
+- **编辑/预览 分段 tab**：dsh 平台无现成 Markdown 编辑器组件（ui-primitives 仅提供只读渲染 MarkdownText，
+  会话渲染体系外的插件没有 labels 管道），故自建轻量双模式：编辑 tab 为两段 monospace textarea；
+  预览 tab 不合并——指令段、骨架段各占一个独立预览框，分别交给 MarkdownText
+  （自备引用稳定 labels）渲染；指令段留空时预览框显示「未填写」。
 - 列表/内置只读/设默认逻辑不变。
 
 ## 6. 工程与验收
