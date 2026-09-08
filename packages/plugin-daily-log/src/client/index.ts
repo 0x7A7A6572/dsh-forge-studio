@@ -13,6 +13,7 @@ import { mountDailyLogRemote, dailyLogOf } from './core/remote.ts'
 import { mountDailyLogSidebarEntry } from './core/sidebar-entry.ts'
 import { mountDailyLogPanel } from './core/panel-mount.ts'
 import { DailyLogBoard, type DailyLogBoardFace } from './views/board.tsx'
+import { boardStore } from './core/board-store.ts'
 
 export const name = '@zzerx/dsh-plugin-daily-log/client'
 export const inject = ['slots', 'remote']
@@ -24,7 +25,42 @@ export function apply(ctx: Context): void {
     // 第二层：命名空间就绪后再读 remote.dailyLog。
     ctx.inject(['remote.dailyLog', 'remote', 'slots'], (ctx) => {
       const dailyLog = dailyLogOf(ctx)
-      const face = (): DailyLogBoardFace => ({ dailyLog })
+      /**
+       * 指南页「填入聊天」：把文案写入当前会话的输入框（conversation.input 会话级
+       * facade），收起面板回到对话并聚焦输入。会话/输入不可用时返回错误由 UI 提示。
+       * 结构访问（sessions/conversation 属宿主能力，不注入即可惰性取用）。
+       */
+      const fillChat = async (text: string): Promise<{ ok: boolean; error?: string }> => {
+        try {
+          const sessions = (ctx as unknown as {
+            sessions?: {
+              list?: { getSnapshot(): { current?: string } }
+              open(id: string): void
+              scope(id: string): unknown
+            }
+          }).sessions
+          const current = sessions?.list?.getSnapshot().current
+          if (sessions === undefined || current === undefined || current === '') {
+            return { ok: false, error: '当前没有可用会话，请先在左侧选择或新建一个会话。' }
+          }
+          sessions.open(current)
+          const actx = sessions.scope(current)
+          if (actx === undefined) return { ok: false, error: '会话上下文不可用，请稍后重试。' }
+          const conversation = (actx as unknown as {
+            conversation?: { input?: { for(c: unknown): { setDraft(t: string): void } } }
+          }).conversation
+          if (conversation?.input === undefined) return { ok: false, error: '聊天输入暂不可用，请直接手动输入。' }
+          conversation.input.for(actx).setDraft(text)
+          boardStore.hide()
+          window.setTimeout(() => {
+            document.querySelector<HTMLElement>('[data-composer-input]')?.focus()
+          }, 60)
+          return { ok: true }
+        } catch (error) {
+          return { ok: false, error: error instanceof Error ? error.message : String(error) }
+        }
+      }
+      const face = (): DailyLogBoardFace => ({ dailyLog, fillChat })
 
       try {
         const disposeEntry = mountDailyLogSidebarEntry()
