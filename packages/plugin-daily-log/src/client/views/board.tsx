@@ -233,35 +233,34 @@ export function DailyLogBoard({ face }: { face: DailyLogBoardFace }): JSX.Elemen
 
 /* ---------- 指南（对话式生成入口） ---------- */
 
-/** 指南页：纯引导（无操作按钮）——入口在左侧聊天；页首展示品牌花体字。 */
+/** 指南页：纯引导（无操作按钮）——整页文案用 Markdown 渲染；页首为品牌花体字。 */
 function GuidanceTab(props: {
   sources: readonly SourceRecord[]
   templates: readonly TemplateRecord[]
 }): JSX.Element {
   const defaultTemplate = props.templates.find((t) => t.isDefault) ?? props.templates.find((t) => t.isBuiltin)
+  const sourceText = props.sources.length === 0
+    ? '0 个 —— 请先到「数据源」页添加项目'
+    : props.sources.map((s) => s.label).join('、')
+  const guideMd = [
+    '## 对话式生成报告',
+    '',
+    '在本窗口左侧的聊天里对 AI 说一句话（如 **「帮我生成本周周报」**）：AI 会先确认时间范围与项目、',
+    '扫描 Git 提交与本地 agent 会话，再亲自把活动归纳成业务化报告',
+    '（合并同功能提交、按模板结构归类），经你确认后保存到「报告」页并可按需导出。',
+    '',
+    '## 当前状态',
+    '',
+    '- **默认模板：** ' + (defaultTemplate?.name ?? '无') + (defaultTemplate?.isBuiltin ? '（内置）' : ''),
+    '- **数据源：** ' + sourceText,
+  ].join('\n')
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ fontSize: 26, fontWeight: 600, letterSpacing: 1, color: 'var(--dsw-alias-label-primary)' }}>
         𝖉𝖆𝖎𝖑𝖞 𝖑𝖔𝖌
       </div>
       <div style={cardStyle}>
-        <strong>对话式生成报告</strong>
-        <div style={hintStyle}>
-          在本窗口左侧的聊天里对 AI 说一句话（如「帮我生成本周周报」）：AI 会先确认时间范围与项目、
-          扫描 Git 提交与本地 agent 会话，再亲自把活动归纳成业务化报告（合并同功能提交、按模板结构归类），
-          经你确认后保存到「报告」页并可按需导出。
-        </div>
-      </div>
-      <div style={cardStyle}>
-        <strong>当前状态</strong>
-        <div style={rowStyle}>
-          <span style={hintStyle}>默认模板：</span>
-          <span>{defaultTemplate?.name ?? '无'}{defaultTemplate?.isBuiltin ? '（内置）' : ''}</span>
-        </div>
-        <div style={rowStyle}>
-          <span style={hintStyle}>数据源：</span>
-          <span>{props.sources.length === 0 ? '0 个 —— 请先到「数据源」页添加项目' : props.sources.map((s) => s.label).join('、')}</span>
-        </div>
+        <MarkdownText text={guideMd} labels={TEMPLATE_MD_LABELS} />
       </div>
     </div>
   )
