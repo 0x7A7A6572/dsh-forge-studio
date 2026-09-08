@@ -22,7 +22,7 @@ import type { dailyLogDomain } from './domain.ts'
 import type { ChannelProvider } from './sources/provider.ts'
 import { detectProjectType } from './sources/detect.ts'
 import { discoverSessionProjects } from './sources/discover.ts'
-import { BUILTIN_TEMPLATE } from './types.ts'
+import { BUILTIN_TEMPLATE, DAILY_LOG_NAMESPACE } from './types.ts'
 import type {
   ActivityEntry, DateRange, ProjectCandidate, ProjectChannels, ReportCreateInput,
   ReportId, ReportPrepareInput, ReportPrepareResult, ReportRecord,
@@ -340,16 +340,26 @@ export class DailyLogService extends TypertRemoteService {
     })
   }
 
-  /** 把报告导出为 .md 文件到指定目录（缺省 ~/daily-log-reports）。返回绝对路径。 */
+  /** 把报告导出为 .md 文件到指定目录（缺省取设置 outputDir，再缺省 ~/daily-log-reports）。返回绝对路径。 */
   async exportReport(id: ReportId, outputDir?: string): Promise<string> {
     const report = this.reports.get(id)
     if (!report) throw new Error('report ' + id + ' not found')
-    const dir = outputDir?.trim() || join(homedir(), 'daily-log-reports')
+    const dir = outputDir?.trim() || this.configuredOutputDir() || join(homedir(), 'daily-log-reports')
     await mkdir(dir, { recursive: true })
     const safe = report.title.replace(/[\\/:*?"<>|]/g, '-').trim() || 'report'
     const filePath = join(dir, safe + '.md')
     await writeFile(filePath, report.markdown, 'utf8')
     return filePath
+  }
+
+  /** 已配置导出目录（设置 forge-studio-daily-log.outputDir）；未配置或不可用时为空串。 */
+  private configuredOutputDir(): string {
+    try {
+      const value = this.ctx.settings?.get(DAILY_LOG_NAMESPACE) as { outputDir?: unknown } | undefined
+      return typeof value?.outputDir === 'string' ? value.outputDir.trim() : ''
+    } catch {
+      return ''
+    }
   }
 
   /* ---------- 模板 ---------- */
@@ -460,8 +470,6 @@ markRemoteMethods(DailyLogService.prototype, [
   'listReports',
   'getReport',
   'deleteReport',
-  'prepareReport',
-  'saveReport',
   'exportReport',
   'listTemplates',
   'getTemplate',
