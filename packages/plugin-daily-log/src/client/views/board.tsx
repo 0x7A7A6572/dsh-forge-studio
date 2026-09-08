@@ -1,10 +1,10 @@
 /**
- * daily-log 面板主视图：数据源管理 + 按模板生成报告 + 报告历史 + 模板自定义。
- * 数据读写走 Typert remote（ctx.remote.dailyLog.*），与 agent 会话完全解耦。
+ * daily-log 面板主视图：数据源管理 + 对话式生成报告引导 + 报告历史 + 模板自定义。
+ * 数据读写走 Typert remote（ctx.remote.dailyLog.*）；报告正文由宿主聊天 agent 经 daily_log_* 工具生成。
  * 风格对齐 dsh-task-board / plugin-notes 的独立面板（内联样式，走宿主 --dsw-* 令牌）。
  */
 
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { CSSProperties } from 'react'
 import { boardStore } from '../core/board-store.ts'
 import type { DailyLogRemote } from '../core/remote.ts'
@@ -215,12 +215,15 @@ function GuidanceTab(props: {
 }): JSX.Element {
   const defaultTemplate = props.templates.find((t) => t.isDefault) ?? props.templates.find((t) => t.isBuiltin)
   const [copied, setCopied] = useState(false)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => { if (timerRef.current !== null) clearTimeout(timerRef.current) }, [])
   const EXAMPLE = '帮我生成本周周报'
   async function copyExample(): Promise<void> {
     try {
       await navigator.clipboard.writeText(EXAMPLE)
       setCopied(true)
-      setTimeout(() => setCopied(false), 1600)
+      if (timerRef.current !== null) clearTimeout(timerRef.current)
+      timerRef.current = setTimeout(() => { setCopied(false); timerRef.current = null }, 1600)
     } catch {
       // 剪贴板不可用时静默忽略
     }
@@ -669,7 +672,7 @@ function TemplateEditDialog(props: {
     await props.run(async () => {
       const res =
         props.editing !== null
-          ? await props.dailyLog.updateTemplate(props.editing.id as never, { name: name.trim(), content })
+          ? await props.dailyLog.updateTemplate(props.editing.id, { name: name.trim(), content })
           : await props.dailyLog.createTemplate({ name: name.trim(), content })
       if (!res.ok) throw new Error(errText(res.error))
       props.onClose()
@@ -820,7 +823,7 @@ function ReportsTab(props: {
           {openId === r.id && open !== undefined && <pre style={preStyle}>{open.markdown}</pre>}
         </div>
       ))}
-      {props.reports.length === 0 && <span style={hintStyle}>尚无报告。在「生成」页扫描并生成第一份报告。</span>}
+      {props.reports.length === 0 && <span style={hintStyle}>尚无报告。在左侧聊天里让 AI 生成（如：帮我生成本周周报），确认后报告会出现在这里。</span>}
     </div>
   )
 }
