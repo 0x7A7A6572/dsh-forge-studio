@@ -12,11 +12,16 @@ import type { ReportRecord, SourceRecord, TemplateRecord } from '../../types.ts'
 import type { ProjectCandidate, ProjectChannels, SourceType } from '../../types.ts'
 import { CHANNEL_LABELS, NO_CHANNELS, SOURCE_KINDS } from '../../types.ts'
 import { DATA_MARKER, parseTemplate, joinTemplate } from '../../template.ts'
+import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 
 export interface DailyLogBoardFace {
   dailyLog: DailyLogRemote
-  /** 把文案填入当前会话聊天输入框并收起面板（缺省时指南页动作降级为提示手动输入）。 */
-  fillChat?: (text: string) => Promise<{ ok: boolean; error?: string }>
+}
+
+/** MarkdownText 本地化文案（模板预览用，引用稳定常量）。 */
+const TEMPLATE_MD_LABELS = {
+  code: { copyLabel: '复制', copiedLabel: '已复制' },
+  footnotes: '脚注',
 }
 
 function errText(err: unknown): string {
@@ -189,7 +194,7 @@ export function DailyLogBoard({ face }: { face: DailyLogBoardFace }): JSX.Elemen
   return (
     <div style={rootStyle}>
       <header style={headerStyle}>
-        <h2 style={titleStyle}>𝖉𝖆𝖎𝖑𝖞 𝖑𝖔𝖌</h2>
+        <h2 style={titleStyle}>工作报告</h2>
         <button type="button" style={btnStyle} onClick={() => boardStore.hide()}>关闭</button>
       </header>
       <nav style={navStyle}>
@@ -200,7 +205,7 @@ export function DailyLogBoard({ face }: { face: DailyLogBoardFace }): JSX.Elemen
       </nav>
       {error !== '' && <div style={errorStyle}>{error}</div>}
       <div style={panelStyle}>
-        {tab === 'board' && <GuidanceTab sources={sources} templates={templates} fillChat={face.fillChat} />}
+        {tab === 'board' && <GuidanceTab sources={sources} templates={templates} />}
         {tab === 'sources' && <SourcesTab dailyLog={dailyLog} sources={sources} busy={busy} run={run} />}
         {tab === 'reports' && <ReportsTab dailyLog={dailyLog} reports={reports} busy={busy} run={run} />}
         {tab === 'templates' && <TemplatesTab dailyLog={dailyLog} templates={templates} busy={busy} run={run} />}
@@ -211,47 +216,24 @@ export function DailyLogBoard({ face }: { face: DailyLogBoardFace }): JSX.Elemen
 
 /* ---------- 指南（对话式生成入口） ---------- */
 
-/**
- * 指南页：说明对话式生成用法 + 一键把示例句填入当前会话聊天框（收起面板即回到对话），
- * 不提供剪贴板复制。fillChat 缺省（非 GUI 宿主）时动作降级为提示手动输入。
- */
+/** 指南页：纯引导（无操作按钮）——入口在左侧聊天；页首展示品牌花体字。 */
 function GuidanceTab(props: {
   sources: readonly SourceRecord[]
   templates: readonly TemplateRecord[]
-  fillChat?: (text: string) => Promise<{ ok: boolean; error?: string }>
 }): JSX.Element {
   const defaultTemplate = props.templates.find((t) => t.isDefault) ?? props.templates.find((t) => t.isBuiltin)
-  const [notice, setNotice] = useState('')
-  const EXAMPLES: ReadonlyArray<{ text: string; scope: string }> = [
-    { text: '帮我生成本周周报', scope: '本周' },
-    { text: '汇总我最近 3 天的工作', scope: '最近 3 天' },
-  ]
-  async function fill(text: string): Promise<void> {
-    if (props.fillChat === undefined) {
-      setNotice('此环境未接入聊天输入，请直接在左侧聊天里输入这句话。')
-      return
-    }
-    setNotice('')
-    const result = await props.fillChat(text)
-    if (!result.ok) setNotice(result.error ?? '填入失败，请直接在聊天里输入这句话。')
-  }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ fontSize: 26, fontWeight: 600, letterSpacing: 1, color: 'var(--dsw-alias-label-primary)' }}>
+        𝖉𝖆𝖎𝖑𝖞 𝖑𝖔𝖌
+      </div>
       <div style={cardStyle}>
         <strong>对话式生成报告</strong>
         <div style={hintStyle}>
-          在本窗口左侧的聊天里对 AI 说一句话：AI 会先确认时间范围与项目、扫描数据，
-          再亲自把提交/会话归纳成业务化报告（合并同功能提交、按模板结构归类），
+          在本窗口左侧的聊天里对 AI 说一句话（如「帮我生成本周周报」）：AI 会先确认时间范围与项目、
+          扫描 Git 提交与本地 agent 会话，再亲自把活动归纳成业务化报告（合并同功能提交、按模板结构归类），
           经你确认后保存到「报告」页并可按需导出。
         </div>
-        <div style={hintStyle}>点下面示例会直接填入当前会话的输入框并收起本面板，回车即可发送：</div>
-        {EXAMPLES.map((ex) => (
-          <div key={ex.text} style={rowStyle}>
-            <span style={{ fontSize: 13, flex: 1 }}>{ex.text}</span>
-            <button type='button' style={btnStyle} onClick={() => void fill(ex.text)}>填入聊天</button>
-          </div>
-        ))}
-        {notice !== '' && <div style={errorStyle}>{notice}</div>}
       </div>
       <div style={cardStyle}>
         <strong>当前状态</strong>
@@ -673,6 +655,11 @@ function TemplateEditDialog(props: {
   const [name, setName] = useState(props.editing?.name ?? '')
   const [prompt, setPrompt] = useState(initial?.promptSection ?? '')
   const [skeleton, setSkeleton] = useState(initial?.skeletonSection ?? '')
+  const [preview, setPreview] = useState(false)
+  const joinedDoc =
+    (prompt.trim() !== '' ? prompt.trim() + '\n\n' : '') +
+    DATA_MARKER +
+    (skeleton.trim() !== '' ? '\n\n' + skeleton.trim() : '')
 
   async function save(): Promise<void> {
     if (name.trim() === '' || skeleton.trim() === '') return
@@ -694,24 +681,40 @@ function TemplateEditDialog(props: {
           <strong style={{ fontSize: 14 }}>{props.editing !== null ? '编辑模板' : '新增模板'}</strong>
           <span style={hintStyle}>指令段（可选） + {DATA_MARKER} + 骨架段；内容作为结构引导喂给生成 AI</span>
         </div>
-        <input style={inputStyle} placeholder='模板名' value={name} onChange={(e) => setName(e.target.value)} />
-        <textarea
-          style={{ ...inputStyle, minHeight: 90, fontFamily: 'monospace', resize: 'vertical' }}
-          placeholder={'指令段（可选）：给生成 AI 的额外撰写要求，如「按周维度组织，每周一个小节」'}
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-        />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ flex: 1, borderTop: '1px solid var(--dsw-alias-border-l2)' }} />
-          <span style={hintStyle}>骨架段（报告章节结构，必填）</span>
-          <span style={{ flex: 1, borderTop: '1px solid var(--dsw-alias-border-l2)' }} />
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button type='button' style={btnStyle} onClick={() => setPreview((v) => !v)}>
+            {preview ? '返回编辑' : '预览渲染'}
+          </button>
         </div>
-        <textarea
-          style={{ ...inputStyle, minHeight: 260, fontFamily: 'monospace', resize: 'vertical' }}
-          placeholder={'章节标题，示例：\n## 核心产出\n## 问题修复\n## 技术优化\n## 其他工作\n## 下一步计划'}
-          value={skeleton}
-          onChange={(e) => setSkeleton(e.target.value)}
-        />
+        <input style={inputStyle} placeholder='模板名' value={name} onChange={(e) => setName(e.target.value)} />
+        {preview ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <span style={hintStyle}>渲染预览（{DATA_MARKER} 为指令段/骨架段分隔符；供参考，不构成正文章节）</span>
+            <div style={{ border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 6, padding: '8px 12px', minHeight: 340, maxHeight: 420, overflowY: 'auto', background: 'var(--dsw-alias-bg-base)' }}>
+              <MarkdownText text={joinedDoc} labels={TEMPLATE_MD_LABELS} />
+            </div>
+          </div>
+        ) : (
+          <>
+            <textarea
+              style={{ ...inputStyle, minHeight: 90, fontFamily: 'monospace', resize: 'vertical' }}
+              placeholder={'指令段（可选）：给生成 AI 的额外撰写要求，如「按周维度组织，每周一个小节」'}
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ flex: 1, borderTop: '1px solid var(--dsw-alias-border-l2)' }} />
+              <span style={hintStyle}>骨架段（报告章节结构，必填）</span>
+              <span style={{ flex: 1, borderTop: '1px solid var(--dsw-alias-border-l2)' }} />
+            </div>
+            <textarea
+              style={{ ...inputStyle, minHeight: 260, fontFamily: 'monospace', resize: 'vertical' }}
+              placeholder={'章节标题，示例：\n## 核心产出\n## 问题修复\n## 技术优化\n## 其他工作\n## 下一步计划'}
+              value={skeleton}
+              onChange={(e) => setSkeleton(e.target.value)}
+            />
+          </>
+        )}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <button type='button' style={btnStyle} onClick={props.onClose}>取消</button>
           <button type='button' style={primaryBtnStyle} disabled={props.busy || name.trim() === '' || skeleton.trim() === ''} onClick={() => void save()}>
