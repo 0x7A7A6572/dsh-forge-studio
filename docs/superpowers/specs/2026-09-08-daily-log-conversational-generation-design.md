@@ -104,8 +104,8 @@ order 2950）但内容分三节：
   add_source / delete_report / template_create / template_update / template_delete / set_default_template`。
   （`scan` 的渲染维持 title 行列表上限 200——模型不需要全量 body。）
 - **重写 `generate` → `prepare_report`**：描述明确「进入生成阶段：返回所选模板的指令/骨架引导与数据统计；
-  随后你必须亲自按引导撰写报告正文」。形参保持 reportType/since/until/source_ids?/template_id?/author_name?/author_email?。
-- **新增 `save_report`**（写，pre-execute ask）：`{ title, markdown, since, until?, report_type?, source_ids?, template_id? }`
+  随后你必须亲自按引导撰写报告正文」。形参保持 reportType/since/until/source_ids?/template_id?。
+- **新增 `save_report`**（写，pre-execute ask）：`{ title, markdown, since, until?, report_type?, source_ids, template_id? }`
   → 落 reports 表，返回记录 id。
 - **新增 `export_report`**（写，ask）：`{ report_id, output_dir? }` → 写 .md 到目录（缺省 settings.outputDir → ~/daily-log-reports）。
 - guard 不变（内置模板只读等）。`prepare_report` 只读模板与统计、无副作用 → **归读工具放行**；
