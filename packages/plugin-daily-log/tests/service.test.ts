@@ -6,7 +6,7 @@ import { Context } from '@deepseek-ai/cordis'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { DailyLogService } from '../src/service.ts'
 import type { DailyLogServiceConfig } from '../src/service.ts'
-import type { ActivityEntry, SourceId, SourceKind } from '../src/types.ts'
+import type { ActivityEntry, SourceId, SourceKind, TemplateId } from '../src/types.ts'
 import type { ReportRecord, SourceRecord, TemplateRecord } from '../src/types.ts'
 import type { ChannelProvider } from '../src/sources/provider.ts'
 import { encodeClaudeSlug } from '../src/sources/claude.ts'
@@ -324,6 +324,44 @@ describe('DailyLogService 类型与候选发现', () => {
   it('listWorkspaceCandidates：无 workspaceProjects → 空候选', async () => {
     const { svc } = makeService()
     expect(await svc.listWorkspaceCandidates()).toEqual([])
+  })
+})
+
+
+describe('DailyLogService 内置模板迁移 + prepare/save', () => {
+  it('预置旧 mustache 内置模板 → 构造后覆盖为新骨架', async () => {
+    const ctx = new Context()
+    const templates = fakeTable<TemplateRecord>()
+    templates.put('t-builtin' as TemplateId, {
+      id: 't-builtin' as TemplateId,
+      name: 'default',
+      content: '# {{author.name}} 的{{reportType}}',
+      isBuiltin: true,
+      isDefault: true,
+      updatedAt: 1,
+    })
+    const domain = { table: (n: string) => (n === 'templates' ? templates : undefined) } as never
+    const fresh = new DailyLogService(ctx, { domain })
+    const t = fresh.listTemplates().find((x) => x.isBuiltin)!
+    expect(t.content).not.toContain('{{')
+    expect(t.content).toContain('## 核心产出')
+  })
+  it('prepareReport 返回模板引导且不触发渠道扫描', async () => {
+    const boom: ChannelProvider = { kind: 'git', probe: async () => true, scan: async () => { throw new Error('should not scan') } }
+    const { svc } = makeService({ channels: [boom] })
+    const s = await svc.addSource({ path: '/a', label: 'proj' })
+    const r = await svc.prepareReport({ reportType: '周报', dateRange: { since: '2026-07-01' }, sourceIds: [s.id] })
+    expect(r.sourceCount).toBe(1)
+    expect(r.template.name).toBe('default')
+    expect(r.template.skeletonSection).toContain('## 核心产出')
+    expect(r.template.promptSection).toBeUndefined()
+  })
+  it('saveReport 落库 + 缺省标题回退', async () => {
+    const { svc, reports } = makeService()
+    const s = await svc.addSource({ path: '/a' })
+    const rec = await svc.saveReport({ markdown: '# 正文', sourceIds: [s.id], dateRange: { since: '2026-07-01' }, reportType: '周报' })
+    expect(reports.get(rec.id)?.markdown).toBe('# 正文')
+    expect(rec.title).toBe('周报 · 2026-07-01')
   })
 })
 
