@@ -103,17 +103,6 @@ export interface ReportRecord {
   readonly createdAt: number
 }
 
-/** 生成报告入参（确定性管线：扫描 → 渲染 → 保存）。 */
-export interface ReportGenerateInput {
-  readonly sourceIds?: SourceId[]
-  readonly dateRange: DateRange
-  readonly templateId?: TemplateId
-  readonly reportType: string
-  readonly title?: string
-  readonly authorName?: string
-  readonly authorEmail?: string
-}
-
 /** 新建报告入参。 */
 export interface ReportCreateInput {
   readonly title: string

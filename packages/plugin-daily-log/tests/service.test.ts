@@ -363,6 +363,11 @@ describe('DailyLogService 内置模板迁移 + prepare/save', () => {
     expect(reports.get(rec.id)?.markdown).toBe('# 正文')
     expect(rec.title).toBe('周报 · 2026-07-01')
   })
+  it('saveReport 空正文被拒绝', async () => {
+    const { svc } = makeService()
+    const s = await svc.addSource({ path: '/a' })
+    await expect(svc.saveReport({ markdown: '   ', sourceIds: [s.id], dateRange: { since: 'x' } })).rejects.toThrow(/正文不能为空/)
+  })
 })
 
 describe('claude 会话目录 slug 编码', () => {

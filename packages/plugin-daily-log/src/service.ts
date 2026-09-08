@@ -25,12 +25,11 @@ import { discoverSessionProjects } from './sources/discover.ts'
 import { BUILTIN_TEMPLATE } from './types.ts'
 import type {
   ActivityEntry, DateRange, ProjectCandidate, ProjectChannels, ReportCreateInput,
-  ReportGenerateInput, ReportId, ReportPrepareInput, ReportPrepareResult, ReportRecord,
+  ReportId, ReportPrepareInput, ReportPrepareResult, ReportRecord,
   ReportSaveInput, ScanResult, SourceAddInput, SourceId, SourceRecord, TemplateId,
   TemplateRecord,
 } from './types.ts'
 import { DEFAULT_TEMPLATE_SKELETON, formatDateRange, parseTemplate } from './template.ts'
-import { buildRenderData, renderTemplate } from './render.ts'
 
 export interface DailyLogServiceConfig {
   readonly domain: Domain<typeof dailyLogDomain>
@@ -303,37 +302,6 @@ export class DailyLogService extends TypertRemoteService {
     return this.reports.delete(id)
   }
 
-  /**
-   * 生成报告（确定性管线）：扫描指定项目 → 合并多渠道活动 → 按模板渲染 → 保存。
-   * sourceIds 缺省 = 全部项目；templateId 缺省 = 默认模板（isDefault，回退内置）。
-   */
-  async generateReport(input: ReportGenerateInput): Promise<ReportRecord> {
-    const ids = input.sourceIds ?? Array.from(this.sources.entries(), ([, s]) => s.id)
-    const allEntries: ActivityEntry[] = []
-    for (const id of ids) {
-      const result = await this.scanSource(id, input.dateRange)
-      allEntries.push(...result.entries)
-    }
-    let template: TemplateRecord | undefined
-    if (input.templateId !== undefined) template = this.templates.get(input.templateId)
-    if (template === undefined) template = this.listTemplates().find((t) => t.isDefault)
-    if (template === undefined) template = this.listTemplates().find((t) => t.isBuiltin)
-    const content = template?.content ?? DEFAULT_TEMPLATE_SKELETON
-    const data = buildRenderData(allEntries, input.dateRange, {
-      name: input.authorName ?? '',
-      email: input.authorEmail ?? '',
-    }, input.reportType)
-    const markdown = renderTemplate(content, data)
-    const title = input.title ?? `${input.reportType} · ${formatDateRange(input.dateRange)}`
-    return this.createReport({
-      title,
-      markdown,
-      sourceIds: ids,
-      ...(template !== undefined ? { templateId: template.id } : {}),
-      dateRange: input.dateRange,
-    })
-  }
-
   /** 按 id 取模板；缺省按 isDefault → isBuiltin 兜底。 */
   private resolveTemplate(templateId?: TemplateId): TemplateRecord | undefined {
     if (templateId !== undefined) return this.templates.get(templateId)
@@ -491,9 +459,7 @@ markRemoteMethods(DailyLogService.prototype, [
   'discoverSessionProjects',
   'listReports',
   'getReport',
-  'createReport',
   'deleteReport',
-  'generateReport',
   'prepareReport',
   'saveReport',
   'exportReport',
