@@ -187,7 +187,7 @@ export function DailyLogBoard({ face }: { face: DailyLogBoardFace }): JSX.Elemen
   return (
     <div style={rootStyle}>
       <header style={headerStyle}>
-        <h2 style={titleStyle}>工作报告</h2>
+        <h2 style={titleStyle}>𝖉𝖆𝖎𝖑𝖞 𝖑𝖔𝖌</h2>
         <button type="button" style={btnStyle} onClick={() => boardStore.hide()}>关闭</button>
       </header>
       <nav style={navStyle}>
