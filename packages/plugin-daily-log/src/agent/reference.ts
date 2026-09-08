@@ -28,7 +28,7 @@ export const DAILY_LOG_REFERENCE_TEXT = [
   '- 调用 daily_log_prepare_report 获取所选模板的指令/骨架引导，然后【你亲自撰写正文】。',
   '- 按骨架归类：feat/新增 → 核心产出；fix → 问题修复；refactor/perf → 技术优化；隐性工作 → 其他工作。',
   '- 同功能多次提交合并为一条业务描述。坏例：「修改了 user.ts 的 login 方法」；好例：「完成用户登录模块重构，提升可维护性」。',
-  '- 写完先在回复中展示正文并询问是否调整；未经用户确认不得调用 daily_log_save_report / daily_log_export_report。',
+  '- 写完先在回复中展示正文并询问是否调整；用户要求调整则按意见修改正文，改完再次询问；未经用户确认不得调用 daily_log_save_report / daily_log_export_report。',
 ].join('\n')
 
 export function installDailyLogReferencePrompt(ctx: Context): void {

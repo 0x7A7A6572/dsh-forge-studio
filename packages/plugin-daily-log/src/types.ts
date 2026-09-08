@@ -117,7 +117,7 @@ export interface ReportCreateInput {
 export interface TemplateRecord {
   readonly id: TemplateId
   readonly name: string
-  /** markdown 骨架 + mustache 占位符。 */
+  /** 指令段（可选）+ <!-- DATA --> + 骨架段（LLM 引导格式）。 */
   readonly content: string
   readonly isBuiltin: boolean
   readonly isDefault: boolean

@@ -220,7 +220,7 @@ export function installDailyLogTools(ctx: Context): void {
 
   ctx.tools.register(defineTool({
     name: TOOL_LIST_TEMPLATES,
-    description: 'List report templates (id, name, isBuiltin, isDefault). The default template is used when daily_log_generate omits template_id.',
+    description: 'List report templates (id, name, isBuiltin, isDefault). The default template is used when daily_log_prepare_report omits template_id.',
     parameters: {},
     output: {
       schema: {
@@ -397,10 +397,10 @@ export function installDailyLogTools(ctx: Context): void {
 
   ctx.tools.register(defineTool({
     name: TOOL_TEMPLATE_CREATE,
-    description: 'Create a report template (markdown skeleton with mustache placeholders).',
+    description: 'Create a report template: Markdown with an optional instruction section, the DATA marker (<!-- DATA -->), and a required skeleton section guiding the generation-phase LLM (no mustache placeholders).',
     parameters: {
       name: { type: 'string', required: true, description: 'Template name.' },
-      content: { type: 'string', required: true, description: 'Markdown skeleton with mustache placeholders; supported keys: reportType, dateRange, author.name, and section loops over projects/commits/activities.' },
+      content: { type: 'string', required: true, description: 'Template content: optional instruction section above <!-- DATA --> and required skeleton section below it, guiding the LLM as it writes the report body (no mustache placeholders).' },
     },
     output: {
       schema: { type: 'object', additionalProperties: false, properties: { id: { type: 'string', required: true }, name: { type: 'string', required: true } } },
@@ -449,7 +449,7 @@ export function installDailyLogTools(ctx: Context): void {
 
   ctx.tools.register(defineTool({
     name: TOOL_TEMPLATE_SET_DEFAULT,
-    description: 'Set a template as the default (used when daily_log_generate omits template_id).',
+    description: 'Set a template as the default (used when daily_log_prepare_report omits template_id).',
     parameters: { template_id: { type: 'string', required: true, description: 'The template id from daily_log_list_templates.' } },
     output: {
       schema: { type: 'object', additionalProperties: false, properties: { ok: { type: 'boolean', required: true } } },
