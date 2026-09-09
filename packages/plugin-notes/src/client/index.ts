@@ -18,9 +18,12 @@ import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { NotesConfig } from '../types.ts'
 import { NOTES_NAMESPACE } from '../types.ts'
 import { mountNotesRemote, notesOf } from './core/notes-remote.ts'
+import { mountQuickAdd } from './core/quick-add.ts'
 import { mountNotesSidebarEntry } from './core/sidebar-entry.ts'
+import { mountNotesStats, mountNotesChangeWatch, refreshNotesStats } from './core/notes-stats.ts'
 import { mountNotesPanel } from './core/panel-mount.ts'
 import { NotesBoard, type NotesBoardFace } from './views/board-view.tsx'
+import { QuickAddDialog } from './views/quick-add-dialog.tsx'
 
 export const name = '@zzerx/dsh-plugin-notes/client'
 export const inject = ['slots', 'settingsScope', 'remote', 'typert']
@@ -51,11 +54,40 @@ export function apply(ctx: Context): void {
       // apply 抛错时会整体 boot 失败）。disposer 随 fiber 卸载回收。
       try {
         const disposeEntry = mountNotesSidebarEntry()
+        const disposeStats = mountNotesStats(() => notes.list())
+        // 事件驱动核心：订阅宿主 notes/watch 推送（关板徽标、开板板内容即时同步）。
+        const disposeWatch = mountNotesChangeWatch(notes)
+        // 快捷新建独立浮层：不开便签板；保存成功落库后补刷一次徽标。
+        const disposeQuickAdd = mountQuickAdd({
+          render: (root) =>
+            root.render(
+              createElement(QuickAddDialog, {
+                scope,
+                create: async (input) => {
+                  const result = await notes.create({
+                    title: input.title,
+                    text: input.text,
+                    color: input.color,
+                    ...(input.laneStatus !== undefined ? { laneStatus: input.laneStatus } : {}),
+                  })
+                  if (result.ok) return { ok: true }
+                  const err = result as { error?: { message?: string } }
+                  return { ok: false, error: err.error }
+                },
+                onCreated: () => {
+                  void refreshNotesStats()
+                },
+              }),
+            ),
+        })
         const disposePanel = mountNotesPanel({
           render: (root) => root.render(createElement(NotesBoard, { face: face() })),
         })
         ctx.effect(() => () => {
           disposeEntry()
+          disposeStats()
+          disposeWatch()
+          disposeQuickAdd()
           disposePanel()
         }, 'plugin-notes: ui surfaces')
       } catch (error) {

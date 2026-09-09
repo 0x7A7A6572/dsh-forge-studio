@@ -1,7 +1,7 @@
 /**
  * 便签板页面（中间列面板挂载点，与 dsh-task-board 同构）：占满中间列的
  * 面板框架，数据直连 host。本组件只当**数据控制器 + 渲染出口**：
- * - 数据流：开关订阅、拉取/轮询、错误条、busy 与保存流（saveDraft → run → refresh）；
+ * - 数据流：开关订阅、拉取（事件驱动，无定时轮询）、错误条、busy 与保存流（saveDraft → run → refresh）；
  * - 弹窗层：编辑器/设置/使用说明是互斥浮层弹窗，开关一律读 notes-nav store，
  *   不再持有 draft/settingsOpen 本地 state（加弹窗只扩 notes-nav + 下方渲染处）；
  * - 内容：列表页 BoardMain 常驻，编辑器弹窗 = EditorPageDialog（独立文件），
@@ -26,6 +26,7 @@ import type {
 import type { TaskStatus } from "../core/task-lanes.ts";
 import { lanePatchForSave } from "../core/task-lanes.ts";
 import { boardStore } from "../core/board-store.ts";
+import { notesChangeBus, notesStatsStore } from "../core/notes-stats.ts";
 import { notesNav } from "../core/notes-nav.ts";
 import type { NotesRemote } from "../core/notes-remote.ts";
 import { t } from "../core/theme-tokens.ts";
@@ -128,6 +129,8 @@ export function NotesBoard(props: NotesBoardProps): JSX.Element {
     const result = await props.face.notes.list();
     if (result.ok) {
       setNotes(result.value);
+      // 侧栏「活动待办」徽标：板内操作/变更推送后即时同步（关板时由 notes-stats 事件订阅兜底）。
+      notesStatsStore.sync(result.value);
       setError(undefined);
     } else if (!silent) {
       setError(errText(result.error));
@@ -135,19 +138,16 @@ export function NotesBoard(props: NotesBoardProps): JSX.Element {
     if (!silent) setLoading(false);
   }
 
-  // 轮询加速（spec §9）：面板内存在运行中任务（status running 且 run 未收尾）
-  // 时 1500ms，否则 5000ms；hasRunning 变化时 effect 重算并重建 interval。
-  const hasRunning = notes.some(
-    (n) => n.lane && n.lane.status === 'running' && !n.lane.run?.finishedAt,
-  );
-
+    // 事件驱动（替代原 5s/1.5s 轮询）：开板首刷；之后任何写（本板操作、
+  // agent 工具、WebDAV 恢复等）由宿主 notes/watch 推送 → 静默刷新。无定时器。
   useEffect(() => {
     if (!open) return;
     void refresh();
-    const timer = setInterval(() => void refresh(true), hasRunning ? 1500 : 5000);
-    return () => clearInterval(timer);
+    return notesChangeBus.subscribe(() => {
+      void refresh(true);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, hasRunning]);
+  }, [open]);
 
   // Esc：按弹窗层级收 —— 使用说明 → 设置弹窗 → 编辑器弹窗 → 整个面板
   // （编辑器内的 Esc 由 NoteEditor 处理并 stopPropagation，不会走到这里）。
@@ -421,7 +421,10 @@ export function NotesBoard(props: NotesBoardProps): JSX.Element {
         <NotesSettingsDialog
           scope={scope}
           snapshot={snapshot}
+          notes={props.face.notes}
           onError={(message) => setError(message)}
+          // 设置保存（默认标题等）后即时刷新板数据（WIP 事件化：等推送会滞后）。
+          onDataChanged={() => void refresh(true)}
           onClose={() => notesNav.setSettingsOpen(false)}
         />
       )}

@@ -30,6 +30,12 @@ import type {
   NoteUpdateInput,
   TaskStatus,
 } from '../../types.ts'
+import type {
+  WebdavBackupResult,
+  WebdavListResult,
+  WebdavRestoreResult,
+  WebdavStatus,
+} from '../../types.ts'
 
 export const NOTES_REMOTE_PACKAGE = '@zzerx/dsh-plugin-notes'
 const SERVICE = 'notes'
@@ -186,16 +192,23 @@ export type TaskResetResult = { readonly ok: true; readonly note: NoteRecord } |
 
 /* ---------- 端点 descriptors（与 host NotesService 方法一一对应） ---------- */
 
+interface DescriptorOptions {
+  readonly mode?: 'stream'
+}
+
 function descriptor(
   method: string,
   parameters: InvocationDescriptor['parameters'],
+  options?: DescriptorOptions,
 ): InvocationDescriptor {
   return {
     id: `notes.${method}`,
     service: SERVICE,
     namespace: NAMESPACE,
     method,
+    ...(options?.mode !== undefined ? { mode: options.mode } : {}),
     invocation: { kind: 'direct' },
+    ...(options?.mode === 'stream' ? { cancellation: { parameter: 'signal' } } : {}),
     parameters,
     result: json,
   }
@@ -227,13 +240,28 @@ export const notesRemoteContribution: TypertRemoteContribution = {
     descriptor('taskReset', [
       { name: 'id', wire: 'id', source: 'json', codec: strict('NoteId', idSchema) },
     ]),
+    // 变更推送流（host SRC marker mode: 'stream'）：无业务参数，取消经 signal。
+    descriptor('watch', [], { mode: 'stream' }),
+    // WebDAV 备份/恢复（结果一律 src-json；网络错误结构化回传，不抛）。
+    descriptor('webdavBackup', []),
+    descriptor('webdavList', []),
+    descriptor('webdavStatus', []),
+    descriptor('webdavRestore', [
+      { name: 'name', wire: 'name', source: 'json', codec: strict('SnapshotName', idSchema) },
+    ]),
   ],
 }
 
 /* ---------- 类型增广：ctx.remote.notes 有类型 ---------- */
 
+/** notes/watch 推送事件（host 与 client 同形状，src-json 透传）。 */
+export interface NotesChangeEvent {
+  readonly changedAt: number
+}
+
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteMap {
+    'notes/watch': (signal?: AbortSignal) => AsyncIterable<NotesChangeEvent>
     'notes/list': () => Promise<RemoteResult<readonly NoteRecord[]>>
     'notes/getAgentBridgeState': () => Promise<RemoteResult<ClientNotesAgentBridgeState>>
     'notes/create': (input: NoteCreateInput) => Promise<RemoteResult<NoteRecord>>
@@ -242,6 +270,10 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'notes/delete': (id: NoteId) => Promise<RemoteResult<boolean>>
     'notes/taskExecute': (id: NoteId, sessionId: string) => Promise<RemoteResult<TaskExecuteResult>>
     'notes/taskReset': (id: NoteId) => Promise<RemoteResult<TaskResetResult>>
+    'notes/webdavBackup': () => Promise<RemoteResult<WebdavBackupResult>>
+    'notes/webdavList': () => Promise<RemoteResult<WebdavListResult>>
+    'notes/webdavStatus': () => Promise<RemoteResult<WebdavStatus>>
+    'notes/webdavRestore': (name: string) => Promise<RemoteResult<WebdavRestoreResult>>
   }
   interface TypertRemoteNamespaceMap {
     notes: TypertRemoteNamespace<'notes'>
@@ -250,6 +282,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
 
 /** 供 UI 使用的窄接口（与增广的 ctx.remote.notes 形状一致）。 */
 export interface NotesRemote {
+  /** 变更推送流（事件驱动）：收到事件后自行 list() 拉最新；signal abort 即停。 */
+  watch(signal?: AbortSignal): AsyncIterable<NotesChangeEvent>
   list(): Promise<RemoteResult<readonly NoteRecord[]>>
   getAgentBridgeState(): Promise<RemoteResult<ClientNotesAgentBridgeState>>
   create(input: NoteCreateInput): Promise<RemoteResult<NoteRecord>>
@@ -258,6 +292,10 @@ export interface NotesRemote {
   delete(id: NoteId): Promise<RemoteResult<boolean>>
   taskExecute(id: NoteId, sessionId: string): Promise<RemoteResult<TaskExecuteResult>>
   taskReset(id: NoteId): Promise<RemoteResult<TaskResetResult>>
+  webdavBackup(): Promise<RemoteResult<WebdavBackupResult>>
+  webdavList(): Promise<RemoteResult<WebdavListResult>>
+  webdavStatus(): Promise<RemoteResult<WebdavStatus>>
+  webdavRestore(name: string): Promise<RemoteResult<WebdavRestoreResult>>
 }
 
 /**

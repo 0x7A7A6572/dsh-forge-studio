@@ -103,7 +103,7 @@ export function TaskLaneCard(props: TaskLaneCardProps): JSX.Element {
 
   const lane = note.lane
   const run = lane?.run
-  // running = 状态进行中且 run 帧未收尾（与轮询加速判定一致）。
+  // running = 状态进行中且 run 帧未收尾（与任务进行中判定一致）。
   const running = lane !== undefined && lane.status === 'running' && isRunOpen(lane)
   // done/failed 卡：主按钮语义为「重跑」，摘要区显示 run.summary 首行。
   const rerun = lane !== undefined && (lane.status === 'done' || lane.status === 'failed')

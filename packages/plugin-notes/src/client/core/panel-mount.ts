@@ -21,9 +21,9 @@ const ACTIVATE_EVENT = 'dsh-panel-activate'
 /** 本面板的 `<html>` 激活属性。 */
 const VIEW_ATTRIBUTE = 'data-dsh-notes-active'
 /** sibling 面板的激活属性（打开本面板时驱逐）。 */
-const SIBLING_ATTRIBUTES = ['data-dsh-taskboard-active', 'data-dsh-ssh-active']
+const SIBLING_ATTRIBUTES = ['data-dsh-taskboard-active', 'data-dsh-ssh-active', 'data-dsh-dailylog-active']
 /** sibling 面板的广播名（其激活时关掉本面板）。 */
-const SIBLING_PANEL_NAMES = ['taskboard', 'ssh']
+const SIBLING_PANEL_NAMES = ['taskboard', 'ssh', 'dailylog']
 // 侧栏会话行：点击把中间列交还会话（含已当前行，其点击不产生 session-change
 // 事件）。捕获阶段监听，让面板在 shell 处理点击前先关。
 const SIDEBAR_ROW_SELECTOR = '[class*="sessionRow"], [class*="projectRow"], [class*="searchResultRow"], [class*="searchResultWorkspace"], [class*="newSession"]'
@@ -41,15 +41,15 @@ const TAKEOVER_CSS = `
   z-index: 60;
   background: var(--dsw-alias-bg-base);
 }
-/* 中间列单占位；:not() 守卫避免与 sibling 面板（task-board）争夺可见性。 */
-html[data-dsh-notes-active]:not([data-dsh-taskboard-active]) [data-dsh-notes-view] {
+/* 中间列单占位；:not() 守卫避免与 sibling 面板（task-board / ssh / daily-log）争夺可见性。 */
+html[data-dsh-notes-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-active]):not([data-dsh-dailylog-active]) [data-dsh-notes-view] {
   display: block;
 }
 /* 面板激活时隐藏会话内容（保持挂载与状态）。!important 必要：新版 shell 用
    inline display:contents 包会话视图，inline 样式会压过普通样式规则，不写
    !important 输入卡片仍会露出并盖在面板底部。 */
-html[data-dsh-notes-active]:not([data-dsh-taskboard-active]) [data-pane='conversation'] > :not([data-dsh-notes-view]),
-html[data-dsh-notes-active]:not([data-dsh-taskboard-active]) [class*='centerCol'] > :not([data-dsh-notes-view]) {
+html[data-dsh-notes-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-active]):not([data-dsh-dailylog-active]) [data-pane='conversation'] > :not([data-dsh-notes-view]),
+html[data-dsh-notes-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-active]):not([data-dsh-dailylog-active]) [class*='centerCol'] > :not([data-dsh-notes-view]) {
   display: none !important;
 }
 `

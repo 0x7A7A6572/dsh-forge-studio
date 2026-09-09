@@ -111,3 +111,17 @@ export function lanePatchForSave(
   }
   return current !== undefined ? { clear: true } : undefined
 }
+
+/**
+ * 侧栏「活动待办」徽标口径：未归档且泳道状态 ∈ {待办, 进行中} 的任务便签数。
+ * （待规划是计划池、已完成/已失败已离开工作流，均不计；普通便签无 lane 不计。）
+ */
+export function countOpenTasks(notes: readonly NoteRecord[]): number {
+  let open = 0
+  for (const note of notes) {
+    if (note.archived) continue
+    const status = note.lane?.status
+    if (status === 'todo' || status === 'running') open += 1
+  }
+  return open
+}

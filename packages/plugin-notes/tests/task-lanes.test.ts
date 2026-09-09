@@ -11,6 +11,7 @@ import {
   beginRun,
   groupNotesByLane,
   isRunOpen,
+  countOpenTasks,
   laneLabel,
   lanePatchForSave,
   makeLane,
@@ -184,5 +185,47 @@ describe('lanePatchForSave（编辑器「设为任务」开关 → lane patch）
 
   it('开关关且原本非任务 → undefined（纯内容更新，不改 lane）', () => {
     expect(lanePatchForSave(false, 'todo', undefined)).toBeUndefined()
+  })
+})
+
+describe('countOpenTasks（侧栏「活动待办」徽标口径）', () => {
+  it('空输入 → 0', () => {
+    expect(countOpenTasks([])).toBe(0)
+  })
+
+  it('只计 待办/进行中；待规划/已完成/已失败不计', () => {
+    const notes = [
+      note({ id: id('backlog'), lane: { status: 'backlog' } }),
+      note({ id: id('todo'), lane: { status: 'todo' } }),
+      note({ id: id('running'), lane: { status: 'running' } }),
+      note({ id: id('done'), lane: { status: 'done' } }),
+      note({ id: id('failed'), lane: { status: 'failed' } }),
+    ]
+    expect(countOpenTasks(notes)).toBe(2)
+  })
+
+  it('无 lane 的普通便签不计', () => {
+    const notes = [
+      note({ id: id('plain'), color: 'purple' }),
+      note({ id: id('todo'), lane: { status: 'todo' } }),
+    ]
+    expect(countOpenTasks(notes)).toBe(1)
+  })
+
+  it('归档不计（即使泳道状态是待办/进行中）', () => {
+    const notes = [
+      note({ id: id('archivedTodo'), archived: true, lane: { status: 'todo' } }),
+      note({ id: id('archivedRunning'), archived: true, lane: { status: 'running' } }),
+      note({ id: id('live'), lane: { status: 'todo' } }),
+    ]
+    expect(countOpenTasks(notes)).toBe(1)
+  })
+
+  it('置顶与手写/agent 来源都计（计数只看状态与归档）', () => {
+    const notes = [
+      note({ id: id('pinned'), pinned: true, lane: { status: 'running' } }),
+      note({ id: id('agent'), origin: 'agent', lane: { status: 'todo' } }),
+    ]
+    expect(countOpenTasks(notes)).toBe(2)
   })
 })

@@ -129,6 +129,64 @@ export function formatNoteMention(id: NoteId, title: string): string {
 export interface NotesConfig {
   /** 新建便签的默认标题。 */
   readonly defaultTitle: string
+  /** WebDAV 备份配置（缺省 = 关闭，见 DEFAULT_WEBDAV_CONFIG）。 */
+  readonly webdav?: NotesWebdavConfig
+}
+
+/** WebDAV 备份配置（与应用密码一起存本地 settings；不做云上云）。 */
+export interface NotesWebdavConfig {
+  /** 总开关。 */
+  readonly enabled: boolean
+  /** WebDAV 根地址（HTTPS，结尾斜杠），如 https://dav.jianguoyun.com/dav/ 。 */
+  readonly url: string
+  /** 账号（坚果云等为用户名/邮箱）。 */
+  readonly username: string
+  /** 应用密码（服务商主密码勿填此处）。 */
+  readonly password: string
+  /** 远端目录（相对根，结尾斜杠），如 dsh/notes/ 。 */
+  readonly path: string
+  /** 定时检查间隔（分钟）。 */
+  readonly intervalMin: number
+  /** 远端保留的快照份数（超出删最旧）。 */
+  readonly keep: number
+}
+
+/** WebDAV 配置缺省值（与 settings.ts schema base 保持一致）。 */
+export const DEFAULT_WEBDAV_CONFIG: NotesWebdavConfig = {
+  enabled: false,
+  url: '',
+  username: '',
+  password: '',
+  path: 'dsh/notes/',
+  intervalMin: 30,
+  keep: 10,
+}
+
+/** 备份执行结果（client 直读；host 引擎产出）。 */
+export type WebdavBackupResult =
+  | { readonly ok: true; readonly snapshot: string }
+  | { readonly ok: false; readonly reason: string }
+
+/** 远端快照列表结果（files = 本插件快照文件名，时间戳可排序）。 */
+export type WebdavListResult =
+  | { readonly ok: true; readonly files: readonly string[] }
+  | { readonly ok: false; readonly reason: string }
+
+/** 恢复执行结果（restored = 重建便签数）。 */
+export type WebdavRestoreResult =
+  | { readonly ok: true; readonly restored: number; readonly from: string }
+  | { readonly ok: false; readonly reason: string }
+
+/** WebDAV 备份引擎状态（设置弹窗展示最近结果；来源 = meta 存储域）。 */
+export interface WebdavStatus {
+  readonly enabled: boolean
+  readonly lastBackupAt: number | null
+  readonly lastBackupOk: boolean | null
+  readonly lastBackupError: string | null
+  readonly lastBackupName: string | null
+  readonly lastRestoreAt: number | null
+  readonly lastRestoreOk: boolean | null
+  readonly lastRestoreName: string | null
 }
 
 /**

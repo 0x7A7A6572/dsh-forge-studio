@@ -25,6 +25,8 @@
  */
 import { Context } from '@deepseek-ai/cordis'
 import { notesDomain } from './domain.ts'
+import { webdavMetaDomain } from './webdav-domain.ts'
+import { createWebdavEngine } from './webdav-backup.ts'
 import { NotesService } from './service.ts'
 import type { NotesServiceConfig } from './service.ts'
 import { installNotesSettings } from './settings.ts'
@@ -39,24 +41,46 @@ export const inject = ['storageDomain']
 export async function apply(ctx: Context): Promise<void> {
   // storageDomain 已在静态 inject 声明，apply 时可用，无需再包一层 ctx.inject。
   const domain = await ctx.storageDomain.open(notesDomain)
+  const metaDomain = await ctx.storageDomain.open(webdavMetaDomain)
   try {
     // 域由本 fiber 负责 close。
     ctx.effect(() => () => { void domain.close() })
+    ctx.effect(() => () => { void metaDomain.close() })
+    // WebDAV 备份引擎：用闭包引用稍后构造的 NotesService（回调在运行期才触发），
+    // 避免循环构造。引擎缺省安全：任何错误都结构化回传，绝不拖垮便签服务。
+    let notesService: NotesService | undefined
+    const webdav = createWebdavEngine(ctx, {
+      listNotes: () => notesService?.list() ?? [],
+      replaceAll: async (notes) => {
+        if (!notesService) throw new Error('notes 服务未就绪')
+        await notesService.replaceAll(notes)
+      },
+      metaTable: metaDomain.table('meta'),
+    })
     // 执行投递（泳道卡执行 → 会话 prompt）为可选增强：装配失败只降级 bridge（dispatch
     // 缺省 → taskExecute 返回 no-dispatch），绝不拖垮 NotesService 注册。
     // 注意用 `new NotesService(ctx, …)` 而非 `ctx.plugin(NotesService, …)`：前者把
     // `notes` 服务 provide 在本 apply 的 fiber 上，后续 `ctx.inject(['tools'], …)`
     // 的子 fiber 才能沿祖先链读到 `ctx.notes`（`ctx.plugin` 会把 notes 挂到兄弟
     // fiber，祖先链读不到 → "cannot get property notes without inject"，工具装不上）。
-    new NotesService(ctx, { domain, dispatch: installTaskDispatchSafely(ctx) })
+    notesService = new NotesService(ctx, { domain, dispatch: installTaskDispatchSafely(ctx), webdav })
     // 设置命名空间（client 设置卡片读写）。
     installNotesSettings(ctx)
+    // 定时自动检查：每 60s 读配置判断「到期 + 确有变更」才上推；enabled=false、
+    // 失败都静默跳过（错误已记入 meta 状态），不炸 host。
+    const timer = setInterval(() => {
+      void webdav.checkAutomatic().catch((error) => {
+        ctx.logger.warn('[plugin-notes] webdav automatic check failed:', error)
+      })
+    }, 60_000)
+    ctx.effect(() => () => { clearInterval(timer) })
     // agent 桥是可选增强：tools/systemPrompt 服务注册后（或已注册）挂载。
     // 它绝不能把核心的 NotesService 一起拖垮——任何一步抛错都只降级桥本身，
     // 服务照常注册。
     installNotesAgentBridgeWhenReady(ctx)
   } catch (error) {
     void domain.close()
+    void metaDomain.close()
     throw error
   }
 }

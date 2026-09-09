@@ -33,9 +33,9 @@ describe('notes remote contribution', () => {
     }
   })
 
-  it('覆盖 host 的八个公开方法端点（含只读桥状态）', () => {
+  it('覆盖 host 的全部公开方法端点（含只读桥状态与 WebDAV）', () => {
     const methods = notesRemoteContribution.descriptors.map((d) => d.method).sort()
-    expect(methods).toEqual(['create', 'delete', 'getAgentBridgeState', 'list', 'setPinned', 'taskExecute', 'taskReset', 'update'])
+    expect(methods).toEqual(['create', 'delete', 'getAgentBridgeState', 'list', 'setPinned', 'taskExecute', 'taskReset', 'update', 'watch', 'webdavBackup', 'webdavList', 'webdavRestore', 'webdavStatus'])
     const ids = notesRemoteContribution.descriptors.map((d) => d.id)
     expect(new Set(ids).size).toBe(ids.length)
   })
@@ -43,7 +43,7 @@ describe('notes remote contribution', () => {
   it('host 服务已挂 Typert SRC 标记（remoteMethods 可发现）', () => {
     // 不跑构造函数（避免触碰 domain/table），仅验证原型上的 marker。
     const markers = remoteMethods(Object.create(NotesService.prototype)).map((m) => m.method)
-    expect(markers.sort()).toEqual(['create', 'delete', 'getAgentBridgeState', 'list', 'setPinned', 'taskExecute', 'taskReset', 'update'])
+    expect(markers.sort()).toEqual(['create', 'delete', 'getAgentBridgeState', 'list', 'setPinned', 'taskExecute', 'taskReset', 'update', 'watch', 'webdavBackup', 'webdavList', 'webdavRestore', 'webdavStatus'])
   })
 
   it('taskExecute/taskReset 形参 wire 名 = id/sessionId', () => {
@@ -84,7 +84,7 @@ describe('notes remote contribution', () => {
     new TypertRegistry(ctx) // provides ctx.typert
     const dispose = await ctx.typert.remotes.register(notesRemoteContribution)
     const list = ctx.typert.remotes.list()
-    expect(list.length).toBe(8)
+    expect(list.length).toBe(13)
     expect(list.map((d) => `${d.namespace}/${d.method}`).sort()).toEqual([
       'notes/create',
       'notes/delete',
@@ -94,6 +94,11 @@ describe('notes remote contribution', () => {
       'notes/taskExecute',
       'notes/taskReset',
       'notes/update',
+      'notes/watch',
+      'notes/webdavBackup',
+      'notes/webdavList',
+      'notes/webdavRestore',
+      'notes/webdavStatus',
     ])
     await dispose()
     await ctx.fiber.dispose()
@@ -179,5 +184,30 @@ describe('notes remote contribution', () => {
     const updateInput = byMethod.get('update')!.parameters[1]!.codec as { schema: { parse: (v: unknown) => unknown } }
     expect(() => updateInput.schema.parse({ lane: { clear: false } })).toThrow()
     expect(() => updateInput.schema.parse({ lane: { clear: 1 } })).toThrow()
+  })
+})
+describe('notes watch stream endpoint', () => {
+  it('client 描述符为 stream：mode=stream、无参数、cancellation=signal', () => {
+    const byMethod = new Map(notesRemoteContribution.descriptors.map((d) => [d.method, d]))
+    const watch = byMethod.get('watch')
+    expect(watch).toBeDefined()
+    expect(watch!.mode).toBe('stream')
+    expect(watch!.parameters).toEqual([])
+    expect(watch!.cancellation).toEqual({ parameter: 'signal' })
+    expect(watch!.result.mode).toBe('src-json')
+  })
+
+  it('host SRC marker 带 mode: stream（gateway 以流承载打开）', () => {
+    const markers = remoteMethods(Object.create(NotesService.prototype)) as unknown as Array<{ method: string; mode?: string }>
+    const watch = markers.find((m) => m.method === 'watch')
+    expect(watch?.mode).toBe('stream')
+  })
+
+  it('watch 无业务参数（host 形参仅可选的 signal）', () => {
+    const prototype = NotesService.prototype as unknown as Record<string, (...args: never[]) => unknown>
+    expect(parameterNames(prototype.watch)).toEqual([])
+    const byMethod = new Map(notesRemoteContribution.descriptors.map((d) => [d.method, d]))
+    const watch = byMethod.get('watch')!
+    expect(watch.parameters.map((p) => p.wire)).toEqual([])
   })
 })

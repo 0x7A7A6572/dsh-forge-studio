@@ -6,18 +6,31 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import Schema from '@deepseek-ai/schemastery'
-import { NOTES_NAMESPACE, type NotesConfig } from './types.ts'
+import { DEFAULT_WEBDAV_CONFIG, NOTES_NAMESPACE } from './types.ts'
+import type { NotesConfig, NotesWebdavConfig } from './types.ts'
 
 /** 设置命名空间（client 弹窗以此绑定 scope）。 */
 export { NOTES_NAMESPACE }
 export type { SettingsProvider }
 
+const webdavSchema = Schema.object({
+  enabled: Schema.boolean().default(false),
+  url: Schema.string().default(''),
+  username: Schema.string().default(''),
+  password: Schema.string().default(''),
+  path: Schema.string().default('dsh/notes/'),
+  intervalMin: Schema.number().min(1).max(1440).default(30),
+  keep: Schema.number().min(1).max(99).default(10),
+}).default(DEFAULT_WEBDAV_CONFIG as NotesWebdavConfig)
+
 export const NotesConfigSchema = Schema.object({
   defaultTitle: Schema.string().default('新便签'),
+  webdav: webdavSchema,
 })
 
 export const NOTES_CONFIG_BASE: NotesConfig = {
   defaultTitle: '新便签',
+  webdav: DEFAULT_WEBDAV_CONFIG,
 }
 
 export function installNotesSettings(ctx: Context): void {

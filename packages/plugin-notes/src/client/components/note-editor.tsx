@@ -165,7 +165,7 @@ export const EDITOR_CSS = `
    转 NOTE_INK 墨迹族（明暗自适应无效，纸底恒浅）；只读预览（.fs-note-preview）
    不带该修饰类，仍走宿主令牌自适应。弹层（链接/表格）是悬浮控件，保持主题表面。 */
 .fs-note-editor--paper { color: #2E2A22; }
-.fs-note-editor--paper .ProseMirror { color: #2E2A22; caret-color: rgba(46, 42, 34, 0.8); }
+.fs-note-editor--paper .ProseMirror { color: #2E2A22; caret-color: var(--dsw-static-deepseek-400); }
 .fs-note-editor--paper .ProseMirror blockquote { border-left-color: rgba(46, 42, 34, 0.32); color: rgba(46, 42, 34, 0.6); }
 .fs-note-editor--paper .ProseMirror code { background: rgba(46, 42, 34, 0.1); color: #2E2A22; }
 .fs-note-editor--paper .ProseMirror pre { background: rgba(46, 42, 34, 0.07); border-color: rgba(46, 42, 34, 0.14); color: #2E2A22; }

@@ -21,7 +21,21 @@ import type { notesDomain } from './domain.ts'
 import type { TaskLease } from './domain.ts'
 import { DEFAULT_NOTE_COLOR } from './types.ts'
 import type { NoteCreateInput, NoteId, NoteLane, NoteRecord, NoteUpdateInput, TaskStatus } from './types.ts'
+import type {
+  WebdavBackupResult,
+  WebdavListResult,
+  WebdavRestoreResult,
+  WebdavStatus,
+} from './types.ts'
+import type { WebdavRunner } from './webdav-backup.ts'
 import { beginRun, settleRun } from './client/core/task-lanes.ts'
+
+/** notes/watch 流推送的变更事件（client 侧以 src-json 透传，不改形状）。 */
+export interface NotesChangeEvent {
+  readonly changedAt: number
+}
+
+type NotesChangeListener = () => void
 
 export interface NotesServiceConfig {
   /** 已打开的 notes 域。 */
@@ -36,23 +50,32 @@ export interface NotesServiceConfig {
     readonly sessionId: string
     readonly title: string
   }) => Promise<void>
+  /**
+   * WebDAV 备份引擎（host index.ts 注入；缺省时 webdav* 端点返回
+   * { ok:false, reason } —— 纯 UI 数据后端没有引擎也不炸）。
+   */
+  readonly webdav?: WebdavRunner
 }
 
 export class NotesService extends TypertRemoteService {
   private readonly table: KvTable<NoteId, NoteRecord>
   private readonly leases: KvTable<NoteId, TaskLease>
   private readonly dispatch: NotesServiceConfig['dispatch']
+  private readonly webdav: NotesServiceConfig['webdav']
   /**
    * agent 桥装配状态（见 agent/bridge-state.ts）。默认 waiting：tools 服务出现后由
    * index.ts 的桥装配器推进为 installed/failed；纯 UI 宿主保持 waiting。
    */
   private agentBridge: NotesAgentBridgeState = bridgeWaiting()
+  /** 变更通知订阅者（notes/watch 每个打开的客户端流一个）；写成功即广播。 */
+  private readonly changeListeners = new Set<NotesChangeListener>()
 
   constructor(ctx: Context, config: NotesServiceConfig) {
     super(ctx, 'notes')
     this.table = config.domain.table('notes')
     this.leases = config.domain.table('leases')
     this.dispatch = config.dispatch
+    this.webdav = config.webdav
   }
 
   /** 当前 agent 桥装配状态快照（同步；client 经 notes/getAgentBridgeState 端点可读）。 */
@@ -71,6 +94,58 @@ export class NotesService extends TypertRemoteService {
   /** 全量便签（未删除），同步读自内存。 */
   list(): NoteRecord[] {
     return Array.from(this.table.entries(), ([, note]) => note)
+  }
+
+  /**
+   * 变更推送流（Typert stream 端点 notes/watch，SRC marker mode: 'stream'）：
+   * 每次写操作成功广播一次；订阅在首次 next() 时建立，generator return/throw
+   * 或 signal abort 时清理。事件只承载时间戳——client 收到后自行 list() 拉
+   * 最新（事件驱动，不做心跳/轮询）。
+   *
+   * signal 语义：等待事件与中止做 race——consumer 断开（gateway 传 abort）时
+   * 等待立即结算并干净收尾，绝不留下悬置 await 卡住 generator.return()。
+   * 未提供 signal（直接调用方）视作永不中止，同样安全。
+   */
+  async *watch(signal?: AbortSignal): AsyncGenerator<NotesChangeEvent> {
+    const lifetime = signal ?? new AbortController().signal
+    if (lifetime.aborted) return
+    let resolveWaiter: ((reason: 'event' | 'abort') => void) | undefined
+    const wake = (): void => {
+      const resolve = resolveWaiter
+      resolveWaiter = undefined
+      if (resolve !== undefined) resolve('event')
+    }
+    const onAbort = (): void => {
+      const resolve = resolveWaiter
+      resolveWaiter = undefined
+      if (resolve !== undefined) resolve('abort')
+    }
+    this.changeListeners.add(wake)
+    lifetime.addEventListener('abort', onAbort, { once: true })
+    try {
+      while (true) {
+        if (resolveWaiter === undefined) {
+          const reason = await new Promise<'event' | 'abort'>((resolve) => { resolveWaiter = resolve })
+          if (reason === 'abort') return
+        }
+        yield { changedAt: Date.now() }
+      }
+    } finally {
+      this.changeListeners.delete(wake)
+      lifetime.removeEventListener('abort', onAbort)
+    }
+  }
+
+  /** 广播一次变更（幂等安全；订阅者抛错不扩散）。 */
+  private broadcastChanged(): void {
+    for (const listener of [...this.changeListeners]) {
+      try {
+        listener()
+      } catch (error) {
+        // 订阅者（如某条流消费循环）抛错只丢该条，不炸写操作。
+        console.error('[plugin-notes] change listener failed:', error)
+      }
+    }
   }
 
   /** 新建便签；title/color/origin 缺省时使用默认值（origin 默认 'user'）。 */
@@ -92,6 +167,7 @@ export class NotesService extends TypertRemoteService {
       updatedAt: now,
     }
     await this.table.put(note.id, note)
+    this.broadcastChanged()
     return note
   }
 
@@ -165,6 +241,7 @@ export class NotesService extends TypertRemoteService {
       await this.revokeTaskLease(id)
     }
     await this.table.put(id, next)
+    this.broadcastChanged()
     return next
   }
 
@@ -185,7 +262,9 @@ export class NotesService extends TypertRemoteService {
   /** 删除便签；返回是否确实删除。删除前先撤销其执行租约（若有）。 */
   async delete(id: NoteId): Promise<boolean> {
     await this.revokeTaskLease(id)
-    return this.table.delete(id)
+    const deleted = await this.table.delete(id)
+    if (deleted) this.broadcastChanged()
+    return deleted
   }
 
   /**
@@ -202,6 +281,7 @@ export class NotesService extends TypertRemoteService {
     await this.leases.put(id, { noteId: id, sessionId, grantedAt: now })
     // beginRun 首参按签名透传当前 lane（其实现未使用该参），返回 { status:'running', run:{ startedAt } }。
     await this.table.put(id, { ...note, lane: beginRun(note.lane, now), updatedAt: now })
+    this.broadcastChanged()
     return 'granted'
   }
 
@@ -236,6 +316,7 @@ export class NotesService extends TypertRemoteService {
         : { ...current.lane, status }
     const next: NoteRecord = { ...current, lane, updatedAt: now }
     await this.table.put(id, next)
+    this.broadcastChanged()
     return next
   }
 
@@ -252,6 +333,7 @@ export class NotesService extends TypertRemoteService {
     await this.revokeTaskLease(id)
     const next: NoteRecord = { ...current, lane, updatedAt: now }
     await this.table.put(id, next)
+    this.broadcastChanged()
     return next
   }
 
@@ -314,6 +396,7 @@ export class NotesService extends TypertRemoteService {
     const lane: NoteLane = { ...settleRun(current.lane, false, '用户手动接管', now), status: 'todo' }
     const next: NoteRecord = { ...current, lane, updatedAt: now }
     await this.table.put(id, next)
+    this.broadcastChanged()
     return { ok: true, note: next }
   }
 
@@ -321,6 +404,55 @@ export class NotesService extends TypertRemoteService {
   private async rollbackTaskExecute(id: NoteId, snapshot: NoteRecord): Promise<void> {
     await this.revokeTaskLease(id)
     await this.table.put(id, snapshot)
+    this.broadcastChanged()
+  }
+
+  /* ---------- WebDAV 备份/恢复（remote 端点；引擎在 host index 注入） ---------- */
+
+  /** 立即上推一份快照（改配置试跑/手动按钮）。引擎缺省返回结构化失败。 */
+  async webdavBackup(): Promise<WebdavBackupResult> {
+    if (this.webdav === undefined) return { ok: false, reason: 'WebDAV 引擎未装配' }
+    return this.webdav.backupNow()
+  }
+
+  /** 远端快照列表（desc 时间序，仅本插件命名）。 */
+  async webdavList(): Promise<WebdavListResult> {
+    if (this.webdav === undefined) return { ok: false, reason: 'WebDAV 引擎未装配' }
+    return this.webdav.listFiles()
+  }
+
+  /** 恢复指定快照（'latest' = 最近一份）；内部先自动备份当前再整体重建。 */
+  async webdavRestore(name: string): Promise<WebdavRestoreResult> {
+    if (this.webdav === undefined) return { ok: false, reason: 'WebDAV 引擎未装配' }
+    return this.webdav.restore(name)
+  }
+
+  /** 引擎状态（上次备份/恢复结果 + 启用态）。 */
+  async webdavStatus(): Promise<WebdavStatus> {
+    if (this.webdav === undefined) {
+      return {
+        enabled: false,
+        lastBackupAt: null,
+        lastBackupOk: null,
+        lastBackupError: null,
+        lastBackupName: null,
+        lastRestoreAt: null,
+        lastRestoreOk: null,
+        lastRestoreName: null,
+      }
+    }
+    return this.webdav.status()
+  }
+
+  /**
+   * 全量重建便签（仅 WebDAV 恢复流程使用，host 可信）：清空便签与租约两张表后
+   * 按恢复 payload 逐条写入。不做 origin guard（agent 工具不可达本方法）。
+   */
+  async replaceAll(notes: readonly NoteRecord[]): Promise<void> {
+    for (const [id] of this.table.entries()) await this.table.delete(id)
+    for (const [leaseId] of this.leases.entries()) await this.leases.delete(leaseId)
+    for (const note of notes) await this.table.put(note.id, note)
+    this.broadcastChanged()
   }
 }
 
@@ -332,21 +464,43 @@ export class NotesService extends TypertRemoteService {
  */
 const REMOTE_METHODS = '@deepseek-ai/dsh-typert-protocol/remote-methods'
 
-function markRemoteMethods(prototype: object, methods: readonly string[]): void {
+type RemoteMethodEntry =
+  | { readonly method: string; readonly mode?: undefined }
+  | { readonly method: string; readonly mode: 'stream' }
+
+function markRemoteMethods(prototype: object, methods: readonly RemoteMethodEntry[]): void {
   Object.defineProperty(prototype, REMOTE_METHODS, {
     configurable: true,
     value: Object.freeze({
       version: 1,
       methods: Object.freeze(
-        methods.map((method) =>
-          Object.freeze({ method, invocation: Object.freeze({ kind: 'direct' as const }) }),
+        methods.map((entry) =>
+          Object.freeze({
+            method: entry.method,
+            ...(entry.mode !== undefined ? { mode: entry.mode } : {}),
+            invocation: Object.freeze({ kind: 'direct' as const }),
+          }),
         ),
       ),
     }),
   })
 }
 
-markRemoteMethods(NotesService.prototype, ['list', 'create', 'update', 'setPinned', 'delete', 'getAgentBridgeState', 'taskExecute', 'taskReset'])
+markRemoteMethods(NotesService.prototype, [
+  { method: 'list' },
+  { method: 'create' },
+  { method: 'update' },
+  { method: 'setPinned' },
+  { method: 'delete' },
+  { method: 'getAgentBridgeState' },
+  { method: 'taskExecute' },
+  { method: 'taskReset' },
+  { method: 'watch', mode: 'stream' },
+  { method: 'webdavBackup' },
+  { method: 'webdavList' },
+  { method: 'webdavRestore' },
+  { method: 'webdavStatus' },
+])
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
