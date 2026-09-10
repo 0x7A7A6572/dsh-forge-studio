@@ -1,8 +1,8 @@
 # @zzerx/dsh-plugin-notes
 
-Forge Studio 便签 的 dsh 插件形态：**独立便签板 UI**（侧栏入口 + 中间列面板，
+dsh 便签插件：**独立便签板 UI**（侧栏入口 + 中间列面板，
 显示形式对齐 dsh-task-board），host 侧作为数据后端（storage-domain）与设置源，
-同时把便签 CRUD **联动到 agent harness**（工具化 + 引用化 + 权限边界）。
+同时把便签 CRUD **联动到 agent harness**（工具化 + 权限边界 + 执行租约）。
 
 ## 能力
 
@@ -22,7 +22,7 @@ Forge Studio 便签 的 dsh 插件形态：**独立便签板 UI**（侧栏入口
     - **grid 纸卡墙 / list 行式列表**（Win11 便签式**六色**纸卡，置顶优先）：
       双视图共用 **文字搜索**（标题+正文纯文本，实时过滤）+ **按颜色多选筛选**
       （只作用于活动区）+ 底部**归档折叠区**（默认收起，展开才渲染）；列表
-      **懒加载**：首批 8 条，滚动触底分批展开（活动区优先，归档区展开后同样
+      **懒加载**：首批 16 条，滚动触底分批展开（底部哨兵进入视口自动续批，另有「加载更多」入口；活动区优先，归档区展开后同样
       分批），全部便签最终可见
     - **任务泳道**（五列状态看板，布局对齐 dsh-task-board 待规划→待办→进行中
       →已完成→已失败）：按 `note.lane.status` 分列，**颜色不再表状态**（六色
@@ -41,9 +41,6 @@ Forge Studio 便签 的 dsh 插件形态：**独立便签板 UI**（侧栏入口
   - 编辑器内直接 **Ctrl+V 粘贴图片**（剪贴板图片 → data URL 内联进正文 Markdown）
   - **便签板设置弹窗**（header 齿轮）：编辑默认标题，直接读写命名空间 scope，
     不再占用插件设置页
-  - 纸卡与行 hover 动作栏带 **引用到会话** 按钮：一键复制
-    `@[标题](note://<id>)` mention 到剪贴板（复制成功短暂变 ✓），粘进会话后
-    agent 可按引用读取全文
   - client 结构：`views/`（页面：面板主体/列表与编辑器弹窗）、`components/`
     （复用组件：纸卡/行/色筛/搜索与归档折叠/设置弹窗/编辑器等）、`core/`
     （状态/远程通道/纯函数/工具 + `sidebar-entry` 侧栏入口行 / `panel-mount`
@@ -52,7 +49,7 @@ Forge Studio 便签 的 dsh 插件形态：**独立便签板 UI**（侧栏入口
 
 ## Agent harness 联动（设计）
 
-四条联动线，全部插件内自包含（不改 harness）：
+三条联动线，全部插件内自包含（不改 harness）：
 
 1. **工具化**（`src/agent/tools.ts`）：8 个 `notes_*` 工具注册到 `ctx.tools`，
    宿主有 `tools` 服务时生效：
@@ -61,11 +58,8 @@ Forge Studio 便签 的 dsh 插件形态：**独立便签板 UI**（侧栏入口
    - 任务：`notes_task_set_status`（置状态）/ `notes_task_report`（收尾写结果），
      窄权限、无 ask，仅泳道「执行」授权后可用（lease guard 兜底）。
    - agent 创建的便签标记 `origin='agent'`；UI/用户创建才是 `origin='user'`。
-2. **引用化**（`src/agent/reference.ts` + client 引用按钮）：会话文本出现
-   `@[标题](note://<id>)` 时，系统提示（systemPrompt section）引导 agent 用
-   `notes_get` 读取全文再作答；client 卡片/行提供「引用到会话」一键复制按钮。
-3. **权限边界**（工具注册时的两层守卫，见下）。
-4. **执行租约（lease）**（`src/service.ts` + `src/agent/task-dispatch.ts`）：
+2. **权限边界**（工具注册时的两层守卫，见下）。
+3. **执行租约（lease）**（`src/service.ts` + `src/agent/task-dispatch.ts`）：
    泳道卡「执行」由 host 服务 `taskExecute` 一次性授予该任务 lease（绑定发起
    会话），并投递结构化任务消息进当前会话；agent 经 `notes_task_set_status`
    置 running → 执行 → `notes_task_report` 收尾写 run + 撤销 lease；guard 校验
@@ -92,9 +86,14 @@ Forge Studio 便签 的 dsh 插件形态：**独立便签板 UI**（侧栏入口
 
 | # | 集成点 | 落地状态 |
 |---|--------|----------|
-| 1 | 工具化：agent 会话内读写便签 | ✅ `notes_*` 8 工具（含 2 任务工具）+ systemPrompt 分区 |
-| 6 | 引用化：会话 `@便签` mention + 列表「引用到会话」按钮 | ✅ mention 语法 + host 引导 + client 复制按钮 |
+| 1 | 工具化：agent 会话内读写便签 | ✅ `notes_*` 8 工具（含 2 任务工具） |
 | 8 | 权限边界：origin 字段 + ask/guard 双层 | ✅ 记录带 origin、写操作 ask、guard 拒绝删 user 便签 |
+
+## 安装
+
+```bash
+dsh plugin --profile <你的profile名> add @zzerx/dsh-plugin-notes
+```
 
 ## 开发
 
@@ -102,14 +101,6 @@ Forge Studio 便签 的 dsh 插件形态：**独立便签板 UI**（侧栏入口
 pnpm --filter @zzerx/dsh-plugin-notes typecheck   # tsc --noEmit
 pnpm --filter @zzerx/dsh-plugin-notes test        # vitest
 pnpm --filter @zzerx/dsh-plugin-notes build       # lib/index.js + lib/client.js + lib/types
-```
-
-## 安装进 web profile
-
-```bash
-pnpm --filter @zzerx/dsh-plugin-notes build
-pnpm dsh -- plugin --profile web add "D:/codes/dsh-desk-studio/packages/plugin-notes"
-pnpm dev
 ```
 
 依赖只指向 Service Definition 包；client 对跨插件值一律 type-only import

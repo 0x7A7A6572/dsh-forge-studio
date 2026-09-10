@@ -22,13 +22,12 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { SessionPromptRequest, SessionRequestId } from '@deepseek-ai/dsh-api-session-controller'
 import type { NotesServiceConfig } from '../service.ts'
 import type { NoteId } from '../types.ts'
-import { formatNoteMention } from '../types.ts'
 
-/** 投递消息模板（spec §8 / M5）：agent-readable，mention 复用 formatNoteMention。 */
+/** 投递消息模板（spec §8 / M5）：agent-readable。note:// mention 已随 v0.1 移除，
+ * 改以纯文本指明标题与 id（agent 仍可经 notes_get(id) 读全文后执行）。 */
 export function buildTaskDispatchMessage(input: { readonly noteId: NoteId; readonly title: string }): string {
-  const mention = formatNoteMention(input.noteId, input.title)
   return [
-    `【任务执行】请执行便签 ${mention} 中描述的任务。`,
+    `【任务执行】请执行便签「${input.title || '无标题'}」（id: ${input.noteId}）中描述的任务。`,
     '步骤：1) notes_get 读全文（含 lane.run.summary 上次结论，如有）；2) 若未 running，notes_task_set_status 置 running；',
     '3) 执行；4) 收尾 notes_task_report：成功 ok=true + 摘要，失败 ok=false + 原因。',
     '只允许操作该任务的 lane 状态与结果，不得修改正文/标题/颜色。',

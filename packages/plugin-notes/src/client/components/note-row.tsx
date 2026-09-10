@@ -4,7 +4,6 @@
  * 行本身可点击进入编辑；与 NoteCard 共用同样的操作集合语义。
  */
 
-import { useState } from "react";
 import type { NoteRecord } from "../../types.ts";
 import {
   NOTE_INK,
@@ -13,13 +12,11 @@ import {
 } from "../core/note-colors.ts";
 import { mdSnippet } from "../core/markdown-text.ts";
 import { fmtRelative } from "../core/time-text.ts";
-import { copyNoteMention } from "../core/note-clipboard.ts";
 import { TaskBadge } from "./task-badge.tsx";
+import { PinnedCornerMark } from "./pin-corner.tsx";
 import {
   Archive,
   ArchiveRestore,
-  Check,
-  AtSign,
   Pencil,
   Pin,
   Trash2,
@@ -48,11 +45,6 @@ export interface NoteRowProps {
 
 export function NoteRow(props: NoteRowProps): JSX.Element {
   const { note } = props;
-  const [copied, setCopied] = useState(false);
-  const flashCopied = (): void => {
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1600);
-  };
   const meta = noteColorMeta(note.color);
   const snippet = note.text ? mdSnippet(note.text, 160) : "";
   return (
@@ -75,8 +67,13 @@ export function NoteRow(props: NoteRowProps): JSX.Element {
             props.onEdit();
           }
         }}
-        style={{ ...rowStyle, background: meta.paper }}
+        style={{
+          ...rowStyle,
+          background: meta.paper,
+          ...(note.pinned && !note.archived ? { borderTopRightRadius: 0 } : {}),
+        }}
       >
+        {note.pinned && !note.archived && <PinnedCornerMark color={meta.ring} size={10} />}
         <span style={bodyStyle}>
           <span style={titleRow}>
             <span style={titleStyle} title={note.title || "（无标题）"}>
@@ -85,13 +82,6 @@ export function NoteRow(props: NoteRowProps): JSX.Element {
               )}
             </span>
             {note.lane && <TaskBadge lane={note.lane} />}
-            {note.pinned && !note.archived && (
-              <Pin
-                size={12}
-                style={{ flex: "none", color: meta.ring }}
-                aria-label="已置顶"
-              />
-            )}
           </span>
           {snippet && <span style={snippetStyle}>{snippet}</span>}
           <time
@@ -103,21 +93,6 @@ export function NoteRow(props: NoteRowProps): JSX.Element {
         </span>
 
         <span className="fs-note-actions" style={actionsStyle}>
-          <button
-            type="button"
-            title={copied ? "已复制引用" : "引用到会话"}
-            aria-label={copied ? "已复制引用" : "引用到会话"}
-            disabled={props.busy}
-            onClick={(e) => {
-              e.stopPropagation();
-              void copyNoteMention(note.id, note.title).then((ok) => {
-                if (ok) flashCopied();
-              });
-            }}
-            style={actionBtn}
-          >
-            {copied ? <Check size={13} /> : <AtSign size={13} />}
-          </button>
           <button
             type="button"
             title="编辑"
@@ -189,13 +164,14 @@ export function NoteRow(props: NoteRowProps): JSX.Element {
 /* ---------- 样式 ---------- */
 
 const rowStyle: React.CSSProperties = {
+  position: "relative",
   display: "flex",
   alignItems: "center",
   gap: 10,
   padding: "7px 10px",
   borderRadius: 10,
   cursor: "pointer",
-  minHeight: 44,
+  minHeight: 62,
   boxSizing: "border-box",
 };
 const bodyStyle: React.CSSProperties = {

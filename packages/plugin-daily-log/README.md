@@ -2,8 +2,6 @@
 
 每日工作日志：聚合 **Git 提交** 与 **本地 agent 对话**（deepseek / claude / codex），按**自定义模板**生成日报 / 周报 / 月报。不再只面向开发者 —— 非开发者也能用本地对话记录做工作总结。
 
-迁移自原项目 `commit-log-daily`：LangChain 部分由 dsh 自带 agent 装配替代，TUI 重构为 Web GUI 面板。详见 [PLAN.md](./PLAN.md)。
-
 ## 功能
 
 - **多源采集**：Git 仓库（`git log` 白名单 + execFile 防注入）、Claude Code（`~/.claude/projects/**/*.jsonl`）、Codex（`~/.codex/sessions/**`）、DeepSeek harness（`DSH_HOME` 会话日志）。

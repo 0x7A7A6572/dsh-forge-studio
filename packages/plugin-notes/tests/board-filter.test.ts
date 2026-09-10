@@ -1,7 +1,7 @@
 /**
  * core/board-filter 纯函数单测：活动/归档分区、置顶优先+最近更新排序、
  * 颜色多选过滤（空数组 = 不过滤）、文字搜索（标题+正文纯文本）、
- * 懒加载窗口推进（首批 8 / 触底分批）。
+ * 懒加载窗口推进（首批 16 / 哨兵触底分批）。
  */
 
 import { describe, expect, it } from 'vitest'
@@ -107,17 +107,17 @@ describe('searchNotes 文字搜索', () => {
 })
 
 describe('懒加载窗口推进', () => {
-  it('initialWindow 首屏各 8 条', () => {
+  it('initialWindow 首屏各 16 条', () => {
     expect(initialWindow()).toEqual({ active: INITIAL_WINDOW, archived: INITIAL_WINDOW })
-    expect(INITIAL_WINDOW).toBe(8)
+    expect(INITIAL_WINDOW).toBe(16)
   })
 
   it('触底优先补活动区，一次补 WINDOW_STEP 且不越过总数', () => {
-    const win = nextWindow(initialWindow(), { active: 30, archived: 0 }, false)
-    expect(win.active).toBe(INITIAL_WINDOW + WINDOW_STEP)
-    // 只剩 3 条时只补到总数
-    const nearEnd = nextWindow({ active: 27, archived: 8 }, { active: 30, archived: 8 }, false)
-    expect(nearEnd.active).toBe(30)
+    const win = nextWindow(initialWindow(), { active: 40, archived: 0 }, false)
+    expect(win.active).toBe(INITIAL_WINDOW + WINDOW_STEP) // 16 + 20 = 36
+    // 剩 3 条（active 37→40）时只补到总数
+    const nearEnd = nextWindow({ active: 37, archived: 8 }, { active: 40, archived: 8 }, false)
+    expect(nearEnd.active).toBe(40)
   })
 
   it('活动区展完才补归档区（需展开态）', () => {

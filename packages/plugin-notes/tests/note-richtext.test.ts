@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest'
 import { CODE_LANGUAGES, CODE_LANGUAGE_NONE, isCodeLanguageOption } from '../src/client/core/code-languages.ts'
 import {
   isCodeLanguageHighlightable,
+  noteImageToMarkdown,
   noteLowlight,
 } from '../src/client/core/note-richtext.ts'
 
@@ -71,5 +72,32 @@ describe('note-richtext 语法高亮注册表', () => {
     for (const name of ['javascript', 'typescript', 'css', 'python', 'xml', 'powershell', 'dos', 'vue']) {
       expect(list).toContain(name)
     }
+  })
+})
+
+describe('noteImageToMarkdown 图片 Markdown 序列化', () => {
+  it('无 width 输出标准 ![](src)', () => {
+    expect(noteImageToMarkdown({ src: 'data:image/png;base64,AAAA', alt: '' }))
+      .toBe('![](data:image/png;base64,AAAA)')
+  })
+
+  it('有 title 时输出 ![](src "title")', () => {
+    expect(noteImageToMarkdown({ src: 'a.png', alt: '图', title: '标题' }))
+      .toBe('![图](a.png "标题")')
+  })
+
+  it('有 width 输出内联 HTML <img width>（尺寸持久化形态）', () => {
+    expect(noteImageToMarkdown({ src: 'data:image/png;base64,AAAA', alt: '', width: '50%' }))
+      .toBe('<img src="data:image/png;base64,AAAA" alt="" width="50%" />')
+  })
+
+  it('HTML 形态对 alt/title 做属性转义', () => {
+    expect(noteImageToMarkdown({ src: 'a.png', alt: 'A&B', title: 't"', width: '100%' }))
+      .toBe('<img src="a.png" alt="A&amp;B" width="100%" title="t&quot;" />')
+  })
+
+  it('空/null width 视为未设尺寸（回到 ![](src)）', () => {
+    expect(noteImageToMarkdown({ src: 'a.png', alt: '', width: '' })).toBe('![](a.png)')
+    expect(noteImageToMarkdown({ src: 'a.png', alt: '', width: null })).toBe('![](a.png)')
   })
 })

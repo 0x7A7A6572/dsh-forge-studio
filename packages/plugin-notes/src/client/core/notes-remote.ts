@@ -52,7 +52,7 @@ const TASK_STATUSES = ['backlog', 'todo', 'running', 'done', 'failed'] as const
  * host 侧 agent 桥装配状态镜像（手写以避免 import host 的 agent 模块）。
  * 与 src/agent/bridge-state.ts 的 NotesAgentBridgeState 形状保持一致；改动需同步。
  * waiting：tools 服务未就绪（纯 UI 宿主）；installed：notes_* 工具已注册；
- * failed：注册失败（reason 人类可读），此时会话侧无 notes_* 工具、引用提示未挂载。
+ * failed：注册失败（reason 人类可读），此时会话侧无 notes_* 工具。
  */
 export type ClientNotesAgentBridgeState =
   | { readonly status: 'waiting' }

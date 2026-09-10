@@ -56,11 +56,6 @@ async function provideTools(ctx: Context, registered: string[]): Promise<void> {
   await ctx.plugin({ apply: (c: Context) => c.provide('tools', fakeTools as never) })
 }
 
-async function provideSystemPrompt(ctx: Context, sections: string[]): Promise<void> {
-  const fakePrompt = { section: (s: { name: string }) => { sections.push(s.name) } }
-  await ctx.plugin({ apply: (c: Context) => c.provide('systemPrompt', fakePrompt as never) })
-}
-
 const tick = () => new Promise((r) => setTimeout(r, 20))
 
 const TOOL_NAMES = [
@@ -78,11 +73,9 @@ describe('host apply（真实 cordis 加载路径）', () => {
   it('apply 不再抛 "Invalid effect"，且注册 ctx.notes + 8 个 notes_* 工具', async () => {
     const ctx = new Context()
     const registered: string[] = []
-    const sections: string[] = []
     await provideStorageDomain(ctx)
     await provideSettings(ctx)
     await provideTools(ctx, registered)
-    await provideSystemPrompt(ctx, sections)
 
     // 走真实入口：ctx.plugin(namespace) → resolve(apply) + Inject.resolve(inject)，
     // 与 loader 的 registry.plugin(…)+fiber.await() 同一条 cordis 路径。
@@ -90,9 +83,8 @@ describe('host apply（真实 cordis 加载路径）', () => {
     await fiber // 修复前这里抛 TypeError("Invalid effect")
 
     expect(ctx.notes).toBeDefined()
-    await tick() // 让 tools/systemPrompt 的 inject fiber 收束
+    await tick() // 让 tools 的 inject fiber 收束
     expect([...registered].sort()).toEqual(TOOL_NAMES)
-    expect(sections).toContain('forge-notes:reference')
 
     await ctx.fiber.dispose()
   })

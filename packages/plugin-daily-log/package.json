@@ -2,7 +2,6 @@
   "name": "@zzerx/dsh-plugin-daily-log",
   "version": "0.1.0",
   "description": "每日工作日志：聚合 Git 提交与本地 agent 对话（deepseek/claude/codex），按自定义模板生成日报/周报/月报。",
-  "private": true,
   "type": "module",
   "main": "./lib/index.js",
   "types": "./lib/types/index.d.ts",
@@ -25,9 +24,13 @@
     "README.md"
   ],
   "scripts": {
+    "prepublishOnly": "node scripts/build.mjs",
     "build": "node scripts/build.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json",
     "test": "vitest run"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.2",

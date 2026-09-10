@@ -112,19 +112,6 @@ export interface NoteUpdateInput {
   }
 }
 
-/**
- * @便签 mention URI scheme（插件私有，不改 harness 引用通道）：
- * `@[标题](note://<uuid>)`。agent 收到该文本后经 notes_get 读取全文。
- * 标题内若含 ']' 会破坏语法 —— formatNoteMention 负责转义。
- */
-export const NOTE_MENTION_SCHEME = 'note'
-
-/** 把一张便签格式化为会话 mention 文本（client 引用按钮与 host 共用）。 */
-export function formatNoteMention(id: NoteId, title: string): string {
-  const label = title.replace(/\]/gu, '\\]').replace(/\(/gu, '\\(')
-  return `@[${label || '便签'}](note://${id})`
-}
-
 /** plugin-notes 设置（forge-studio-notes 命名空间；host schema 见 settings.ts）。 */
 export interface NotesConfig {
   /** 新建便签的默认标题。 */

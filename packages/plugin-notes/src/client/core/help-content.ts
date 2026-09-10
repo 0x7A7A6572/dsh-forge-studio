@@ -3,7 +3,7 @@
  * 覆盖四块：入口与快捷键 / 基础使用 / 对话使用 / 任务泳道。
  *
  * 文案里的产品事实必须与实现一致（tests/help-content.test.ts 守卫）：
- * - agent 工具名与 note:// 引用语法对齐 src/agent/tools.ts、reference.ts；
+ * - agent 工具名与工具实现对齐 src/agent/tools.ts；
  * - 泳道五列按任务状态（note.lane.status）分列对齐 src/client/core/task-lanes.ts
  *   的 TASK_LANES；六色仅为纸色、与任务状态无关，对齐 src/client/core/note-colors.ts；
  * - 执行/重置/结果区交互对齐 src/client/components/task-lane-card.tsx、note-editor.tsx
@@ -69,7 +69,6 @@ AI 助手也能读能写——记笔记、查资料、整理任务都可以直�
 - **同一份数据**：AI 与便签板读写同一批便签——AI 新建的会立刻出现在板上，你在板上写的 AI 也能查到。
 - **权限**：AI 可自由**读取与更新**任意便签；但**不能删除** \`user\` 便签（你在便签板手写的）——这是安全策略的硬性拒绝，目的是保护你的手写内容。AI 自己创建的便签记 \`agent\`，可随意删改。
 - **写操作会先征求同意**：AI 新建/修改/置顶/删除前通常先弹出确认，批准后才执行。
-- **引用便签**：对话里出现 \`@[标题](note://<便签id>)\` 这类引用时，AI 会先调 \`notes_get\` 读全文再回答；id 可用 \`notes_list\` 查到。
 
 ## 四、任务泳道：把便签变成可让 AI 执行的任务看板
 

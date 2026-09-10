@@ -1,8 +1,7 @@
 {
   "name": "@zzerx/dsh-plugin-notes",
   "version": "0.1.0",
-  "description": "Forge Studio 便签的 dsh 插件形态：独立便签板 UI（侧栏入口 + 中间列面板，Markdown 编辑器，Typert 直连 host 持久化）",
-  "private": true,
+  "description": "dsh 便签插件：独立便签板 UI（侧栏入口 + 中间列面板，Markdown 编辑器，Typert 直连 host 持久化）",
   "type": "module",
   "main": "./lib/index.js",
   "types": "./lib/types/index.d.ts",
@@ -25,10 +24,14 @@
     "README.md"
   ],
   "scripts": {
+    "prepublishOnly": "node scripts/build.mjs",
     "build": "node scripts/build.mjs",
     "watch": "node scripts/watch.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json",
     "test": "vitest run"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.2",

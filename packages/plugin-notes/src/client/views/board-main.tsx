@@ -5,7 +5,7 @@
  * 三种显示模式（board-store 记忆，模块级）：
  * - grid：纸卡墙（默认） / list：行式列表 —— 数据整理全部走 core/board-filter
  *   纯函数：分区（活动/归档）→ 排序 → 颜色过滤 → 文字搜索；展示做**懒加载**
- *   （首批 8 条，滚动触底逐步展开，见 nextWindow）；颜色筛选只作用于活动区；
+ *   （首批 16 条，底部哨兵进入视口即续批，见 nextWindow）；颜色筛选只作用于活动区；
  *   文字搜索同时作用于活动区与归档区（展开后可见）；
  * - lanes：任务泳道 —— 五列状态看板（布局参考 dsh-task-board），纸色即状态
  *   （core/task-lanes 派生），活动便签全量渲染（泳道列内自带滚动，不做懒加载
@@ -40,12 +40,10 @@ import { NoteRow, ROW_CSS } from "../components/note-row.tsx";
 import { TaskLanes, LANES_CSS } from "../components/task-lanes.tsx";
 import { LANE_CARD_CSS } from "../components/task-lane-card.tsx";
 import { ColorFilter, FILTER_CSS } from "../components/color-filter.tsx";
-import {
-  ArchivedSection,
-  ARCHIVED_CSS,
-} from "../components/archived-section.tsx";
 import { EmptyState } from "../components/empty-state.tsx";
 import {
+  Archive,
+  ChevronRight,
   Kanban,
   LayoutGrid,
   Plus,
@@ -93,16 +91,15 @@ const MOTION_CSS = `
 .fs-note-search-clear { animation: fs-note-in 160ms ease-out backwards; }
 .fs-note-empty { animation: fs-note-in 240ms ease-out backwards; }
 @media (prefers-reduced-motion: reduce) {
-  .fs-note-card, .fs-note-row, .fs-lane-card, .fs-note-archived-body,
-  .fs-note-search-clear, .fs-note-empty, .fs-note-archived-toggle,
-  .fs-note-archived-chevron, .fs-note-filter-chip, .fs-note-tool,
+  .fs-note-card, .fs-note-row, .fs-lane-card,
+  .fs-note-search-clear, .fs-note-empty, .fs-note-filter-chip, .fs-note-tool,
   .fs-note-search-row, .fs-note-lane, .fs-task-live-dot { animation: none !important; transition: none !important; }
   .fs-lane-card.fs-lane-running::after { animation: none !important; opacity: 0 !important; }
 }
 `;
 
 /** board-main 覆盖的所有类选择器样式（统一注入一次）。 */
-const BOARD_CSS = `${MOTION_CSS}${CARD_CSS}${ROW_CSS}${FILTER_CSS}${ARCHIVED_CSS}${LANE_CARD_CSS}${LANES_CSS}`;
+const BOARD_CSS = `${MOTION_CSS}${CARD_CSS}${ROW_CSS}${FILTER_CSS}${LANE_CARD_CSS}${LANES_CSS}`;
 
 export function BoardMain(props: BoardMainProps): JSX.Element {
   const view = useSyncExternalStore(
@@ -120,7 +117,11 @@ export function BoardMain(props: BoardMainProps): JSX.Element {
 
   const [win, setWin] = useState<LazyWindow>(initialWindow);
   const [archivedOpen, setArchivedOpen] = useState(false);
-  const listRef = useRef<HTMLDivElement | null>(null);
+  // 底部哨兵：进入视口下沿附近即继续展开懒加载窗口（见下方 effect）。
+  const [sentinelInView, setSentinelInView] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  // 归档 dock 展开后把列表滚到底所需（列表 div 本身是滚动容器）。
+  const listScrollRef = useRef<HTMLDivElement | null>(null);
 
   const { active, archived } = useMemo(
     () => partitionNotes(props.notes),
@@ -150,16 +151,41 @@ export function BoardMain(props: BoardMainProps): JSX.Element {
     [archivedMatched, win.archived],
   );
 
+  /** 尚未懒加载显示的条目数（活动区 + 展开中的归档区）。 */
+  const remaining =
+    activeMatched.length - activeVisible.length +
+    (archivedOpen ? archivedMatched.length - archivedVisible.length : 0);
+
   const noNotes = props.notes.length === 0;
   const hasFilter = colors.length > 0 || query.trim() !== "";
   const noMatch =
     hasFilter && activeMatched.length === 0 && archivedMatched.length === 0;
 
-  /** 滚动触底 → 展开下一批（活动区优先，归档区展开后才补）。 */
-  function handleScroll(): void {
-    const el = listRef.current;
-    if (!el) return;
-    if (el.scrollTop + el.clientHeight < el.scrollHeight - 60) return;
+  // 底部哨兵观察：宿主外层或列表 div 任意一方滚动到哨兵附近都触发（不依赖
+  // 具体哪个容器在滚 —— 旧 onScroll 在首批内容不足一屏时永不触发）。
+  useEffect(() => {
+    const el = sentinelRef.current;
+    // jsdom/无 IO 环境静默降级（不自动续批，仍有「加载更多」按钮兜底）。
+    if (!el || view === "lanes" || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) setSentinelInView(entry.isIntersecting);
+      },
+      { root: null, rootMargin: "300px 0px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [view]);
+
+  // 哨兵可见期间逐批展开，直到填满可视区或全部加载完。
+  useEffect(() => {
+    if (!sentinelInView || view === "lanes") return;
+    if (
+      win.active >= activeMatched.length &&
+      (!archivedOpen || win.archived >= archivedMatched.length)
+    ) {
+      return;
+    }
     setWin((w) =>
       nextWindow(
         w,
@@ -167,6 +193,31 @@ export function BoardMain(props: BoardMainProps): JSX.Element {
         archivedOpen,
       ),
     );
+  }, [sentinelInView, view, win, archivedOpen, activeMatched.length, archivedMatched.length]);
+
+  /** 「加载更多」手动兜底：点一次展开一批。 */
+  function loadMore(): void {
+    setWin((w) =>
+      nextWindow(
+        w,
+        { active: activeMatched.length, archived: archivedMatched.length },
+        archivedOpen,
+      ),
+    );
+  }
+
+  /** 展开/收起归档：展开后把列表滚到底，让归档内容直接出现在 dock 条上方。 */
+  function toggleArchived(): void {
+    setArchivedOpen((open) => {
+      if (!open) {
+        window.requestAnimationFrame(() => {
+          const el = listScrollRef.current;
+          if (!el) return;
+          el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+        });
+      }
+      return !open;
+    });
   }
 
   const rowHandlers = (note: NoteRecord) => ({
@@ -274,7 +325,7 @@ export function BoardMain(props: BoardMainProps): JSX.Element {
         </div>
       )}
 
-      <div ref={listRef} onScroll={handleScroll} style={listStyle}>
+      <div ref={listScrollRef} style={listStyle}>
         {view === "lanes" ? (
           // 任务泳道：活动便签按列全量渲染（不做懒加载分批，列内自带滚动）；
           // 颜色筛选行已在上面隐藏；归档便签不进泳道，底部细提示行引导切列表。
@@ -364,12 +415,9 @@ export function BoardMain(props: BoardMainProps): JSX.Element {
               </div>
             )}
 
-            <ArchivedSection
-              count={archivedMatched.length}
-              open={archivedOpen}
-              onToggle={() => setArchivedOpen((v) => !v)}
-              renderContent={() =>
-                view === "grid" ? (
+            {archivedOpen && archivedMatched.length > 0 && (
+              <section style={archivedBodyStyle} aria-label="已归档便签">
+                {view === "grid" ? (
                   <ul style={gridStyle}>
                     {archivedVisible.map((note) => (
                       <NoteCard
@@ -391,9 +439,9 @@ export function BoardMain(props: BoardMainProps): JSX.Element {
                       />
                     ))}
                   </ul>
-                )
-              }
-            />
+                )}
+              </section>
+            )}
 
             {noMatch && (
               <div style={noMatchStyle}>
@@ -420,7 +468,40 @@ export function BoardMain(props: BoardMainProps): JSX.Element {
             )}
           </>
         )}
+        {view !== "lanes" && !noNotes && remaining > 0 && (
+          <div style={loadMoreRowStyle}>
+            <span style={loadMoreHint}>还有 {remaining} 条未显示</span>
+            <button type="button" style={loadMoreBtn} onClick={loadMore}>
+              加载更多
+            </button>
+          </div>
+        )}
+        {view !== "lanes" && (
+          <div ref={sentinelRef} aria-hidden="true" style={sentinelStyle} />
+        )}
       </div>
+      {view !== "lanes" && archivedMatched.length > 0 && (
+        <button
+          type="button"
+          aria-expanded={archivedOpen}
+          onClick={toggleArchived}
+          style={archivedDockStyle}
+        >
+          <Archive size={14} style={{ flex: "none", color: t.labelSecondary }} />
+          <span style={{ flex: 1, textAlign: "left", minWidth: 0 }}>
+            已归档（{archivedMatched.length}）
+          </span>
+          <ChevronRight
+            size={14}
+            style={{
+              flex: "none",
+              color: t.labelTertiary,
+              transform: archivedOpen ? "rotate(90deg)" : "none",
+              transition: "transform 140ms ease",
+            }}
+          />
+        </button>
+      )}
     </>
   );
 }
@@ -496,7 +577,7 @@ const clearBtn: React.CSSProperties = {
   cursor: "pointer",
 };
 const filterRowStyle: React.CSSProperties = {
-  padding: "8px 16px 0",
+  padding: "8px 16px",
   display: "flex",
   alignItems: "center",
   gap: 8,
@@ -565,6 +646,54 @@ const clearFilterBtn: React.CSSProperties = {
   color: t.labelPrimary,
   background: t.hoverBg,
   cursor: "pointer",
+};
+const loadMoreRowStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 10,
+  padding: "14px 0 4px",
+};
+const loadMoreHint: React.CSSProperties = {
+  color: t.labelCaption,
+  fontSize: 12.5,
+};
+const loadMoreBtn: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  height: 28,
+  padding: "0 14px",
+  border: "none",
+  borderRadius: 14,
+  fontSize: 12.5,
+  lineHeight: 1,
+  cursor: "pointer",
+  color: t.onPrimary,
+  background: t.primaryFill,
+  fontWeight: 600,
+};
+const sentinelStyle: React.CSSProperties = { height: 1 };
+/** 归档内容块（滚动区内、dock 条上方）。 */
+const archivedBodyStyle: React.CSSProperties = {
+  marginTop: 20,
+  borderTop: `1px dashed ${t.borderL2}`,
+  paddingTop: 20,
+};
+/** 底部常驻「已归档」dock 条：列表在它上方滚动，永远可见可点。 */
+const archivedDockStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  width: "100%",
+  boxSizing: "border-box",
+  padding: "7px 16px 8px",
+  border: "none",
+  borderTop: `1px solid ${t.borderL2}`,
+  background: "transparent",
+  cursor: "pointer",
+  fontSize: 12.5,
+  color: t.labelSecondary,
+  flex: "none",
 };
 const btnPrimary: React.CSSProperties = {
   display: "inline-flex",

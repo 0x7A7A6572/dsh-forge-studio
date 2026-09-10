@@ -32,6 +32,10 @@ describe('mdToPlainText', () => {
     expect(mdToPlainText('')).toBe('')
     expect(mdToPlainText('  纯文本  ')).toBe('纯文本')
   })
+
+  it('剥掉 <img> HTML 标签', () => {
+    expect(mdToPlainText('看图 <img src="x.png" width="50%"> 这里')).toBe('看图 这里')
+  })
 })
 
 describe('mdSnippet', () => {
@@ -70,5 +74,18 @@ describe('firstImageUrl', () => {
   it('支持 title 后缀与空格', () => {
     expect(firstImageUrl('![图](http://x/y.png "标题")')).toBe('http://x/y.png')
     expect(firstImageUrl('![图]( http://x/y.png )')).toBe('http://x/y.png')
+  })
+
+  it('识别内联 HTML <img>（设过尺寸的图）', () => {
+    expect(firstImageUrl('<img src="data:image/png;base64,AAAA" width="50%" />')).toBe('data:image/png;base64,AAAA')
+  })
+
+  it('HTML 与 markdown 混排时取最早出现者', () => {
+    expect(firstImageUrl('文字 ![图](a.png) 与 <img src="b.png">')).toBe('a.png')
+    expect(firstImageUrl('文字 <img src="b.png"> 后 ![图](a.png)')).toBe('b.png')
+  })
+
+  it('src 不在首位的 <img> 也能识别', () => {
+    expect(firstImageUrl('<img width="50%" src="c.png">')).toBe('c.png')
   })
 })

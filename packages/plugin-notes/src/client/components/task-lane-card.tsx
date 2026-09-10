@@ -18,6 +18,7 @@ import { NOTE_INK, NOTE_INK_MUTED, noteColorMeta } from '../core/note-colors.ts'
 import { isRunOpen } from '../core/task-lanes.ts'
 import { mdSnippet, mdToPlainText } from '../core/markdown-text.ts'
 import { fmtDateTime, fmtElapsed, fmtRelative } from '../core/time-text.ts'
+import { PinnedCornerMark } from './pin-corner.tsx'
 import {
   Archive,
   ArchiveRestore,
@@ -148,14 +149,15 @@ export function TaskLaneCard(props: TaskLaneCardProps): JSX.Element {
           ...cardStyle,
           background: meta.paper,
           opacity: dragging ? 0.45 : 1,
+          ...(note.pinned && !note.archived ? { borderTopRightRadius: 0 } : {}),
           ...(running ? { boxShadow: '0 2px 8px rgba(0, 0, 0, 0.12)' } : {}),
         }}
       >
+        {note.pinned && !note.archived && <PinnedCornerMark color={meta.ring} size={10} />}
         <span style={cardTitleRow}>
           <span style={cardTitle} title={note.title || '（无标题）'}>
             {note.title || <span style={{ color: NOTE_INK_MUTED }}>（无标题）</span>}
           </span>
-          {note.pinned && !note.archived && <Pin size={12} style={{ flex: 'none', color: meta.ring }} aria-label="已置顶" />}
         </span>
         {running ? (
           <>
@@ -226,10 +228,12 @@ export function TaskLaneCard(props: TaskLaneCardProps): JSX.Element {
 
 const cardStyle: React.CSSProperties = {
   boxSizing: 'border-box',
+  position: 'relative',
   width: '100%',
   display: 'flex',
   flexDirection: 'column',
   gap: 4,
+  minHeight: 78,
   padding: '8px 10px 7px',
   borderRadius: 10,
   border: '1px solid rgba(0, 0, 0, 0.07)',

@@ -1,6 +1,6 @@
 # dsh-desk-studio
 
-用 dsh 插件范式重做 Forge Studio 功能（F1 便签/F2 天气/F3 翻译/F4 提醒/F5 定时任务/F7 设置）。
+dsh 插件集合：聚合多个独立的日常 dsh 插件（便签 / 日志等）。
 
 ## 命令
 - `pnpm install` — 装 workspace（含本地 dsh CLI）

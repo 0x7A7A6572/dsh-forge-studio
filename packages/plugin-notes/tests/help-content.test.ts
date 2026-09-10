@@ -1,7 +1,7 @@
 /**
  * 使用说明 markdown（help-content.ts 的 HELP_MARKDOWN）覆盖性测试。
  * 内容本身即需求：四块说明（入口与快捷键 / 基础使用 / 对话使用 / 任务泳道），
- * 并须写全与产品事实一致的要点 —— 工具名、note:// 引用语法、五列任务状态、
+ * 并须写全与产品事实一致的要点 —— 工具名、五列任务状态、
  * 六色纸卡与状态解耦、执行/接管交互、快捷键。任何与真实实现脱节的文案漂移
  * 都应让这些断言失败。
  */
@@ -37,9 +37,10 @@ describe('HELP_MARKDOWN 使用说明覆盖', () => {
     }
   })
 
-  it('对话使用块说明 note:// 引用语法与 user 便签不可被 agent 删除', () => {
-    expect(HELP_MARKDOWN).toContain('note://')
+  it('对话使用块说明 user 便签不可被 agent 删除，且不再含 note:// 引用语法', () => {
     expect(HELP_MARKDOWN).toContain('user')
+    expect(HELP_MARKDOWN).not.toContain('note://')
+    expect(HELP_MARKDOWN).not.toContain('@[')
   })
 
   it('任务泳道块写全五列任务状态，且颜色与状态解耦', () => {

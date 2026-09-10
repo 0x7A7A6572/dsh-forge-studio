@@ -1,8 +1,7 @@
 {
   "name": "@zzerx/dsh-plugin-home-studio",
   "version": "0.1.0",
-  "description": "Forge Studio 主面板（F1-F7 入口编排）的 dsh 插件形态：骨架包，待填充 UI。图标统一使用 lucide-react。",
-  "private": true,
+  "description": "dsh 工作台插件：聚合日常功能入口的骨架包，待填充 UI。图标统一使用 lucide-react。",
   "type": "module",
   "main": "./lib/index.js",
   "types": "./lib/types/index.d.ts",
@@ -25,9 +24,16 @@
     "README.md"
   ],
   "scripts": {
+    "prepublishOnly": "node scripts/build.mjs",
     "build": "node scripts/build.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json",
     "test": "vitest run"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.2"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.2",

@@ -2,20 +2,21 @@
  * agent 桥挂载时序集成测试（回归防线）。
  *
  * 复现 bug：宿主装配是 service-availability 驱动的（行序不承载加载语义），
- * plugin-notes 只依赖 storageDomain，tools/systemPrompt 服务可能晚于插件激活。
- * 旧实现用 apply 时一次性 ctx.get('tools') 判存 → 服务未就绪时永久漏挂、无重试
- * （web GUI 会话看不到 notes_* 工具）。新实现用 ctx.inject 声明依赖，cordis 在
- * 服务注册（provide→notify）时唤醒等待中的 fiber。
+ * plugin-notes 只依赖 storageDomain，tools 服务可能晚于插件激活。旧实现用
+ * apply 时一次性 ctx.get('tools') 判存 → 服务未就绪时永久漏挂、无重试（web
+ * GUI 会话看不到 notes_* 工具）。新实现用 ctx.inject 声明依赖，cordis 在服务
+ * 注册（provide→notify）时唤醒等待中的 fiber。
  *
  * 桥状态契约（agent/bridge-state.ts）：waiting → installed | failed，单向迁移。
  * - 工具注册成功 → 桥 installed；失败 → failed（含 reason），只降级不抛；
- * - 引用提示（note:// mention 引导）只在 installed 之后挂载——tools 失败时
- *   agent 不会被空头告知“存在 notes_* 工具却调不到”（unknown tool bug）。
+ * - failed 时 agent 不会被空头告知“存在 notes_* 工具却调不到”（unknown tool
+ *   bug 曾让泳道任务执行协议全线失败）。
  *
- * 用真实 cordis Context + 假 tools/systemPrompt 服务，验证：
+ * 用真实 cordis Context + 假 tools 服务，验证：
  * - tools 晚到 / 已就绪 / 永不提供（纯 UI 宿主，不注册也不抛错、ctx 可卸载）；
- * - tools 注册抛错 → 桥 failed、引用提示不挂载；
- * - reference 门控：tools 成功后才挂，且与 systemPrompt 的到达次序无关。
+ * - tools 注册抛错 → 桥 failed（不抛到插件层）。
+ * 注：note:// mention 引用引导已随 v0.1 移除（@便签 引用化不再支持），本桥
+ * 不再依赖 systemPrompt，故无系统提示分区断言。
  */
 
 import { describe, expect, it } from 'vitest'
@@ -24,11 +25,9 @@ import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { NotesService } from '../src/service.ts'
 import {
   installNotesAgentBridgeWhenReady,
-  installNotesReferencePromptWhenReady,
   installNotesToolsWhenReady,
 } from '../src/index.ts'
 import { NOTES_TOOL_PREFIX } from '../src/agent/tools.ts'
-import { NOTES_REFERENCE_SECTION } from '../src/agent/reference.ts'
 import type { NoteId, NoteRecord } from '../src/types.ts'
 
 function fakeTable(): KvTable<NoteId, NoteRecord> {
@@ -78,14 +77,6 @@ async function provideBrokenTools(ctx: Context): Promise<void> {
     guard: () => {},
   }
   await ctx.plugin({ apply: (c: Context) => c.provide('tools', brokenTools as never) })
-}
-
-/** 在 ctx 上注册一个假 systemPrompt 服务（记录 section 调用）。 */
-async function provideSystemPrompt(ctx: Context, sections: string[]): Promise<void> {
-  const fakePrompt = {
-    section: (s: { name: string }) => { sections.push(s.name) },
-  }
-  await ctx.plugin({ apply: (c: Context) => c.provide('systemPrompt', fakePrompt as never) })
 }
 
 const tick = () => new Promise((r) => setTimeout(r, 20))
@@ -149,75 +140,14 @@ describe('agent 桥挂载时序（tools 晚于插件就绪）', () => {
   })
 })
 
-describe('agent 桥挂载时序（reference 门控于 tools 成功）', () => {
-  it('tools 与 systemPrompt 都晚到 → tools 成功后引用分区才挂上', async () => {
-    const ctx = makeNotesContext()
-    const registered: string[] = []
-    const sections: string[] = []
-    const install = installNotesToolsWhenReady(ctx)
-    installNotesReferencePromptWhenReady(ctx, install)
-    await provideTools(ctx, registered)
-    await install
-    await tick()
-    expect(sections).toEqual([]) // 工具已就绪但 systemPrompt 未到 → 仍未挂
-    await provideSystemPrompt(ctx, sections)
-    await tick()
-    expect(sections).toEqual([NOTES_REFERENCE_SECTION]) // 门控通过 + systemPrompt 就绪 → 挂
-    await ctx.fiber.dispose()
-  })
-
-  it('systemPrompt 已就绪、tools 后到 → 引用分区随后挂上', async () => {
-    const ctx = makeNotesContext()
-    const registered: string[] = []
-    const sections: string[] = []
-    await provideSystemPrompt(ctx, sections)
-    const install = installNotesToolsWhenReady(ctx)
-    installNotesReferencePromptWhenReady(ctx, install)
-    await tick()
-    expect(sections).toEqual([])
-    await provideTools(ctx, registered)
-    await install
-    await tick()
-    expect(sections).toEqual([NOTES_REFERENCE_SECTION])
-    await ctx.fiber.dispose()
-  })
-
-  it('tools 注册失败 → 即使 systemPrompt 就绪也不挂引用提示', async () => {
-    const ctx = makeNotesContext()
-    const sections: string[] = []
-    await provideSystemPrompt(ctx, sections)
-    await provideBrokenTools(ctx)
-    const install = installNotesToolsWhenReady(ctx)
-    installNotesReferencePromptWhenReady(ctx, install)
-    await tick()
-    expect(sections).toEqual([])
-    expect(ctx.notes.getAgentBridgeState().status).toBe('failed')
-    await ctx.fiber.dispose()
-  })
-
-  it('永不提供 tools → 引用提示永不挂载（不再空头告知 notes_* 存在）', async () => {
-    const ctx = makeNotesContext()
-    const sections: string[] = []
-    const install = installNotesToolsWhenReady(ctx)
-    installNotesReferencePromptWhenReady(ctx, install)
-    await provideSystemPrompt(ctx, sections)
-    await tick()
-    expect(sections).toEqual([])
-    await ctx.fiber.dispose()
-  })
-})
-
 describe('installNotesAgentBridgeWhenReady（apply 使用的协调器）', () => {
-  it('tools + systemPrompt 就绪 → 工具注册 + 引用挂载 + 桥 installed 全链路', async () => {
+  it('tools 就绪 → 工具注册 + 桥 installed 全链路（无 systemPrompt 依赖）', async () => {
     const ctx = makeNotesContext()
     const registered: string[] = []
-    const sections: string[] = []
     installNotesAgentBridgeWhenReady(ctx)
     await provideTools(ctx, registered)
-    await provideSystemPrompt(ctx, sections)
     await tick()
     expect([...registered].sort()).toEqual(TOOL_NAMES)
-    expect(sections).toEqual([NOTES_REFERENCE_SECTION])
     expect(ctx.notes.getAgentBridgeState().status).toBe('installed')
     await ctx.fiber.dispose()
   })

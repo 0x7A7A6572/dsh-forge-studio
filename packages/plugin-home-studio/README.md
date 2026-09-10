@@ -1,6 +1,6 @@
 # @zzerx/dsh-plugin-home-studio
 
-Forge Studio 主面板的 dsh 插件形态 —— **骨架占位**，UI 待填充。
+dsh 工作台插件 —— **骨架占位**，UI 待填充。
 
 ## 现状
 

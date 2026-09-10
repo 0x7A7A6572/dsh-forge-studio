@@ -1,6 +1,6 @@
 /**
  * plugin-daily-log 设置命名空间 `forge-studio-daily-log`：host 注册 schema + 组合 base。
- * 字段对齐原 commit-log-daily 的 author/report/safety（去掉 model——模型路由走宿主）。
+ * 字段对齐 author/report/safety（去掉 model——模型路由走宿主）。
  */
 
 import type { Context } from '@deepseek-ai/cordis'

@@ -27,6 +27,7 @@ import { fmtDateTime } from "../core/time-text.ts";
 import { fileToDataUrl, pickImageFiles } from "../core/paste-image.ts";
 import { t } from "../core/theme-tokens.ts";
 import { buildNoteRichTextExtensions } from "../core/note-richtext.ts";
+import { NoteImageResizable } from "./note-image-view.tsx";
 import {
   CODE_LANGUAGES,
   codeLanguageLabel,
@@ -38,6 +39,8 @@ import {
   ArrowUpToLine,
   Bold,
   Check,
+  ChevronDown,
+  ChevronUp,
   Code,
   CodeXml,
   Heading1,
@@ -59,6 +62,23 @@ import {
 
 // 图片扩展定义挪至共享层 core/note-richtext.ts，此处仅再导出保持兼容。
 export { NoteImage } from "../core/note-richtext.ts";
+
+/** 只读 markdown 渲染（正文观感）：run.summary 是 agent 写回的 markdown 总结，
+ * 不能用纯文本展示。复用正文同款排版栈（EDITOR_CSS 已由编辑器根部注入一次，
+ * 这里只补只读覆盖），观感与便签正文一致 —— 链接可点开、代码高亮/表格同源。 */
+function RunSummaryMarkdown(props: { readonly markdown: string }): JSX.Element {
+  const editor = useEditor({
+    extensions: buildNoteRichTextExtensions({ readonly: true }),
+    content: props.markdown,
+    editable: false,
+  });
+  return (
+    <div className="fs-note-editor fs-note-preview fs-note-run-summary">
+      <style>{RUN_SUMMARY_PREVIEW_CSS}</style>
+      <EditorContent editor={editor} />
+    </div>
+  );
+}
 
 export interface NoteEditorProps {
   readonly initialTitle: string;
@@ -115,6 +135,10 @@ export const EDITOR_CSS = `
 /* 只读展示态（.fs-note-preview）链接默认带下划线，可直接点开（openOnClick）。 */
 .fs-note-editor.fs-note-preview .ProseMirror a { text-decoration: underline; text-underline-offset: 2px; }
 .fs-note-editor .ProseMirror img { max-width: 66.67%; height: auto; border-radius: 6px; }
+.fs-note-editor .ProseMirror img[width] { max-width: 100%; }
+.fs-note-image-wrap { position: relative; display: inline; }
+.fs-note-image-wrap img { vertical-align: bottom; }
+.fs-note-image-handle { position: absolute; right: 2px; bottom: 2px; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; padding: 0; border: none; border-radius: 6px; background: var(--dsw-static-deepseek-450); color: #fff; cursor: nwse-resize; z-index: 5; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28); }
 .fs-note-editor .ProseMirror p:has(> img) {  }
 .fs-note-editor .ProseMirror img.ProseMirror-selectednode { outline: 2px solid var(--dsw-static-deepseek-450); }
 .fs-note-editor .ProseMirror ::selection { background: var(--dsw-specific-bubble-highlight); }
@@ -186,6 +210,8 @@ export const EDITOR_CSS = `
 .fs-note-editor--paper .fs-note-color:focus-visible { outline: 2px solid rgba(46, 42, 34, 0.55); }
 .fs-note-editor--paper .fs-note-btn-primary:hover:not(:disabled) { background: #100e08; }
 .fs-note-editor--paper .fs-note-lang-select { color: rgba(46, 42, 34, 0.85); border: none; background: rgba(46, 42, 34, 0.06); }
+.fs-note-run-toggle { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border: none; border-radius: 7px; background: transparent; color: rgba(46, 42, 34, 0.72); font-size: 12.5px; cursor: pointer; }
+.fs-note-run-toggle:hover { background: rgba(46, 42, 34, 0.09); color: #2E2A22; }
 `;
 
 /**
@@ -343,6 +369,8 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
   const runningReadOnly =
     props.initialLane !== undefined && isRunOpen(props.initialLane);
   const [saving, setSaving] = useState(false);
+  /** 任务执行结果是否展开（默认收起，避免长摘要把编辑器撑高）。 */
+  const [runExpanded, setRunExpanded] = useState(false);
   /** 当前打开的工具栏弹层：link（链接）/ table（表格）。 */
   const [popup, setPopup] = useState<"link" | "table" | null>(null);
   /** 链接弹层草稿（textLocked=选区非空，文字由选中内容决定）。 */
@@ -355,7 +383,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
   const [gridSize, setGridSize] = useState({ cols: 3, rows: 2 });
 
   const editor = useEditor({
-    extensions: buildNoteRichTextExtensions(),
+    extensions: buildNoteRichTextExtensions({ imageNode: NoteImageResizable }),
     content: props.initialBody,
   });
   const fmt =
@@ -437,7 +465,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
     setPopup((p) => (p === "link" ? null : "link"));
   }
 
-  /** 规范化地址：无 scheme 时补 https://（mailto:/note:/file: 等保留）。 */
+  /** 规范化地址：无 scheme 时补 https://（mailto:/file: 等带 scheme 的地址保留原样）。 */
   function normalizeUrl(raw: string): string {
     const value = raw.trim();
     if (!value) return "";
@@ -1002,9 +1030,25 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                 )}
               </div>
               {props.initialLane.run.summary !== undefined && (
-                <div style={laneRunSummary}>
-                  {props.initialLane.run.summary}
-                </div>
+                <>
+                  <button
+                    type="button"
+                    className="fs-note-run-toggle"
+                    onClick={() => setRunExpanded((v) => !v)}
+                    aria-expanded={runExpanded}
+                    title={runExpanded ? "收起执行结果" : "展开执行结果"}
+                  >
+                    {runExpanded ? (
+                      <ChevronUp size={14} />
+                    ) : (
+                      <ChevronDown size={14} />
+                    )}
+                    执行结果
+                  </button>
+                  {runExpanded && (
+                    <RunSummaryMarkdown markdown={props.initialLane.run.summary} />
+                  )}
+                </>
               )}
             </div>
           )}
@@ -1304,13 +1348,11 @@ const laneMetaRow: React.CSSProperties = {
 const metaDot: React.CSSProperties = {
   color: "rgba(46, 42, 34, 0.32)",
 };
-const laneRunSummary: React.CSSProperties = {
-  fontSize: 12.5,
-  color: NOTE_INK,
-  lineHeight: 1.6,
-  whiteSpace: "pre-wrap",
-  wordBreak: "break-word",
-};
+/** run.summary 只读 markdown 的内层排版覆盖（嵌套在编辑器内，见 RunSummaryMarkdown）。 */
+const RUN_SUMMARY_PREVIEW_CSS = `
+.fs-note-run-summary { padding: 0; max-height: 36vh; overflow-y: auto; }
+.fs-note-run-summary .ProseMirror { min-height: 0; caret-color: transparent; }
+`;
 const laneRunMuted: React.CSSProperties = {
   fontSize: 12.5,
   color: "rgba(46, 42, 34, 0.45)",

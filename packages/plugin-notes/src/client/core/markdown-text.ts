@@ -52,13 +52,18 @@ export function mdSnippet(md: string, maxLength = 120): string {
 }
 
 /**
- * 取正文中第一张图片的 URL（markdown `![alt](url)`）。
+ * 取正文中第一张图片的 URL：markdown `![alt](url)` 或内联 HTML `<img src="…">`
+ * （设过显示尺寸的图会序列化为 <img>，这里一并识别，保证卡片缩略图不丢）。
  * 用于列表卡片缩略图；无图返回 null。url 形如 data:…、http(s)://… 或相对路径；
- * 支持可选的 "title" / 'title' 后缀。不解析、不校验内容，只做稳妥剥离。
+ * markdown 形式支持可选的 "title" / 'title' 后缀。不解析、不校验内容，只做稳妥剥离。
  */
 export function firstImageUrl(md: string): string | null {
-  const match = /!\[[^\]]*\]\(\s*([^)\s]+)(?:\s+["'][^"']*["'])?\s*\)/.exec(md)
-  if (!match) return null
-  const url = match[1]
+  const mdMatch = /!\[[^\]]*\]\(\s*([^)\s]+)(?:\s+["'][^"']*["'])?\s*\)/.exec(md)
+  const htmlMatch = /<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/i.exec(md)
+  if (!mdMatch && !htmlMatch) return null
+  if (mdMatch && htmlMatch) {
+    return (mdMatch.index < htmlMatch.index ? mdMatch[1] : htmlMatch[1]) || null
+  }
+  const url = mdMatch ? mdMatch[1] : (htmlMatch as RegExpExecArray)[1]
   return url || null
 }

@@ -4,5 +4,7 @@ packages/*/lib/
 packages/*/node_modules/
 .research/
 *.log
+docs/
+**/PLAN.md
 
 .superpowers/

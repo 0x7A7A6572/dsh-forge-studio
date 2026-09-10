@@ -1,6 +1,6 @@
 /**
  * Git 数据源 provider：`git log --all` 白名单执行（execFile 数组传参防注入），
- * 解析为结构化活动条目（commit）。沿用原 commit-log-daily 的 safeGitExecute 白名单语义。
+ * 解析为结构化活动条目（commit）。沿用 safeGitExecute 白名单语义。
  */
 
 import { execFile } from 'node:child_process'

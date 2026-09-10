@@ -64,7 +64,7 @@ export function searchNotes(
 /* ---------- 懒加载窗口 ---------- */
 
 /** 首批渲染的条目数。 */
-export const INITIAL_WINDOW = 8
+export const INITIAL_WINDOW = 16
 /** 触底后每批追加的条目数。 */
 export const WINDOW_STEP = 20
 

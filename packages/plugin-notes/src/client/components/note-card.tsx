@@ -5,14 +5,13 @@
  * 类选择器样式见导出的 CARD_CSS（由 board-main 统一注入一次 <style>）。
  */
 
-import { useState } from 'react'
 import type { NoteRecord } from '../../types.ts'
 import { NOTE_INK, NOTE_INK_MUTED, noteColorMeta } from '../core/note-colors.ts'
 import { mdSnippet, firstImageUrl } from '../core/markdown-text.ts'
 import { fmtDateTime, fmtRelative } from '../core/time-text.ts'
-import { copyNoteMention } from '../core/note-clipboard.ts'
 import { TaskBadge } from './task-badge.tsx'
-import { Archive, ArchiveRestore, Check, Link2, Pencil, Pin, Trash2, AtSign } from 'lucide-react'
+import { PinnedCornerMark } from './pin-corner.tsx'
+import { Archive, ArchiveRestore, Pencil, Pin, Trash2 } from 'lucide-react'
 
 /** 纸卡 hover/焦点态与两行截断（:hover 无法用行内样式表达）。 */
 export const CARD_CSS = `
@@ -38,15 +37,9 @@ export interface NoteCardProps {
 
 export function NoteCard(props: NoteCardProps): JSX.Element {
   const { note } = props
-  // 引用复制成功后的短暂反馈态（✓ 图标 1.6s 后还原）。
-  const [copied, setCopied] = useState(false)
   const meta = noteColorMeta(note.color)
   const snippet = note.text ? mdSnippet(note.text, 140) : ''
   const thumb = note.text ? firstImageUrl(note.text) : null
-  const flashCopied = (): void => {
-    setCopied(true)
-    window.setTimeout(() => setCopied(false), 1600)
-  }
   return (
     <li>
       <div
@@ -65,14 +58,18 @@ export function NoteCard(props: NoteCardProps): JSX.Element {
             props.onEdit()
           }
         }}
-        style={{ ...cardStyle, background: meta.paper }}
+        style={{
+          ...cardStyle,
+          background: meta.paper,
+          ...(note.pinned && !note.archived ? { borderTopRightRadius: 0 } : {}),
+        }}
       >
+        {note.pinned && !note.archived && <PinnedCornerMark color={meta.ring} />}
         <span style={cardTitleRow}>
           <span style={cardTitle} title={note.title || '（无标题）'}>
             {note.title || <span style={{ color: NOTE_INK_MUTED }}>（无标题）</span>}
           </span>
           {note.lane && <TaskBadge lane={note.lane} />}
-          {note.pinned && !note.archived && <Pin size={14} style={{ flex: 'none', color: meta.ring }} aria-label="已置顶" />}
         </span>
         {thumb && (
           <span style={cardThumbWrap}>
@@ -95,14 +92,6 @@ export function NoteCard(props: NoteCardProps): JSX.Element {
         <span style={cardFooter}>
           <time style={{ color: NOTE_INK_MUTED }} title={fmtDateTime(note.updatedAt)}>{fmtRelative(note.updatedAt)}</time>
           <span className="fs-note-actions" style={cardActions}>
-            <button type="button" title={copied ? '已复制引用' : '引用到会话'} aria-label={copied ? '已复制引用' : '引用到会话'}
-              disabled={props.busy}
-              onClick={(e) => {
-                e.stopPropagation();
-                void copyNoteMention(note.id, note.title).then((ok) => { if (ok) flashCopied() });
-              }} style={actionBtn}>
-              {copied ? <Check size={13} /> : <AtSign size={13} />}
-            </button>
             <button type="button" title="编辑" aria-label="编辑" disabled={props.busy}
               onClick={(e) => { e.stopPropagation(); props.onEdit() }} style={actionBtn}>
               <Pencil size={13} />
@@ -137,8 +126,9 @@ export function NoteCard(props: NoteCardProps): JSX.Element {
 
 const cardStyle: React.CSSProperties = {
   boxSizing: 'border-box',
+  position: 'relative',
   height: '100%',
-  minHeight: 130,
+  minHeight: 240,
   display: 'flex',
   flexDirection: 'column',
   gap: 5,

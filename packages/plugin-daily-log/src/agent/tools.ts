@@ -5,7 +5,9 @@
  * - 读工具（list_sources / scan / list_reports / get_report / list_templates / get_template /
  *   prepare_report）放行；
  * - 写工具（add_source / save_report / export_report / delete_report / template_*）在宿主有
- *   approval seam 时经 tools/pre-execute 弹确认，无 seam 时放行；
+ *   approval seam 且会话有效策略为 ask（会真正弹确认）时经 tools/pre-execute 弹确认；
+ *   无 seam、策略为 never（禁弹窗，ask 会被 ApprovalService 确定性拒绝）时放行 ——
+ *   判定见 dailyLogWriteShouldAsk；
  * - guard（单调拒绝）：内置模板不可修改/删除（service 已兜底，此处提前拒绝）。
  *
  * 工具以 tools 服务判存后条件挂载（ctx.inject），纯 UI 宿主照常工作（不注册工具）。
@@ -57,6 +59,21 @@ function describeAction(tool: string): string {
     case TOOL_TEMPLATE_SET_DEFAULT: return 'change the default template'
     default: return 'write'
   }
+}
+
+/** 'ask' | 'never' —— 与 @deepseek-ai/dsh-user-approval 的 ApprovalPolicy 同形。 */
+type DailyLogApprovalPolicy = 'ask' | 'never'
+
+/**
+ * pre-execute ask 门禁判定（纯函数，供单测）：
+ * - policy === undefined：宿主未装配 approval（无 seam）→ 放行（保持原语义）；
+ * - policy === 'never'：会话禁弹窗，ApprovalService 对一切 ask 确定性返回
+ *   'rejected'（decide 在分发应答器之前直接拒绝）→ 弹确认只会让用户已在对话中
+ *   确认的写操作被自动拒绝，等同「无交互通道」，放行；
+ * - policy === 'ask'：宿主会真正弹确认 → 写工具先 ask。
+ */
+export function dailyLogWriteShouldAsk(policy: DailyLogApprovalPolicy | undefined): boolean {
+  return policy === 'ask'
 }
 
 function renderEntries(entries: ActivityEntry[]): Array<{ type: 'text'; text: string }> {
@@ -471,11 +488,18 @@ export function installDailyLogTools(ctx: Context): void {
     return undefined
   })
 
-  // pre-execute ask：宿主有 approval seam 时，写工具先弹确认。
+  // pre-execute ask：宿主有 approval seam 且会话有效策略为 ask（会真正弹确认）时，
+  // 写工具先弹确认；策略 never（禁弹窗 → ApprovalService 确定性拒绝一切 ask）或
+  // 无 agent 可路由时放行 —— 避免用户已在对话中确认的操作仍被自动拒绝。
   ctx.on('tools/pre-execute', async (exec, next) => {
     if (!isDailyLogTool(exec.name)) return next()
     if (!WRITE_TOOLS.has(exec.name)) return next()
-    if (ctx.get('approval') === undefined) return next()
+    const approval = ctx.get('approval')
+    if (approval === undefined) return next()
+    const policy = exec.agent === undefined
+      ? undefined
+      : approval.overrideOf(exec.agent.session) ?? approval.config.policy ?? 'ask'
+    if (!dailyLogWriteShouldAsk(policy)) return next()
     return { kind: 'ask', reason: 'The agent wants to ' + describeAction(exec.name) + ' in daily-log.' }
   })
 }
