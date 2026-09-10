@@ -1,4 +1,4 @@
-# dsh-desk-studio
+# dsh-forge-studio
 
 dsh 插件集合：聚合多个独立的日常 dsh 插件（便签 / 日志等）。
 
