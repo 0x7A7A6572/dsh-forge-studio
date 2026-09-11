@@ -293,7 +293,7 @@ export function installDailyLogTools(ctx: Context): void {
     parameters: {
       path: { type: 'string', required: true, description: 'Absolute path of the project directory.' },
       label: { type: 'string', description: 'Optional display label.' },
-      author: { type: 'string', description: 'Optional git author email filter (git commits only).' },
+      author: { type: 'string', description: 'Optional git author filter (git commits only). Defaults to the repo user.email (own commits only); pass "*" for all authors.' },
       type: { type: 'string', enum: ['code', 'other'], description: 'Optional project type; auto-detected when omitted (has .git → code).' },
     },
     output: {

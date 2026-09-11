@@ -1,6 +1,9 @@
 /**
  * Git 数据源 provider：`git log --all` 白名单执行（execFile 数组传参防注入），
  * 解析为结构化活动条目（commit）。沿用 safeGitExecute 白名单语义。
+ *
+ * 作者过滤：默认只取"本人提交"——未显式传 author 时回落到该仓库的
+ * `git config user.email`；显式传 `*` 或 `all` 表示放开全作者。
  */
 
 import { execFile } from 'node:child_process'
@@ -29,6 +32,32 @@ async function gitLog(projectPath: string, args: string[]): Promise<string> {
   }
 }
 
+/** 显式放开作者过滤的取值：项目级 author 填 `*` 或 `all` 时不加 `--author`。 */
+const ALL_AUTHOR_VALUES = new Set(['*', 'all'])
+
+/** 读取 git 生效的提交身份邮箱（`git config user.email`：仓库 local 优先、回落全局）；未配置或不可用时为空串。 */
+export async function readRepoUserEmail(projectPath: string): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync('git', ['-C', projectPath, 'config', 'user.email'], {
+      maxBuffer: 64 * 1024,
+    })
+    return stdout.trim()
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * 解析实际生效的作者过滤值：显式传入优先（`*`/`all` → 不过滤），
+ * 未传入时回落到仓库自身的 user.email —— 即默认"仅本人提交"；都无法确定时不过滤。
+ */
+export async function resolveAuthorFilter(projectPath: string, author?: string): Promise<string> {
+  const explicit = (author ?? '').trim()
+  if (ALL_AUTHOR_VALUES.has(explicit.toLowerCase())) return ''
+  if (explicit) return explicit
+  return readRepoUserEmail(projectPath)
+}
+
 function parseGitLog(raw: string): Array<{ hash: string; author: string; date: string; message: string; branch: string }> {
   const trimmed = raw.trim()
   if (!trimmed) return []
@@ -55,12 +84,13 @@ export const gitChannel: ChannelProvider = {
     }
   },
   async scan({ path, label, range, author }): Promise<ActivityEntry[]> {
+    const authorFilter = await resolveAuthorFilter(path, author)
     const args = [
       'log', '--all', `--format=${LOG_FORMAT}`,
       `--since=${range.since}`, `--max-count=${MAX_COMMITS + 1}`,
     ]
     if (range.until) args.push(`--until=${range.until}`)
-    if (author) args.push(`--author=${author}`)
+    if (authorFilter) args.push(`--author=${authorFilter}`)
     const out = await gitLog(path, args)
     return parseGitLog(out).slice(0, MAX_COMMITS).map((c) => ({
       ts: Date.parse(c.date) || 0,

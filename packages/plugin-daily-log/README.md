@@ -7,7 +7,18 @@
 - **多源采集**：Git 仓库（`git log` 白名单 + execFile 防注入）、Claude Code（`~/.claude/projects/**/*.jsonl`）、Codex（`~/.codex/sessions/**`）、DeepSeek harness（`DSH_HOME` 会话日志）。
 - **对话式生成**：在聊天里说「帮我生成本周周报」，agent 先确认时间范围与项目、扫描 Git 提交与本地 agent 对话，再亲自按模板结构把活动归纳成业务化报告（合并同功能提交、归类到核心产出/问题修复/技术优化等章节）；经你确认后保存到报告历史并可导出 .md。
 - **报告历史 + 导出**：历史报告可查看 / 删除，一键导出 .md 到本地目录。
+- **默认仅本人提交**：Git 渠道默认按提交身份过滤 —— 设置 `authorEmail` 优先，未配置时回落各仓库生效的 `git config user.email`，因此默认只产出本人提交；项目级 `author` 可覆盖，填 `*` / `all` 放开全作者。对话渠道没有作者维度，不受影响。
 - **agent 工具**：会话里自然语言「帮我生成本周周报」，经 `daily_log_*` 工具完成（`daily_log_list_sources` / `daily_log_scan` / `daily_log_prepare_report` / `daily_log_save_report` / `daily_log_export_report` 等）。
+
+## 作者过滤（默认仅本人提交）
+
+Git 提交的作者过滤按以下优先级取值，三级皆空时不过滤：
+
+1. 项目级 `author`（`daily_log_add_source` 的 `author` 参数）；
+2. 设置 `forge-studio-daily-log.authorEmail`（设置页可填）；
+3. 各仓库生效的 `git config user.email`（仓库 local 优先，回落全局身份）。
+
+填 `*` 或 `all` 可显式放开全作者（想收录团队提交时使用）。
 
 ## 架构
 

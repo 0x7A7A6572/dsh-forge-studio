@@ -148,7 +148,7 @@ export interface ScanResult {
 export interface DailyLogConfig {
   /** 报告署名作者名。 */
   readonly authorName: string
-  /** git 提交过滤用作者邮箱（可选）。 */
+  /** git 提交过滤用作者邮箱；留空时默认取各仓库 `git config user.email`（仅本人提交）。 */
   readonly authorEmail: string
   /** 报告导出目录。 */
   readonly outputDir: string

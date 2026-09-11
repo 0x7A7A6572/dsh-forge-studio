@@ -241,6 +241,9 @@ export class DailyLogService extends TypertRemoteService {
   /**
    * 扫描一个项目：对命中渠道全部取数（同路径多源合并覆盖），活动归属项目名。
    * 某渠道异常不中断整体，错误汇入 truncatedHint。
+   *
+   * 作者过滤：项目级 author 优先，其次设置 authorEmail；均为空时由 git 渠道
+   * 回落到仓库 user.email —— 即默认只收本人提交（可显式填 `*` 放开全作者）。
    */
   async scanSource(id: SourceId, range: DateRange): Promise<ScanResult> {
     await this.ensureMigrated()
@@ -257,7 +260,13 @@ export class DailyLogService extends TypertRemoteService {
       }
       if (!hit) continue
       try {
-        const got = await ch.scan({ path: source.path, label: source.label, range, author: source.author })
+        const author = this.resolveGitAuthor(source)
+        const got = await ch.scan({
+          path: source.path,
+          label: source.label,
+          range,
+          ...(author !== undefined ? { author } : {}),
+        })
         // 归属统一覆盖为项目名：同路径多源聚合到同一分组。
         entries.push(...got.map((e) => ({ ...e, sourceLabel: source.label })))
       } catch (e) {
@@ -360,6 +369,26 @@ export class DailyLogService extends TypertRemoteService {
     } catch {
       return ''
     }
+  }
+
+  /** 已配置的 git 作者过滤邮箱（设置 forge-studio-daily-log.authorEmail）；未配置或不可用时为空串。 */
+  private configuredAuthorEmail(): string {
+    try {
+      const value = this.ctx.settings?.get(DAILY_LOG_NAMESPACE) as { authorEmail?: unknown } | undefined
+      return typeof value?.authorEmail === 'string' ? value.authorEmail.trim() : ''
+    } catch {
+      return ''
+    }
+  }
+
+  /**
+   * 解析项目生效的作者过滤值：项目级 author（`*`/`all` 由渠道解释为放开）优先，
+   * 其次设置 authorEmail；都为空时返回 undefined，交由 git 渠道回落仓库 user.email。
+   */
+  private resolveGitAuthor(source: SourceRecord): string | undefined {
+    const explicit = source.author?.trim()
+    if (explicit) return explicit
+    return this.configuredAuthorEmail() || undefined
   }
 
   /* ---------- 模板 ---------- */

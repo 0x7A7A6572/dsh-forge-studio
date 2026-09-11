@@ -31,13 +31,15 @@ function fakeTable<V>(): KvTable<string, V> {
   }
 }
 
-function makeService(overrides: Partial<Omit<DailyLogServiceConfig, 'domain'>> = {}): {
+function makeService(
+  overrides: Partial<Omit<DailyLogServiceConfig, 'domain'>> = {},
+  ctx = new Context(),
+): {
   svc: DailyLogService
   sources: KvTable<string, SourceRecord>
   reports: KvTable<string, ReportRecord>
   templates: KvTable<string, TemplateRecord>
 } {
-  const ctx = new Context()
   const sources = fakeTable<SourceRecord>()
   const reports = fakeTable<ReportRecord>()
   const templates = fakeTable<TemplateRecord>()
@@ -249,6 +251,54 @@ describe('DailyLogService 扫描（按项目聚合渠道）', () => {
   it('不存在的 source 抛 not found', async () => {
     const { svc } = makeService()
     await expect(svc.scanSource('nope' as SourceId, { since: 'x' })).rejects.toThrow(/not found/)
+  })
+
+  /** 渠道记录 scan 入参的 author；上下文可注入 settings 假体。 */
+  async function withAuthorSpy(settingsEmail?: string): Promise<{
+    svc: DailyLogService
+    seen: Array<string | undefined>
+  }> {
+    const ctx = new Context()
+    if (settingsEmail !== undefined) {
+      await ctx.plugin({
+        apply: (c: Context) => {
+          c.provide('settings', { get: () => ({ authorEmail: settingsEmail }) } as never)
+        },
+      })
+    }
+    const seen: Array<string | undefined> = []
+    const channel: ChannelProvider = {
+      kind: 'git',
+      probe: async () => true,
+      scan: async (input) => {
+        seen.push(input.author)
+        return [entry('git', 'commit-a')]
+      },
+    }
+    const { svc } = makeService({ channels: [channel] }, ctx)
+    return { svc, seen }
+  }
+
+  it('默认把设置 authorEmail 作为 git 作者过滤（仅本人提交）', async () => {
+    const { svc, seen } = await withAuthorSpy('me@example.com')
+    const s = await svc.addSource({ path: '/a' })
+    await svc.scanSource(s.id, { since: '2026-06-30' })
+    expect(seen).toEqual(['me@example.com'])
+  })
+
+  it('项目级 author 覆盖设置 authorEmail', async () => {
+    const { svc, seen } = await withAuthorSpy('me@example.com')
+    const s = await svc.addSource({ path: '/a', author: 'other@example.com' })
+    await svc.scanSource(s.id, { since: '2026-06-30' })
+    expect(seen).toEqual(['other@example.com'])
+  })
+
+  it('未配置 authorEmail 时不传 author（交给 git 渠道回落本人身份）', async () => {
+    const { svc, seen } = await withAuthorSpy()
+    const s = await svc.addSource({ path: '/a' })
+    const res = await svc.scanSource(s.id, { since: '2026-06-30' })
+    expect(seen).toEqual([undefined])
+    expect(res.entries).toHaveLength(1)
   })
 })
 
