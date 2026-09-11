@@ -9,6 +9,8 @@
 - **报告历史 + 导出**：历史报告可查看 / 删除，一键导出 .md 到本地目录。
 - **默认仅本人提交**：Git 渠道默认按提交身份过滤 —— 设置 `authorEmail` 优先，未配置时回落各仓库生效的 `git config user.email`，因此默认只产出本人提交；项目级 `author` 可覆盖，填 `*` / `all` 放开全作者。对话渠道没有作者维度，不受影响。
 - **agent 工具**：会话里自然语言「帮我生成本周周报」，经 `daily_log_*` 工具完成（`daily_log_list_sources` / `daily_log_scan` / `daily_log_prepare_report` / `daily_log_save_report` / `daily_log_export_report` 等）。
+- **上下文可控的取数**：会话渠道按条产出（单人一周可达数百条），因此扫描默认只给**分组级索引** —— `level=index` 的渲染行数只与「会话 / 分支」数量有关，与消息条数无关；需要细节时 `level=summary` 取每组「首问 + 末答」，`level=raw` 才是逐条明细（可配 `session_id` / `keywords` 下钻）。被折叠的分组会**显式列出名称与条数**，不会静默丢弃。
+- **注入内容剥离**：宿主往会话里塞的包裹块（IDE 打开的/选中的文件、环境与权限说明、AGENTS.md 提示、技能基目录、命令回显、任务通知、`[Request interrupted]`）在解析阶段剥离或丢弃；它们常与真实提问同处一条消息，因此先剥壳、剥完为空才丢整条。只按白名单标签匹配 —— 正文里出现 `<name>` / `<div>` 这类正常尖括号内容不会被误伤。
 
 ## 作者过滤（默认仅本人提交）
 
@@ -23,6 +25,7 @@ Git 提交的作者过滤按以下优先级取值，三级皆空时不过滤：
 ## 架构
 
 - host：`src/index.ts` 打开 `daily_log` 域（storage-domain 三表 sources/reports/templates）→ 提供 `ctx.dailyLog` 服务（Typert remote 直连）→ 注册设置命名空间 → 装配数据源 provider + agent 工具桥。
+- 数据源：`src/sources/{git,claude,codex,dsh}.ts`（`claude`/`codex` 共用 `conversation-jsonl.ts` 解析器；`dsh.ts` 自带多帧 zstd 解码与注入源过滤）；扫描结果经 `src/agent/scan-render.ts` 分层渲染（index / summary / raw）后交给 agent。
 - client：`src/client/index.ts` 挂 `ctx.remote.dailyLog.*` 远程通道 → 侧栏入口行（DOM 注入 + MutationObserver 自愈）→ 中间列面板接管（`dsh-panel-activate` 广播 + 多面板互斥）。
 
 ## 启用进 web profile
