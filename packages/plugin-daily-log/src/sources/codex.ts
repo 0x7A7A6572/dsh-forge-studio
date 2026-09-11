@@ -5,7 +5,7 @@
  */
 
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { readdir, readFile, stat } from 'node:fs/promises'
 import type { ActivityEntry, DateRange } from '../types.ts'
 import { parseConversationLine } from './conversation-jsonl.ts'
@@ -101,8 +101,10 @@ export const codexChannel: ChannelProvider = {
       } catch {
         continue
       }
+      // Codex 会话日志没有标题事件：以会话文件名（含 session id）作分组键。
+      const session = { id: basename(f, '.jsonl') }
       for (const line of text.split('\n')) {
-        const e = parseConversationLine(line, range, label)
+        const e = parseConversationLine(line, range, label, session)
         if (e) entries.push(e)
       }
     }

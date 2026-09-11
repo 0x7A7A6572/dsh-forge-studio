@@ -14,10 +14,11 @@
  */
 
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { open, readFile, readdir, stat } from 'node:fs/promises'
 import { zstdDecompressSync } from 'node:zlib'
 import type { ActivityEntry, DateRange } from '../types.ts'
+import type { SessionInfo } from './conversation-jsonl.ts'
 import { normalizeCwd } from './agent-logs.ts'
 import type { ChannelProvider } from './provider.ts'
 
@@ -188,11 +189,28 @@ function extractTs(raw: unknown): number {
   return 0
 }
 
+/** 会话标题（session/title 事件，同一会话可能多次写入，取最后一条）。 */
+export function extractSessionTitle(text: string): string | undefined {
+  let title: string | undefined
+  for (const line of text.split('\n')) {
+    if (!line.includes('"session/title"')) continue
+    try {
+      const o = JSON.parse(line) as { type?: unknown; data?: { title?: unknown } }
+      const t = o.data?.title
+      if (o.type === 'session/title' && typeof t === 'string' && t.trim()) title = t.trim()
+    } catch {
+      // 坏行忽略：标题缺失不影响正文采集
+    }
+  }
+  return title
+}
+
 /** 把一条 DSH 会话行解析为活动条目（非正文行 / 无正文 / 窗口外 返回 undefined）。 */
 export function parseDshSessionLine(
   line: string,
   range: DateRange,
   sourceLabel: string,
+  session?: SessionInfo,
 ): ActivityEntry | undefined {
   const trimmed = line.trim()
   if (!trimmed) return undefined
@@ -233,6 +251,10 @@ export function parseDshSessionLine(
     kind: 'conversation',
     title: `${role === 'user' ? '[提问]' : '[回答]'} ${head}`,
     body: text,
+    role,
+    ...(session
+      ? { group: session.id, ...(session.title ? { groupTitle: session.title } : {}) }
+      : {}),
   }
 }
 
@@ -253,8 +275,11 @@ export const dshChannel: ChannelProvider = {
         } catch {
           continue
         }
+        const id = basename(sub)
+        const title = extractSessionTitle(text)
+        const session = title ? { id, title } : { id }
         for (const line of text.split('\n')) {
-          const e = parseDshSessionLine(line, range, label)
+          const e = parseDshSessionLine(line, range, label, session)
           if (e) entries.push(e)
         }
       }

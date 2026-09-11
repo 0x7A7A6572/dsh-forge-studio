@@ -5,7 +5,7 @@
  */
 
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { readdir, readFile, stat } from 'node:fs/promises'
 import type { ActivityEntry } from '../types.ts'
 import { parseConversationLine } from './conversation-jsonl.ts'
@@ -56,6 +56,23 @@ async function resolveProjectDir(path: string): Promise<string | undefined> {
   return hit ? join(root, hit.name) : undefined
 }
 
+/** 会话文件里的 AI 标题（ai-title 事件，同一会话重复写，取最后一条）。 */
+export function extractAiTitle(text: string): string | undefined {
+  let title: string | undefined
+  for (const line of text.split('\n')) {
+    if (!line.includes('"ai-title"')) continue
+    try {
+      const o = JSON.parse(line) as { type?: unknown; aiTitle?: unknown }
+      if (o.type === 'ai-title' && typeof o.aiTitle === 'string' && o.aiTitle.trim()) {
+        title = o.aiTitle.trim()
+      }
+    } catch {
+      // 坏行忽略：标题缺失不影响正文采集
+    }
+  }
+  return title
+}
+
 export const claudeChannel: ChannelProvider = {
   kind: 'claude',
   async probe(path): Promise<boolean> {
@@ -72,8 +89,11 @@ export const claudeChannel: ChannelProvider = {
       } catch {
         continue
       }
+      const title = extractAiTitle(text)
+      const id = basename(f, '.jsonl')
+      const session = title ? { id, title } : { id }
       for (const line of text.split('\n')) {
-        const e = parseConversationLine(line, range, label)
+        const e = parseConversationLine(line, range, label, session)
         if (e) entries.push(e)
       }
     }

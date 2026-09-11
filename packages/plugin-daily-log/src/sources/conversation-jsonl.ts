@@ -87,11 +87,18 @@ function isInjectedMessage(obj: Record<string, unknown>): boolean {
   return origin?.kind === 'task-notification'
 }
 
+/** 会话归属信息（分组键 + 显示标题）：上层按会话文件/目录填充。 */
+export interface SessionInfo {
+  readonly id: string
+  readonly title?: string
+}
+
 /** 把一条 JSONL 行解析为活动条目（非 user/assistant、无正文、纯注入、窗口外 返回 undefined）。 */
 export function parseConversationLine(
   line: string,
   range: DateRange,
   sourceLabel: string,
+  session?: SessionInfo,
 ): ActivityEntry | undefined {
   const trimmed = line.trim()
   if (!trimmed) return undefined
@@ -123,5 +130,9 @@ export function parseConversationLine(
     kind: 'conversation',
     title: role === 'user' ? `[提问] ${head}` : `[回答] ${head}`,
     body: text,
+    role,
+    ...(session
+      ? { group: session.id, ...(session.title ? { groupTitle: session.title } : {}) }
+      : {}),
   }
 }

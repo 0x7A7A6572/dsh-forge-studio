@@ -19,6 +19,8 @@ import type {} from '@deepseek-ai/dsh-user-approval'
 import type {} from '../service.ts'
 import { SOURCE_KINDS } from '../types.ts'
 import type { ActivityEntry, ReportId, SourceId, TemplateId } from '../types.ts'
+import { filterEntries, renderScan } from './scan-render.ts'
+import type { ScanLevel } from './scan-render.ts'
 
 export const DAILY_LOG_TOOL_PREFIX = 'daily_log_'
 
@@ -76,14 +78,10 @@ export function dailyLogWriteShouldAsk(policy: DailyLogApprovalPolicy | undefine
   return policy === 'ask'
 }
 
-function renderEntries(entries: ActivityEntry[]): Array<{ type: 'text'; text: string }> {
-  if (entries.length === 0) return [{ type: 'text', text: '(no entries)' }]
-  const lines = entries.slice(0, 200).map((e) =>
-    '- [' + e.kind + '] ' + e.sourceLabel + ' · ' + new Date(e.ts).toISOString().slice(0, 10) + ' · ' + e.title,
-  )
-  const tail = entries.length > 200 ? '\n… (truncated, ' + (entries.length - 200) + ' more)' : ''
-  return [{ type: 'text', text: lines.join('\n') + tail }]
-}
+/** 扫描工具描述里对 level 的说明（与 scan-render 的口径一致）。 */
+const SCAN_LEVEL_HINT =
+  'level=index（默认）给会话/分支级索引，行数只与分组数有关；level=summary 在索引上补每组"首问 + 末答"；' +
+  'level=raw 才是逐条明细（可用 session_id / keywords 下钻）。被折叠的分组会显式列出，不会静默丢弃。'
 
 export function installDailyLogTools(ctx: Context): void {
   const svc = ctx.dailyLog
@@ -129,11 +127,20 @@ export function installDailyLogTools(ctx: Context): void {
 
   ctx.tools.register(defineTool({
     name: TOOL_SCAN,
-    description: 'Scan data sources for activity entries (git commits / conversation turns) within a date range. Omit source_id to scan all sources. Returns structured entries; this is the data a report is built from.',
+    description: 'Scan data sources for activity entries (git commits / conversation turns) within a date range. '
+      + 'Omit source_id to scan all sources. Returns structured entries; this is the data a report is built from. '
+      + SCAN_LEVEL_HINT,
     parameters: {
       source_id: { type: 'string', description: 'Optional source id; omit to scan all sources.' },
       since: { type: 'string', required: true, description: 'Start date, e.g. "2026-06-30" or "Monday".' },
       until: { type: 'string', description: 'Optional end date, e.g. "2026-07-05".' },
+      level: {
+        type: 'string',
+        enum: ['index', 'summary', 'raw'],
+        description: 'Rendering level (default index): index=per-session/branch overview, summary=index + first question & last answer per group, raw=every entry.',
+      },
+      session_id: { type: 'string', description: 'Drill-down: only entries of sessions/branches whose id or title contains this string.' },
+      keywords: { type: 'string', description: 'Drill-down: only entries whose text contains any of these space/comma separated terms.' },
     },
     output: {
       schema: {
@@ -149,16 +156,21 @@ export function installDailyLogTools(ctx: Context): void {
               properties: {
                 ts: { type: 'number', required: true },
                 sourceLabel: { type: 'string', required: true },
+                channel: { type: 'string', enum: SOURCE_KINDS },
                 kind: { type: 'string', required: true, enum: ['commit', 'conversation'] },
                 title: { type: 'string', required: true },
                 body: { type: 'string', required: true },
+                group: { type: 'string' },
+                groupTitle: { type: 'string' },
+                role: { type: 'string', enum: ['user', 'assistant'] },
               },
             },
           },
           count: { type: 'number', required: true },
         },
       },
-      render: (_args, value) => renderEntries((value as { entries: ActivityEntry[] }).entries),
+      render: (args, value) =>
+        [{ type: 'text', text: renderScan((value as { entries: ActivityEntry[] }).entries, { level: args.level as ScanLevel | undefined }) }],
     },
     async execute(args) {
       const since = args.since as string
@@ -173,7 +185,12 @@ export function installDailyLogTools(ctx: Context): void {
         const r = await svc.scanSource(s.id, range)
         entries.push(...r.entries)
       }
-      return { entries, count: entries.length }
+      // 下钻过滤在渲染与结构化返回上同时生效，避免显示与取值不一致。
+      const filtered = filterEntries(entries, {
+        ...(args.session_id !== undefined ? { sessionId: args.session_id as string } : {}),
+        ...(args.keywords !== undefined ? { keywords: args.keywords as string } : {}),
+      })
+      return { entries: filtered, count: filtered.length }
     },
   }))
 

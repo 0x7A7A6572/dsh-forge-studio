@@ -1,5 +1,5 @@
 /**
- * Git 数据源 provider：`git log --all` 白名单执行（execFile 数组传参防注入），
+ * Git 数据源 provider：`git log --branches --remotes --tags` 白名单执行（execFile 数组传参防注入），
  * 解析为结构化活动条目（commit）。沿用 safeGitExecute 白名单语义。
  *
  * 作者过滤：默认只取"本人提交"——未显式传 author 时回落到该仓库的
@@ -73,6 +73,21 @@ function parseGitLog(raw: string): Array<{ hash: string; author: string; date: s
   })
 }
 
+/**
+ * 从 %D 装饰串取主分支名作分组键：'HEAD -> fix/x, origin/fix/x' → 'fix/x'。
+ * 跳过 tag 与 stash；去掉 origin/ 前缀，使本地分支与远端跟踪分支并入同一组。
+ */
+export function primaryBranch(decorations: string): string | undefined {
+  for (const ref of decorations.split(',')) {
+    const raw = ref.trim()
+    if (!raw) continue
+    const name = (raw.includes('->') ? raw.split('->').pop() ?? '' : raw).trim()
+    if (!name || name.startsWith('refs/stash') || name.startsWith('tag:')) continue
+    return name.replace(/^origin\//, '').replace(/^HEAD\s*/, '')
+  }
+  return undefined
+}
+
 export const gitChannel: ChannelProvider = {
   kind: 'git',
   async probe(path): Promise<boolean> {
@@ -85,19 +100,25 @@ export const gitChannel: ChannelProvider = {
   },
   async scan({ path, label, range, author }): Promise<ActivityEntry[]> {
     const authorFilter = await resolveAuthorFilter(path, author)
+    // 用 --branches/--remotes/--tags 而非 --all：--all 会把 refs/stash 里的
+    // stash 提交（'On <branch>: …' / 'index on <branch>: …'）当成本周工作。
     const args = [
-      'log', '--all', `--format=${LOG_FORMAT}`,
+      'log', '--branches', '--remotes', '--tags', `--format=${LOG_FORMAT}`,
       `--since=${range.since}`, `--max-count=${MAX_COMMITS + 1}`,
     ]
     if (range.until) args.push(`--until=${range.until}`)
     if (authorFilter) args.push(`--author=${authorFilter}`)
     const out = await gitLog(path, args)
-    return parseGitLog(out).slice(0, MAX_COMMITS).map((c) => ({
-      ts: Date.parse(c.date) || 0,
-      sourceLabel: label,
-      kind: 'commit',
-      title: c.message || '(no message)',
-      body: `${c.hash} · ${c.date}${c.branch ? ` · ${c.branch}` : ''}`,
-    }))
+    return parseGitLog(out).slice(0, MAX_COMMITS).map((c) => {
+      const branch = primaryBranch(c.branch)
+      return {
+        ts: Date.parse(c.date) || 0,
+        sourceLabel: label,
+        kind: 'commit',
+        title: c.message || '(no message)',
+        body: `${c.hash} · ${c.date}${c.branch ? ` · ${c.branch}` : ''}`,
+        ...(branch ? { group: branch, groupTitle: branch } : {}),
+      }
+    })
   },
 }

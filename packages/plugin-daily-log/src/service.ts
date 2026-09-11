@@ -267,8 +267,8 @@ export class DailyLogService extends TypertRemoteService {
           range,
           ...(author !== undefined ? { author } : {}),
         })
-        // 归属统一覆盖为项目名：同路径多源聚合到同一分组。
-        entries.push(...got.map((e) => ({ ...e, sourceLabel: source.label })))
+        // 归属统一覆盖为项目名、渠道由扫描器侧统一填充：同路径多源聚合到同一分组。
+        entries.push(...got.map((e) => ({ ...e, sourceLabel: source.label, channel: ch.kind })))
       } catch (e) {
         errors.push(`[${ch.kind}] ${errText(e)}`)
       }

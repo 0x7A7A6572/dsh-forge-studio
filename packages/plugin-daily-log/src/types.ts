@@ -131,9 +131,17 @@ export const BUILTIN_TEMPLATE = 'default'
 export interface ActivityEntry {
   readonly ts: number
   readonly sourceLabel: string
+  /** 产出渠道（由 service 扫描时统一填充，渠道自身不必重复设置）。 */
+  readonly channel?: SourceKind
   readonly kind: 'commit' | 'conversation'
   readonly title: string
   readonly body: string
+  /** 分组键：会话渠道 = 会话 id，git = 分支名；缺省时按 title 各自成组。 */
+  readonly group?: string
+  /** 分组显示名（会话标题 / 分支名）。 */
+  readonly groupTitle?: string
+  /** 会话内角色（仅 kind=conversation）。 */
+  readonly role?: 'user' | 'assistant'
 }
 
 /** 扫描结果。 */
