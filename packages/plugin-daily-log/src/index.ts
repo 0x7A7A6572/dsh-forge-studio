@@ -1,11 +1,10 @@
 /**
  * @zzerx/dsh-plugin-daily-log —— host 入口。
  * 打开 daily-log 域 → 提供 ctx.dailyLog 服务（client 经 Typert remote 直连）→
- * 注册设置命名空间 → 装配内置渠道（git/claude/codex）→ 读取 DSH 工作区项目候选。
+ * 注册设置命名空间 → 装配内置渠道（git/claude/codex/dsh）→ 读取 DSH 工作区项目候选。
  *
- * DSH 会话渠道（正文读取）接入点：sources/dsh-channel.ts —— 需通过
- * ctx.workspaceRegistry（项目 → sessionIds）+ dsh session 事件读取（带时间戳），
- * 因 dev profile 无会话数据且读取 API 需专项校准，尚未启用（TODO 下轮接入）。
+ * DSH 会话渠道（sources/dsh.ts）直接读 <DSH_HOME>/sessions 下的会话文件：
+ * 按会话头部 cwd 归属项目，正文为追加写的多帧 zstd，须逐帧解压。
  */
 
 import { Context } from '@deepseek-ai/cordis'
