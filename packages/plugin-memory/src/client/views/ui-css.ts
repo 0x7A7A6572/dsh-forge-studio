@@ -1,0 +1,648 @@
+/**
+ * plugin-memory 设置分区的样式：视觉语言对齐 dsh 设置页（0.5px 描边卡片 +
+ * 分组小标题 + 卡片栅格），全部走宿主 --dsw-* 令牌。
+ *
+ * 只注入一次，选择器统一挂在 [data-dsh-memory-ui] 之下：这个根属性同时贴在
+ * 设置分区根节点与每个 Modal 内容包一层上 —— Modal 是 body 级 portal，挂在分区
+ * 选择器下会失配，故与分区共用同一个根标记。
+ */
+
+const STYLE_ATTR = 'data-dsh-memory-style'
+
+const CSS = `
+[data-dsh-memory-ui] {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 720px;
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+}
+
+[data-dsh-memory-ui] .mem-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+[data-dsh-memory-ui] .mem-intro {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+[data-dsh-memory-ui] .mem-warn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  /* 底色用 color-mix 兑红；不支持时退回上一行的模块底色。 */
+  background: var(--dsw-alias-bg-module-platform);
+  /* 注意：DSH 主题里没有 --dsw-alias-label-error，红色的是 state-error-primary。
+     未定义的 var() 会让整条声明在 computed-value 阶段失效（连上一行的兜底也回不来）。 */
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary, #d64545) 10%, var(--dsw-alias-bg-module-platform));
+  border: 1px solid var(--dsw-alias-state-error-primary, #d64545);
+  border-left-width: 3px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+[data-dsh-memory-ui] .mem-warn strong {
+  font-weight: 600;
+  font-size: 13.5px;
+  color: var(--dsw-alias-state-error-primary, #d64545);
+}
+
+[data-dsh-memory-ui] .mem-warn p {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+}
+
+[data-dsh-memory-ui] .mem-warn-src {
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+[data-dsh-memory-ui] .mem-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 14px;
+  background: var(--dsw-alias-bg-module-platform);
+}
+
+[data-dsh-memory-ui] .mem-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+[data-dsh-memory-ui] .mem-row-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+[data-dsh-memory-ui] .mem-row-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+[data-dsh-memory-ui] .mem-row-desc {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+[data-dsh-memory-ui] .mem-switch {
+  position: relative;
+  flex: none;
+  width: 40px;
+  height: 24px;
+  padding: 0;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-module-platform);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+[data-dsh-memory-ui] .mem-switch-on {
+  /* 同样不存在 --dsw-alias-bg-accent；品牌色是 state-business-primary。 */
+  background: var(--dsw-alias-state-business-primary, var(--dsw-alias-label-primary));
+  border-color: transparent;
+}
+
+[data-dsh-memory-ui] .mem-switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--dsw-alias-label-primary);
+  transition: transform 120ms ease, background 120ms ease;
+}
+
+[data-dsh-memory-ui] .mem-switch-on .mem-switch-knob {
+  transform: translateX(16px);
+  background: var(--dsw-alias-bg-module-platform);
+}
+
+[data-dsh-memory-ui] .mem-seg-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+[data-dsh-memory-ui] .mem-seg-label {
+  min-width: 52px;
+  font-size: 13px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+[data-dsh-memory-ui] .mem-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 9px;
+  background: var(--dsw-alias-bg-module-platform);
+}
+
+[data-dsh-memory-ui] .mem-seg-btn {
+  padding: 3px 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.5;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+[data-dsh-memory-ui] .mem-seg-btn:hover:not(:disabled) {
+  color: var(--dsw-alias-label-primary);
+}
+
+[data-dsh-memory-ui] .mem-seg-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+[data-dsh-memory-ui] .mem-seg-on {
+  /* interactive-bg-active 才是官方的「选中/激活」填充（light 0.1 黑 / dark 0.14 白），
+     比拿 border 之类的 token 当底色更贴语义、两个主题下都看得清。 */
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
+}
+
+[data-dsh-memory-ui] .mem-draft-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+[data-dsh-memory-ui] .mem-draft-form textarea {
+  min-height: 96px;
+  padding: 8px 10px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+[data-dsh-memory-ui] .mem-field-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* 只给数字输入定宽。写裸 input 会把搜索框和复选框一起压成 64px
+   （Input 原语的 input 自带 (0,1,0)，压不过这里的 (0,2,1)）。 */
+[data-dsh-memory-ui] .mem-field-row input[type='number'] {
+  width: 64px;
+}
+
+/* 搜索框自己撑开剩余宽度。 */
+[data-dsh-memory-ui] .mem-search {
+  flex: 1;
+  min-width: 160px;
+}
+
+[data-dsh-memory-ui] .mem-search input {
+  width: 100%;
+}
+
+/* ---- 原生下拉统一外观（插件级） ----
+   作用域锁在本插件自己的选择器上：内联 UI 走 [data-dsh-memory-ui] 前缀，
+   弹窗（portal 到 document.body，不在该作用域内）走 .mem-select 类名。
+   两者都带 mem- 命名空间，因此不会漏到别的插件。
+   主题是 body[data-ds-dark-theme]，箭头分浅深两套配色。 */
+[data-dsh-memory-ui] select,
+.mem-select {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 0 1 auto;
+  min-width: 200px;
+  height: 30px;
+  padding: 0 28px 0 10px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 8px;
+  background-color: var(--dsw-alias-bg-module-platform);
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23888b93' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  background-size: 10px 6px;
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+body[data-ds-dark-theme] [data-dsh-memory-ui] select,
+body[data-ds-dark-theme] .mem-select {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23a8adb8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+[data-dsh-memory-ui] select:hover:not(:disabled),
+.mem-select:hover:not(:disabled) {
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
+[data-dsh-memory-ui] select:focus-visible,
+.mem-select:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 1px;
+}
+
+[data-dsh-memory-ui] select:disabled,
+.mem-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 展开后的选项列表：Chromium 下 option 的底色可以生效，跟着主题走。 */
+[data-dsh-memory-ui] select option,
+.mem-select option {
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+}
+
+[data-dsh-memory-ui] .mem-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+[data-dsh-memory-ui] .mem-head-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+[data-dsh-memory-ui] .mem-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+[data-dsh-memory-ui] .mem-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l4);
+}
+
+[data-dsh-memory-ui] .mem-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+[data-dsh-memory-ui] .mem-tab-active {
+  color: var(--dsw-alias-label-primary);
+  border-bottom-color: var(--dsw-alias-label-primary);
+}
+
+[data-dsh-memory-ui] .mem-tab-count {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+[data-dsh-memory-ui] .mem-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+[data-dsh-memory-ui] .mem-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-module-platform);
+}
+
+[data-dsh-memory-ui] .mem-item-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+[data-dsh-memory-ui] .mem-item-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-dsh-memory-ui] .mem-item-body {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-secondary, var(--dsw-alias-label-primary));
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+[data-dsh-memory-ui] .mem-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+[data-dsh-memory-ui] .mem-empty {
+  padding: 20px 12px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--dsw-alias-label-tertiary);
+  border: 0.5px dashed var(--dsw-alias-border-l4);
+  border-radius: 10px;
+}
+
+[data-dsh-memory-ui] .mem-error {
+  font-size: 12.5px;
+  color: var(--dsw-alias-state-error-primary, #d64545);
+}
+
+[data-dsh-memory-ui] .mem-notice {
+  font-size: 12.5px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+[data-dsh-memory-ui] .mem-prompt {
+  max-height: 200px;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-module-platform);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+[data-dsh-memory-ui] .mem-import-area {
+  width: 100%;
+  min-height: 140px;
+  padding: 8px 10px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+/* 注意：Modal 是 createPortal 到 document.body 的，弹窗不在 [data-dsh-memory-ui]
+   作用域内 —— 属性挂在 .mem-modal-body 自己身上，所以这里必须是自身选择器（没有空格），
+   写成后代选择器会永远匹配不到。 */
+[data-dsh-memory-ui].mem-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 560px;
+}
+
+/* 需要更宽的弹窗（新增/编辑、导入）都挂这个类。
+   Modal.module.css 的 .dialog 是单类 .dialog { width: min(380px, 100%) }，权重 (0,1,0)；
+   插件自己的单类规则同样是 (0,1,0)，打平后按源码顺序 —— app 的 CSS Module 在插件的
+   <style> 之后注入，所以只写单类会被压住。用 [role='dialog'].mem-modal-wide 把权重
+   拉到 (0,2,0)，与加载顺序无关。Modal 会把 className 透传到 dialog 上。 */
+[role='dialog'].mem-modal-wide {
+  width: min(640px, 100%);
+}
+
+/* 内层不再限制 560px，让内容吃满宽出来的空间。 */
+[role='dialog'].mem-modal-wide [data-dsh-memory-ui].mem-modal-body {
+  max-width: none;
+}
+
+/* ---- 重要性：分级滑杆（原生 range + 自绘轨道/滑块，1-5 一档一停） ---- */
+
+[data-dsh-memory-ui] .mem-slider-wrap {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+
+[data-dsh-memory-ui] .mem-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  margin: 0;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--dsw-alias-state-business-primary) 0 var(--mem-fill, 0%),
+    var(--dsw-alias-border-l4) var(--mem-fill, 0%) 100%
+  );
+  cursor: pointer;
+}
+
+[data-dsh-memory-ui] .mem-slider:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+[data-dsh-memory-ui] .mem-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--dsw-alias-bg-layer-2);
+  border-radius: 50%;
+  background: var(--dsw-alias-state-business-primary);
+  cursor: pointer;
+}
+
+[data-dsh-memory-ui] .mem-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--dsw-alias-bg-layer-2);
+  border-radius: 50%;
+  background: var(--dsw-alias-state-business-primary);
+  cursor: pointer;
+}
+
+/* 刻度条：左右各留半个滑块宽度，让刻点和滑块行程对齐。 */
+[data-dsh-memory-ui] .mem-slider-ticks {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 7px;
+}
+
+[data-dsh-memory-ui] .mem-tick {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--dsw-alias-border-l4);
+}
+
+[data-dsh-memory-ui] .mem-tick-on {
+  background: var(--dsw-alias-state-business-primary);
+}
+
+[data-dsh-memory-ui] .mem-slider-desc {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary);
+}
+
+[data-dsh-memory-ui] .mem-slider-desc b {
+  font-weight: 500;
+  color: var(--dsw-alias-state-business-primary);
+}
+
+/* ---- 详情：元数据网格 + 全文 ---- */
+[data-dsh-memory-ui] .mem-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+[data-dsh-memory-ui] .mem-meta-key {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+[data-dsh-memory-ui] .mem-meta-value {
+  color: var(--dsw-alias-label-primary);
+  word-break: break-all;
+}
+
+[data-dsh-memory-ui] .mem-detail-body {
+  margin: 0;
+  padding: 10px 12px;
+  max-height: 320px;
+  overflow: auto;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-module-platform);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--dsw-alias-label-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ---- 沉淀：原文留档 + 后台调用审计 ---- */
+[data-dsh-memory-ui] .mem-raw-list,
+[data-dsh-memory-ui] .mem-audit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+[data-dsh-memory-ui] .mem-raw-item {
+  padding: 8px 10px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 8px;
+}
+
+[data-dsh-memory-ui] .mem-raw-meta {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+[data-dsh-memory-ui] .mem-raw-text {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  max-height: 200px;
+  overflow: auto;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-module-platform);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+[data-dsh-memory-ui] .mem-audit-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l4);
+  font-size: 12px;
+}
+
+[data-dsh-memory-ui] .mem-audit-ok,
+[data-dsh-memory-ui] .mem-audit-bad {
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+}
+
+[data-dsh-memory-ui] .mem-audit-ok {
+  border: 0.5px solid var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-state-business-primary);
+}
+
+[data-dsh-memory-ui] .mem-audit-bad {
+  border: 0.5px solid var(--dsw-alias-state-error-primary);
+  color: var(--dsw-alias-state-error-primary);
+}
+
+[data-dsh-memory-ui] .mem-audit-model {
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+[data-dsh-memory-ui] .mem-audit-error {
+  font-size: 11px;
+  color: var(--dsw-alias-state-error-primary);
+  word-break: break-all;
+}
+`;
+
+/** 只注入一次样式。 */
+export function ensureMemoryStyle(): void {
+  if (typeof document === 'undefined') return
+  if (document.head.querySelector('style[' + STYLE_ATTR + ']') !== null) return
+  const style = document.createElement('style')
+  style.setAttribute(STYLE_ATTR, '')
+  style.textContent = CSS
+  document.head.appendChild(style)
+}

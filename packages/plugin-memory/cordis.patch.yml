@@ -1,0 +1,6 @@
+# The @zzerx/dsh-plugin-memory bundle patch: one insert over the base/web
+# layers. storageDomain / storage / tools / settings / systemPrompt come from
+# the dsh-base layer; this row only mounts the memory feature plugin.
+- insert:
+    - id: memory
+      name: '@zzerx/dsh-plugin-memory'

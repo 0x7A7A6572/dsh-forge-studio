@@ -1,0 +1,84 @@
+{
+  "name": "@zzerx/dsh-plugin-memory",
+  "version": "0.1.0",
+  "description": "dsh 记忆与进化插件：跨会话记住你的偏好与项目习惯（全局 / 项目双作用域），自动注入、自动整理，设置面板一级「记忆」分区可视化管理。",
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "lib/types",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "scripts": {
+    "prepublishOnly": "node scripts/build.mjs",
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json",
+    "test": "vitest run"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.2",
+    "@deepseek-ai/dsh-brand": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-settings": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-storage-domain": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-system-prompt": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-tools": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-typert-protocol": "0.1.2-alpha.3",
+    "@deepseek-ai/schemastery": "3.18.2"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.2",
+    "@deepseek-ai/dsh-api-gateway": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-brand": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-client-store": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-client-ui-renderer": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-client-ui-settings": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-client-ui-slots": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-cordis-client-runner": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-settings": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-storage": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-storage-domain": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-system-prompt": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-tools": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-typert-protocol": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-typert-registry": "0.1.2-alpha.3",
+    "@deepseek-ai/schemastery": "3.18.2",
+    "@types/node": "^24.0.0",
+    "@types/react": "18.3.5",
+    "@types/react-dom": "18.3.0",
+    "esbuild": "0.28.2",
+    "lucide-react": "1.39.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "tsup": "8.5.1",
+    "typescript": "5.7.2",
+    "vitest": "2.1.9",
+    "zod": "4.4.3"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": []
+    }
+  }
+}

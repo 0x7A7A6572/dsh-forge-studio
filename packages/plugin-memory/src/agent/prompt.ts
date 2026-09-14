@@ -1,0 +1,115 @@
+/**
+ * plugin-memory × agent harness 桥（host 侧）—— 提示词两条注入。
+ *
+ * 1. usage 段（静态 systemPrompt.section）：告诉模型什么时候该记、该记到全局还是
+ *    项目、什么时候该查、什么不该记。没有它，记忆工具等于没装。
+ * 2. recall 段（动态 systemPrompt.context）：每个会话开局注入「全局 + 当前工作区」
+ *    的高重要性记忆，让模型开箱就知道你的偏好。
+ *
+ * 安全：DSH 的 interpolate() 把 \`{{name}}\` 当提示词变量且严格校验变量名，记忆正文
+ * 里出现 \`{{...}}\` 会让整轮对话崩溃，故注入边界统一转义花括号（幂等）。
+ */
+
+import type { Context } from '@deepseek-ai/cordis'
+import { MEMORY_KIND_LABELS, importanceLabel, type MemoryRecord } from '../types.ts'
+import type { MemoryService } from '../service.ts'
+import { projectLabelOf } from '../service.ts'
+import type { MemorySettingsAccess } from '../settings.ts'
+
+export const MEMORY_USAGE_SECTION = 'forge-memory:usage'
+export const MEMORY_RECALL_CONTEXT = 'forge-memory:recall'
+
+/** 使用引导（可测试的文本常量）。 */
+export const MEMORY_USAGE_TEXT = [
+  '## 记忆与进化 (plugin-memory)',
+  '',
+  '你有一份跨会话的本地记忆库，通过 memory_* 工具读写。它让你在后续对话里继续懂这个用户。',
+  '',
+  '### 什么时候记（memory_save）',
+  '- 用户明确表达的偏好、纠正、语气/格式/风格要求（"以后都…"、"别再…"）。',
+  '- 用户主动分享的身份与职业信息（姓名、所在地、背景、职位、技能）。',
+  '- 项目层面的关键决策与状态（为什么这么选、当前进展、踩过的坑）。',
+  '- 可复用的经验教训。',
+  '- 一条一事；标题写短而唯一，同主题沿用同一标题（会自动合并，不会重复）。',
+  '',
+  '### 记到全局还是项目（这一步必须自己判断）',
+  '- scope=global：换到任何项目都成立的东西 —— 语气、格式、身份、职业、广泛偏好。',
+  '- scope=project：只对当前这一个工作区成立的习惯、约定、决策、环境细节。',
+  '- 判不准时问：这条换个项目还成立吗？成立就 global，不成立就 project。',
+  '- 单项目习惯写进全局会污染其他项目；反之会丢失上下文。判错了可用 memory_move 改。',
+  '',
+  '### 什么时候查（memory_search / memory_list）',
+  '- 用户提到"上次""之前说过的""按我的习惯"这类历史指代时。',
+  '- 要动手前先查一眼有没有相关约定或决策。',
+  '',
+  '### 不该记的',
+  '- 临时任务的中间细节、可从代码/仓库直接读出的东西。',
+  '- 密钥、令牌、证件号、联系方式等敏感数据。',
+  '- 用户没说过、由你推测出来的偏好。',
+  '',
+  '### 修正与遗忘',
+  '- 内容过时或写错：memory_update 改；判断记错了作用域：memory_move 移动。',
+  '- 不再需要但可能还有价值：memory_archive 归档（可恢复）；确认无用才 memory_delete。',
+].join('\n')
+
+/**
+ * 注入边界的花括号转义（幂等）：\`{{a}}\` → \`{\\{a\\}}\`，不留下 \`{{\` 子串。
+ * 单独的花括号原样透传（interpolate 只扫描 \`{{\`）。
+ */
+export function escapePromptVars(text: string): string {
+  return text.replace(/\{\{/g, '{\\{').replace(/\}\}/g, '}\\}')
+}
+
+/** 渲染注入块；无候选返回空串（不占用提示词预算）。 */
+export function renderMemoryBlock(records: readonly MemoryRecord[], sessionCwd: string | undefined): string {
+  if (records.length === 0) return ''
+  const lines = ['[记忆] 来自 plugin-memory 的本地记忆库（跨会话）。它是背景信息，若与用户当前指令冲突，以当前指令为准：']
+  for (const record of records) {
+    const where = record.scope === 'global' ? '全局' : '项目:' + projectLabelOf(record.projectPath)
+    const label = MEMORY_KIND_LABELS[record.kind]
+    lines.push('- [' + label + ' | ' + where + ' | ' + importanceLabel(record.importance) + '] ' + record.title + '：'
+      + record.content.replace(/\n/g, ' '))
+  }
+  if (sessionCwd !== undefined && sessionCwd.trim() !== '') {
+    lines.push('当前工作区：' + sessionCwd.trim() + '（scope=project 的记忆默认记到这里）')
+  }
+  return escapePromptVars(lines.join('\n'))
+}
+
+/** 从渲染上下文里尽力取会话 cwd；取不到返回 undefined（注入退化为只给全局记忆）。 */
+export function sessionCwdOf(renderCtx: unknown): string | undefined {
+  try {
+    const agent = (renderCtx as { agent?: { session?: { header?: { cwd?: unknown } } } } | undefined)?.agent
+    const cwd = agent?.session?.header?.cwd
+    return typeof cwd === 'string' && cwd.trim() !== '' ? cwd : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** 注册 usage 段与 recall 段。任何渲染期异常都降级为空块，绝不炸会话。 */
+export function installMemoryPrompt(ctx: Context, service: MemoryService, settings: MemorySettingsAccess): void {
+  ctx.systemPrompt.section({
+    name: MEMORY_USAGE_SECTION,
+    order: 2940,
+    text: MEMORY_USAGE_TEXT,
+  })
+  ctx.systemPrompt.context({
+    name: MEMORY_RECALL_CONTEXT,
+    order: 95,
+    text: (renderCtx: unknown) => {
+      try {
+        const config = settings.get()
+        if (!config.autoInject) return ''
+        const cwd = sessionCwdOf(renderCtx)
+        const records = service.injectCandidates(cwd, {
+          maxItems: config.maxInjected,
+          threshold: config.importanceThreshold,
+        })
+        return renderMemoryBlock(records, cwd)
+      } catch {
+        return ''
+      }
+    },
+  })
+}
