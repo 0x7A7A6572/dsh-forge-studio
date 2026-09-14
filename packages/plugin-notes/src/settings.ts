@@ -6,7 +6,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import Schema from '@deepseek-ai/schemastery'
-import { DEFAULT_WEBDAV_CONFIG, NOTES_NAMESPACE } from './types.ts'
+import { DEFAULT_WEBDAV_CONFIG, DEFAULT_WORKSPACE, NOTES_NAMESPACE } from './types.ts'
 import type { NotesConfig, NotesWebdavConfig } from './types.ts'
 
 /** 设置命名空间（client 弹窗以此绑定 scope）。 */
@@ -25,11 +25,14 @@ const webdavSchema = Schema.object({
 
 export const NotesConfigSchema = Schema.object({
   defaultTitle: Schema.string().default('新便签'),
+  // 任务执行默认工作区（绝对目录路径）：空串 = 未配置。
+  defaultWorkspace: Schema.string().default(DEFAULT_WORKSPACE),
   webdav: webdavSchema,
 })
 
 export const NOTES_CONFIG_BASE: NotesConfig = {
   defaultTitle: '新便签',
+  defaultWorkspace: DEFAULT_WORKSPACE,
   webdav: DEFAULT_WEBDAV_CONFIG,
 }
 

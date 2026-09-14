@@ -30,7 +30,8 @@ import { NotesService } from './service.ts'
 import type { NotesServiceConfig } from './service.ts'
 import { installNotesSettings } from './settings.ts'
 import { installNotesTools } from './agent/tools.ts'
-import { installTaskDispatch } from './agent/task-dispatch.ts'
+import { installTaskRuntime } from './agent/task-dispatch.ts'
+import { installNotesScheduler } from './scheduler.ts'
 import { bridgeErrorMessage, bridgeFailed, bridgeInstalled, type NotesAgentBridgeSettled, type NotesAgentBridgeState } from './agent/bridge-state.ts'
 
 export const name = '@zzerx/dsh-plugin-notes'
@@ -55,13 +56,13 @@ export async function apply(ctx: Context): Promise<void> {
       },
       metaTable: metaDomain.table('meta'),
     })
-    // 执行投递（泳道卡执行 → 会话 prompt）为可选增强：装配失败只降级 bridge（dispatch
-    // 缺省 → taskExecute 返回 no-dispatch），绝不拖垮 NotesService 注册。
+    // 任务执行运行时（泳道卡执行 → 按工作区新建会话 + prompt）为可选增强：装配失败只
+    // 降级（task 缺省 → taskExecute 返回 no-dispatch），绝不拖垮 NotesService 注册。
     // 注意用 `new NotesService(ctx, …)` 而非 `ctx.plugin(NotesService, …)`：前者把
     // `notes` 服务 provide 在本 apply 的 fiber 上，后续 `ctx.inject(['tools'], …)`
     // 的子 fiber 才能沿祖先链读到 `ctx.notes`（`ctx.plugin` 会把 notes 挂到兄弟
     // fiber，祖先链读不到 → "cannot get property notes without inject"，工具装不上）。
-    notesService = new NotesService(ctx, { domain, dispatch: installTaskDispatchSafely(ctx), webdav })
+    notesService = new NotesService(ctx, { domain, task: installTaskRuntimeSafely(ctx), webdav })
     // 设置命名空间（client 设置卡片读写）。
     installNotesSettings(ctx)
     // 定时自动检查：每 60s 读配置判断「到期 + 确有变更」才上推；enabled=false、
@@ -72,6 +73,10 @@ export async function apply(ctx: Context): Promise<void> {
       })
     }, 60_000)
     ctx.effect(() => () => { clearInterval(timer) })
+    // 定时执行调度器：每 30s 扫到期日程 → taskExecuteScheduled 派发（人不在也照跑；
+  // run 帧标 by='schedule'，供超时兜底认领）。装配失败只
+    // 降级（定时不生效），绝不拖垮 NotesService 注册与手动执行。
+    installNotesSchedulerSafely(ctx, notesService)
     // agent 桥是可选增强：tools/systemPrompt 服务注册后（或已注册）挂载。
     // 它绝不能把核心的 NotesService 一起拖垮——任何一步抛错都只降级桥本身，
     // 服务照常注册。
@@ -84,16 +89,27 @@ export async function apply(ctx: Context): Promise<void> {
 }
 
 /**
- * 装配 taskExecute 的 dispatch 回调（降级安全）：任何抛错都只降级 bridge——记录
- * warn 并返回 undefined（taskExecute 走 no-dispatch），绝不破坏 NotesService 注册。
- * dispatch 本身惰性解析 sessionController（见 task-dispatch.ts），装配时无副作用。
+ * 装配 taskExecute 的任务执行运行时（降级安全）：任何抛错都只降级——记录 warn 并返回
+ * undefined（taskExecute 走 no-dispatch），绝不破坏 NotesService 注册。
+ * 运行时本身惰性解析 sessionController（见 task-dispatch.ts），装配时无副作用。
  */
-export function installTaskDispatchSafely(ctx: Context): NotesServiceConfig['dispatch'] | undefined {
+export function installTaskRuntimeSafely(ctx: Context): NotesServiceConfig['task'] | undefined {
   try {
-    return installTaskDispatch(ctx)
+    return installTaskRuntime(ctx)
   } catch (error) {
     ctx.logger.warn('[plugin-notes] task dispatch disabled:', error)
     return undefined
+  }
+}
+
+/**
+ * 装配定时执行调度器（降级安全）：抛错只记 warn——定时失效，手动执行与其余能力照常。
+ */
+export function installNotesSchedulerSafely(ctx: Context, notes: NotesService): void {
+  try {
+    installNotesScheduler(ctx, notes)
+  } catch (error) {
+    ctx.logger.warn('[plugin-notes] schedule dispatcher disabled:', error)
   }
 }
 

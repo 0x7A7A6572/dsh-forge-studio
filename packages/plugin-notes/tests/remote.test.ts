@@ -35,7 +35,7 @@ describe('notes remote contribution', () => {
 
   it('覆盖 host 的全部公开方法端点（含只读桥状态与 WebDAV）', () => {
     const methods = notesRemoteContribution.descriptors.map((d) => d.method).sort()
-    expect(methods).toEqual(['create', 'delete', 'getAgentBridgeState', 'list', 'setPinned', 'taskExecute', 'taskReset', 'update', 'watch', 'webdavBackup', 'webdavList', 'webdavRestore', 'webdavStatus'])
+    expect(methods).toEqual(['create', 'delete', 'getAgentBridgeState', 'list', 'listWorkspaces', 'setPinned', 'taskExecute', 'taskReset', 'update', 'watch', 'webdavBackup', 'webdavList', 'webdavRestore', 'webdavStatus'])
     const ids = notesRemoteContribution.descriptors.map((d) => d.id)
     expect(new Set(ids).size).toBe(ids.length)
   })
@@ -43,20 +43,20 @@ describe('notes remote contribution', () => {
   it('host 服务已挂 Typert SRC 标记（remoteMethods 可发现）', () => {
     // 不跑构造函数（避免触碰 domain/table），仅验证原型上的 marker。
     const markers = remoteMethods(Object.create(NotesService.prototype)).map((m) => m.method)
-    expect(markers.sort()).toEqual(['create', 'delete', 'getAgentBridgeState', 'list', 'setPinned', 'taskExecute', 'taskReset', 'update', 'watch', 'webdavBackup', 'webdavList', 'webdavRestore', 'webdavStatus'])
+    expect(markers.sort()).toEqual(['create', 'delete', 'getAgentBridgeState', 'list', 'listWorkspaces', 'setPinned', 'taskExecute', 'taskReset', 'update', 'watch', 'webdavBackup', 'webdavList', 'webdavRestore', 'webdavStatus'])
   })
 
-  it('taskExecute/taskReset 形参 wire 名 = id/sessionId', () => {
+  it('taskExecute/taskReset 形参 wire 名 = id（执行会话由 host 新建，不再传 sessionId）', () => {
     const prototype = NotesService.prototype as unknown as Record<string, (...args: never[]) => unknown>
-    expect(parameterNames(prototype.taskExecute)).toEqual(['id', 'sessionId'])
+    expect(parameterNames(prototype.taskExecute)).toEqual(['id'])
     expect(parameterNames(prototype.taskReset)).toEqual(['id'])
   })
 
-  it('taskExecute/taskReset 描述符存在且 wire 名 = id/sessionId、id', () => {
+  it('taskExecute/taskReset 描述符存在且 wire 名 = id、id', () => {
     const byMethod = new Map(notesRemoteContribution.descriptors.map((d) => [d.method, d]))
     const execute = byMethod.get('taskExecute')
     expect(execute).toBeDefined()
-    expect(execute!.parameters.map((p) => p.wire)).toEqual(['id', 'sessionId'])
+    expect(execute!.parameters.map((p) => p.wire)).toEqual(['id'])
     expect(execute!.result.mode).toBe('src-json')
     const reset = byMethod.get('taskReset')
     expect(reset).toBeDefined()
@@ -84,12 +84,13 @@ describe('notes remote contribution', () => {
     new TypertRegistry(ctx) // provides ctx.typert
     const dispose = await ctx.typert.remotes.register(notesRemoteContribution)
     const list = ctx.typert.remotes.list()
-    expect(list.length).toBe(13)
+    expect(list.length).toBe(14)
     expect(list.map((d) => `${d.namespace}/${d.method}`).sort()).toEqual([
       'notes/create',
       'notes/delete',
       'notes/getAgentBridgeState',
       'notes/list',
+      'notes/listWorkspaces',
       'notes/setPinned',
       'notes/taskExecute',
       'notes/taskReset',

@@ -17,11 +17,15 @@ import type { NoteRecord } from '../../types.ts'
 import { NOTE_INK, NOTE_INK_MUTED, noteColorMeta } from '../core/note-colors.ts'
 import { isRunOpen } from '../core/task-lanes.ts'
 import { mdSnippet, mdToPlainText } from '../core/markdown-text.ts'
+import { folderNameOf } from '../core/workspace-path.ts'
+import { isScheduleBlockedStatus, scheduleBlockTextFor, scheduleLabel } from '../../schedule.ts'
 import { fmtDateTime, fmtElapsed, fmtRelative } from '../core/time-text.ts'
 import { PinnedCornerMark } from './pin-corner.tsx'
 import {
   Archive,
   ArchiveRestore,
+  Clock,
+  Folder,
   Pencil,
   Pin,
   Play,
@@ -80,6 +84,12 @@ export const LANE_CARD_CSS = `
 
 /** 超过该耗时（30min）running 卡弱提示「执行可能已中断」。 */
 const INTERRUPT_AFTER_MS = 30 * 60 * 1000
+
+/**
+ * 工作区展示名走共享辅助（core/workspace-path.ts）：窄列放不下完整路径，只显示
+ * 末段目录名，完整路径进 title。未指定工作区（note.workspace 缺省）= 执行时用
+ * 默认工作区，卡片不显示该行（避免每张卡都挂一条「用默认」，反而更难扫）。
+ */
 
 export interface TaskLaneCardProps {
   readonly note: NoteRecord
@@ -159,11 +169,51 @@ export function TaskLaneCard(props: TaskLaneCardProps): JSX.Element {
             {note.title || <span style={{ color: NOTE_INK_MUTED }}>（无标题）</span>}
           </span>
         </span>
+        {/* 执行工作区：有显式指定才显示（缺省 = 用设置默认值，见 lane 卡不刷噪声）。 */}
+        {note.workspace !== undefined && note.workspace.trim() !== '' && (
+          <span style={cardWorkspace} title={`工作区：${note.workspace}`}>
+            <Folder size={10} aria-hidden="true" />
+            <span style={cardWorkspaceText}>{folderNameOf(note.workspace)}</span>
+          </span>
+        )}
+        {/* 定时日程：只挂一行「周期 · 下次」（悬停看下次完整时刻与上次结果），
+            窄列里长文案由 CSS 截断。停用的日程也显示（提醒用户它还在卡片上）。 */}
+        {note.schedule !== undefined && (
+          <span
+            style={cardSchedule}
+            title={
+              '定时：' + scheduleLabel(note.schedule) +
+              (note.schedule.enabled ? ' · 下次 ' + fmtDateTime(note.schedule.nextAt) : ' · 已停用') +
+              (note.schedule.lastResult !== undefined ? ' · 上次 ' + note.schedule.lastResult : '') +
+              ((note.schedule.runCount ?? 0) > 0 ? ' · 已跑 ' + note.schedule.runCount + ' 次' : '') +
+              ((note.schedule.failureStreak ?? 0) > 0 ? ' · 连续失败 ' + note.schedule.failureStreak + ' 次' : '') +
+              // 状态闸门：当前列不会自动派发（拖回「待办」即恢复），悬停说清楚。
+              (note.schedule.enabled && isScheduleBlockedStatus(note.lane?.status)
+                ? ' · ' + (scheduleBlockTextFor(note.lane?.status) ?? '') + '（拖回「待办」即恢复）'
+                : '')
+            }
+          >
+            <Clock size={10} aria-hidden="true" />
+            <span style={cardScheduleText}>
+              {note.schedule.enabled
+                ? isScheduleBlockedStatus(note.lane?.status)
+                  ? '定时待命（当前状态不执行）'
+                  : (note.schedule.nextAt > 0
+                      ? scheduleLabel(note.schedule) + ' · ' + fmtDateTime(note.schedule.nextAt)
+                      : scheduleLabel(note.schedule)) +
+                    ((note.schedule.failureStreak ?? 0) > 0 ? ' · 失败 ' + note.schedule.failureStreak : '')
+                : '定时已停用'}
+            </span>
+          </span>
+        )}
         {running ? (
           <>
             <span className="fs-lane-status" style={laneStatus}>
               <span className="fs-lane-spinner" style={spinner} aria-hidden="true" />
-              <span>已执行 {fmtElapsed(elapsedMs)}</span>
+              <span>
+                {run?.by === 'schedule' ? '定时触发 · ' : ''}
+                已执行 {fmtElapsed(elapsedMs)}
+              </span>
             </span>
             {interrupted && (
               <span className="fs-lane-interrupted" style={interruptedStyle} title="执行可能已中断，可重置">
@@ -262,6 +312,38 @@ const cardSnippet: React.CSSProperties = {
   lineHeight: 1.5,
   wordBreak: 'break-word',
 }
+/** 工作区行：小号整行截断（完整路径在 title 里），窄列只显示末段目录名。 */
+const cardWorkspace: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 4,
+  minWidth: 0,
+  fontSize: 10.5,
+  lineHeight: 1.4,
+  color: 'rgba(46, 42, 34, 0.5)',
+}
+const cardWorkspaceText: React.CSSProperties = {
+  minWidth: 0,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+}
+/** 定时行：与工作区行同款小号整行截断（日期 + 周期，悬停看全文）。 */
+const cardSchedule: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 4,
+  minWidth: 0,
+  fontSize: 10.5,
+  lineHeight: 1.4,
+  color: 'rgba(46, 42, 34, 0.55)',
+}
+const cardScheduleText: React.CSSProperties = {
+  minWidth: 0,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+}
 const laneStatus: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
@@ -272,6 +354,7 @@ const laneStatus: React.CSSProperties = {
 const spinner: React.CSSProperties = {
   width: 11,
   height: 11,
+  borderRadius: '50%',
   flex: 'none',
 }
 const interruptedStyle: React.CSSProperties = {

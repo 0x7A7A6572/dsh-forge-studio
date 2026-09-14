@@ -317,7 +317,7 @@ describe('notes 工具 execute 语义', () => {
   })
 })
 
-describe('notes 读工具 lane 透出', () => {
+describe('notes 读工具 lane / workspace 透出', () => {
   it('notes_list / notes_get 输出 schema 含 lane 字段', () => {
     const h = makeHarness()
     const list = h.registered.find(d => d.name === `${NOTES_TOOL_PREFIX}list`)!
@@ -338,5 +338,54 @@ describe('notes 读工具 lane 透出', () => {
     expect(rendered[0].text).toContain('(task: running')
     expect(rendered[0].text).toContain('run@42')
     expect(rendered[0].text).toContain('almost there')
+  })
+  it('真实便签的字段全部被输出 schema 声明（漏声明 = harness 判非法输出，整次调用失败）', async () => {
+    const h = makeHarness()
+    // 用「带 lane + 带 schedule + 带 workspace」的任务便签：字段最全的形状。
+    // schedule 必须在场：带日程的便签一旦漏声明，notes_list/notes_get/task_report
+    // 会整次被判非法输出（本用例当初正因 fixture 无日程而漏掉这个字段）。
+    const note = await h.notes.create({
+      title: 't',
+      text: 'b',
+      laneStatus: 'todo',
+      workspace: 'D:/ws',
+      schedule: { enabled: true, mode: 'once', at: Date.now() + 60_000 },
+    })
+    // host 自有字段也要塞满：日程错误边界计数（setSchedule 直写）+ run 帧发起方（grant）。
+    await h.notes.setSchedule(note.id, { ...note.schedule!, failureStreak: 2, runCount: 5 })
+    await h.notes.grantTaskLease(note.id, 'sess-1')
+    const value = h.notes.list().find(n => n.id === note.id)!
+    const declaredOf = (short: string): Record<string, unknown> => {
+      const def = h.registered.find(d => d.name === `${NOTES_TOOL_PREFIX}${short}`)!
+      expect(def, short).toBeDefined()
+      const schema = def.output.schema as { properties: Record<string, unknown> }
+      // notes_list 的便签形状嵌在 notes.items 里，其余工具就是顶层。
+      if (short === 'list') {
+        const items = (schema.properties.notes as { items: { properties: Record<string, unknown> } }).items
+        return items.properties
+      }
+      return schema.properties
+    }
+    // 嵌套形状同样受 additionalProperties:false 约束：各形态的日程字段都要被声明。
+    const scheduled = [
+      await h.notes.create({ text: 'b', laneStatus: 'todo', schedule: { enabled: true, mode: 'interval', everyMin: 30 } }),
+      await h.notes.create({ text: 'b', laneStatus: 'todo', schedule: { enabled: true, mode: 'weekly', time: '09:30', weekdays: [1, 3] } }),
+      await h.notes.create({ text: 'b', laneStatus: 'todo', schedule: { enabled: true, mode: 'monthly', time: '09:30', monthDay: 15 } }),
+    ]
+    const scheduleProps = (declaredOf('get').schedule as { properties: Record<string, unknown> }).properties
+    for (const n of [value, ...scheduled]) {
+      const keys = Object.keys(n.schedule ?? {})
+      expect(keys.filter(k => !(k in scheduleProps)), `schedule(${n.schedule?.mode}) 未声明字段`).toEqual([])
+    }
+    // lane.run 的嵌套形状同样要声明（by = 发起方）。
+    const laneProps = (declaredOf('get').lane as { properties: Record<string, unknown> }).properties
+    const runProps = (laneProps.run as { properties: Record<string, unknown> }).properties
+    expect(value.lane?.run?.by).toBeDefined()
+    expect(Object.keys(value.lane?.run ?? {}).filter(k => !(k in runProps))).toEqual([])
+    for (const short of ['list', 'get', 'create', 'update', 'set_pinned', 'task_set_status', 'task_report']) {
+      const declared = declaredOf(short)
+      const undeclared = Object.keys(value).filter(k => !(k in declared))
+      expect(undeclared, `${short} 未声明字段`).toEqual([])
+    }
   })
 })

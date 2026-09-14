@@ -17,6 +17,12 @@ import type { NoteId, NoteRecord } from './types.ts'
 const NOTE_TASK_STATUSES = ['backlog', 'todo', 'running', 'done', 'failed'] as const
 
 /**
+ * 定时形态枚举（与 types.ts 的 ScheduleMode 保持同步）。同上写死字面量数组，
+ * 避免 domain ↔ types 的 import 环；改动 types.ts 时须同步此处。
+ */
+const NOTE_SCHEDULE_MODES = ['once', 'interval', 'daily', 'weekly', 'monthly'] as const
+
+/**
  * 便签记录 schema：存储边界校验（storage-domain 打开时全量校验）。
  * color 带默认值：旧记录（v1 无该字段）打开时不炸，解析即回填默认黄。
  * zod 的 brand 与自有 Branded<NoteId> 符号不互通，这里用形状收窄声明，
@@ -49,10 +55,35 @@ export const noteRecordSchema = z.object({
           finishedAt: z.number().optional(),
           ok: z.boolean().optional(),
           summary: z.string().optional(),
+          // 发起方（旧记录无 → optional，视同 'user'）；见 types.ts NoteRun。
+          by: z.enum(['user', 'schedule']).optional(),
         })
         .optional(),
     })
     .optional(),
+  // schedule 可选（无默认、不回填）：任务定时执行日程（仅任务便签有意义）。
+  // 旧记录天然无该字段，解析不炸；缺省 = 不定时。nextAt 为 host 计算的权威下次时刻
+  // （必填），其余触发参数按 mode 取用。旧数据里不存在的字段一律 optional。
+  schedule: z
+    .object({
+      enabled: z.boolean(),
+      mode: z.enum(NOTE_SCHEDULE_MODES),
+      at: z.number().optional(),
+      everyMin: z.number().optional(),
+      time: z.string().optional(),
+      weekdays: z.array(z.number()).optional(),
+      monthDay: z.number().optional(),
+      nextAt: z.number(),
+      lastFiredAt: z.number().optional(),
+      lastResult: z.string().optional(),
+      // 错误边界计数（旧记录无 → optional；见 types.ts NoteSchedule）。
+      failureStreak: z.number().optional(),
+      runCount: z.number().optional(),
+    })
+    .optional(),
+  // workspace 可选（无默认、不回填）：任务执行工作区（绝对目录路径）。旧记录
+  // 天然无该字段，解析不炸；缺省 = 执行时回退设置里的默认工作区。
+  workspace: z.string().optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
 }) as unknown as ZodType<NoteRecord>

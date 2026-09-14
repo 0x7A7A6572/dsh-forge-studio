@@ -63,6 +63,12 @@ export function isNotesTaskTool(name: string): boolean {
  */
 const TASK_STATUSES = ['backlog', 'todo', 'running', 'done', 'failed'] as const
 
+/**
+ * 定时形态枚举（与 types.ts 的 SCHEDULE_MODES 保持同步）。同样是写死字面量以避免
+ * 对 types.ts 之外的运行时 import；改动 types.ts 时须同步此处。
+ */
+const SCHEDULE_MODES = ['once', 'interval', 'daily', 'weekly', 'monthly'] as const
+
 function noteText(note: NoteRecord): string {
   const flags = [
     note.pinned ? 'pinned' : '',
@@ -95,13 +101,44 @@ const LANE_SCHEMA = {
         finishedAt: { type: 'number' },
         ok: { type: 'boolean' },
         summary: { type: 'string' },
+        // 发起方：'schedule' = 定时自动派发；旧记录无该字段。
+        by: { type: 'string', enum: ['user', 'schedule'] },
       },
     },
   },
 } as const
 
-/** 任务工具输出 schema：返回整张便签（含 lane；report 后 run 带结果）。 */
-const TASK_NOTE_OUTPUT_SCHEMA = {
+/** 读工具输出里 schedule 字段的 schema 形状（与 domain.ts 的 schedule 校验一致）。 */
+const SCHEDULE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    enabled: { type: 'boolean', required: true },
+    mode: { type: 'string', required: true, enum: [...SCHEDULE_MODES] },
+    at: { type: 'number' },
+    everyMin: { type: 'number' },
+    time: { type: 'string' },
+    weekdays: { type: 'array', items: { type: 'number' } },
+    monthDay: { type: 'number' },
+    // host 调度器自有字段：nextAt 权威下次时刻；lastFiredAt/lastResult 最近派发记录；
+    // failureStreak/runCount 是错误边界计数（连续失败熔断 / 累计派发次数）。
+    nextAt: { type: 'number', required: true },
+    lastFiredAt: { type: 'number' },
+    lastResult: { type: 'string' },
+    failureStreak: { type: 'number' },
+    runCount: { type: 'number' },
+  },
+} as const
+
+/**
+ * 便签输出的公共 schema：读/写工具的输出值都是**整张** NoteRecord（含 lane、schedule、workspace）。
+ *
+ * 曾经各工具内联各自的形状，于是 `lane` / `workspace` / `schedule` 这种后加字段漏在某处时，
+ * harness 的 additionalProperties:false 校验会把整次调用判为非法输出（现象：有工作区的
+ * 便签读不出来、任务便签的 lane 传不回去、带日程的便签连 notes_list 都整条失败）。
+ * 新增字段只改这一份。
+ */
+const NOTE_OUTPUT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   properties: {
@@ -115,6 +152,10 @@ const TASK_NOTE_OUTPUT_SCHEMA = {
     createdAt: { type: 'number', required: true },
     updatedAt: { type: 'number', required: true },
     lane: LANE_SCHEMA,
+    /** 任务定时日程（host 调度器写 nextAt/lastFiredAt/lastResult；缺省 = 不定时）。 */
+    schedule: SCHEDULE_SCHEMA,
+    /** 任务执行工作区（绝对目录路径）；缺省 = 执行时回退默认工作区。 */
+    workspace: { type: 'string' },
   },
 } as const
 
@@ -187,20 +228,7 @@ export function installNotesTools(ctx: Context): void {
           notes: {
             type: 'array',
             required: true,
-            items: {
-              type: 'object',
-              additionalProperties: false,
-              properties: {
-                id: { type: 'string', required: true },
-                title: { type: 'string', required: true },
-                pinned: { type: 'boolean', required: true },
-                archived: { type: 'boolean', required: true },
-                color: { type: 'string', required: true, enum: [...NOTE_COLORS] },
-                origin: { type: 'string', required: true, enum: ['user', 'agent'] },
-                updatedAt: { type: 'number', required: true },
-                lane: LANE_SCHEMA,
-              },
-            },
+            items: NOTE_OUTPUT_SCHEMA,
           },
         },
       },
@@ -227,22 +255,7 @@ export function installNotesTools(ctx: Context): void {
       note_id: { type: 'string', required: true, description: 'The note id from notes_list.' },
     },
     output: {
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          id: { type: 'string', required: true },
-          title: { type: 'string', required: true },
-          text: { type: 'string', required: true },
-          pinned: { type: 'boolean', required: true },
-          archived: { type: 'boolean', required: true },
-          color: { type: 'string', required: true, enum: [...NOTE_COLORS] },
-          origin: { type: 'string', required: true, enum: ['user', 'agent'] },
-          createdAt: { type: 'number', required: true },
-          updatedAt: { type: 'number', required: true },
-          lane: LANE_SCHEMA,
-        },
-      },
+      schema: NOTE_OUTPUT_SCHEMA,
       render: (_args, value) => [{ type: 'text', text: noteText(value as NoteRecord) }],
     },
     async execute(args, _exec) {
@@ -264,21 +277,7 @@ export function installNotesTools(ctx: Context): void {
       color: { type: 'string', enum: [...NOTE_COLORS], description: 'Sticky-note color. Defaults to yellow when omitted.' },
     },
     output: {
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          id: { type: 'string', required: true },
-          title: { type: 'string', required: true },
-          text: { type: 'string', required: true },
-          pinned: { type: 'boolean', required: true },
-          archived: { type: 'boolean', required: true },
-          color: { type: 'string', required: true, enum: [...NOTE_COLORS] },
-          origin: { type: 'string', required: true, enum: ['user', 'agent'] },
-          createdAt: { type: 'number', required: true },
-          updatedAt: { type: 'number', required: true },
-        },
-      },
+      schema: NOTE_OUTPUT_SCHEMA,
       render: (_args, value) => [{ type: 'text', text: noteText(value as NoteRecord) }],
     },
     async execute(args, _exec) {
@@ -304,21 +303,7 @@ export function installNotesTools(ctx: Context): void {
       archived: { type: 'boolean', description: 'Archive or restore.' },
     },
     output: {
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          id: { type: 'string', required: true },
-          title: { type: 'string', required: true },
-          text: { type: 'string', required: true },
-          pinned: { type: 'boolean', required: true },
-          archived: { type: 'boolean', required: true },
-          color: { type: 'string', required: true, enum: [...NOTE_COLORS] },
-          origin: { type: 'string', required: true, enum: ['user', 'agent'] },
-          createdAt: { type: 'number', required: true },
-          updatedAt: { type: 'number', required: true },
-        },
-      },
+      schema: NOTE_OUTPUT_SCHEMA,
       render: (_args, value) => [{ type: 'text', text: noteText(value as NoteRecord) }],
     },
     async execute(args, _exec) {
@@ -343,21 +328,7 @@ export function installNotesTools(ctx: Context): void {
       pinned: { type: 'boolean', required: true, description: 'true pins, false unpins.' },
     },
     output: {
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          id: { type: 'string', required: true },
-          title: { type: 'string', required: true },
-          text: { type: 'string', required: true },
-          pinned: { type: 'boolean', required: true },
-          archived: { type: 'boolean', required: true },
-          color: { type: 'string', required: true, enum: [...NOTE_COLORS] },
-          origin: { type: 'string', required: true, enum: ['user', 'agent'] },
-          createdAt: { type: 'number', required: true },
-          updatedAt: { type: 'number', required: true },
-        },
-      },
+      schema: NOTE_OUTPUT_SCHEMA,
       render: (_args, value) => [{ type: 'text', text: noteText(value as NoteRecord) }],
     },
     async execute(args, _exec) {
@@ -405,13 +376,19 @@ export function installNotesTools(ctx: Context): void {
       'since the host already grants "running" at dispatch and re-asserting it is a harmless no-op. ' +
       'To end the run, do NOT use this tool: call notes_task_report instead (it writes the result ' +
       'summary and settles the run to done/failed automatically). Only works while this note holds ' +
-      'an active execution lease for the calling session.',
+      'an active execution lease for the calling session. ' +
+      // 执行的协议写在工具说明里而不是投递消息里：投递消息是**用户消息**，会逐字出现在
+      // 会话记录中（见 task-dispatch.ts buildTaskDispatchMessage —— 首行只有「⇲ 标题」）。
+      'A dispatched task message starts with a ⇲ line carrying the note title (the formal ' +
+      'instruction sits at its end): read the note in full with ' +
+      'notes_get first (including lane.run.summary from a previous run), then do the work. ' +
+      'Only the lane status/result may be touched — never rewrite the note body, title, or color.',
     parameters: {
       note_id: { type: 'string', required: true, description: 'The task note id from notes_list.' },
       status: { type: 'string', required: true, enum: [...TASK_STATUSES], description: 'Must be "running" (the only accepted value); done/failed go through notes_task_report.' },
     },
     output: {
-      schema: TASK_NOTE_OUTPUT_SCHEMA,
+      schema: NOTE_OUTPUT_SCHEMA,
       render: (_args, value) => [{ type: 'text', text: noteText(value as NoteRecord) }],
     },
     async execute(args, _exec) {
@@ -431,16 +408,17 @@ export function installNotesTools(ctx: Context): void {
     description:
       'End a task run and record its result. Writes the run summary, sets status to "done" ' +
       '(ok=true) or "failed" (ok=false), and releases the execution lease (after which another ' +
-      'notes_task_* call is rejected until the task is executed again). Protocol: first ' +
-      'notes_task_set_status(running), do the work, then report ok=true + summary on success or ' +
-      'ok=false + reason on failure.',
+      'notes_task_* call is rejected until the task is executed again). Protocol: read the task ' +
+      'note in full with notes_get first, work on it, then report ok=true + summary on success or ' +
+      'ok=false + reason on failure. Only the lane status/result may be touched — never rewrite ' +
+      'the note body, title, or color.',
     parameters: {
       note_id: { type: 'string', required: true, description: 'The task note id from notes_list.' },
       ok: { type: 'boolean', required: true, description: 'true if the task succeeded, false if it failed.' },
       summary: { type: 'string', required: true, description: 'Short markdown summary of the result, or the failure reason.' },
     },
     output: {
-      schema: TASK_NOTE_OUTPUT_SCHEMA,
+      schema: NOTE_OUTPUT_SCHEMA,
       render: (_args, value) => [{ type: 'text', text: noteText(value as NoteRecord) }],
     },
     async execute(args, _exec) {

@@ -30,7 +30,7 @@ function fakeTable<V>(): KvTable<NoteId, V> {
   }
 }
 
-function makeService(dispatch?: NotesServiceConfig['dispatch']): {
+function makeService(task?: NotesServiceConfig['task']): {
   notes: NotesService
   table: KvTable<NoteId, NoteRecord>
   leases: KvTable<NoteId, TaskLease>
@@ -41,7 +41,7 @@ function makeService(dispatch?: NotesServiceConfig['dispatch']): {
   const domain = {
     table: (name: string) => (name === 'notes' ? table : name === 'leases' ? leases : undefined),
   } as never
-  const notes = new NotesService(ctx, { domain, ...(dispatch ? { dispatch } : {}) })
+  const notes = new NotesService(ctx, { domain, ...(task ? { task } : {}) })
   return { notes, table, leases }
 }
 

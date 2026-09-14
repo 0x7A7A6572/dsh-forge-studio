@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { mdSnippet, mdToPlainText, firstImageUrl } from '../src/client/core/markdown-text.ts'
+import { mdSnippet, mdToPlainText, firstImageUrl, todoProgress } from '../src/client/core/markdown-text.ts'
 
 describe('mdToPlainText', () => {
   it('去掉粗体/斜体/删除线标记', () => {
@@ -52,6 +52,28 @@ describe('mdSnippet', () => {
   it('CJK 截断不产生半个字符', () => {
     const out = mdSnippet('便'.repeat(100), 10)
     expect(out).toBe('便'.repeat(10) + '…')
+  })
+})
+
+describe('todoProgress', () => {
+  it('无待办项返回 null（空串 / 普通列表 / 行内勾选框）', () => {
+    expect(todoProgress('')).toBeNull()
+    expect(todoProgress('- 普通列表项\n- 另一项')).toBeNull()
+    expect(todoProgress('正文里的 [ ] 不算清单项')).toBeNull()
+  })
+
+  it('统计 - [ ] / - [x]（含 * + 标记、缩进嵌套、大写 X 与有序标记）', () => {
+    const md = ['- [ ] a', '- [x] b', '* [X] c', '  + [ ] d', '1. [ ] e'].join('\n')
+    expect(todoProgress(md)).toEqual({ done: 2, total: 5 })
+  })
+
+  it('围栏代码块里的勾选框不计入', () => {
+    const md = ['- [ ] 真项', '```md', '- [x] 示例', '```'].join('\n')
+    expect(todoProgress(md)).toEqual({ done: 0, total: 1 })
+  })
+
+  it('全部勾完时 done === total', () => {
+    expect(todoProgress('- [x] a\n- [X] b')).toEqual({ done: 2, total: 2 })
   })
 })
 

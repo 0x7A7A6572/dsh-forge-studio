@@ -1,5 +1,10 @@
 /**
- * 便签板设置弹窗：默认标题（既有）+ WebDAV 备份分区（新增）。
+ * 便签板设置弹窗：默认标题 / 默认工作区 + WebDAV 备份分区。
+ *
+ * 默认工作区分区：任务便签未单独指定 workspace 时，任务执行以该目录**新建会话**
+ * （cwd = 工作区）。候选由 notes/listWorkspaces 给出（最近会话用过的 cwd），
+ * 下拉只选不手填、选项只显示文件夹名；未配置时预置最近使用的目录，
+ * 选「自动」= 交回兜底链（最近会话目录 → 宿主进程目录）。
  *
  * WebDAV 分区：
  * - 表单读写 forge-studio-notes 命名空间的 webdav 对象（与应用密码一起存本地
@@ -10,13 +15,14 @@
  *   备份当前）→ 调 notes/webdavRestore，成功后通知父级刷新便签列表。
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { NotesRemote } from '../core/notes-remote.ts'
 import type { NotesConfig, WebdavStatus } from '../../types.ts'
 import { DEFAULT_WEBDAV_CONFIG } from '../../types.ts'
 import type { NotesWebdavConfig } from '../../types.ts'
 import { t } from '../core/theme-tokens.ts'
+import { folderNameOf, workspaceLabels } from '../core/workspace-path.ts'
 import { X } from 'lucide-react'
 
 export interface NotesSettingsDialogProps {
@@ -26,6 +32,8 @@ export interface NotesSettingsDialogProps {
   readonly snapshot: SettingsScopeSnapshot<NotesConfig>
   /** notes 远程通道（WebDAV 备份/列表/恢复/状态端点）。 */
   readonly notes: NotesRemote
+  /** 工作区候选（最近会话用过的 cwd；下拉只选不手填，标签只给文件夹名）。 */
+  readonly workspaceOptions?: readonly string[]
   /** 保存/恢复成功后通知父级刷新列表。 */
   readonly onDataChanged: () => void
   /** 保存失败回调（供上层展示错误条）。 */
@@ -57,6 +65,28 @@ export function NotesSettingsDialog(props: NotesSettingsDialogProps): JSX.Elemen
   const [draft, setDraft] = useState(current)
   const [saving, setSaving] = useState(false)
   const dirty = draft.trim() !== current
+  // ---- 默认工作区分区状态 ----
+  const currentWorkspace = props.snapshot.value?.defaultWorkspace ?? ''
+  const workspaceOverridden =
+    props.snapshot.user !== undefined && 'defaultWorkspace' in (props.snapshot.user as object)
+  /** 候选目录（最近会话用过的 cwd；host 侧 notes/listWorkspaces 提供）。 */
+  const wsCandidates = props.workspaceOptions ?? []
+  /** 选项集：候选 + 已配置但不在候选里的旧值（否则 select 会显示空白并把它抹掉）。 */
+  const wsOptions = useMemo(() => {
+    const list = [...wsCandidates]
+    if (currentWorkspace !== '' && !list.includes(currentWorkspace)) list.push(currentWorkspace)
+    return list
+  }, [wsCandidates, currentWorkspace])
+  /** 选项标签只给文件夹名，同名冲突才补父目录段。 */
+  const wsLabels = useMemo(() => workspaceLabels(wsOptions), [wsOptions])
+  /**
+   * 默认值：设置值优先；未配置则自动取最近会话用过的目录（与 host 侧兜底一致），
+   * 所以这个下拉一打开就有值可看/可存，而不是空框等用户填。
+   */
+  const effectiveWorkspace = currentWorkspace !== '' ? currentWorkspace : (wsCandidates[0] ?? '')
+  const [wsDraft, setWsDraft] = useState(effectiveWorkspace)
+  const [wsSaving, setWsSaving] = useState(false)
+  const wsDirty = wsDraft.trim() !== currentWorkspace
 
   // ---- WebDAV 分区状态 ----
   const [wd, setWd] = useState<NotesWebdavConfig>({
@@ -107,6 +137,22 @@ export function NotesSettingsDialog(props: NotesSettingsDialogProps): JSX.Elemen
       props.onError?.(cause instanceof Error ? cause.message : String(cause))
     } finally {
       setSaving(false)
+    }
+  }
+
+  /** 保存默认工作区：清空即 unset（回退「未配置」）。 */
+  async function saveDefaultWorkspace(): Promise<void> {
+    if (!writable || !wsDirty || wsSaving) return
+    setWsSaving(true)
+    try {
+      const trimmed = wsDraft.trim()
+      if (trimmed === '') await props.scope.unset('defaultWorkspace')
+      else await props.scope.set('defaultWorkspace', trimmed)
+      props.onClose()
+    } catch (cause) {
+      props.onError?.(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setWsSaving(false)
     }
   }
 
@@ -230,6 +276,42 @@ export function NotesSettingsDialog(props: NotesSettingsDialogProps): JSX.Elemen
             style={inputStyle}
           />
           <span style={{ color: t.labelCaption, fontSize: 12 }}>新建便签标题留空时使用的默认标题；清空并保存可恢复系统默认</span>
+        </label>
+
+        {/* 默认工作区（任务执行） */}
+        <label style={fieldStyle}>
+          <span style={{ fontWeight: 600, fontSize: 13, color: t.labelPrimary }}>
+            默认工作区
+            {workspaceOverridden && <span style={{ color: t.stateWarn, fontSize: 12, marginLeft: 6 }}>已覆盖</span>}
+          </span>
+          <select
+            value={wsDraft}
+            disabled={!writable || wsSaving}
+            aria-label="默认工作区"
+            title={wsDraft === '' ? '自动：优先最近会话用过的目录，其次宿主进程目录' : `工作区：${wsDraft}`}
+            onChange={(e) => setWsDraft(e.target.value)}
+            style={inputStyle}
+          >
+            <option value="">自动（最近使用的目录）</option>
+            {wsOptions.map((option) => (
+              <option key={option} value={option} title={option}>
+                {wsLabels.get(option) ?? folderNameOf(option)}
+              </option>
+            ))}
+          </select>
+          <span style={{ color: t.labelCaption, fontSize: 12 }}>
+            任务便签未单独指定工作区时，执行会以该目录新建会话。候选来自最近会话用过的目录（只选不手填）；选「自动」则优先用最近使用的目录，都没有时用宿主进程目录。选项只显示文件夹名，悬停可见完整路径。
+          </span>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button
+              type="button"
+              disabled={!writable || wsSaving || !wsDirty}
+              onClick={() => void saveDefaultWorkspace()}
+              style={{ ...btnPrimary, ...(!writable || wsSaving || !wsDirty ? dimmed : {}) }}
+            >
+              {wsSaving ? '保存中…' : '保存默认工作区'}
+            </button>
+          </div>
         </label>
 
         <div style={dividerStyle} />

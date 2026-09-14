@@ -135,10 +135,14 @@ describe('makeLane / beginRun / settleRun / isRunOpen', () => {
     expect(makeLane('todo')).toEqual({ status: 'todo' })
   })
 
-  it('beginRun 置 running 并开新 run 帧', () => {
+  it('beginRun 置 running 并开新 run 帧（默认发起方 = user，可显式传 schedule）', () => {
     expect(beginRun({ status: 'todo' }, 42)).toEqual({
       status: 'running',
-      run: { startedAt: 42 },
+      run: { startedAt: 42, by: 'user' },
+    })
+    expect(beginRun({ status: 'todo' }, 42, 'schedule')).toEqual({
+      status: 'running',
+      run: { startedAt: 42, by: 'schedule' },
     })
   })
 

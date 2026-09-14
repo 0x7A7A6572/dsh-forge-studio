@@ -1,21 +1,35 @@
 /**
  * 便签编辑器（tiptap + Markdown）：标题输入 + 富文本正文 + 格式操作栏。
  * - 正文经 tiptap-markdown 序列化保存为真实 Markdown（不再丢格式）；
- * - 操作栏：粗体/斜体/删除线/标题H1-H3/无序·有序列表/引用/行内代码/代码块
- *   （+ 语言选择）/分隔线/链接（弹层设置）/表格（插入·行列操作）/撤销/重做；
+ * - 操作栏：粗体/斜体/删除线/标题H1-H3/无序·有序列表/任务清单(todolist)/引用/
+ *   行内代码/代码块（+ 语言选择）/分隔线/链接（弹层设置）/表格（插入·行列操作）/撤销/重做；
  * - 代码块语言高亮、链接与表格能力来自共享扩展层 core/note-richtext.ts
  *   （note-preview 只读渲染复用同一套，保证编辑与展示一致）；
  * - 粘贴图片：剪贴板图片文件 → data URL 内联插入正文（![图](data:...)）；
- * - 快捷键：Ctrl/Cmd+Enter 保存，Esc 关闭弹层或取消，Ctrl/Cmd+K 插入链接。
+ * - 保存：编辑既有便签时**停顿约 1 秒自动保存**（不关弹窗、不打断输入），
+ *   Ctrl/Cmd+S 立即保存（同样不关弹窗）；Ctrl/Cmd+Enter 与「保存」按钮仍是
+ *   「保存并关闭」；新建态没有库记录，故只走显式保存（Ctrl+S 等同「保存」）；
+ * - 快捷键：Esc 关闭弹层或取消，Ctrl/Cmd+K 插入链接，Ctrl/Cmd+S 保存不关闭。
  * 父组件用 key 控制实例重建（新建/每条便签各一个编辑器），初值即草稿内容。
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import type { Editor } from "@tiptap/core";
 import type { MarkdownStorage } from "tiptap-markdown";
-import { DEFAULT_NOTE_COLOR } from "../../types.ts";
-import type { NoteColor, NoteLane, TaskStatus } from "../../types.ts";
+import { DEFAULT_NOTE_COLOR, SCHEDULE_MODES } from "../../types.ts";
+import type { NoteColor, NoteLane, NoteScheduleInput, ScheduleMode, TaskStatus } from "../../types.ts";
+import {
+  SCHEDULE_MAX_FAILURES,
+  SCHEDULE_RUN_TIMEOUT_MS,
+  fromLocalDateTimeInput,
+  makeSchedule,
+  previewNextAt,
+  scheduleBlockTextFor,
+  scheduleLabel,
+  toLocalDateTimeInput,
+} from "../../schedule.ts";
+import { ConfirmDialog } from "./confirm-dialog.tsx";
 import {
   NOTE_COLOR_PALETTE,
   NOTE_INK,
@@ -23,9 +37,11 @@ import {
   noteColorMeta,
 } from "../core/note-colors.ts";
 import { TASK_LANES, isRunOpen, laneLabel } from "../core/task-lanes.ts";
+import { createAutoSaver, type AutoSaver } from "../core/auto-save.ts";
 import { fmtDateTime } from "../core/time-text.ts";
 import { fileToDataUrl, pickImageFiles } from "../core/paste-image.ts";
 import { t } from "../core/theme-tokens.ts";
+import { folderNameOf, workspaceSelectOptions } from "../core/workspace-path.ts";
 import { buildNoteRichTextExtensions } from "../core/note-richtext.ts";
 import { NoteImageResizable } from "./note-image-view.tsx";
 import {
@@ -40,6 +56,7 @@ import {
   Bold,
   Check,
   ChevronDown,
+  Clock,
   ChevronUp,
   Code,
   CodeXml,
@@ -50,6 +67,7 @@ import {
   Link2,
   List,
   ListOrdered,
+  ListTodo,
   Minus,
   Quote,
   Redo2,
@@ -80,6 +98,41 @@ function RunSummaryMarkdown(props: { readonly markdown: string }): JSX.Element {
   );
 }
 
+/**
+ * 保存选项（编辑器 → 宿主保存口 → 数据控制器）。
+ * - `close`（默认 true）：保存成功后是否关闭弹窗；自动保存 / Ctrl+S 传 false；
+ * - `silent`：静默保存（自动保存用）——不置 saving 态、不置全局 busy，避免把
+ *   正在输入的标题框 disabled 掉（输入框一 disabled 焦点就没了）。
+ */
+export interface NoteSaveOptions {
+  readonly close?: boolean;
+  readonly silent?: boolean;
+}
+
+/**
+ * 任务草稿 patch（编辑器 → 保存链路 → board-view 落库）：
+ * `on` = 是否任务便签；`status` = 泳道状态；`workspace` = 执行工作区（空串 = 用默认）；
+ * `schedule` = 定时日程草稿（undefined = 不定时；已停用的日程仍带 enabled:false 对象）。
+ */
+export interface NoteTaskDraft {
+  readonly on: boolean;
+  readonly status: TaskStatus;
+  readonly workspace: string;
+  readonly schedule?: NoteScheduleInput;
+}
+
+/** 定时周期下拉的中文标签（与 SCHEDULE_MODES 一一对应）。 */
+const SCHEDULE_MODE_LABELS: Record<ScheduleMode, string> = {
+  once: "一次性",
+  interval: "间隔",
+  daily: "每天",
+  weekly: "每周",
+  monthly: "每月",
+};
+
+/** 星期几短标签（0=周日；与 Date#getDay 对齐）。 */
+const WEEKDAY_SHORT = ["日", "一", "二", "三", "四", "五", "六"] as const;
+
 export interface NoteEditorProps {
   readonly initialTitle: string;
   readonly initialBody: string;
@@ -97,20 +150,47 @@ export interface NoteEditorProps {
    */
   readonly initialLaneStatus?: TaskStatus;
   /**
+   * 既有便签的执行工作区（编辑态带出，新建态 undefined）：任务是「在某个工作区
+   * 里跑的事」，执行时以该目录新建会话；留空即回退设置里的默认工作区。
+   */
+  readonly initialWorkspace?: string;
+  /**
+   * 既有便签的定时日程（编辑态带出，新建态 undefined = 不定时）。日程只有任务便签
+   * 才有意义（host 侧同样约束）：任务开关关闭时编辑器不显示该行，保存时按「清除」落库。
+   */
+  readonly initialSchedule?: NoteScheduleInput;
+  /**
    * 纸色切换回调：弹窗整卡背景随所选纸色实时变化（新建/编辑的初值分别由
    * initialColor / 宿主传入，切换发生在底部取色器）。
    */
   readonly onColorChange?: (color: NoteColor) => void;
   /** 标题留空时使用的默认标题（来自设置）。 */
   readonly defaultTitle: string;
+  /** 设置里的默认工作区（占位提示：留空即用它新建执行会话）。 */
+  readonly defaultWorkspace?: string;
+  /** 工作区候选（最近会话用过的 cwd；下拉只选不手填，选项标签只给文件夹名）。 */
+  readonly workspaceOptions?: readonly string[];
+  /**
+   * 工作区候选是否已加载完成。未就绪时「用默认」文案不写「（未配置）」——那个中间态
+   * 会在候选到达后立刻变成真目录，用户看到的就是「提示一闪而过」（见 board-view）。
+   */
+  readonly workspaceReady?: boolean;
+  /** 编辑既有便签时开启：停顿后自动保存（不关弹窗）。新建态恒 false。 */
+  readonly autoSave?: boolean;
   readonly onCancel: () => void;
   readonly onSave: (
     title: string,
     body: string,
     color: NoteColor,
-    lanePatch: { readonly on: boolean; readonly status: TaskStatus },
+    taskPatch: NoteTaskDraft,
+    options?: NoteSaveOptions,
   ) => void | Promise<void>;
 }
+
+/** 自动保存延迟：最后一次改动后静置多久落盘（太短会边打字边写库）。 */
+const AUTO_SAVE_DELAY_MS = 1200;
+/** 自动保存撞上在途保存时的重试间隔。 */
+const AUTO_SAVE_RETRY_MS = 500;
 
 /**
  * 编辑器内容区排版（tiptap 生成的 HTML 在此样式化；令牌取色，明暗自适应）。
@@ -141,7 +221,10 @@ export const EDITOR_CSS = `
 .fs-note-image-handle { position: absolute; right: 2px; bottom: 2px; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; padding: 0; border: none; border-radius: 6px; background: var(--dsw-static-deepseek-450); color: #fff; cursor: nwse-resize; z-index: 5; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28); }
 .fs-note-editor .ProseMirror p:has(> img) {  }
 .fs-note-editor .ProseMirror img.ProseMirror-selectednode { outline: 2px solid var(--dsw-static-deepseek-450); }
-.fs-note-editor .ProseMirror ::selection { background: var(--dsw-specific-bubble-highlight); }
+/* 选中态（主题表面＝只读预览）：宿主 bubble-highlight 是给气泡内标记用的极淡高亮，
+   作选区几乎看不见，改用品牌蓝半透明（保留文字原色，明暗主题都清晰）。
+   纸面编辑态另有反相规则，见下方 .fs-note-editor--paper 段（顺序在后、层叠胜出）。 */
+.fs-note-editor .ProseMirror ::selection { background: color-mix(in srgb, var(--dsw-static-deepseek-450) 32%, transparent); }
 .fs-note-editor input:focus { border-color: var(--dsw-static-deepseek-450); }
 .fs-note-tool:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
 .fs-note-editor .fs-note-btn:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
@@ -155,6 +238,21 @@ export const EDITOR_CSS = `
 .fs-note-editor .ProseMirror th, .fs-note-editor .ProseMirror td { border: 1px solid var(--dsw-alias-border-l3); padding: 5px 8px; vertical-align: top; min-width: 40px; position: relative; word-break: break-word; }
 .fs-note-editor .ProseMirror th { font-weight: 600; text-align: left; background: color-mix(in srgb, var(--dsw-alias-label-secondary) 10%, transparent); }
 .fs-note-editor .ProseMirror .selectedCell::after { content: ""; position: absolute; inset: 0; background: color-mix(in srgb, var(--dsw-static-deepseek-400) 18%, transparent); pointer-events: none; }
+
+/* ---------- 待办清单（todolist） ----------
+   官方 taskItem 结构：ul[data-type=taskList] > li[data-checked] > label>input + div>p。
+   label/input 由扩展渲染（勾选框不参与文本编辑），这里只做排版与勾选态观感；
+   勾选状态来自 checked 属性（data-checked），与 Markdown 的 - [ ]/- [x] 一一对应。 */
+.fs-note-editor .ProseMirror ul[data-type="taskList"] { list-style: none; margin: 2px 0; padding-left: 2px; }
+.fs-note-editor .ProseMirror ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 6px; margin: 1px 0; }
+.fs-note-editor .ProseMirror ul[data-type="taskList"] li > label { flex: none; display: inline-flex; align-items: center; margin-top: 0.32em; user-select: none; }
+.fs-note-editor .ProseMirror ul[data-type="taskList"] li > label input { width: 14px; height: 14px; margin: 0; cursor: pointer; accent-color: var(--dsw-static-deepseek-450); }
+.fs-note-editor .ProseMirror ul[data-type="taskList"] li > div { flex: 1 1 auto; min-width: 0; }
+.fs-note-editor .ProseMirror ul[data-type="taskList"] li > div > p { margin: 0; }
+.fs-note-editor .ProseMirror ul[data-type="taskList"] li[data-checked="true"] > div { color: var(--dsw-alias-label-secondary); text-decoration: line-through; }
+.fs-note-editor .ProseMirror ul[data-type="taskList"] ul[data-type="taskList"] { margin: 1px 0 1px 4px; padding-left: 0; }
+/* 只读展示态（note-preview / 任务结果区 / 使用说明）：勾选框仅展示状态，不可交互。 */
+.fs-note-editor.fs-note-preview .ProseMirror ul[data-type="taskList"] li > label input { cursor: default; }
 
 /* ---------- 代码语法高亮 token（映射宿主 --shiki-token-*，带字面量回退） ---------- */
 .fs-note-editor .ProseMirror .hljs-comment, .fs-note-editor .ProseMirror .hljs-quote { color: var(--shiki-token-comment, #868e96); font-style: italic; }
@@ -201,6 +299,9 @@ export const EDITOR_CSS = `
 .fs-note-editor--paper .ProseMirror th { background: rgba(46, 42, 34, 0.06); }
 .fs-note-editor--paper input::placeholder { color: rgba(46, 42, 34, 0.45); }
 .fs-note-editor--paper input:focus { border-color: rgba(46, 42, 34, 0.5); }
+/* 纸面待办清单：勾选框随墨迹（不用品牌蓝），勾选后墨字弱化（删除线走通用规则）。 */
+.fs-note-editor--paper .ProseMirror ul[data-type="taskList"] li > label input { accent-color: #2E2A22; }
+.fs-note-editor--paper .ProseMirror ul[data-type="taskList"] li[data-checked="true"] > div { color: rgba(46, 42, 34, 0.5); }
 /* 便签标题（header 直写）：无边框输入，聚焦仅淡墨染底，保持「写在纸上」观感。 */
 .fs-note-editor--paper .fs-note-title { border-radius: 7px; }
 .fs-note-editor--paper .fs-note-title:hover { background: rgba(46, 42, 34, 0.045); }
@@ -210,6 +311,15 @@ export const EDITOR_CSS = `
 .fs-note-editor--paper .fs-note-color:focus-visible { outline: 2px solid rgba(46, 42, 34, 0.55); }
 .fs-note-editor--paper .fs-note-btn-primary:hover:not(:disabled) { background: #100e08; }
 .fs-note-editor--paper .fs-note-lang-select { color: rgba(46, 42, 34, 0.85); border: none; background: rgba(46, 42, 34, 0.06); }
+/* 选中态（纸面编辑）：纸底恒浅 + 墨字，若沿用主题高亮就只剩「灰底黑字」，选区与正文
+   几乎分不出来。这里改为反相选中（墨底 + 纸白字）：六种纸色、标题/正文/代码块/结果区
+   一律高对比。注意两条选择器都要写——.ProseMirror 那条与上方主题规则同为 (0,2,1)，
+   靠「顺序在后」取胜；泛化那条管标题输入框与只读结果区（不受主题规则覆盖）。 */
+.fs-note-editor--paper .ProseMirror ::selection,
+.fs-note-editor--paper ::selection {
+  background: rgba(46, 42, 34, 0.85);
+  color: #FFFDF4;
+}
 .fs-note-run-toggle { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border: none; border-radius: 7px; background: transparent; color: rgba(46, 42, 34, 0.72); font-size: 12.5px; cursor: pointer; }
 .fs-note-run-toggle:hover { background: rgba(46, 42, 34, 0.09); color: #2E2A22; }
 `;
@@ -231,6 +341,8 @@ type FormatState = {
   h3: boolean;
   bullet: boolean;
   ordered: boolean;
+  /** 光标在待办清单（todolist）项内。 */
+  taskList: boolean;
   quote: boolean;
   code: boolean;
   codeBlock: boolean;
@@ -308,6 +420,7 @@ function formatOf(editor: Editor | null): FormatState {
     h3: h(3),
     bullet: editor.isActive("bulletList"),
     ordered: editor.isActive("orderedList"),
+    taskList: editor.isActive("taskList"),
     quote: editor.isActive("blockquote"),
     code: editor.isActive("code"),
     codeBlock: editor.isActive("codeBlock"),
@@ -332,6 +445,7 @@ const EMPTY_FORMAT: FormatState = {
   h3: false,
   bullet: false,
   ordered: false,
+  taskList: false,
   quote: false,
   code: false,
   codeBlock: false,
@@ -365,12 +479,71 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
   const [taskStatus, setTaskStatus] = useState<TaskStatus>(
     props.initialLane?.status ?? props.initialLaneStatus ?? "todo",
   );
+  /**
+   * 任务执行工作区：编辑态带出便签值，新建态留空。留空 = 不落字段，执行时回退
+   * 运行时默认工作区（设置值 → 最近会话目录 → 宿主进程目录）。
+   */
+  const [workspace, setWorkspace] = useState(props.initialWorkspace ?? "");
+  /**
+   * 定时日程草稿（编辑态带出便签既有 schedule；新建/未定时 undefined）。nextAt 由 host
+   * 保存时重算并写回，这里的值只用于编辑与预览（previewNextAt）。
+   */
+  const [schedule, setSchedule] = useState<NoteScheduleInput | undefined>(props.initialSchedule);
+  /**
+   * 开启「定时」前的行内确认草稿：点开关不直接落地，先让用户看清后果
+   * （到点宿主会自动新建会话替你执行 = 无人值守跑 agent）。取消即清空，不动库。
+   */
+  const [scheduleConfirm, setScheduleConfirm] = useState<NoteScheduleInput | undefined>(undefined);
+  /**
+   * 间隔模式的数量单位（分钟/小时）：只影响展示与输入换算，落库统一为分钟（everyMin）。
+   * 初值按既有间隔推断（60 的整数倍且 >= 60 视作小时）。
+   */
+  const [intervalUnit, setIntervalUnit] = useState<"min" | "hour">(() => {
+    const minutes = props.initialSchedule?.everyMin ?? 30;
+    return minutes % 60 === 0 && minutes >= 60 ? "hour" : "min";
+  });
+  /** 间隔输入框里显示的数量（按当前单位换算）。 */
+  const intervalAmount =
+    schedule?.everyMin === undefined
+      ? 30
+      : intervalUnit === "hour"
+        ? schedule.everyMin / 60
+        : schedule.everyMin;
+  /** 定时行里的「下次触发」预览（已停用 → undefined）。 */
+  const scheduleNextPreview = schedule !== undefined ? previewNextAt(schedule) : undefined;
+  /**
+   * 工作区只从「最近会话用过的目录」里挑（不提供手填新路径）。但便签上已存的
+   * 工作区可能不在候选里（旧的显式值、或设置默认目录本就不在会话列表里），
+   * 这种值也要列出来，否则一进编辑器就会被静默改掉。
+   */
+  const workspaceOptions = useMemo(
+    () => workspaceSelectOptions(props.workspaceOptions ?? [], workspace),
+    [props.workspaceOptions, workspace],
+  );
+  /**
+   * 「用默认」项文案：候选还没拉回来时**不写「（未配置）」**——那是「还没数据」，不是
+   * 「没配置」。写了它就会在候选到达的一瞬间被真目录替换，看起来正是「提示一闪而过」。
+   */
+  const defaultWorkspaceOptionLabel = props.defaultWorkspace
+    ? `用默认（${folderNameOf(props.defaultWorkspace)}）`
+    : props.workspaceReady === false
+      ? "用默认工作区"
+      : "用默认工作区（未配置）";
+  const workspaceSelectTitle =
+    workspace !== ""
+      ? `工作区：${workspace}`
+      : props.defaultWorkspace
+        ? `默认工作区：${props.defaultWorkspace}`
+        : props.workspaceReady === false
+          ? "默认工作区：自动选择"
+          : "未指定工作区";
   /** 编辑 running 任务（isRunOpen）：开关与状态只读（改状态请先在泳道重置）。 */
   const runningReadOnly =
     props.initialLane !== undefined && isRunOpen(props.initialLane);
   const [saving, setSaving] = useState(false);
   /** 任务执行结果是否展开（默认收起，避免长摘要把编辑器撑高）。 */
   const [runExpanded, setRunExpanded] = useState(false);
+
   /** 当前打开的工具栏弹层：link（链接）/ table（表格）。 */
   const [popup, setPopup] = useState<"link" | "table" | null>(null);
   /** 链接弹层草稿（textLocked=选区非空，文字由选中内容决定）。 */
@@ -409,7 +582,8 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor]);
 
-  async function save(): Promise<void> {
+  /** 显式保存（按钮 / Ctrl/Cmd+Enter）：默认保存并关闭弹窗。 */
+  async function save(options?: NoteSaveOptions): Promise<void> {
     const body = editorMarkdown(editor, props.initialBody);
     const trimmed = title.trim();
     if (!trimmed && !body) {
@@ -418,14 +592,148 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
     }
     setSaving(true);
     try {
-      await props.onSave(trimmed || props.defaultTitle, body, color, {
-        on: taskOn,
-        status: taskStatus,
-      });
+      await props.onSave(
+        trimmed || props.defaultTitle,
+        body,
+        color,
+        {
+          on: taskOn,
+          status: taskStatus,
+          workspace,
+          ...(schedule !== undefined ? { schedule } : {}),
+        },
+        options,
+      );
     } finally {
       setSaving(false);
     }
   }
+
+  /* ---------- 自动保存 / Ctrl+S（编辑既有便签，落盘但不关弹窗） ---------- */
+
+  /** 自动保存指示灯（只在真落盘时变化，打字过程不刷状态）。 */
+  const [autoSaveState, setAutoSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  /** 最近一次落盘时刻（只做 title 悬停提示）。 */
+  const lastSavedAt = useRef<number | null>(null);
+  /** 自动保存调度器（防抖/在途补跑/取消，见 core/auto-save.ts）。 */
+  const autoSaver = useRef<AutoSaver | null>(null);
+  /** 在途标记：Ctrl+S 与调度器撞上时不并发（撞上就跳过，等在途那次落盘）。 */
+  const autoSaving = useRef(false);
+  /** 上次落盘的草稿签名：没变就不重复写库/广播。 */
+  const savedSignature = useRef<string | null>(null);
+  /**
+   * 最新草稿镜像（标题/纸色/任务开关/状态/工作区）：自动保存回调异步执行，闭包里
+   * 的 state 是排定时那一刻的旧值，故用 ref 取「保存时」的真值。
+   */
+  const draftRef = useRef({ title, color, taskOn, taskStatus, workspace, schedule });
+  useEffect(() => {
+    draftRef.current = { title, color, taskOn, taskStatus, workspace, schedule };
+  });
+
+  /**
+   * 落盘一次：不关弹窗、不置 saving（标题框一 disabled 就丢焦点）。
+   * - 空标题默认跳过（用户可能正在删标题，别把中间态写成默认标题）；
+   *   显式 Ctrl+S（force）则补默认标题并同步到输入框；
+   * - 草稿与上次落盘一致 → 不打库，只给「已保存」反馈。
+   */
+  async function autoSaveNow(force = false): Promise<void> {
+    if (autoSaving.current) return;
+    const draft = draftRef.current;
+    let nextTitle = draft.title.trim();
+    if (nextTitle === "") {
+      if (!force) return;
+      nextTitle = props.defaultTitle;
+      setTitle(nextTitle);
+    }
+    const body = editorMarkdown(editor, props.initialBody);
+    const signature = JSON.stringify([
+      nextTitle,
+      body,
+      draft.color,
+      draft.taskOn,
+      draft.taskStatus,
+      draft.workspace,
+      draft.schedule ?? null,
+    ]);
+    if (signature === savedSignature.current) {
+      setAutoSaveState("saved");
+      return;
+    }
+    autoSaving.current = true;
+    setAutoSaveState("saving");
+    try {
+      await props.onSave(
+        nextTitle,
+        body,
+        draft.color,
+        {
+          on: draft.taskOn,
+          status: draft.taskStatus,
+          workspace: draft.workspace,
+          ...(draft.schedule !== undefined ? { schedule: draft.schedule } : {}),
+        },
+        { close: false, silent: true },
+      );
+      savedSignature.current = signature;
+      lastSavedAt.current = Date.now();
+      setAutoSaveState("saved");
+    } catch {
+      setAutoSaveState("error");
+    } finally {
+      autoSaving.current = false;
+    }
+  }
+
+  /** 有改动：标记一次自动保存（重置倒计时），并把「已保存」指示灯打回待保存。 */
+  function markDirty(): void {
+    if (props.autoSave !== true) return;
+    setAutoSaveState((state) => (state === "saved" || state === "error" ? "idle" : state));
+    autoSaver.current?.touch();
+  }
+
+  // 自动保存调度器：只在编辑既有便签（autoSave）时装配，卸载即 dispose。
+  // save 走 ref 取当次渲染的 autoSaveNow（否则会闭包到首帧那个 editor 还是 null 的版本）。
+  const autoSaveNowRef = useRef<(force?: boolean) => Promise<void>>(() => Promise.resolve());
+  useEffect(() => {
+    autoSaveNowRef.current = autoSaveNow;
+  });
+  useEffect(() => {
+    if (props.autoSave !== true) return;
+    const saver = createAutoSaver({
+      delayMs: AUTO_SAVE_DELAY_MS,
+      retryMs: AUTO_SAVE_RETRY_MS,
+      save: () => autoSaveNowRef.current(),
+    });
+    autoSaver.current = saver;
+    return () => {
+      saver.dispose();
+      autoSaver.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.autoSave]);
+
+  // 正文改动 → 自动保存（tiptap 只在文档真变化时发 update，焦点/选区不算）。
+  useEffect(() => {
+    if (!editor || props.autoSave !== true) return;
+    const onUpdate = (): void => markDirty();
+    editor.on("update", onUpdate);
+    return () => {
+      editor.off("update", onUpdate);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor, props.autoSave]);
+
+  /** 自动保存指示灯文案（新建态没有库记录，不显示）。 */
+  const autoSaveHintText =
+    props.autoSave !== true
+      ? ""
+      : autoSaveState === "saving"
+        ? "保存中…"
+        : autoSaveState === "error"
+          ? "⚠ 自动保存失败"
+          : autoSaveState === "saved"
+            ? "已自动保存"
+            : "自动保存";
 
   function run(fn: (e: Editor) => void): void {
     if (editor) fn(editor);
@@ -598,6 +906,17 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
         } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
           e.preventDefault();
           openLinkPopup();
+        } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+          // Ctrl/Cmd+S：编辑既有便签 → 立即保存且**不关弹窗**（与自动保存同一路径）；
+          // 新建态没有库记录，等同「保存」按钮（创建并关闭）。
+          e.preventDefault();
+          if (props.autoSave === true) {
+            // 先取消排着的自动保存（避免刚落盘又被定时器跑一次），再立即保存。
+            autoSaver.current?.cancel();
+            void autoSaveNow(true);
+          } else {
+            void save();
+          }
         } else if (e.key === "Escape") {
           if (popup) {
             // 弹层开启时：Esc 先关弹层，再按一次才取消编辑
@@ -622,7 +941,10 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
           placeholder={props.initialTitle.trim() ? undefined : "标题（留空使用默认标题）"}
           value={title}
           disabled={saving}
-          onChange={(e) => setTitle(e.target.value)}
+          onChange={(e) => {
+            setTitle(e.target.value);
+            markDirty();
+          }}
           aria-label="便签标题"
           style={headTitleStyle}
         />
@@ -718,6 +1040,14 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
           }
         >
           <ListOrdered size={16} />
+        </ToolButton>
+        <ToolButton
+          title="任务清单 (Ctrl+Shift+9)"
+          active={fmt.taskList}
+          disabled={saving}
+          onClick={() => run((e) => e.chain().focus().toggleTaskList().run())}
+        >
+          <ListTodo size={16} />
         </ToolButton>
         <ToolButton
           title="引用"
@@ -972,7 +1302,10 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
               type="checkbox"
               checked={taskOn}
               disabled={saving || runningReadOnly}
-              onChange={(e) => setTaskOn(e.target.checked)}
+              onChange={(e) => {
+                setTaskOn(e.target.checked);
+                markDirty();
+              }}
               style={{
                 accentColor: colorMeta.ring,
                 cursor: saving || runningReadOnly ? "default" : "pointer",
@@ -984,7 +1317,10 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
             <select
               value={taskStatus}
               disabled={saving}
-              onChange={(e) => setTaskStatus(e.target.value as TaskStatus)}
+              onChange={(e) => {
+                setTaskStatus(e.target.value as TaskStatus);
+                markDirty();
+              }}
               aria-label="任务状态"
               style={laneSelect}
             >
@@ -1000,10 +1336,234 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
               {laneLabel(props.initialLane.status)}
             </span>
           )}
+          {/* 工作区（任务专属）：与状态选择同行。执行时以该目录**新建会话**跑。
+              候选 = 最近会话用过的目录（不给手填新路径）；选项只显示文件夹名，
+              完整路径进 title 悬停可见。 */}
+          {taskOn && (
+            <span style={workspaceField}>
+              <span style={workspaceLabel}>工作区</span>
+              <select
+                value={workspace}
+                disabled={saving}
+                onChange={(e) => {
+                  setWorkspace(e.target.value);
+                  markDirty();
+                }}
+                aria-label="任务执行工作区"
+                title={workspaceSelectTitle}
+                style={workspaceSelect}
+              >
+                <option value="">{defaultWorkspaceOptionLabel}</option>
+                {workspaceOptions.map((option) => (
+                  <option key={option.path} value={option.path} title={option.path}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </span>
+          )}
           {runningReadOnly && (
             <span style={laneHint}>执行中：改状态请先在泳道重置</span>
           )}
         </div>
+        {/* 定时执行（任务专属）：到点由 host 调度器自动派发（等价点「执行」，同样新建
+            会话 + 投递 + 租约）。一次性 / 间隔 / 每天 / 每周 / 每月；nextAt 由 host 保存时
+            重算写回，这里只做编辑与预览（previewNextAt）。 */}
+        {taskOn && (
+          <div style={scheduleRow} aria-label="定时执行">
+            <label style={laneToggleLabel}>
+              <input
+                type="checkbox"
+                checked={schedule?.enabled === true}
+                disabled={saving}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    // 开启 = 授权无人值守执行：先弹行内确认，不确认就不落地。
+                    setScheduleConfirm(makeSchedule(schedule?.mode ?? "once", schedule));
+                  } else {
+                    setScheduleConfirm(undefined);
+                    if (schedule !== undefined) setSchedule({ ...schedule, enabled: false });
+                    markDirty();
+                  }
+                }}
+                style={{ accentColor: colorMeta.ring, cursor: saving ? "default" : "pointer" }}
+              />
+              定时
+            </label>
+            {schedule !== undefined && (
+              <>
+                <select
+                  value={schedule.mode}
+                  disabled={saving}
+                  aria-label="定时周期"
+                  title="定时周期"
+                  style={laneSelect}
+                  onChange={(e) => {
+                    setSchedule(makeSchedule(e.target.value as ScheduleMode, schedule));
+                    markDirty();
+                  }}
+                >
+                  {SCHEDULE_MODES.map((mode) => (
+                    <option key={mode} value={mode}>
+                      {SCHEDULE_MODE_LABELS[mode]}
+                    </option>
+                  ))}
+                </select>
+                {/* 一次性：绝对时刻（datetime-local，本机时区）。 */}
+                {schedule.mode === "once" && (
+                  <input
+                    type="datetime-local"
+                    value={schedule.at !== undefined ? toLocalDateTimeInput(schedule.at) : ""}
+                    disabled={saving}
+                    aria-label="一次性触发时刻"
+                    title="触发时刻"
+                    style={scheduleInput}
+                    onChange={(e) => {
+                      const at = fromLocalDateTimeInput(e.target.value);
+                      if (at !== undefined) setSchedule({ ...schedule, at });
+                      markDirty();
+                    }}
+                  />
+                )}
+                {/* 间隔：数量 + 单位（落库统一为分钟）。 */}
+                {schedule.mode === "interval" && (
+                  <>
+                    <input
+                      type="number"
+                      min={1}
+                      max={intervalUnit === "hour" ? 168 : 1440}
+                      value={intervalAmount}
+                      disabled={saving}
+                      aria-label="间隔时长"
+                      title="间隔时长"
+                      style={scheduleNumber}
+                      onChange={(e) => {
+                        const raw = Number(e.target.value);
+                        const amount = Number.isFinite(raw) ? Math.max(1, Math.round(raw)) : 1;
+                        setSchedule({ ...schedule, everyMin: intervalUnit === "hour" ? amount * 60 : amount });
+                        markDirty();
+                      }}
+                    />
+                    <select
+                      value={intervalUnit}
+                      disabled={saving}
+                      aria-label="间隔单位"
+                      title="间隔单位"
+                      style={laneSelect}
+                      onChange={(e) => {
+                        const next = e.target.value === "hour" ? "hour" : "min";
+                        const minutes = schedule.everyMin ?? 30;
+                        setIntervalUnit(next);
+                        setSchedule({
+                          ...schedule,
+                          everyMin: next === "hour" ? Math.max(1, Math.round(minutes / 60)) * 60 : minutes,
+                        });
+                        markDirty();
+                      }}
+                    >
+                      <option value="min">分钟</option>
+                      <option value="hour">小时</option>
+                    </select>
+                  </>
+                )}
+                {/* 每周：星期多选（至少一天；host 侧 sanitizeSchedule 同样拒绝空星期）。 */}
+                {schedule.mode === "weekly" && (
+                  <span style={scheduleChips}>
+                    {WEEKDAY_SHORT.map((label, day) => {
+                      const active = (schedule.weekdays ?? []).includes(day);
+                      return (
+                        <button
+                          key={day}
+                          type="button"
+                          disabled={saving}
+                          aria-pressed={active}
+                          aria-label={"周" + label}
+                          title={"周" + label}
+                          onClick={() => {
+                            const days = new Set(schedule.weekdays ?? []);
+                            if (active) days.delete(day);
+                            else days.add(day);
+                            if (days.size === 0) return;
+                            setSchedule({ ...schedule, weekdays: [...days].sort((a, b) => a - b) });
+                            markDirty();
+                          }}
+                          style={active ? { ...scheduleChip, ...scheduleChipActive } : scheduleChip}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </span>
+                )}
+                {/* 每月：某日（1-31；当月不足时落在当月最后一天）。 */}
+                {schedule.mode === "monthly" && (
+                  <input
+                    type="number"
+                    min={1}
+                    max={31}
+                    value={schedule.monthDay ?? 1}
+                    disabled={saving}
+                    aria-label="每月第几日"
+                    title="每月第几日"
+                    style={scheduleNumber}
+                    onChange={(e) => {
+                      const raw = Number(e.target.value);
+                      if (Number.isFinite(raw)) {
+                        setSchedule({ ...schedule, monthDay: Math.min(31, Math.max(1, Math.round(raw))) });
+                      }
+                      markDirty();
+                    }}
+                  />
+                )}
+                {/* 每天/每周/每月共用：当日时刻。 */}
+                {schedule.mode !== "once" && schedule.mode !== "interval" && (
+                  <input
+                    type="time"
+                    value={schedule.time ?? "09:00"}
+                    disabled={saving}
+                    aria-label="触发时刻"
+                    title="触发时刻"
+                    style={scheduleInput}
+                    onChange={(e) => {
+                      if (e.target.value !== "") setSchedule({ ...schedule, time: e.target.value });
+                      markDirty();
+                    }}
+                  />
+                )}
+                <span style={scheduleMeta}>
+                  {schedule.enabled
+                    ? scheduleNextPreview !== undefined
+                      ? "下次：" + fmtDateTime(scheduleNextPreview)
+                      : "下次：保存后生效"
+                    : "定时已停用"}
+                  {schedule.lastResult !== undefined ? " · 上次：" + schedule.lastResult : ""}
+                  {(schedule.runCount ?? 0) > 0 ? " · 已跑 " + schedule.runCount + " 次" : ""}
+                </span>
+                {/* 状态闸门可见：当前列不会被自动执行（拖回「待办」即恢复）。 */}
+                {schedule.enabled && scheduleBlockTextFor(taskStatus) !== undefined && (
+                  <span style={scheduleWarn}>
+                    {scheduleBlockTextFor(taskStatus)}——拖回「待办」即恢复
+                  </span>
+                )}
+                {(schedule.failureStreak ?? 0) > 0 && (
+                  <span style={scheduleWarn}>
+                    连续失败 {schedule.failureStreak ?? 0} 次
+                    {(schedule.failureStreak ?? 0) >= SCHEDULE_MAX_FAILURES
+                      ? "（已达上限，日程已停用）"
+                      : `（满 ${SCHEDULE_MAX_FAILURES} 次自动停用）`}
+                  </span>
+                )}
+              </>
+            )}
+            {/* 后果提示：说清「定时」= 无人值守自动执行，不靠用户翻帮助页。 */}
+            {schedule !== undefined && (
+              <span style={scheduleHint}>
+                到点由宿主自动新建会话替你执行（等价于点「执行」），便签板关着也会跑；
+                待规划 / 已完成 / 已失败 的卡片不会被自动执行。
+              </span>
+            )}
+          </div>
+        )}
         {taskOn &&
           props.initialLane !== undefined &&
           props.initialLane.run !== undefined && (
@@ -1083,6 +1643,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
             onClick={() => {
               setColor(c.id);
               props.onColorChange?.(c.id);
+              markDirty();
             }}
             style={{
               ...colorDot,
@@ -1102,6 +1663,20 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
           justifyContent: "flex-end",
         }}
       >
+        {props.autoSave === true && (
+          <span
+            role="status"
+            style={autoSaveHint}
+            title={
+              lastSavedAt.current !== null
+                ? `上次自动保存：${fmtDateTime(lastSavedAt.current)}（Ctrl+S 可立即保存）`
+                : "编辑停顿约 1 秒自动保存；Ctrl+S 立即保存——两者都不关闭弹窗"
+            }
+          >
+            {autoSaveHintText}
+          </span>
+        )}
+        <span style={{ flex: 1 }} />
         <button
           type="button"
           className="fs-note-btn"
@@ -1116,12 +1691,43 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
           className="fs-note-btn fs-note-btn-primary"
           style={{ ...btnPrimary, ...(saving ? disabledBtn : {}) }}
           disabled={saving}
+          title="保存并关闭（Ctrl+Enter；只保存不关闭用 Ctrl+S）"
           onClick={() => void save()}
         >
           <Check size={14} />
           {saving ? "保存中…" : "保存"}
         </button>
       </div>
+
+      {/* 开启「定时」前的确认弹窗：把「到点会自己开 agent 跑」这件事说清楚再授权。
+          点开关只弹窗不落地，确认后才写进草稿（与其它字段一样等保存生效）。 */}
+      {scheduleConfirm !== undefined && (
+        <ConfirmDialog
+          title="开启定时执行？"
+          description="到点由宿主自动新建会话替你执行（等价于点「执行」），便签板关着也会跑。"
+          accent={colorMeta.ring}
+          bullets={[
+            `周期：${scheduleLabel(scheduleConfirm)}${
+              (() => {
+                const next = previewNextAt(scheduleConfirm);
+                return next !== undefined ? `，下次 ${fmtDateTime(next)}` : "（保存后按当前时刻计算）";
+              })()
+            }`,
+            `工作区：${workspace.trim() !== "" ? workspace : defaultWorkspaceOptionLabel}`,
+            "待规划 / 已完成 / 已失败 的卡片不会被自动执行（拖回「待办」即恢复）",
+            `连续失败 ${SCHEDULE_MAX_FAILURES} 次自动停用；单次执行超过 ${
+              SCHEDULE_RUN_TIMEOUT_MS / 60_000
+            } 分钟未收尾按失败收尾`,
+          ]}
+          confirmLabel="开启定时"
+          onConfirm={() => {
+            setSchedule(scheduleConfirm);
+            setScheduleConfirm(undefined);
+            markDirty();
+          }}
+          onCancel={() => setScheduleConfirm(undefined)}
+        />
+      )}
     </div>
   );
 }
@@ -1326,9 +1932,107 @@ const laneSelect: React.CSSProperties = {
   outline: "none",
   cursor: "pointer",
 };
+/** 自动保存指示灯：页脚最左，弱化存在感（墨迹系灰）。 */
+const autoSaveHint: React.CSSProperties = {
+  fontSize: 11.5,
+  color: "rgba(46, 42, 34, 0.5)",
+};
 const laneHint: React.CSSProperties = {
   fontSize: 12,
   color: "#b3261e",
+};
+/** 工作区控件（与状态选择同行）：标签 + 下拉，命中「自定义」时才展开手填输入。 */
+const workspaceField: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 5,
+  flex: "1 1 200px",
+  minWidth: 0,
+};
+const workspaceLabel: React.CSSProperties = {
+  flex: "none",
+  fontSize: 12.5,
+  color: NOTE_INK_MUTED,
+};
+const workspaceSelect: React.CSSProperties = {
+  flex: "0 1 auto",
+  minWidth: 0,
+  maxWidth: "100%",
+  height: 26,
+  padding: "0 4px",
+  fontSize: 12.5,
+  color: "rgba(46, 42, 34, 0.85)",
+  background: PAPER_SOFT_FILL,
+  border: "none",
+  borderRadius: 7,
+  outline: "none",
+  cursor: "pointer",
+};
+/** 定时行：独占一行（开关 + 周期 + 参数 + 下次/上次），窄弹窗内自动换行。 */
+const scheduleRow: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  flexWrap: "wrap",
+  gap: 6,
+};
+/** 定时行里的后果说明 / 失败警示（整行，弱化字号）。 */
+const scheduleHint: React.CSSProperties = {
+  flex: "1 1 100%",
+  fontSize: 11.5,
+  lineHeight: 1.5,
+  color: NOTE_INK_MUTED,
+};
+const scheduleWarn: React.CSSProperties = {
+  fontSize: 11.5,
+  color: t.danger,
+};
+/** 定时参数输入（datetime-local / time）：与工作区下拉同款墨迹系浅底填充。 */
+const scheduleInput: React.CSSProperties = {
+  height: 26,
+  padding: "0 4px",
+  fontSize: 12.5,
+  fontFamily: "inherit",
+  color: "rgba(46, 42, 34, 0.85)",
+  background: PAPER_SOFT_FILL,
+  border: "none",
+  borderRadius: 7,
+  outline: "none",
+};
+/** 数量输入（间隔时长 / 每月第几日）：窄，免得把整行撑开。 */
+const scheduleNumber: React.CSSProperties = { ...scheduleInput, width: 58 };
+/** 星期多选容器。 */
+const scheduleChips: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 3,
+  flexWrap: "wrap",
+};
+/** 星期胶囊（未选）：浅底墨迹。 */
+const scheduleChip: React.CSSProperties = {
+  minWidth: 22,
+  height: 22,
+  padding: "0 5px",
+  fontSize: 11.5,
+  lineHeight: 1,
+  boxSizing: "border-box",
+  color: "rgba(46, 42, 34, 0.75)",
+  background: PAPER_SOFT_FILL,
+  border: "none",
+  borderRadius: 6,
+  cursor: "pointer",
+};
+/** 星期胶囊（已选）：深墨底反白，纸质卡面上对比恒定。 */
+const scheduleChipActive: React.CSSProperties = {
+  background: "rgba(46, 42, 34, 0.72)",
+  color: "#ffffff",
+  fontWeight: 600,
+};
+/** 定时行尾的「下次/上次」小字（弱化，别抢正文视线）。 */
+const scheduleMeta: React.CSSProperties = {
+  fontSize: 11.5,
+  color: NOTE_INK_MUTED,
+  flex: "1 1 160px",
+  minWidth: 0,
 };
 /** 执行记录区：开始/结束/结果一行（· 分隔）+ 摘要。 */
 const taskRunArea: React.CSSProperties = {

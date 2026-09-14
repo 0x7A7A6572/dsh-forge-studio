@@ -61,9 +61,12 @@ export function makeLane(status: TaskStatus): NoteLane {
   return { status }
 }
 
-/** 开新 run 帧：置 running，run = { startedAt }（重跑时新帧覆盖旧帧）。 */
-export function beginRun(_lane: NoteLane, startedAt: number): NoteLane {
-  return { status: 'running', run: { startedAt } }
+/**
+ * 开新 run 帧：置 running，run = { startedAt, by }（重跑时新帧覆盖旧帧）。
+ * by 记录发起方（定时调度自动派发 / 用户点执行），供 host 超时兜底只收拾定时发起的 run。
+ */
+export function beginRun(_lane: NoteLane, startedAt: number, by: 'user' | 'schedule' = 'user'): NoteLane {
+  return { status: 'running', run: { startedAt, by } }
 }
 
 /**

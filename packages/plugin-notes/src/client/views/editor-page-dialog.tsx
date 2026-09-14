@@ -13,6 +13,7 @@ import { useEffect, useState } from 'react'
 import { DEFAULT_NOTE_COLOR } from '../../types.ts'
 import type { NoteColor, NoteLane, TaskStatus } from '../../types.ts'
 import { NoteEditor } from '../components/note-editor.tsx'
+import type { NoteSaveOptions, NoteTaskDraft } from '../components/note-editor.tsx'
 import { noteColorMeta } from '../core/note-colors.ts'
 import type { EditorTarget } from '../core/notes-nav.ts'
 import { t } from '../core/theme-tokens.ts'
@@ -22,12 +23,20 @@ export interface EditorPageDialogProps {
   readonly target: EditorTarget
   /** 标题留空时的默认标题（来自设置命名空间）。 */
   readonly defaultTitle: string
+  /** 生效的默认工作区（设置值，未配置则为最近会话目录；「用默认」项显示它）。 */
+  readonly defaultWorkspace?: string
+  /** 工作区候选（最近会话用过的 cwd；下拉只选不手填，标签只给文件夹名）。 */
+  readonly workspaceOptions?: readonly string[]
+  /** 工作区候选是否已加载完成（未就绪时「用默认」文案不写「未配置」，避免闪一下）。 */
+  readonly workspaceReady?: boolean
   readonly onCancel: () => void
   readonly onSave: (
     title: string,
     body: string,
     color: NoteColor,
-    lanePatch: { readonly on: boolean; readonly status: TaskStatus },
+    taskPatch: NoteTaskDraft,
+    /** 保存选项：close/silent（自动保存、Ctrl+S 传 close:false）。 */
+    options?: NoteSaveOptions,
   ) => void | Promise<void>
 }
 
@@ -64,7 +73,14 @@ export function EditorPageDialog(props: EditorPageDialogProps): JSX.Element {
           initialColor={editing ? editing.color : undefined}
           initialLane={initialLane}
           initialLaneStatus={initialLaneStatus}
+          initialWorkspace={editing?.workspace}
+          initialSchedule={editing?.schedule}
           defaultTitle={props.defaultTitle}
+          defaultWorkspace={props.defaultWorkspace}
+          workspaceOptions={props.workspaceOptions}
+          workspaceReady={props.workspaceReady}
+          // 编辑既有便签才自动保存：新建态没有库记录（保存即创建），无从自动落盘。
+          autoSave={props.target.mode === 'edit'}
           onColorChange={setPaper}
           onCancel={props.onCancel}
           onSave={props.onSave}

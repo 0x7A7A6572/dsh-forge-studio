@@ -30,6 +30,9 @@ const noop = (): void => undefined
 
 const LANE_LABELS = ['待规划', '待办', '进行中', '已完成', '已失败']
 
+/** 任务身份：泳道卡只渲染带 lane 的便签。 */
+const TODO_LANE = { status: 'todo' } as const
+
 function renderLanes(notes: readonly NoteRecord[]): string {
   return renderToStaticMarkup(
     <TaskLanes
@@ -46,6 +49,53 @@ function renderLanes(notes: readonly NoteRecord[]): string {
     />,
   )
 }
+
+describe('TaskLanes 泳道卡工作区展示（执行目录）', () => {
+  it('显式工作区显示末段目录名，完整路径进 title（Windows 反斜杠路径）', () => {
+    const html = renderLanes([note({ id: id('w1'), lane: TODO_LANE, workspace: 'D:\\codes\\my-app' })])
+    expect(html).toContain('工作区：D:\\codes\\my-app')
+    expect(html).toContain('my-app')
+  })
+
+  it('正斜杠路径与尾随分隔符同样取末段目录名', () => {
+    const html = renderLanes([note({ id: id('w2'), lane: TODO_LANE, workspace: 'D:/codes/other-app/' })])
+    expect(html).toContain('工作区：D:/codes/other-app/')
+    expect(html).toContain('other-app')
+  })
+
+  it('未指定工作区（缺省 = 执行时用设置默认值）不渲染工作区行', () => {
+    const html = renderLanes([note({ id: id('w3'), lane: TODO_LANE })])
+    expect(html).not.toContain('工作区：')
+  })
+})
+
+describe('TaskLanes 泳道卡定时展示', () => {
+  it('有日程：显示「周期 · 下次时刻」，title 带完整说明与上次结果', () => {
+    const next = new Date(2026, 0, 6, 9, 0, 0, 0).getTime();
+    const html = renderLanes([
+      note({
+        id: id('s1'),
+        lane: TODO_LANE,
+        schedule: { enabled: true, mode: 'daily', time: '09:00', nextAt: next, lastResult: '已派发' },
+      }),
+    ]);
+    expect(html).toContain('定时：每天 09:00');
+    expect(html).toContain('下次 2026-01-06 09:00');
+    expect(html).toContain('上次 已派发');
+  })
+
+  it('停用的日程不误导为「会跑」：显示定时已停用', () => {
+    const html = renderLanes([
+      note({ id: id('s2'), lane: TODO_LANE, schedule: { enabled: false, mode: 'interval', everyMin: 30, nextAt: 0 } }),
+    ]);
+    expect(html).toContain('定时已停用');
+  })
+
+  it('无日程的便签不渲染定时行', () => {
+    const html = renderLanes([note({ id: id('s3'), lane: TODO_LANE })]);
+    expect(html).not.toContain('定时');
+  })
+})
 
 describe('TaskLanes 泳道视图渲染', () => {
   it('五列按 待规划→待办→进行中→已完成→已失败 顺序渲染，空列有占位', () => {

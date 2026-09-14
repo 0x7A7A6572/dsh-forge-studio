@@ -68,6 +68,12 @@ describe('HELP_MARKDOWN 使用说明覆盖', () => {
     expect(HELP_MARKDOWN).toContain('接管')
   })
 
+  it('基础使用块说明任务清单（todolist）能力与完成度徽标', () => {
+    expect(HELP_MARKDOWN).toContain('任务清单')
+    expect(HELP_MARKDOWN).toContain('- [ ]')
+    expect(HELP_MARKDOWN).toContain('Ctrl+Shift+9')
+  })
+
   it('快捷键速查含 Esc 与 Ctrl+Enter', () => {
     expect(HELP_MARKDOWN).toContain('Esc')
     expect(HELP_MARKDOWN).toContain('Ctrl+Enter')

@@ -13,6 +13,9 @@
  *   tiptap 的装饰判定把「别名语言」也放行，这里给实例挂一个 registered。
  * - 图片：@tiptap/extension-image（base64 内联）——原 note-editor 定义挪来
  *   一处，避免编辑器与只读渲染各自配置漂移。
+ * - 待办清单：@tiptap/extension-task-list + task-item —— 节点名必须保持官方
+ *   `taskList` / `taskItem`（tiptap-markdown 的内置 Markdown 规格按扩展名匹配，
+ *   改名即丢 `- [ ]` / `- [x]` 存取），详见 NoteTaskListKit。
  */
 
 import StarterKit from '@tiptap/starter-kit'
@@ -23,6 +26,8 @@ import TableHeader from '@tiptap/extension-table-header'
 import TableCell from '@tiptap/extension-table-cell'
 import { CodeBlockLowlight } from '@tiptap/extension-code-block-lowlight'
 import Image from '@tiptap/extension-image'
+import TaskList from '@tiptap/extension-task-list'
+import TaskItem from '@tiptap/extension-task-item'
 import type { AnyExtension } from '@tiptap/core'
 import { Markdown } from 'tiptap-markdown'
 import { createLowlight, common } from 'lowlight'
@@ -109,6 +114,25 @@ export const NoteImage = Image.extend({
   },
 }).configure({ inline: true, allowBase64: true })
 
+/**
+ * 待办清单（todolist）扩展组：taskList + taskItem。
+ *
+ * 节点名必须保持官方名 `taskList` / `taskItem`：tiptap-markdown 的 Markdown 规格
+ * 是按**扩展名**回退的（getMarkdownSpec 用 extension.name 去内置 markdownExtensions
+ * 里找同名的 markdown spec），一旦改名，`- [ ]` / `- [x]` 的存取立刻失效。
+ * 官方 taskItem 的 `checked` 属性与内置规格的数据契约正好对齐：解析读
+ * `data-checked`（markdown-it-task-lists 的 updateDOM 写入），序列化按
+ * `attrs.checked` 输出 `- [x] ` / `- [ ] `，故 Markdown 往返零额外代码。
+ *
+ * nested:true 允许清单项下嵌套子列表（Tab 缩进/回车续行由官方键位处理，
+ * Mod-Shift-9 = 切换任务清单）。编辑与只读渲染共用同一份装配：只读态勾选框由
+ * 官方默认渲染为不可交互，展示勾选状态即可。
+ */
+export const NoteTaskListKit = (): AnyExtension[] => [
+  TaskList,
+  TaskItem.configure({ nested: true }),
+]
+
 /** 表格扩展组（table 需要 row/header/cell 三个伙伴节点才可实例化）。 */
 export const NoteTableKit = (): AnyExtension[] => [
   Table.configure({ resizable: false }),
@@ -130,7 +154,7 @@ export function noteLinkExtension(readonly: boolean): AnyExtension {
 }
 
 /**
- * 构造便签编辑器/只读渲染共用扩展列表。
+ * 构造便签编辑器/只读渲染共用扩展列表（代码高亮 / 图片 / 链接 / 待办清单 / 表格）。
  * StarterKit 默认带 codeBlock，需关掉换成 CodeBlockLowlight，避免节点重名。
  */
 export function buildNoteRichTextExtensions(
@@ -143,6 +167,7 @@ export function buildNoteRichTextExtensions(
     Markdown,
     opts.imageNode ?? NoteImage,
     noteLinkExtension(readonly),
+    ...NoteTaskListKit(),
     ...NoteTableKit(),
   ]
 }

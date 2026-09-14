@@ -17,6 +17,7 @@ import type { NoteColor, NotesConfig, TaskStatus } from '../../types.ts'
 import { quickAddStore } from '../core/quick-add.ts'
 import { t } from '../core/theme-tokens.ts'
 import { EditorPageDialog } from './editor-page-dialog.tsx'
+import type { NoteSaveOptions } from '../components/note-editor.tsx'
 
 /** create 收窄返回（host 侧 RemoteResult<NoteRecord> 的 ok 面；错误只取 message）。 */
 export interface QuickCreateResult {
@@ -25,7 +26,7 @@ export interface QuickCreateResult {
 }
 
 export interface QuickAddDialogProps {
-  /** 设置命名空间 scope（读 defaultTitle）。 */
+  /** 设置命名空间 scope（读 defaultTitle / defaultWorkspace）。 */
   readonly scope: SettingsScope<NotesConfig>
   /** 实际落库调用（index.ts 注入 notes.create + 错误映射）。 */
   readonly create: (input: {
@@ -33,7 +34,10 @@ export interface QuickAddDialogProps {
     text: string
     color?: NoteColor
     laneStatus?: TaskStatus
+    workspace?: string
   }) => Promise<QuickCreateResult>
+  /** 工作区候选（最近会话用过的 cwd）：打开浮层时拉一次；缺省 = 无候选。 */
+  readonly listWorkspaces?: () => Promise<readonly string[]>
   /** 保存成功回调（补刷侧栏徽标等）。 */
   readonly onCreated: () => void
 }
@@ -44,6 +48,10 @@ export function QuickAddDialog(props: QuickAddDialogProps): JSX.Element {
     () => quickAddStore.open,
   )
   const [error, setError] = useState<string | undefined>(undefined)
+  /** 工作区候选（最近会话用过的 cwd）：挂载即拉一次，失败静默降级空数组。 */
+  const [workspaces, setWorkspaces] = useState<readonly string[]>([])
+  /** 候选是否已加载完成：未就绪时「用默认」文案不写「（未配置）」（避免闪一下）。 */
+  const [workspacesReady, setWorkspacesReady] = useState(false)
 
   // Esc 关闭浮层：capture 阶段拦截并停传播，避免板内全局 Esc（开板时）抢收。
   useEffect(() => {
@@ -59,8 +67,32 @@ export function QuickAddDialog(props: QuickAddDialogProps): JSX.Element {
 
   // 打开时清掉上一次的残留错误提示。
   useEffect(() => {
-    if (open) setError(undefined)
+    if (!open) return
+    setError(undefined)
   }, [open])
+
+  // 工作区候选：挂载即拉（不等打开浮层）。等打开才拉的话，「用默认（目录）」会先渲染成
+  // 「未配置」、候选到达后再变成真目录——用户看到的就是「提示一闪而过」。
+  useEffect(() => {
+    const load = props.listWorkspaces
+    if (load === undefined) {
+      setWorkspacesReady(true)
+      return
+    }
+    let alive = true
+    void load()
+      .then((list) => {
+        if (alive) setWorkspaces(list)
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (alive) setWorkspacesReady(true)
+      })
+    return () => {
+      alive = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   if (!open) return <></>
 
@@ -68,14 +100,18 @@ export function QuickAddDialog(props: QuickAddDialogProps): JSX.Element {
     title: string,
     body: string,
     color: NoteColor,
-    lanePatch: { readonly on: boolean; readonly status: TaskStatus },
+    taskPatch: { readonly on: boolean; readonly status: TaskStatus; readonly workspace: string },
+    // 快捷新建只有 create 语义（保存即创建并关闭），options 收下即忽略。
+    _options?: NoteSaveOptions,
   ): Promise<void> => {
     setError(undefined)
+    const workspace = taskPatch.workspace.trim()
     const result = await props.create({
       title,
       text: body,
       color,
-      ...(lanePatch.on ? { laneStatus: lanePatch.status } : {}),
+      ...(taskPatch.on ? { laneStatus: taskPatch.status } : {}),
+      ...(workspace !== '' ? { workspace } : {}),
     })
     if (result.ok) {
       props.onCreated()
@@ -90,6 +126,11 @@ export function QuickAddDialog(props: QuickAddDialogProps): JSX.Element {
       <EditorPageDialog
         target={{ mode: 'create' }}
         defaultTitle={props.scope.getSnapshot().value?.defaultTitle ?? '新便签'}
+        defaultWorkspace={
+          props.scope.getSnapshot().value?.defaultWorkspace || workspaces[0] || ''
+        }
+        workspaceOptions={workspaces}
+        workspaceReady={workspacesReady}
         onCancel={() => quickAddStore.hide()}
         onSave={onSave}
       />

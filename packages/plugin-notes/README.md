@@ -10,7 +10,13 @@ dsh 便签插件：**独立便签板 UI**（侧栏入口 + 中间列面板，
   - `ctx.notes` 服务（storage-domain 持久化，`notes` 域，per-record 布局，
     记录带 `origin: 'user' | 'agent'` 来源标记，旧记录 schema 缺省回填 `user`）
   - 经 Typert Gateway 以 SRC 模式暴露 `notes/*` 端点，client 直连读写
-  - 设置命名空间 `forge-studio-notes`（`defaultTitle`）
+  - 设置命名空间 `forge-studio-notes`（`defaultTitle`、`defaultWorkspace`）
+  - **定时执行调度器**（`src/scheduler.ts`，随 host 启动的 30s tick，与 UI 是否打开
+    无关）：扫描 `note.schedule` 到期的任务便签 → 调 `taskExecute` 派发（与手动
+    「执行」同一条链路：新建会话 + 投递 + 租约）→ 把 `lastFiredAt/lastResult/nextAt`
+    写回。循环形态：一次性 / 间隔 N 分钟 / 每天 / 每周（可多选星期）/ 每月（不足时落
+    当月最后一天）。一次性触发成功后自动停用；循环跑完回到「待办」等下一周期；宿主
+    停机期错过的时点**不补跑**（`nextAt` 从当前时刻之后重算）；上一轮未结束时本轮跳过
   - **agent 桥（条件挂载，见 `src/agent/`）**：宿主装配 `tools`/`systemPrompt`
     时自动生效，无 agent 装配的宿主（纯 UI 数据后端）照常工作
 - **client**
@@ -31,16 +37,39 @@ dsh 便签插件：**独立便签板 UI**（侧栏入口 + 中间列面板，
       活动任务按列全量渲染、列内滚动；色筛行隐藏（列本身已按状态分列）、搜索
       仍可用；归档便签不进泳道，底部提示行一键切回列表管理
     - **泳道任务执行（AI 联动）**：非 running 卡 hover「执行」（done/failed 为
-      「重跑」）→ 一次性授权当前会话 AI 执行任务（读全文 → 置 running → 干活 →
-      落结果），running 卡常驻 spinner + 已耗时、hover「重置为待办」（超 30min
+      「重跑」）→ 一次性授权 AI 执行任务（读全文 → 置 running → 干活 → 落结果）。
+      执行**按任务工作区新建会话**（cwd = 工作区）并在新会话里跑，便签板所在会话
+      不被占用；running 卡常驻 spinner + 已耗时、hover「重置为待办」（超 30min
       弱提示「执行可能已中断，可重置」）；结果写回 run.summary，卡片首行摘要 +
       编辑器只读「任务与结果」区全文；手动改状态/取消任务即收回授权（接管）
+    - **工作区（执行目录）**：便签可选字段 `workspace`（绝对路径）。编辑器任务区
+      **下拉选择**（候选 = 最近会话用过的 cwd，只选不手填；选项只显示文件夹名，
+      同名冲突补父目录段，悬停看完整路径），留空回退运行时
+      `defaultWorkspace()` 三层兜底：设置里的 **默认工作区** → 最近会话用过的目录
+      → 宿主进程目录（`process.cwd()`）；全空才 `missing-workspace`。
+      泳道卡上有显式工作区时显示目录名（悬停看完整路径）。执行时优先按
+      **工作区注册表反查 workspaceId** 新建会话，新会话归入会话列表里对应的工作区
+      分组；反查不到（无注册表 / 目录不存在 / 目录未注册）退回 cwd（工作目录一样，
+      显示为「（未分组）」——即「没设工作区」该有的样子）
+    - **定时执行**：编辑器任务区的「定时」开关 + 周期（一次性 / 间隔 / 每天 / 每周 /
+      每月）+ 参数控件（原生 `datetime-local` / `time` / 数字，无新依赖），旁边显示
+      「下次：…」与「上次：…（含跳过原因）」；「设为任务」关掉即不显示（保存时清除
+      日程）。泳道卡挂一行「周期 · 下次时刻」（悬停看完整时刻与上次结果），停用的
+      日程显示「定时已停用」。字段是便签上的可选 `schedule`（与 `lane`/`workspace`
+      同款：旧记录无该字段，不升版本、不需迁移）
   - 便签可**归档**：归档后移出活动区、折叠在列表底部，可恢复/编辑/删除
-  - 正文以 Markdown 存储：格式操作栏（加粗/标题/列表/引用/代码/撤销重做），
-    `Ctrl+Enter` 保存；卡片展示 Markdown 摘要
+  - 正文以 Markdown 存储：格式操作栏（加粗/标题/列表/**任务清单**/引用/代码/
+    撤销重做）；查看 Markdown 摘要
+  - **任务清单（todolist）**：正文支持 \`- [ ]\` / \`- [x]\` 勾选清单——工具栏
+    「任务清单」按钮（\`Ctrl+Shift+9\`）插入，输入 \`- [ ] \` 自动转换，回车续行、
+    Tab 缩进成子项；勾选状态随 Markdown 原文存取（编辑/只读渲染/说明弹窗同源），
+    纸卡与行列表在标题旁显示完成度徽标（如 2/5，全勾完转 ✓）
+  - 保存：**编辑既有便签时自动保存**（改动停顿约 1 秒落盘，页脚有「自动保存 /
+    已自动保存」指示灯）+ `Ctrl+S` 立即保存——两者都**不关闭弹窗**；
+    `Ctrl+Enter` 与「保存」按钮是「保存并关闭」；新建态只走显式保存（保存即创建）
   - 编辑器内直接 **Ctrl+V 粘贴图片**（剪贴板图片 → data URL 内联进正文 Markdown）
-  - **便签板设置弹窗**（header 齿轮）：编辑默认标题，直接读写命名空间 scope，
-    不再占用插件设置页
+  - **便签板设置弹窗**（header 齿轮）：编辑默认标题与默认工作区，直接读写命名空间
+    scope，不再占用插件设置页
   - client 结构：`views/`（页面：面板主体/列表与编辑器弹窗）、`components/`
     （复用组件：纸卡/行/色筛/搜索与归档折叠/设置弹窗/编辑器等）、`core/`
     （状态/远程通道/纯函数/工具 + `sidebar-entry` 侧栏入口行 / `panel-mount`
@@ -60,11 +89,19 @@ dsh 便签插件：**独立便签板 UI**（侧栏入口 + 中间列面板，
    - agent 创建的便签标记 `origin='agent'`；UI/用户创建才是 `origin='user'`。
 2. **权限边界**（工具注册时的两层守卫，见下）。
 3. **执行租约（lease）**（`src/service.ts` + `src/agent/task-dispatch.ts`）：
-   泳道卡「执行」由 host 服务 `taskExecute` 一次性授予该任务 lease（绑定发起
-   会话），并投递结构化任务消息进当前会话；agent 经 `notes_task_set_status`
-   置 running → 执行 → `notes_task_report` 收尾写 run + 撤销 lease；guard 校验
-   租约存在且与调用会话一致。手动改状态/取消任务即撤销 lease（接管），agent
-   后续调用被拒（无 lease / 会话不符）。
+   泳道卡「执行」由 host 服务 `taskExecute` 解析工作区（便签 `workspace` >
+   `defaultWorkspace()`：设置值 → 最近会话目录 → 宿主进程目录）→
+   经 `ctx.sessionController.create({ workspaceId })`
+   （目录已注册为工作区时；否则退回 `create({ cwd })`）**新建执行会话** →
+   一次性授予该任务 lease（**绑定新会话 id**）→ 向新会话投递**首行 `⇲ 标题`**
+   的任务消息（正式说明压到末尾；会话列表只显示首行，故长前缀不进首行——一屏
+   派发会话才可分辨。执行协议由 `notes_task_*` 的工具说明承担，不逐字出现在
+   会话记录里）；agent 经 `notes_task_set_status` 置 running → 执行 →
+   `notes_task_report` 收尾写 run + 撤销 lease；guard 校验租约存在且与调用会话
+   一致。手动改状态/取消任务即撤销 lease（接管），agent 后续调用被拒（无 lease /
+   会话不符）。失败语义：无运行时 → `no-dispatch`（无副作用）；工作区缺失 →
+   `missing-workspace`（无副作用）；新建会话/prompt 抛错 → `dispatch-failed`
+   （回滚 lane/run 与 lease）。
 
 ### 写操作审批与 guard
 

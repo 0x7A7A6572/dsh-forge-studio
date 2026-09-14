@@ -7,9 +7,10 @@
 
 import type { NoteRecord } from '../../types.ts'
 import { NOTE_INK, NOTE_INK_MUTED, noteColorMeta } from '../core/note-colors.ts'
-import { mdSnippet, firstImageUrl } from '../core/markdown-text.ts'
+import { mdSnippet, firstImageUrl, todoProgress } from '../core/markdown-text.ts'
 import { fmtDateTime, fmtRelative } from '../core/time-text.ts'
 import { TaskBadge } from './task-badge.tsx'
+import { TodoBadge } from './todo-badge.tsx'
 import { PinnedCornerMark } from './pin-corner.tsx'
 import { Archive, ArchiveRestore, Pencil, Pin, Trash2 } from 'lucide-react'
 
@@ -40,6 +41,7 @@ export function NoteCard(props: NoteCardProps): JSX.Element {
   const meta = noteColorMeta(note.color)
   const snippet = note.text ? mdSnippet(note.text, 140) : ''
   const thumb = note.text ? firstImageUrl(note.text) : null
+  const todo = note.text ? todoProgress(note.text) : null
   return (
     <li>
       <div
@@ -70,6 +72,7 @@ export function NoteCard(props: NoteCardProps): JSX.Element {
             {note.title || <span style={{ color: NOTE_INK_MUTED }}>（无标题）</span>}
           </span>
           {note.lane && <TaskBadge lane={note.lane} />}
+          {todo && <TodoBadge done={todo.done} total={todo.total} />}
         </span>
         {thumb && (
           <span style={cardThumbWrap}>

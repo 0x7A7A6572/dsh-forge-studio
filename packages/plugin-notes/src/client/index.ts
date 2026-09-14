@@ -14,7 +14,6 @@ import { Context } from '@deepseek-ai/cordis'
 // 载入 renderer 的 Context 增广（ctx.slots），type-only，无运行时依赖。
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // 载入会话控制器的 client 面类型（ctx.sessions），type-only，无运行时依赖。
-import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { NotesConfig } from '../types.ts'
 import { NOTES_NAMESPACE } from '../types.ts'
 import { mountNotesRemote, notesOf } from './core/notes-remote.ts'
@@ -38,16 +37,11 @@ export function apply(ctx: Context): void {
       // 命名空间 scope：设置弹窗读写 defaultTitle（便签板内，不再走插件设置页）。
       const scope = ctx.settingsScope.bind<NotesConfig>({ namespace: NOTES_NAMESPACE })
 
+      // 执行不再依赖「当前会话」：host 按工作区新建会话后投递（见 task-dispatch），
+      // 便签板因此在哪里打开都能执行任务。
       const face = (): NotesBoardFace => ({
         notes,
         scope,
-        // 会话 id（执行投递目标）：惰性读 ctx.sessions 的当前选中会话
-        // （session-controller client 在宿主 Web shell 恒装配；不可得时降级空串，
-        // 由 board-view 的 §8 提示兜底，见 board-view.currentSessionId）。
-        currentSessionId: () => {
-          const sessions = ctx.get('sessions') as ISessions | undefined
-          return sessions?.list.getSnapshot().current ?? ''
-        },
       })
 
       // DOM 挂载失败只降级便签板，绝不能把整个 GUI 拖垮（web shell 在插件
@@ -69,10 +63,16 @@ export function apply(ctx: Context): void {
                     text: input.text,
                     color: input.color,
                     ...(input.laneStatus !== undefined ? { laneStatus: input.laneStatus } : {}),
+                    ...(input.workspace !== undefined ? { workspace: input.workspace } : {}),
                   })
                   if (result.ok) return { ok: true }
                   const err = result as { error?: { message?: string } }
                   return { ok: false, error: err.error }
+                },
+                // 工作区候选（任务开关的下拉）：只读端点，失败即「无候选」。
+                listWorkspaces: async () => {
+                  const result = await notes.listWorkspaces()
+                  return result.ok ? result.value : []
                 },
                 onCreated: () => {
                   void refreshNotesStats()

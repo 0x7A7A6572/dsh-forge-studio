@@ -108,3 +108,35 @@ describe('notesDomain leases 表', () => {
     expect(parsed).toEqual({ noteId: 'n1', sessionId: 's1', grantedAt: 1 })
   })
 })
+
+describe('noteRecordSchema schedule 校验', () => {
+  it('无 schedule 的旧记录解析后为 undefined（不回填、不炸库）', () => {
+    expect(noteRecordSchema.parse(LEGACY).schedule).toBeUndefined();
+  })
+
+  it('合法日程（含 lastFiredAt/lastResult）原样透传', () => {
+    const schedule = { enabled: true, mode: 'daily', time: '09:00', nextAt: 100, lastFiredAt: 50, lastResult: '已派发' };
+    expect(noteRecordSchema.parse({ ...LEGACY, schedule }).schedule).toEqual(schedule);
+  })
+
+  it('五种模式都可解析', () => {
+    const modes = [
+      { enabled: true, mode: 'once', at: 1, nextAt: 1 },
+      { enabled: true, mode: 'interval', everyMin: 30, nextAt: 1 },
+      { enabled: true, mode: 'daily', time: '09:00', nextAt: 1 },
+      { enabled: true, mode: 'weekly', time: '09:00', weekdays: [1, 3], nextAt: 1 },
+      { enabled: true, mode: 'monthly', time: '09:00', monthDay: 1, nextAt: 1 },
+    ];
+    for (const schedule of modes) {
+      expect(noteRecordSchema.parse({ ...LEGACY, schedule }).schedule).toEqual(schedule);
+    }
+  })
+
+  it('非法 mode 被拒绝', () => {
+    expect(() => noteRecordSchema.parse({ ...LEGACY, schedule: { enabled: true, mode: 'cron', nextAt: 1 } })).toThrow();
+  })
+
+  it('缺 nextAt 被拒绝（nextAt 是 host 计算的权威字段，必填）', () => {
+    expect(() => noteRecordSchema.parse({ ...LEGACY, schedule: { enabled: true, mode: 'daily', time: '09:00' } })).toThrow();
+  })
+})

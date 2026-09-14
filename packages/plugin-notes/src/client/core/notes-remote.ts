@@ -20,14 +20,16 @@ import type {
   TypertRemoteNamespace,
   TypertSchema,
 } from '@deepseek-ai/dsh-typert-protocol'
-import { normalizeNoteColor, NOTE_COLORS } from '../../types.ts'
+import { normalizeNoteColor, NOTE_COLORS, SCHEDULE_MODES } from '../../types.ts'
 import type {
   NoteColor,
   NoteCreateInput,
   NoteId,
   NoteRecord,
   NoteRun,
+  NoteScheduleInput,
   NoteUpdateInput,
+  ScheduleMode,
   TaskStatus,
 } from '../../types.ts'
 import type {
@@ -79,14 +81,6 @@ const idSchema: TypertSchema<NoteId> = {
 const booleanSchema: TypertSchema<boolean> = {
   parse(value) {
     if (typeof value !== 'boolean') throw new Error('expected boolean')
-    return value
-  },
-}
-
-/** sessionId 字段校验：非空字符串（任务执行投递会话标识）。 */
-const sessionIdSchema: TypertSchema<string> = {
-  parse(value) {
-    if (typeof value !== 'string') throw new Error('expected non-empty sessionId string')
     return value
   },
 }
@@ -148,15 +142,74 @@ function parseOptionalLane(value: unknown): { status?: TaskStatus; run?: NoteRun
   }
 }
 
+/**
+ * 可选 schedule 校验（strict 形状）：undefined 放行；null 表示「清除」（仅 update 用，
+ * create 侧由调用点拒绝）；对象则逐字段校验——语义合法性（如每周是否给了星期）留给
+ * host 的 sanitizeSchedule，这里只保证「不会把垃圾形状写进库」。
+ */
+function parseOptionalSchedule(value: unknown): NoteScheduleInput | null | undefined {
+  if (value === undefined) return undefined
+  if (value === null) return null
+  if (!isRecord(value)) throw new Error('expected schedule object')
+  if (typeof value.enabled !== 'boolean') throw new Error('expected schedule.enabled: boolean')
+  if (typeof value.mode !== 'string' || !(SCHEDULE_MODES as readonly string[]).includes(value.mode)) {
+    throw new Error(`expected schedule.mode in ${SCHEDULE_MODES.join('|')}`)
+  }
+  const optionalNumber = (raw: unknown, name: string): number | undefined => {
+    if (raw === undefined) return undefined
+    if (typeof raw !== 'number' || !Number.isFinite(raw)) throw new Error(`expected ${name}: number`)
+    return raw
+  }
+  if (value.time !== undefined && typeof value.time !== 'string') throw new Error('expected schedule.time?: string')
+  if (value.lastResult !== undefined && typeof value.lastResult !== 'string') {
+    throw new Error('expected schedule.lastResult?: string')
+  }
+  let weekdays: number[] | undefined
+  if (value.weekdays !== undefined) {
+    if (!Array.isArray(value.weekdays)) throw new Error('expected schedule.weekdays?: number[]')
+    weekdays = value.weekdays.map((day) => {
+      if (typeof day !== 'number' || !Number.isInteger(day)) throw new Error('expected schedule.weekdays entries: integer')
+      return day
+    })
+  }
+  const at = optionalNumber(value.at, 'schedule.at')
+  const everyMin = optionalNumber(value.everyMin, 'schedule.everyMin')
+  const monthDay = optionalNumber(value.monthDay, 'schedule.monthDay')
+  const nextAt = optionalNumber(value.nextAt, 'schedule.nextAt')
+  const lastFiredAt = optionalNumber(value.lastFiredAt, 'schedule.lastFiredAt')
+  const failureStreak = optionalNumber(value.failureStreak, 'schedule.failureStreak')
+  const runCount = optionalNumber(value.runCount, 'schedule.runCount')
+  return {
+    enabled: value.enabled,
+    mode: value.mode as ScheduleMode,
+    ...(at !== undefined ? { at } : {}),
+    ...(everyMin !== undefined ? { everyMin } : {}),
+    ...(value.time !== undefined ? { time: value.time } : {}),
+    ...(weekdays !== undefined ? { weekdays } : {}),
+    ...(monthDay !== undefined ? { monthDay } : {}),
+    ...(nextAt !== undefined ? { nextAt } : {}),
+    ...(lastFiredAt !== undefined ? { lastFiredAt } : {}),
+    ...(value.lastResult !== undefined ? { lastResult: value.lastResult } : {}),
+    ...(failureStreak !== undefined ? { failureStreak } : {}),
+    ...(runCount !== undefined ? { runCount } : {}),
+  }
+}
+
 const createInputSchema: TypertSchema<NoteCreateInput> = {
   parse(value) {
     if (!isRecord(value) || typeof value.text !== 'string') throw new Error('expected { text: string }')
     if (value.title !== undefined && typeof value.title !== 'string') throw new Error('expected title?: string')
+    if (value.workspace !== undefined && typeof value.workspace !== 'string') throw new Error('expected workspace?: string')
+    // 新建不接受 null（没有「清除」语义），只接受对象或缺省。
+    const schedule = parseOptionalSchedule(value.schedule)
+    if (schedule === null) throw new Error('expected schedule object')
     return {
       title: value.title,
       text: value.text,
       color: parseOptionalColor(value.color),
       ...(value.laneStatus !== undefined ? { laneStatus: parseOptionalTaskStatus(value.laneStatus) } : {}),
+      ...(value.workspace !== undefined ? { workspace: value.workspace } : {}),
+      ...(schedule !== undefined ? { schedule } : {}),
     }
   },
 }
@@ -168,6 +221,10 @@ const updateInputSchema: TypertSchema<NoteUpdateInput> = {
     if (value.text !== undefined && typeof value.text !== 'string') throw new Error('expected text?: string')
     if (value.pinned !== undefined && typeof value.pinned !== 'boolean') throw new Error('expected pinned?: boolean')
     if (value.archived !== undefined && typeof value.archived !== 'boolean') throw new Error('expected archived?: boolean')
+    // workspace：字符串透传；空串是「清除」信号（host 侧 trim 后为空即删字段）。
+    if (value.workspace !== undefined && typeof value.workspace !== 'string') throw new Error('expected workspace?: string')
+    // schedule：undefined 放行（保留原值）；null = 清除（取消定时）；对象 = 整体替换。
+    const schedule = parseOptionalSchedule(value.schedule)
     return {
       title: value.title,
       text: value.text,
@@ -175,6 +232,8 @@ const updateInputSchema: TypertSchema<NoteUpdateInput> = {
       archived: value.archived,
       color: parseOptionalColor(value.color),
       ...(value.lane !== undefined ? { lane: parseOptionalLane(value.lane) } : {}),
+      ...(value.workspace !== undefined ? { workspace: value.workspace } : {}),
+      ...(schedule !== undefined ? { schedule } : {}),
     }
   },
 }
@@ -185,7 +244,10 @@ const json: TypertCodec = { mode: 'src-json' }
 /** 任务执行事务结果（与 host NotesService.taskExecute 返回值一致，client 不解析）。 */
 export type TaskExecuteResult =
   | { readonly ok: true; readonly note: NoteRecord }
-  | { readonly ok: false; readonly reason: 'missing' | 'busy' | 'no-dispatch' | 'dispatch-failed' }
+  | {
+      readonly ok: false
+      readonly reason: 'missing' | 'busy' | 'missing-workspace' | 'no-dispatch' | 'dispatch-failed'
+    }
 
 /** 任务重置结果（与 host NotesService.taskReset 返回值一致，client 不解析）。 */
 export type TaskResetResult = { readonly ok: true; readonly note: NoteRecord } | { readonly ok: false }
@@ -233,10 +295,12 @@ export const notesRemoteContribution: TypertRemoteContribution = {
     descriptor('delete', [
       { name: 'id', wire: 'id', source: 'json', codec: strict('NoteId', idSchema) },
     ]),
+    // 执行 = host 按工作区新建会话后投递（不再向承载便签板的会话投递，故无 sessionId）。
     descriptor('taskExecute', [
       { name: 'id', wire: 'id', source: 'json', codec: strict('NoteId', idSchema) },
-      { name: 'sessionId', wire: 'sessionId', source: 'json', codec: strict('sessionId', sessionIdSchema) },
     ]),
+    // 工作区候选（最近会话用过的 cwd，供设置/编辑器下拉）：只读、永不抛（降级空数组）。
+    descriptor('listWorkspaces', []),
     descriptor('taskReset', [
       { name: 'id', wire: 'id', source: 'json', codec: strict('NoteId', idSchema) },
     ]),
@@ -268,7 +332,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'notes/update': (id: NoteId, patch: NoteUpdateInput) => Promise<RemoteResult<NoteRecord | undefined>>
     'notes/setPinned': (id: NoteId, pinned: boolean) => Promise<RemoteResult<NoteRecord | undefined>>
     'notes/delete': (id: NoteId) => Promise<RemoteResult<boolean>>
-    'notes/taskExecute': (id: NoteId, sessionId: string) => Promise<RemoteResult<TaskExecuteResult>>
+    'notes/taskExecute': (id: NoteId) => Promise<RemoteResult<TaskExecuteResult>>
+    'notes/listWorkspaces': () => Promise<RemoteResult<readonly string[]>>
     'notes/taskReset': (id: NoteId) => Promise<RemoteResult<TaskResetResult>>
     'notes/webdavBackup': () => Promise<RemoteResult<WebdavBackupResult>>
     'notes/webdavList': () => Promise<RemoteResult<WebdavListResult>>
@@ -290,7 +355,8 @@ export interface NotesRemote {
   update(id: NoteId, patch: NoteUpdateInput): Promise<RemoteResult<NoteRecord | undefined>>
   setPinned(id: NoteId, pinned: boolean): Promise<RemoteResult<NoteRecord | undefined>>
   delete(id: NoteId): Promise<RemoteResult<boolean>>
-  taskExecute(id: NoteId, sessionId: string): Promise<RemoteResult<TaskExecuteResult>>
+  taskExecute(id: NoteId): Promise<RemoteResult<TaskExecuteResult>>
+  listWorkspaces(): Promise<RemoteResult<readonly string[]>>
   taskReset(id: NoteId): Promise<RemoteResult<TaskResetResult>>
   webdavBackup(): Promise<RemoteResult<WebdavBackupResult>>
   webdavList(): Promise<RemoteResult<WebdavListResult>>

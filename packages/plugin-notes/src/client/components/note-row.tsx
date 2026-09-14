@@ -10,9 +10,10 @@ import {
   NOTE_INK_MUTED,
   noteColorMeta,
 } from "../core/note-colors.ts";
-import { mdSnippet } from "../core/markdown-text.ts";
+import { mdSnippet, todoProgress } from "../core/markdown-text.ts";
 import { fmtRelative } from "../core/time-text.ts";
 import { TaskBadge } from "./task-badge.tsx";
+import { TodoBadge } from "./todo-badge.tsx";
 import { PinnedCornerMark } from "./pin-corner.tsx";
 import {
   Archive,
@@ -47,6 +48,7 @@ export function NoteRow(props: NoteRowProps): JSX.Element {
   const { note } = props;
   const meta = noteColorMeta(note.color);
   const snippet = note.text ? mdSnippet(note.text, 160) : "";
+  const todo = note.text ? todoProgress(note.text) : null;
   return (
     <li>
       <div
@@ -82,6 +84,7 @@ export function NoteRow(props: NoteRowProps): JSX.Element {
               )}
             </span>
             {note.lane && <TaskBadge lane={note.lane} />}
+            {todo && <TodoBadge done={todo.done} total={todo.total} />}
           </span>
           {snippet && <span style={snippetStyle}>{snippet}</span>}
           <time

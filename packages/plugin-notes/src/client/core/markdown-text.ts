@@ -2,6 +2,7 @@
  * Markdown → 纯文本摘要工具（仅用于列表/搜索预览，不触碰存储原文）。
  * 便签正文以 Markdown 存储；卡片行展示时先剥掉语法标记得到可读纯文本。
  * 不依赖任何解析库：面向显示的子集剥离 + 空白折叠，输出永不抛错。
+ * 另有 todoProgress：只统计正文里的 Markdown 待办项完成度（纸卡/行列表徽标用）。
  */
 
 /** 剥掉常见 Markdown 语法标记，返回可读纯文本（单行、无语法符号）。 */
@@ -49,6 +50,35 @@ export function mdSnippet(md: string, maxLength = 120): string {
   const plain = mdToPlainText(md)
   if (plain.length <= maxLength) return plain
   return `${plain.slice(0, maxLength)}…`
+}
+
+/** 待办清单完成度：done = 已勾选数，total = 总项数（total > 0 时才有意义）。 */
+export interface TodoProgress {
+  readonly done: number
+  readonly total: number
+}
+
+/**
+ * 待办项识别：可选的缩进 + 列表标记（- * + 或 1. / 1)）+ 勾选框 `[ ]` / `[x]`。
+ * 允许任意缩进（嵌套清单里同样计数）。
+ */
+const TODO_ITEM_RE = /^[ \t]*(?:[-*+]|\d+[.)])[ \t]+\[([ xX])\](?=[ \t]|$)/gm
+
+/**
+ * 统计正文里的 Markdown 待办项（`- [ ]` / `- [x]`）：返回 { done, total }；
+ * 正文没有待办项时返回 null（调用方据此不显示徽标）。围栏代码块（```/~~~）
+ * 整体剔除后再统计——写在代码示例里的勾选框不算真清单。纯文本扫描，不解析、不抛错。
+ */
+export function todoProgress(md: string): TodoProgress | null {
+  if (!md) return null
+  const body = md.replace(/```[\s\S]*?```/g, '').replace(/~~~[\s\S]*?~~~/g, '')
+  let done = 0
+  let total = 0
+  for (const item of body.matchAll(TODO_ITEM_RE)) {
+    total += 1
+    if (item[1] !== ' ') done += 1
+  }
+  return total > 0 ? { done, total } : null
 }
 
 /**
