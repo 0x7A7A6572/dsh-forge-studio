@@ -31,6 +31,8 @@ import type {
 export const MEMORY_RAW_LIMIT = 200
 /** 审计保留上限。 */
 export const MEMORY_AUDIT_LIMIT = 500
+/** 单条记忆的正文上限（字符）。超限拒绝写入，逼源头写短，而不是静默截断。 */
+export const MEMORY_CONTENT_LIMIT = 800
 /** 摄取条目的默认重要性（用户主动整理过的内容，高于自动提炼的 3）。 */
 export const IMPORT_IMPORTANCE = 4
 
@@ -63,6 +65,15 @@ function normalizeTags(tags: readonly string[] | undefined): string[] {
     if (trimmed !== '' && !out.includes(trimmed)) out.push(trimmed)
   }
   return out
+}
+
+/** 超限就抛可读错误；调用方（工具 / 面板 / 摄取）自己决定怎么处理。 */
+function assertContentWithinLimit(text: string): void {
+  if (text.length <= MEMORY_CONTENT_LIMIT) return
+  throw new Error(
+    '记忆内容超出上限：当前 ' + text.length + ' 字，上限 ' + MEMORY_CONTENT_LIMIT
+    + ' 字。请精简后再写入（同标题合并后的总长也受此限制）。',
+  )
 }
 
 /** 同一条目的重复写入：新内容已包含在旧内容里就保留旧的，否则追加一行。 */
@@ -265,26 +276,34 @@ export class MemoryService extends TypertRemoteService {
   private async applyItems(
     items: readonly ParsedMemoryItem[],
     target: { scope: MemoryScope; projectPath: string; source: string; importance: number },
-  ): Promise<{ added: number; merged: number; recordIds: string[] }> {
+  ): Promise<{ added: number; merged: number; skipped: number; recordIds: string[] }> {
     let added = 0
     let merged = 0
+    let skipped = 0
     const recordIds: string[] = []
     for (const item of items) {
       const existing = this.findByTitle(item.title, target.scope, target.projectPath, item.kind)
-      const saved = await this.save({
-        title: item.title,
-        content: item.content,
-        kind: item.kind,
-        scope: target.scope,
-        ...(target.projectPath !== '' ? { projectPath: target.projectPath } : {}),
-        importance: target.importance,
-        source: target.source,
-      })
+      let saved: MemoryRecord
+      try {
+        saved = await this.save({
+          title: item.title,
+          content: item.content,
+          kind: item.kind,
+          scope: target.scope,
+          ...(target.projectPath !== '' ? { projectPath: target.projectPath } : {}),
+          importance: target.importance,
+          source: target.source,
+        })
+      } catch {
+        // 单条不合格（超长、缺字段）只跳过这一条，不让整批导入失败。
+        skipped += 1
+        continue
+      }
       recordIds.push(saved.id)
       if (existing === undefined) added += 1
       else merged += 1
     }
-    return { added, merged, recordIds }
+    return { added, merged, skipped, recordIds }
   }
 
   private findByTitle(title: string, scope: MemoryScope, projectPath: string, kind: MemoryKind): MemoryRecord | undefined {
@@ -479,7 +498,7 @@ export class MemoryService extends TypertRemoteService {
     return {
       added: applied.added,
       merged: applied.merged,
-      skipped: parsed.skipped,
+      skipped: parsed.skipped + applied.skipped,
       removed,
       rawId: raw.id,
       origin,
@@ -502,7 +521,7 @@ export class MemoryService extends TypertRemoteService {
     return {
       added: applied.added,
       merged: applied.merged,
-      skipped: parsed.skipped,
+      skipped: parsed.skipped + applied.skipped,
       removed: 0,
       rawId,
       origin: doc.origin,
@@ -658,9 +677,11 @@ export class MemoryService extends TypertRemoteService {
     const now = Date.now()
     const existing = this.findByTitle(title, scope, projectPath, kind)
     if (existing !== undefined) {
+      const mergedContent = mergeContent(existing.content, content)
+      assertContentWithinLimit(mergedContent)
       const merged: MemoryRecord = {
         ...existing,
-        content: mergeContent(existing.content, content),
+        content: mergedContent,
         importance: Math.max(existing.importance, clampImportance(input.importance)),
         tags: normalizeTags([...existing.tags, ...(input.tags ?? [])]),
         pinned: input.pinned ?? existing.pinned,
@@ -670,6 +691,7 @@ export class MemoryService extends TypertRemoteService {
       await this.memories.put(merged.id, merged)
       return merged
     }
+    assertContentWithinLimit(content)
     const record: MemoryRecord = {
       id: brandString<MemoryId>(randomUUID()),
       kind,
@@ -705,6 +727,7 @@ export class MemoryService extends TypertRemoteService {
     if (title === '') throw new Error('memory title must not be empty')
     const content = patch.content === undefined ? current.content : patch.content.trim()
     if (content === '') throw new Error('memory content must not be empty')
+    assertContentWithinLimit(content)
     const next: MemoryRecord = {
       ...current,
       title,
@@ -800,7 +823,9 @@ export class MemoryService extends TypertRemoteService {
       let content = keeper.content
       const tags = new Set(keeper.tags)
       for (const extra of bucket.slice(1)) {
-        content = mergeContent(content, extra.content)
+        const candidate = mergeContent(content, extra.content)
+        // 合并不得顶破上限：顶破就保留现有正文（本来与 keeper 同标题），只并标签。
+        if (candidate.length <= MEMORY_CONTENT_LIMIT) content = candidate
         for (const tag of extra.tags) tags.add(tag)
       }
       const tidied: MemoryRecord = {

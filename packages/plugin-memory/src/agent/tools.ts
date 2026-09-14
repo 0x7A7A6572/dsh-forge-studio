@@ -171,10 +171,13 @@ function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): voi
       'Persist one memory entry for future sessions (user preferences, identity, project state, decisions). '
       + 'Merges into an existing entry when the title matches, so repeated saves never duplicate. '
       + 'scope=global for anything true across projects (tone, format, style, identity, broad preferences); '
-      + 'scope=project for habits/decisions that only hold for one workspace directory.',
+      + 'scope=project for habits/decisions that only hold for one workspace directory. '
+      + 'Keep the body short and conclusion-only: it is capped at 800 characters (the merged length counts too) '
+      + 'and an over-limit save is rejected, not truncated. Skip task progress, in-flight snapshots, and '
+      + 're-runnable verification results (tests pass / tsc clean / build ok).',
     parameters: {
       title: { type: 'string', required: true, description: 'Short unique title; the dedup key within a scope.' },
-      content: { type: 'string', required: true, description: 'The memory body, in the user\'s own wording when possible.' },
+      content: { type: 'string', required: true, description: 'The memory body, in the user\'s own wording when possible. Conclusion-only, <=800 chars (hard cap).' },
       scope: {
         type: 'string',
         required: true,
