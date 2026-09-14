@@ -105,7 +105,7 @@ const ENTRY_CSS = `
   align-items: center;
   flex: none;
   margin-left: auto;
-  padding: 0 5px;
+  padding: 2px 5px;
   border-radius: 3px;
   background: #e3b341;
   color: #2e2a22;
