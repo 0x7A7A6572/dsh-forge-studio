@@ -26,7 +26,17 @@ Git 提交的作者过滤按以下优先级取值，三级皆空时不过滤：
 
 - host：`src/index.ts` 打开 `daily_log` 域（storage-domain 三表 sources/reports/templates）→ 提供 `ctx.dailyLog` 服务（Typert remote 直连）→ 注册设置命名空间 → 装配数据源 provider + agent 工具桥。
 - 数据源：`src/sources/{git,claude,codex,dsh}.ts`（`claude`/`codex` 共用 `conversation-jsonl.ts` 解析器；`dsh.ts` 自带多帧 zstd 解码与注入源过滤）；扫描结果经 `src/agent/scan-render.ts` 分层渲染（index / summary / raw）后交给 agent。
-- client：`src/client/index.ts` 挂 `ctx.remote.dailyLog.*` 远程通道 → 侧栏入口行（DOM 注入 + MutationObserver 自愈）→ 中间列面板接管（`dsh-panel-activate` 广播 + 多面板互斥）。
+- client：`src/client/index.ts` 挂 `ctx.remote.dailyLog.*` 远程通道 → 在 **dsh 设置面板**注册一级分区「工作报告」（`settings.section`，声明感知注入，与加载顺序无关）。
+
+## 界面（设置里的一级分区）
+
+入口统一收在 **设置 → 工作报告**（不再占用侧栏与会话区）。分区内：
+
+- 顶部「对话式生成」模块：说明怎么用左侧对话生成，显示当前默认模板与数据源数量，按钮「去对话生成」直接关掉设置回到会话；
+- 页签 **报告 / 数据源 / 模板**（带计数）；
+- 三页统一走 dsh 的卡片语言（0.5px 描边卡片 + 卡片栅格 + 分组小标题 + 虚线新增位），样式`src/client/views/ui-css.ts`只注入一次，选择器挂在分区根标记下；长正文（报告正文 / 模板预览）在卡片内滚动，展开的报告横跨整行。
+
+视图文件：`views/section.tsx`（分区外壳）/ `sources-view.tsx`（数据源 + 两个弹窗）/ `reports-view.tsx` / `templates-view.tsx` / `parts.tsx`（共用小件）/ `ui-css.ts`（样式）。弹窗走宿主 `Modal` 原语（body portal），内容包一层同根标记以命中分区样式。
 
 ## 启用进 web profile
 
