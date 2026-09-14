@@ -177,6 +177,23 @@ export function parseCapturedItems(text: string): CapturedItem[] {
   return items
 }
 
+/**
+ * 取一个服务：先走服务注册表（ctx.get），再试属性访问（ctx.llm）。
+ * 本插件只声明了部分 inject，属性访问未必看得见别的服务；两条都试，
+ * 都没有才算不可用 —— 未声明的服务访问可能直接抛，所以两条都要包 try。
+ */
+function serviceOf<T>(ctx: Context, name: string): T | undefined {
+  try {
+    const viaGet = (ctx as unknown as { get?: (key: string) => unknown }).get?.(name)
+    if (viaGet !== undefined && viaGet !== null) return viaGet as T
+  } catch { /* 落到属性访问 */ }
+  try {
+    const viaProp = (ctx as unknown as Record<string, unknown>)[name]
+    if (viaProp !== undefined && viaProp !== null) return viaProp as T
+  } catch { /* 没有这个服务 */ }
+  return undefined
+}
+
 /** 当前可用的模型路由；拿不到返回 undefined（本次不提炼）。 */
 function resolveRoute(ctx: Context, session: unknown): { provider: string; model: string } | undefined {
   try {
@@ -189,8 +206,8 @@ function resolveRoute(ctx: Context, session: unknown): { provider: string; model
     }
   } catch { /* 落到 agentDefaultModel */ }
   try {
-    const selection = (ctx as unknown as { agentDefaultModel?: { currentSelection?: () => unknown } })
-      .agentDefaultModel?.currentSelection?.()
+    const selection = serviceOf<{ currentSelection?: () => unknown }>(ctx, 'agentDefaultModel')
+      ?.currentSelection?.()
     const record = asRecord(selection)
     const provider = record?.provider
     const model = record?.model
@@ -208,7 +225,7 @@ function resolveRoute(ctx: Context, session: unknown): { provider: string; model
  * 原文都已经在库里，之后可以对同一份原文重抽（reingest），不会有"这次没记就永远丢了"。
  * 转录按会话归并成一份（后一轮覆盖前一轮，转录本身是累积的），不会越滚越多。
  */
-async function captureOne(ctx: Context, service: MemoryService, session: unknown): Promise<void> {
+export async function captureOne(ctx: Context, service: MemoryService, session: unknown): Promise<void> {
   const transcript = collectTranscript(session)
   if (transcript.length < 80) return
   const id = (session as { id?: unknown } | undefined)?.id
@@ -238,11 +255,32 @@ async function captureOne(ctx: Context, service: MemoryService, session: unknown
     ctx.logger?.warn?.('[plugin-memory] capture archive skipped: ' + errorText(error))
   }
 
-  // 2) 模型抽取（拿不到路由 / 没有 llm 服务就到此为止，转录已留档）。
+  // 2) 模型抽取。拿不到路由 / 没有 llm 服务时到此为止（转录已留档），但**留一条
+  //    失败审计**：静默跳过会让「模型觉得不值得记」和「这一步坏了」长得一模一样。
   const route = resolveRoute(ctx, session)
-  if (route === undefined) return
-  const llm = (ctx as unknown as { llm?: { stream?: (options: unknown) => AsyncIterable<unknown> } }).llm
-  if (llm?.stream === undefined) return
+  const llm = serviceOf<{ stream?: (options: unknown) => AsyncIterable<unknown> }>(ctx, 'llm')
+  if (route === undefined || llm?.stream === undefined) {
+    const reason = route === undefined ? '拿不到模型路由，本次未提炼' : 'llm 服务不可用，本次未提炼'
+    ctx.logger?.warn?.('[plugin-memory] capture skipped: ' + reason)
+    try {
+      await service.recordAudit({
+        kind: 'capture',
+        provider: route?.provider ?? 'unknown',
+        model: route?.model ?? 'unknown',
+        ok: false,
+        durationMs: 0,
+        inputChars: transcript.length,
+        outputChars: 0,
+        recordIds: [],
+        ...(rawId !== undefined ? { rawId } : {}),
+        ...(sessionId !== undefined ? { sessionId } : {}),
+        error: reason,
+      })
+    } catch (error) {
+      ctx.logger?.warn?.('[plugin-memory] capture audit skipped: ' + errorText(error))
+    }
+    return
+  }
 
   const startedAt = Date.now()
   const controller = new AbortController()

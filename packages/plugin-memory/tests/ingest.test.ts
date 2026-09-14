@@ -13,7 +13,7 @@ import { Context } from '@deepseek-ai/cordis'
 import {
   compareRawDocuments, dedupeParsedItems, MemoryService, prunableRawIds, rawTitleOf,
 } from '../src/service.ts'
-import { readUsage } from '../src/agent/capture.ts'
+import { captureOne, readUsage } from '../src/agent/capture.ts'
 import type { MemoryRawDocument } from '../src/types.ts'
 
 /** 每个表一个假的 Map 后端（service 只用到 get / entries / put / delete）。 */
@@ -280,3 +280,75 @@ describe('纯函数：去重 / 标题 / 保留上限', () => {
     expect(ordered.map((item) => item.id)).toEqual(['c', 'b', 'a'])
   })
 })
+
+/** 提炼路径需要一个 ctx（取 llm / agentDefaultModel）与一个 service。 */
+function captureHarness() {
+  const tables = { memories: fakeTable(), raw_documents: fakeTable(), audits: fakeTable() }
+  const domain = { table: (name: keyof typeof tables) => tables[name] }
+  const ctx = new Context()
+  return { ctx, service: new MemoryService(ctx, { domain } as never) }
+}
+
+const LONG_TURN = '这是一段足够长的对话内容，用来越过八十字符的静默门槛。'.repeat(4)
+
+const userTurn = (text: string) => ({
+  type: 'user/message',
+  data: { content: [{ type: 'text', text }], source: { kind: 'user' } },
+})
+
+function sessionWith(events: unknown[], cwd?: string) {
+  return {
+    id: 'session-capture',
+    ...(cwd === undefined ? {} : { header: { cwd } }),
+    snapshotEvents: () => events,
+  }
+}
+
+describe('自动提炼的失败可见性', () => {
+  it('拿不到模型路由时不静默：原文照留档，同时留一条失败审计', async () => {
+    const { ctx, service } = captureHarness()
+    await captureOne(ctx, service, sessionWith([userTurn(LONG_TURN)], 'D:\\codes\\x'))
+
+    const docs = await service.rawDocuments({})
+    expect(docs).toHaveLength(1)
+    expect(docs[0]?.origin).toBe('capture')
+    expect(docs[0]?.scope).toBe('project')
+    expect(docs[0]?.projectPath).toBeTruthy()
+    // 没走到模型那一步，就没有抽取痕迹
+    expect(docs[0]?.extractedAt).toBeUndefined()
+
+    const audits = await service.audits({})
+    expect(audits).toHaveLength(1)
+    expect(audits[0]?.ok).toBe(false)
+    expect(audits[0]?.error).toContain('未提炼')
+    expect(audits[0]?.inputChars).toBeGreaterThan(80)
+  })
+
+  it('路由与 llm 都在时走真实调用：条目落库 + 成功审计带用量', async () => {
+    const { ctx, service } = captureHarness()
+    ;(ctx as unknown as { provide: (name: string, value: unknown) => void }).provide('llm', {
+      stream: () => (async function* () {
+        yield { type: 'text-delta', text: '[{"title":"标题","content":"正文","kind":"fact","scope":"global"}]' }
+        yield { type: 'finish', reason: { kind: 'stop' }, usage: { inputTokens: 12, outputTokens: 7 } }
+      })(),
+    })
+    const session = {
+      ...sessionWith([userTurn(LONG_TURN)]),
+      requestHeader: () => ({ config: { provider: 'p', model: 'm' } }),
+    }
+    await captureOne(ctx, service, session)
+
+    const records = await service.list({})
+    expect(records).toHaveLength(1)
+    expect(records[0]?.source).toBe('capture')
+    expect((await service.getRawDocument((await service.rawDocuments({}))[0]!.id))?.recordIds).toHaveLength(1)
+
+    const audits = await service.audits({})
+    expect(audits).toHaveLength(1)
+    expect(audits[0]?.ok).toBe(true)
+    expect(audits[0]?.provider).toBe('p')
+    expect(audits[0]?.tokensIn).toBe(12)
+    expect(audits[0]?.tokensOut).toBe(7)
+  })
+})
+
