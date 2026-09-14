@@ -16,6 +16,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { mountDailyLogRemote, dailyLogOf } from './core/remote.ts'
 import { DailyLogSection } from './views/section.tsx'
 import { ensureDailyLogStyle } from './views/ui-css.ts'
+import { installDailyLogNavIcon } from './views/nav-icon.tsx'
 
 export const name = '@zzerx/dsh-plugin-daily-log/client'
 export const inject = ['slots', 'remote']
@@ -25,6 +26,8 @@ export function apply(ctx: Context): void {
   ctx.inject(['slots', 'remote'], async (ctx) => {
     await mountDailyLogRemote(ctx)
     ensureDailyLogStyle()
+    // 侧边栏图标：外壳没有图标入口，只能打补丁（见 views/nav-icon.tsx）。失败即降级。
+    ctx.effect(() => installDailyLogNavIcon())
     // 第二层：命名空间就绪后再读 remote.dailyLog。
     ctx.inject(['remote.dailyLog', 'remote', 'slots'], (ctx) => {
       const dailyLog = dailyLogOf(ctx)

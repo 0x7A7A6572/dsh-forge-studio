@@ -19,7 +19,8 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => {
   return {
     Button: Stub, Input: Stub, MarkdownText: Stub, Modal: Stub, Pill: Stub,
     IconBrowseOutline16: Icon, IconCheckOutline14: Icon, IconDownloadOutline16: Icon,
-    IconEditOutline16: Icon, IconPlusOutline16: Icon, IconSendOutline14: Icon,
+    IconEditOutline16: Icon, IconLightOutline16: Icon, IconListPenOutline16: Icon,
+    IconPlusOutline16: Icon, IconSendOutline14: Icon,
     IconTrashOutline16: Icon,
   }
 })
