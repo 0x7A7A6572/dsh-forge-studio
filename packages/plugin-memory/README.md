@@ -57,7 +57,7 @@ src/
 ```bash
 pnpm --filter @zzerx/dsh-plugin-memory build      # lib/index.js + lib/client.js + lib/types
 pnpm --filter @zzerx/dsh-plugin-memory typecheck
-pnpm --filter @zzerx/dsh-plugin-memory test       # 70 tests
+pnpm --filter @zzerx/dsh-plugin-memory test       # 72 tests
 ```
 
 装进某个 profile 后重启即可：

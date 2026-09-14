@@ -77,32 +77,71 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-/** 从会话事件里取最后若干轮「用户问 + 助手答」的纯文本。任何异常返回空串。 */
+/**
+ * 取会话事件：真实 Session 只有 snapshotEvents()（事件日志的方法，不是属性），
+ * 测试替身可能直接给 events。两条都认，都读不到就是空。
+ */
+function sessionEvents(session: unknown): readonly unknown[] {
+  const handle = session as { snapshotEvents?: () => unknown; events?: unknown } | undefined
+  if (handle === undefined) return []
+  if (typeof handle.snapshotEvents === 'function') {
+    const value = handle.snapshotEvents()
+    return Array.isArray(value) ? value : []
+  }
+  return Array.isArray(handle.events) ? handle.events : []
+}
+
+/**
+ * 助手文本的位置：assistant/message 的事件体是 { turn, step, message, … }，
+ * 正文在 message.content；data.content 是早期形状，留作兜底。
+ */
+function assistantBodyOf(data: Record<string, unknown>): string {
+  const fromMessage = textOfContentParts(asRecord(data.message)?.content)
+  return fromMessage !== '' ? fromMessage : textOfContentParts(data.content)
+}
+
+/**
+ * 从会话事件里取最后若干轮「用户问 + 助手答」的纯文本。任何异常返回空串。
+ *
+ * 只收真人输入（user/message 且 source.kind === 'user'）——agent.inject 塞进来的
+ * 合成上下文（文件变更提示、AGENTS.md、技能正文、定时通知、目标续轮）同样是
+ * user/message，收进来就是纯噪声。倒着走事件，取满 maxTurns 轮或 maxChars 就停。
+ */
 export function collectTranscript(session: unknown, maxTurns = 12, maxChars = 12000): string {
   try {
-    const events = (session as { events?: unknown } | undefined)?.events
-    if (!Array.isArray(events) || events.length === 0) return ''
-    const turns: string[] = []
-    for (const raw of events) {
-      const event = asRecord(raw)
+    const events = sessionEvents(session)
+    if (events.length === 0) return ''
+    const blocks: string[] = []
+    let pending: string[] = []
+    let chars = 0
+    let turns = 0
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+      const event = asRecord(events[index])
       if (event === undefined) continue
       const type = event.type
       if (typeof type !== 'string') continue
       const data = asRecord(event.data)
       if (data === undefined) continue
-      const source = asRecord(data.source)
-      const kind = source?.kind
-      const body = textOfContentParts(data.content)
-      if (body === '') continue
-      if (type === 'user/message' && (kind === undefined || kind === 'user')) {
-        turns.push('用户：' + body)
+      if (type === 'assistant/message') {
+        const body = assistantBodyOf(data)
+        if (body !== '') pending.unshift(body)
         continue
       }
-      if (kind === 'assistant' || type.includes('assistant')) {
-        turns.push('助手：' + body)
-      }
+      if (type !== 'user/message') continue
+      const kind = asRecord(data.source)?.kind
+      if (kind !== undefined && kind !== 'user') continue
+      const body = textOfContentParts(data.content)
+      if (body === '') continue
+      const lines = ['用户：' + body]
+      if (pending.length > 0) lines.push('助手：' + pending.join('\n'))
+      const block = lines.join('\n')
+      blocks.unshift(block)
+      pending = []
+      chars += block.length
+      turns += 1
+      if (turns >= maxTurns || chars >= maxChars) break
     }
-    const joined = turns.join('\n\n')
+    const joined = blocks.join('\n\n')
     return joined.length > maxChars ? joined.slice(joined.length - maxChars) : joined
   } catch {
     return ''
@@ -216,12 +255,17 @@ async function captureOne(ctx: Context, service: MemoryService, session: unknown
     const stream = llm.stream({
       provider: route.provider,
       model: route.model,
-      purpose: 'memory-capture',
+      // 一次性调用走 system 槽（GenerateOptions 的 purpose 是 'compaction' | 'session-title'
+      // 的封闭联合，塞自定义值属于越界）。消息形状对齐 dsh-compaction-basic 的既有用法。
+      system: CAPTURE_PROMPT,
       maxTokens: 2048,
       signal: controller.signal,
       messages: [
-        { role: 'system', content: [{ type: 'text', text: CAPTURE_PROMPT }] },
-        { role: 'user', content: [{ type: 'text', text: transcript }] },
+        {
+          role: 'user',
+          content: [{ type: 'text', text: transcript }],
+          source: { kind: 'plugin', plugin: '@zzerx/dsh-plugin-memory' },
+        },
       ],
     })
     for await (const raw of stream) {

@@ -211,23 +211,59 @@ describe('与其它记忆插件的冲突探测', () => {
 })
 
 describe('自动提炼', () => {
-  it('从会话事件里取用户与助手文本', () => {
-    const session = {
-      events: [
-        { type: 'user/message', data: { content: [{ type: 'text', text: '我喜欢简洁' }] } },
-        { type: 'assistant/message', data: { content: [{ type: 'text', text: '明白了' }] } },
-        { type: 'tool/call', data: { content: [{ type: 'text', text: '不该出现' }] } },
-      ],
-    }
-    const transcript = collectTranscript(session)
+  // 形状对齐真实 Session：事件日志是 snapshotEvents() 方法（不是 events 属性），
+  // 助手正文在 event.data.message.content。这两点都曾在真机上错掉过，别改回去。
+  const userEvent = (text: string, kind = 'user') => ({
+    type: 'user/message',
+    data: { content: [{ type: 'text', text }], source: { kind } },
+  })
+  const assistantEvent = (text: string) => ({
+    type: 'assistant/message',
+    data: { turn: 1, step: 1, message: { role: 'assistant', content: [{ type: 'text', text }] } },
+  })
+  const sessionOf = (events: unknown[]) => ({ snapshotEvents: () => events })
+
+  it('按真实 Session 形状取用户与助手文本', () => {
+    const transcript = collectTranscript(sessionOf([
+      userEvent('我喜欢简洁'),
+      assistantEvent('明白了'),
+      { type: 'tool/call', data: { content: [{ type: 'text', text: '不该出现' }] } },
+    ]))
     expect(transcript).toContain('用户：我喜欢简洁')
     expect(transcript).toContain('助手：明白了')
     expect(transcript).not.toContain('不该出现')
+    expect(transcript.indexOf('用户：我喜欢简洁')).toBeLessThan(transcript.indexOf('助手：明白了'))
   })
 
-  it('会话结构异常时安全返回空串', () => {
+  it('注入的合成上下文不算用户输入', () => {
+    const transcript = collectTranscript(sessionOf([
+      userEvent('文件变更提示', 'inject'),
+      userEvent('把按钮改成蓝色'),
+    ]))
+    expect(transcript).toContain('把按钮改成蓝色')
+    expect(transcript).not.toContain('文件变更提示')
+  })
+
+  it('只保留最后 maxTurns 轮，超长时保留尾部', () => {
+    const many = [1, 2, 3, 4, 5].flatMap((n) => [userEvent('问' + n), assistantEvent('答' + n)])
+    const limited = collectTranscript(sessionOf(many), 2)
+    expect(limited).toContain('用户：问4')
+    expect(limited).toContain('用户：问5')
+    expect(limited).not.toContain('用户：问3')
+
+    const tail = collectTranscript(sessionOf([
+      userEvent('x'.repeat(200)),
+      assistantEvent('y'.repeat(200)),
+    ]), 12, 100)
+    expect(tail).toHaveLength(100)
+    expect(tail).toBe('y'.repeat(100))
+  })
+
+  it('没有 snapshotEvents 时兼容 events 数组，结构异常安全返回空串', () => {
+    expect(collectTranscript({ events: [userEvent('兼容路径')] })).toBe('用户：兼容路径')
     expect(collectTranscript(undefined)).toBe('')
     expect(collectTranscript({ events: 'nope' })).toBe('')
+    expect(collectTranscript({ snapshotEvents: () => 'nope' })).toBe('')
   })
 
   it('解析模型输出并丢弃非法项', () => {
