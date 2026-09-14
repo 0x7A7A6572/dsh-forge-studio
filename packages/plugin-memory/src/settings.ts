@@ -21,6 +21,10 @@ export const MemoryConfigSchema = Schema.object({
   autoInject: Schema.boolean().default(MEMORY_CONFIG_BASE.autoInject),
   maxInjected: Schema.natural().min(1).max(20).default(MEMORY_CONFIG_BASE.maxInjected),
   importanceThreshold: Schema.natural().min(1).max(5).default(MEMORY_CONFIG_BASE.importanceThreshold),
+  captureEveryTurns: Schema.natural().min(1).max(20).default(MEMORY_CONFIG_BASE.captureEveryTurns),
+  captureMaxTurns: Schema.natural().min(1).max(24).default(MEMORY_CONFIG_BASE.captureMaxTurns),
+  captureMaxChars: Schema.natural().min(500).max(12000).default(MEMORY_CONFIG_BASE.captureMaxChars),
+  captureIncludeAssistant: Schema.boolean().default(MEMORY_CONFIG_BASE.captureIncludeAssistant),
 })
 
 /** 当前配置的稳定读取/写入句柄。 */

@@ -111,7 +111,7 @@ function assistantBodyOf(data: Record<string, unknown>): string {
  * 合成上下文（文件变更提示、AGENTS.md、技能正文、定时通知、目标续轮）同样是
  * user/message，收进来就是纯噪声。倒着走事件，取满 maxTurns 轮或 maxChars 就停。
  */
-export function collectTranscript(session: unknown, maxTurns = 12, maxChars = 12000): string {
+export function collectTranscript(session: unknown, maxTurns = 12, maxChars = 12000, includeAssistant = true): string {
   try {
     const events = sessionEvents(session)
     if (events.length === 0) return ''
@@ -127,6 +127,7 @@ export function collectTranscript(session: unknown, maxTurns = 12, maxChars = 12
       const data = asRecord(event.data)
       if (data === undefined) continue
       if (type === 'assistant/message') {
+        if (!includeAssistant) continue
         const body = assistantBodyOf(data)
         if (body !== '') pending.unshift(body)
         continue
@@ -223,14 +224,42 @@ function resolveRoute(ctx: Context, session: unknown): { provider: string; model
 }
 
 /**
+ * 频次判定：每 N 个回合提炼一次（N=1 即每轮，等于旧行为）。
+ * 拿不到轮次号时兜底为触发 —— 缺一个字段不该把自动提炼整个关掉。
+ */
+export function shouldCaptureNow(turn: number | undefined, every: number): boolean {
+  const n = Number.isFinite(every) ? Math.max(1, Math.floor(every)) : 1
+  if (n <= 1) return true
+  if (turn === undefined || !Number.isFinite(turn)) return true
+  return Math.floor(turn) % n === 0
+}
+
+/** 一次提炼的转录窗口与料源（来自面板高级配置）。 */
+export interface CaptureOptions {
+  readonly maxTurns?: number
+  readonly maxChars?: number
+  readonly includeAssistant?: boolean
+}
+
+/**
  * 一个 turn/end 的完整摄取：留档转录 → 模型抽取 → 写条目 → 记审计。
  *
  * 顺序上有意为之：**先留档，再调模型**。模型不可用、调用失败、输出不可解析，
  * 原文都已经在库里，之后可以对同一份原文重抽（reingest），不会有"这次没记就永远丢了"。
  * 转录按会话归并成一份（后一轮覆盖前一轮，转录本身是累积的），不会越滚越多。
  */
-export async function captureOne(ctx: Context, service: MemoryService, session: unknown): Promise<void> {
-  const transcript = collectTranscript(session)
+export async function captureOne(
+  ctx: Context,
+  service: MemoryService,
+  session: unknown,
+  options: CaptureOptions = {},
+): Promise<void> {
+  const transcript = collectTranscript(
+    session,
+    options.maxTurns ?? 12,
+    options.maxChars ?? 12000,
+    options.includeAssistant ?? true,
+  )
   if (transcript.length < 80) return
   const id = (session as { id?: unknown } | undefined)?.id
   const sessionId = typeof id === 'string' && id !== '' ? id : undefined
@@ -401,12 +430,20 @@ export function installMemoryCapture(
     try {
       const record = asRecord(event)
       if (record?.type !== 'turn/end') return
-      if (!settings.get().autoCapture) return
+      const config = settings.get()
+      if (!config.autoCapture) return
       if (service.isLocked()) return
+      const turnValue = asRecord(record.data)?.turn
+      const turn = typeof turnValue === 'number' ? turnValue : undefined
+      if (!shouldCaptureNow(turn, config.captureEveryTurns)) return
       const id = (session as { id?: unknown } | undefined)?.id
       if (typeof id !== 'string' || id === '' || inFlight.has(id)) return
       inFlight.add(id)
-      void captureOne(ctx, service, session)
+      void captureOne(ctx, service, session, {
+        maxTurns: config.captureMaxTurns,
+        maxChars: config.captureMaxChars,
+        includeAssistant: config.captureIncludeAssistant,
+      })
         .catch((error: unknown) => { ctx.logger?.warn?.('[plugin-memory] capture failed: ' + String(error)) })
         .finally(() => { inFlight.delete(id) })
     } catch (error) {

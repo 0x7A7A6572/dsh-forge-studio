@@ -451,6 +451,29 @@ body[data-ds-dark-theme] .mem-select {
   max-width: none;
 }
 
+/* ---- 节点滑杆（ScaleSlider）：重要性 / 注入门槛 / 高级配置共用 ---- */
+
+[data-dsh-memory-ui] .mem-advanced {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--dsw-alias-border-l4);
+}
+
+[data-dsh-memory-ui] .mem-advanced > summary {
+  cursor: pointer;
+  user-select: none;
+  opacity: 0.75;
+}
+
+[data-dsh-memory-ui] .mem-advanced[open] > summary {
+  margin-bottom: 9px;
+  opacity: 1;
+}
+
+[data-dsh-memory-ui] .mem-advanced .mem-slider-wrap {
+  margin-bottom: 10px;
+}
+
 /* ---- 重要性：分级滑杆（原生 range + 自绘轨道/滑块，1-5 一档一停） ---- */
 
 [data-dsh-memory-ui] .mem-slider-wrap {

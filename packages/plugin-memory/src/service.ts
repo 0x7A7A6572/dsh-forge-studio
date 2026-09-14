@@ -349,7 +349,17 @@ export class MemoryService extends TypertRemoteService {
   /** 读面板开关（生成对话记忆 / 自动注入 / 注入条数与门槛）。 */
   async getConfig(): Promise<MemoryConfig> {
     if (this.config.settings !== undefined) return this.config.settings.get()
-    return { autoCapture: true, autoInject: true, maxInjected: 6, importanceThreshold: 3 }
+    // settings 未就绪时的兜底：字段与默认值必须和 MEMORY_CONFIG_BASE 保持一致。
+    return {
+      autoCapture: true,
+      autoInject: true,
+      maxInjected: 6,
+      importanceThreshold: 4,
+      captureEveryTurns: 3,
+      captureMaxTurns: 4,
+      captureMaxChars: 4000,
+      captureIncludeAssistant: false,
+    }
   }
 
   /** 写面板开关；settings 未就绪或被锁时抛可读错误。 */

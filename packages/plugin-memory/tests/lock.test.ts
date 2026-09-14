@@ -20,7 +20,16 @@ function makeService() {
     put: async (key: string, value: MemoryRecord) => { rows.set(key, value) },
     delete: async (key: string) => rows.delete(key),
   }
-  let config: MemoryConfig = { autoCapture: true, autoInject: true, maxInjected: 6, importanceThreshold: 3 }
+  let config: MemoryConfig = {
+    autoCapture: true,
+    autoInject: true,
+    maxInjected: 6,
+    importanceThreshold: 4,
+    captureEveryTurns: 3,
+    captureMaxTurns: 4,
+    captureMaxChars: 4000,
+    captureIncludeAssistant: false,
+  }
   const settings = {
     get: () => ({ ...config }),
     update: async (patch: Partial<MemoryConfig>) => { config = { ...config, ...patch } },

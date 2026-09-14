@@ -78,9 +78,11 @@ describe('分段组按钮（替代下拉）', () => {
       onChange: () => {},
     }))
     expect(out).toContain('type="range"')
-    expect(out).toContain('min="1"')
-    expect(out).toContain('max="5"')
+    // ScaleSlider 按档位下标驱动：5 档 → min=0 / max=4，第 3 档落在下标 2
+    expect(out).toContain('min="0"')
+    expect(out).toContain('max="4"')
     expect(out).toContain('step="1"')
+    expect(out).toContain('value="2"')
     expect(out).toContain('aria-label="重要性"')
     // 无障碍读数也走中文等级，不再是星号
     expect(out).toContain('aria-valuetext="普通（3/5）· 一般偏好与事实"')

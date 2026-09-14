@@ -28,8 +28,10 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { MemoryRemote } from '../core/remote.ts'
+import { ScaleSlider } from '../components/scale-slider.tsx'
 import {
   IMPORT_PROMPT_TEXT,
+  MEMORY_CONFIG_BASE,
   MEMORY_IMPORTANCE_LABELS,
   MEMORY_KINDS,
   MEMORY_KIND_LABELS,
@@ -125,6 +127,19 @@ export const IMPORTANCE_LEVELS = [
   { value: 4, label: MEMORY_IMPORTANCE_LABELS[3], desc: '影响多数对话的约定' },
   { value: 5, label: MEMORY_IMPORTANCE_LABELS[4], desc: '每次对话都要遵守' },
 ] as const
+/** 重要性 1-5 的档位（节点滑杆用）。 */
+export const IMPORTANCE_STEPS = [1, 2, 3, 4, 5] as const
+/** 提炼间隔档位：覆盖 1-20，但只给有意义的停点。 */
+export const CAPTURE_EVERY_STEPS = [1, 2, 3, 5, 8, 10, 15, 20] as const
+/** 转录窗口轮数档位。 */
+export const CAPTURE_TURNS_STEPS = [2, 4, 6, 8, 12, 16, 24] as const
+/** 转录字符上限档位。 */
+export const CAPTURE_CHARS_STEPS = [1000, 2000, 4000, 6000, 8000, 12000] as const
+/** 第 N 档的重要性等级（越界回落到「普通」）。 */
+export function importanceLevelAt(value: number) {
+  return IMPORTANCE_LEVELS[value - 1] ?? IMPORTANCE_LEVELS[2]
+}
+
 const IMPORT_MODE_OPTIONS = [
   { value: 'merge' as const, label: '合并', title: '按标题去重，已有的就地更新' },
   { value: 'replace' as const, label: '覆盖', title: '先清空当前作用域再导入' },
@@ -212,7 +227,7 @@ export function MemoryDraftForm(props: {
 }): JSX.Element {
   const current = props.draft
   const setDraft = props.onChange
-  const currentLevel = IMPORTANCE_LEVELS[current.importance - 1] ?? IMPORTANCE_LEVELS[2]
+  
     return (
       <div className="mem-modal-body" data-dsh-memory-ui="">
         <div className="mem-draft-form">
@@ -248,36 +263,21 @@ export function MemoryDraftForm(props: {
           />
           <div className="mem-seg-row">
             <span className="mem-seg-label">重要性</span>
-            <div className="mem-slider-wrap">
-              <input
-                type="range"
-                className="mem-slider"
-                min={1}
-                max={5}
-                step={1}
-                value={current.importance}
-                disabled={props.disabled === true}
-                aria-label="重要性"
-                aria-valuetext={currentLevel.label + '（' + current.importance + '/5）· ' + currentLevel.desc}
-                style={{ '--mem-fill': ((current.importance - 1) / 4) * 100 + '%' } as CSSProperties}
-                onChange={(event) => {
-                  setDraft({ ...current, importance: Number(event.currentTarget.value) })
-                }}
-              />
-              <div className="mem-slider-ticks" aria-hidden="true">
-                {IMPORTANCE_LEVELS.map((level) => (
-                  <span
-                    key={level.value}
-                    className={level.value <= current.importance ? 'mem-tick mem-tick-on' : 'mem-tick'}
-                  />
-                ))}
-              </div>
-              <span className="mem-slider-desc">
-                <b>{currentLevel.label}</b>
-                {' · '}
-                {currentLevel.desc}
-              </span>
-            </div>
+            <ScaleSlider
+              label="重要性"
+              value={current.importance}
+              steps={IMPORTANCE_STEPS}
+              disabled={props.disabled === true}
+              describe={(value) => {
+                const level = importanceLevelAt(value)
+                return <><b>{level.label}</b>{' · '}{level.desc}</>
+              }}
+              valueText={(value) => {
+                const level = importanceLevelAt(value)
+                return level.label + '（' + value + '/5）· ' + level.desc
+              }}
+              onChange={(importance) => { setDraft({ ...current, importance }) }}
+            />
           </div>
           <textarea
             value={current.content}
@@ -670,19 +670,65 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
               void run(async () => { await memory.setConfig({ maxInjected: Math.min(20, Math.max(1, Math.round(value))) }) })
             }}
           />
-          <span>重要性门槛</span>
-          <Input
-            type="number" min={1} max={5}
-            disabled={locked}
-            value={String(config?.importanceThreshold ?? 3)}
-            onChange={(event) => {
-              const value = Number(event.currentTarget.value)
-              if (!Number.isFinite(value)) return
-              void run(async () => { await memory.setConfig({ importanceThreshold: Math.min(5, Math.max(1, Math.round(value))) }) })
-            }}
-          />
           <span>（达到门槛或被置顶的记忆才会注入）</span>
         </div>
+        <div className="mem-seg-row">
+          <span className="mem-seg-label">注入门槛</span>
+          <ScaleSlider
+            label="注入门槛"
+            value={config?.importanceThreshold ?? MEMORY_CONFIG_BASE.importanceThreshold}
+            steps={IMPORTANCE_STEPS}
+            disabled={busy || config === null || locked}
+            describe={(value) => {
+              const level = importanceLevelAt(value)
+              return <><b>{level.label}</b>{' · '}{level.desc}</>
+            }}
+            valueText={(value) => {
+              const level = importanceLevelAt(value)
+              return level.label + '（' + value + '/5）'
+            }}
+            onChange={(importanceThreshold) => {
+              void run(async () => { await memory.setConfig({ importanceThreshold }) })
+            }}
+          />
+        </div>
+        <details className="mem-advanced">
+          <summary>高级 · 自动提炼</summary>
+          <ScaleSlider
+            label="提炼间隔"
+            value={config?.captureEveryTurns ?? MEMORY_CONFIG_BASE.captureEveryTurns}
+            steps={CAPTURE_EVERY_STEPS}
+            disabled={busy || config === null || locked}
+            describe={(value) => (value === 1 ? '每个回合都提炼一次' : '每 ' + value + ' 个回合提炼一次')}
+            valueText={(value) => value + ' 个回合一次'}
+            onChange={(captureEveryTurns) => { void run(async () => { await memory.setConfig({ captureEveryTurns }) }) }}
+          />
+          <ScaleSlider
+            label="转录轮数"
+            value={config?.captureMaxTurns ?? MEMORY_CONFIG_BASE.captureMaxTurns}
+            steps={CAPTURE_TURNS_STEPS}
+            disabled={busy || config === null || locked}
+            describe={(value) => '只把最近 ' + value + ' 轮对话送去提炼'}
+            valueText={(value) => value + ' 轮'}
+            onChange={(captureMaxTurns) => { void run(async () => { await memory.setConfig({ captureMaxTurns }) }) }}
+          />
+          <ScaleSlider
+            label="转录字符上限"
+            value={config?.captureMaxChars ?? MEMORY_CONFIG_BASE.captureMaxChars}
+            steps={CAPTURE_CHARS_STEPS}
+            disabled={busy || config === null || locked}
+            describe={(value) => value + ' 字，超出保留尾部'}
+            valueText={(value) => value + ' 字'}
+            onChange={(captureMaxChars) => { void run(async () => { await memory.setConfig({ captureMaxChars }) }) }}
+          />
+          <SwitchRow
+            title="助手回复也作为提炼素材"
+            desc="默认关闭：结论类记忆由 agent 主动写入，避免每轮顺手把排查过程也记下来。"
+            checked={config?.captureIncludeAssistant ?? false}
+            disabled={busy || config === null || locked}
+            onChange={(next) => { void run(async () => { await memory.setConfig({ captureIncludeAssistant: next }) }) }}
+          />
+        </details>
       </div>
 
       <div className="mem-head">

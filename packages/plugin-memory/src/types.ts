@@ -319,13 +319,25 @@ export interface MemoryConfig {
   maxInjected: number
   /** 注入重要性门槛（1-5）。 */
   importanceThreshold: number
+  /** 自动提炼间隔：每 N 个回合提炼一次（1 = 每轮，等于旧行为）。 */
+  captureEveryTurns: number
+  /** 转录窗口：只取最近几轮对话。 */
+  captureMaxTurns: number
+  /** 转录字符上限（超出保留尾部）。 */
+  captureMaxChars: number
+  /** 把助手回复也作为提炼素材（默认关：结论类记忆由 agent 主动写）。 */
+  captureIncludeAssistant: boolean
 }
 
 export const MEMORY_CONFIG_BASE: MemoryConfig = {
   autoCapture: true,
   autoInject: true,
   maxInjected: 6,
-  importanceThreshold: 3,
+  importanceThreshold: 4,
+  captureEveryTurns: 3,
+  captureMaxTurns: 4,
+  captureMaxChars: 4000,
+  captureIncludeAssistant: false,
 }
 
 /**
