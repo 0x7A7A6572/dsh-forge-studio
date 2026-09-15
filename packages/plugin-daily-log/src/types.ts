@@ -162,6 +162,8 @@ export interface DailyLogConfig {
   readonly outputDir: string
   /** 安全模式：仅允许 git 只读子命令白名单。 */
   readonly safeMode: boolean
+  /** 是否注册 /report 斜杠指令（关闭后模型仍可经 daily_log 派发器自行启用）。 */
+  readonly enableReportCommand: boolean
 }
 
 /** 设置命名空间（host schema 与 client 卡片共用，client-safe 常量）。 */
