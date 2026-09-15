@@ -29,14 +29,20 @@ describe('ToolGate', () => {
     expect(sections).toEqual(['sec'])
   })
 
-  it('按 agent 隔离', () => {
+  it('按 agent 隔离，且每个 agent 各跑一次 contribution', () => {
     const s1 = fakeScope(); const s2 = fakeScope()
-    const gate = createToolGate((s) => { s.tools.register({ name: 'a' } as never); return () => {} })
-    const agent = fakeAgent(s1.scope)          // 必须复用同一个对象：gate 用 WeakMap 按身份记
-    gate.enable(agent)
+    let runs = 0
+    const gate = createToolGate((s) => { runs += 1; s.tools.register({ name: 'a' } as never); return () => {} })
+    const a1 = fakeAgent(s1.scope)             // 必须复用同一个对象：gate 用 WeakMap 按身份记
+    const a2 = fakeAgent(s2.scope)
+    expect(gate.enable(a1)).toBe(true)
+    expect(gate.enable(a2)).toBe(true)
+    expect(runs).toBe(2)
     expect(s1.tools).toEqual(['a'])
-    expect(s2.tools).toEqual([])
-    expect(gate.isEnabled(agent)).toBe(true)
+    expect(s2.tools).toEqual(['a'])
+    expect(gate.isEnabled(a1)).toBe(true)
+    expect(gate.isEnabled(a2)).toBe(true)
+    expect(gate.enable(a1)).toBe(false)
   })
 
   it('dispose 释放全部并关闭 gate', () => {
