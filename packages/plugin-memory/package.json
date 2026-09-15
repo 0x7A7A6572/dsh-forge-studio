@@ -2,6 +2,26 @@
   "name": "@zzerx/dsh-plugin-memory",
   "version": "0.1.0",
   "description": "dsh 记忆与进化插件：跨会话记住你的偏好与项目习惯（全局 / 项目双作用域），自动注入、自动整理，设置面板一级「记忆」分区可视化管理。",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "memory",
+    "agent-memory",
+    "context",
+    "llm"
+  ],
+  "homepage": "https://github.com/0x7A7A6572/dsh-forge-studio/tree/main/packages/plugin-memory#readme",
+  "bugs": {
+    "url": "https://github.com/0x7A7A6572/dsh-forge-studio/issues"
+  },
+  "license": "MIT",
+  "author": "0x7A7A",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0x7A7A6572/dsh-forge-studio.git",
+    "directory": "packages/plugin-memory"
+  },
   "type": "module",
   "main": "./lib/index.js",
   "types": "./lib/types/index.d.ts",
@@ -21,7 +41,8 @@
     "lib/client.js",
     "lib/types",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "prepublishOnly": "node scripts/build.mjs",

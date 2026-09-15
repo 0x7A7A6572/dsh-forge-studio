@@ -2,6 +2,27 @@
   "name": "@zzerx/dsh-plugin-daily-log",
   "version": "0.1.0",
   "description": "每日工作日志：聚合 Git 提交与本地 agent 对话（deepseek/claude/codex），按自定义模板生成日报/周报/月报。",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "daily-log",
+    "work-report",
+    "git",
+    "weekly-report",
+    "llm"
+  ],
+  "homepage": "https://github.com/0x7A7A6572/dsh-forge-studio/tree/main/packages/plugin-daily-log#readme",
+  "bugs": {
+    "url": "https://github.com/0x7A7A6572/dsh-forge-studio/issues"
+  },
+  "license": "MIT",
+  "author": "0x7A7A",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0x7A7A6572/dsh-forge-studio.git",
+    "directory": "packages/plugin-daily-log"
+  },
   "type": "module",
   "main": "./lib/index.js",
   "types": "./lib/types/index.d.ts",
@@ -21,7 +42,8 @@
     "lib/client.js",
     "lib/types",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "prepublishOnly": "node scripts/build.mjs",

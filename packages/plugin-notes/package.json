@@ -2,6 +2,27 @@
   "name": "@zzerx/dsh-plugin-notes",
   "version": "0.1.0",
   "description": "dsh 便签插件：独立便签板 UI（侧栏入口 + 中间列面板，Markdown 编辑器，Typert 直连 host 持久化）",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "notes",
+    "sticky-notes",
+    "markdown",
+    "tiptap",
+    "task-board"
+  ],
+  "homepage": "https://github.com/0x7A7A6572/dsh-forge-studio/tree/main/packages/plugin-notes#readme",
+  "bugs": {
+    "url": "https://github.com/0x7A7A6572/dsh-forge-studio/issues"
+  },
+  "license": "MIT",
+  "author": "0x7A7A",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0x7A7A6572/dsh-forge-studio.git",
+    "directory": "packages/plugin-notes"
+  },
   "type": "module",
   "main": "./lib/index.js",
   "types": "./lib/types/index.d.ts",
@@ -21,7 +42,8 @@
     "lib/client.js",
     "lib/types",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "prepublishOnly": "node scripts/build.mjs",
