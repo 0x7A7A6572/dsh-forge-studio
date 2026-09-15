@@ -63,8 +63,17 @@ export type ClientNotesAgentBridgeState =
 
 /* ---------- 手写 strict codec（无需 zod；只做形状校验） ---------- */
 
+/**
+ * strict codec（手写，无需 zod；只做形状校验）。
+ *
+ * 同时给出两代契约字段，兼容新旧 dsh：
+ * - `create`：dsh >= 0.1.6-alpha 的 typert 校验要求 strict codec 带 create() 工厂，
+ *   边界首次使用时惰性取 schema（HEAD 只读这个字段）；
+ * - `schema`：0.1.5-rc.2 及更早直接读 schema.parse。
+ * schema 是常量对象，create() 直接复用，无额外开销。
+ */
 function strict<T>(typeSymbol: string, schema: TypertSchema<T>): TypertCodec {
-  return { mode: 'strict', typeSymbol, schema }
+  return { mode: 'strict', typeSymbol, create: () => schema, schema } as unknown as TypertCodec
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
