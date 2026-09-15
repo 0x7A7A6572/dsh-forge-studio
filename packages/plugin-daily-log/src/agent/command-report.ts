@@ -9,16 +9,12 @@
  * to the model'。所以「启用」之后必须自己把请求续给模型，否则用户敲完 /report 只会收到一句
  * 回复、拿不到报告。续接参照 packages/acp/acp/src/session.ts:291-299：
  * createUserMessage({ content, source: { kind: 'user' } }) 之后调 agent.followup(message)。
- *
- * 本包只允许依赖 @deepseek-ai/dsh-commands（见任务约束），而 createUserMessage 的属主
- * @deepseek-ai/dsh-llm 不在依赖集内，故此处用 Agent['followup'] 的公开入参类型在本地拼出
- * 同形消息（id 用 dsh-brand 的 brandString —— 与 dsh-llm 内部同一原语），不额外引入依赖。
+ * 消息一律走官方工厂 @deepseek-ai/dsh-llm 的 createUserMessage（不再本地拼装）。
  */
 
-import { randomUUID } from 'node:crypto'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { brandString } from '@deepseek-ai/dsh-brand'
 import type { CommandDefinition } from '@deepseek-ai/dsh-commands'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { Context } from '@deepseek-ai/cordis'
 import { DAILY_LOG_TOOL_NAMES } from './tools.ts'
 import type { ToolGate } from './tool-gate.ts'
@@ -29,9 +25,6 @@ export const COMMAND_REPORT = 'report'
 /** 指令描述与输入提示（给人看，中文）。 */
 export const REPORT_COMMAND_DESCRIPTION = '启用工作报告能力：扫描 Git 提交与本地 agent 对话，生成日报 / 周报 / 月报'
 export const REPORT_COMMAND_HINT = '[需求描述]'
-
-/** 续接所用的 user 消息形状：直接取 agent 公开方法的入参类型，不引 dsh-llm。 */
-type ReportUserMessage = Parameters<Agent['followup']>[0]
 
 /** 把用户原始请求续给 agent，产生一次模型轮次；无此能力时返回 false。 */
 export interface ReportForwarder {
@@ -46,25 +39,6 @@ interface ReportInvocation {
 interface ReportResult {
   readonly kind: 'success' | 'error'
   readonly text: string
-}
-
-/** 与宿主 createUserMessage 一致的不可变约定：交付前深冻结。 */
-function deepFreeze<T>(value: T): T {
-  if (value !== null && typeof value === 'object') {
-    for (const item of Object.values(value as Record<string, unknown>)) deepFreeze(item)
-    Object.freeze(value)
-  }
-  return value
-}
-
-/** 拼一条 user 文本消息（同 createUserMessage 的结果形状）。 */
-function draftUserMessage(text: string): ReportUserMessage {
-  return deepFreeze({
-    id: brandString<ReportUserMessage['id']>(randomUUID()),
-    role: 'user',
-    content: [{ type: 'text', text }],
-    source: { kind: 'user' },
-  })
 }
 
 /**
@@ -102,7 +76,7 @@ export function createReportForwarder(ctx: Context): ReportForwarder {
       const live = ctx.agents.get(agent.id)
       if (live === undefined) return false
       try {
-        live.followup(draftUserMessage(text))
+        live.followup(createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } }))
       } catch {
         return false   // driver 已收敛/已释放：如实回报「没能自动续接」
       }
