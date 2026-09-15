@@ -9,6 +9,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Context } from '@deepseek-ai/cordis'
 import { createToolGate, type AgentScopeContext } from '../src/agent/tool-gate.ts'
 import { DAILY_LOG_TOOL_NAMES } from '../src/agent/tools.ts'
+import { DAILY_LOG_REFERENCE_TEXT } from '../src/agent/reference.ts'
 import {
   COMMAND_REPORT,
   createReportForwarder,
@@ -68,8 +69,22 @@ describe('handleReportCommand（纯 handler）', () => {
     expect(result.kind).toBe('success')
     expect(registered).toEqual([...DAILY_LOG_TOOL_NAMES])
     expect(gate.isEnabled(agent)).toBe(true)
-    expect(forwarded).toEqual(['生成上周周报'])   // 去首尾空白后原样续接
+    // 去首尾空白后原样续接；其后紧跟详细引导段（引导必须随对话到达模型）
+    expect(forwarded).toEqual([`生成上周周报\n\n${DAILY_LOG_REFERENCE_TEXT}`])
     expect(result.text).toContain('正在按你的要求生成')
+  })
+
+  it('续接消息带上引导文本 —— 指令路径不经过派发器也能拿到引导', () => {
+    const { scope } = fakeScope()
+    const gate = toolkitGate()
+    const { forwarder, forwarded } = recordingForwarder(true)
+
+    handleReportCommand(gate, forwarder, { agent: fakeAgent(scope), rawInput: '生成上周周报' })
+
+    expect(forwarded).toHaveLength(1)
+    expect(forwarded[0]!).toContain('data-driven')
+    expect(forwarded[0]!.indexOf('生成上周周报')).toBeLessThan(forwarded[0]!.indexOf('data-driven'))
+    expect(forwarded[0]!).toContain(DAILY_LOG_REFERENCE_TEXT)   // 全文，不截断、不改写
   })
 
   it('没有 rawInput 时只启用、不续接，并回报可用工具数', () => {
@@ -294,6 +309,6 @@ describe('installReportCommand', () => {
     } as unknown as CommandInvocation)
 
     expect(registered).toEqual([...DAILY_LOG_TOOL_NAMES])
-    expect(forwarded.map((item) => item.text)).toEqual(['生成上周周报'])
+    expect(forwarded.map((item) => item.text)).toEqual([`生成上周周报\n\n${DAILY_LOG_REFERENCE_TEXT}`])
   })
 })

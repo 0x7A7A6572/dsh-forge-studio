@@ -44,7 +44,16 @@ export const DAILY_LOG_POINTER_TEXT = [
   '启用后本轮即可使用全部工作报告工具，并会附带详细的工作流引导。',
 ].join('\n')
 
-/** 把详细引导注册进 agent scope；宿主未装配 systemPrompt 时安静跳过。 */
+/**
+ * 把详细引导注册进 agent scope —— 真机上这条路**不生效**：agent 作用域提供 `tools`
+ * （所以 15 个工具确实能注入），但不提供 `systemPrompt`，本函数首行即短路返回，整段引导被静默丢弃
+ * （2026-09-15 真机验收：对引导一无所知的探针 agent 被问「系统提示词是否禁止未经确认调用某些工具」，
+ * 答案是 NONE；用户侧表现为模型直接开扫）。
+ *
+ * 保留它只为仍装配 systemPrompt 的宿主；**权威投递路径是对话本身** ——
+ * tool-dispatcher.ts 的启用结果与 command-report.ts 的续接消息各自携带全文。
+ * 不要把这里当兜底：模型能否读到引导，取决于那两处。
+ */
 export function registerDailyLogGuidance(scope: AgentScopeContext): () => void {
   if (scope.systemPrompt === undefined) return () => {}
   return scope.systemPrompt.section({

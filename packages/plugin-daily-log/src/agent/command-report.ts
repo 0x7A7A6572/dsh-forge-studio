@@ -17,6 +17,7 @@ import type { CommandDefinition } from '@deepseek-ai/dsh-commands'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { Context } from '@deepseek-ai/cordis'
 import { DAILY_LOG_TOOL_NAMES } from './tools.ts'
+import { DAILY_LOG_REFERENCE_TEXT } from './reference.ts'
 import type { ToolGate } from './tool-gate.ts'
 import type { DailyLogSettingsAccess } from '../settings.ts'
 
@@ -44,6 +45,10 @@ interface ReportResult {
 /**
  * 纯函数：便于单测，不依赖 cordis。
  * 顺序固定为「先启用、后续接」—— 启用失败时绝不续接（否则模型会在没有工具的情况下开工）。
+ *
+ * 续接消息 = 用户原话 + 详细引导段：引导段只有落在对话里才必然被模型读到 ——
+ * agent 作用域不提供 systemPrompt（registerDailyLogGuidance 在真机上直接短路），
+ * 所以指令路径不再指望 prompt 装配。用户原话必须在前，引导在后。
  */
 export function handleReportCommand(
   gate: ToolGate,
@@ -64,7 +69,7 @@ export function handleReportCommand(
       text: lead + '，本轮可用 ' + DAILY_LOG_TOOL_NAMES.length + ' 个工具。把需求告诉我即可，例如「生成上周周报」。',
     }
   }
-  return forwarder.forward(invocation.agent, text)
+  return forwarder.forward(invocation.agent, text + '\n\n' + DAILY_LOG_REFERENCE_TEXT)
     ? { kind: 'success', text: lead + '，正在按你的要求生成。' }
     : { kind: 'success', text: lead + '，但没能自动继续你的请求 —— 请把需求再说一次。' }
 }
