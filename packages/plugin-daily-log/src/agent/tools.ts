@@ -16,7 +16,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-user-approval'
-import type {} from '../service.ts'
+import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
+import type { DailyLogService } from '../service.ts'
 import { SOURCE_KINDS } from '../types.ts'
 import type { ActivityEntry, ReportId, SourceId, TemplateId } from '../types.ts'
 import { filterEntries, renderScan } from './scan-render.ts'
@@ -83,12 +84,25 @@ const SCAN_LEVEL_HINT =
   'level=index（默认）给会话/分支级索引，行数只与分组数有关；level=summary 在索引上补每组"首问 + 末答"；' +
   'level=raw 才是逐条明细（可用 session_id / keywords 下钻）。被折叠的分组会显式列出，不会静默丢弃。'
 
-export function installDailyLogTools(ctx: Context): void {
-  const svc = ctx.dailyLog
+/** 15 个工具的名字（顺序与注册顺序一致）。 */
+export const DAILY_LOG_TOOL_NAMES: readonly string[] = [
+  TOOL_LIST_SOURCES, TOOL_SCAN, TOOL_LIST_REPORTS, TOOL_GET_REPORT, TOOL_LIST_TEMPLATES,
+  TOOL_GET_TEMPLATE, TOOL_ADD_SOURCE, TOOL_PREPARE, TOOL_SAVE, TOOL_EXPORT,
+  TOOL_DELETE_REPORT, TOOL_TEMPLATE_CREATE, TOOL_TEMPLATE_UPDATE, TOOL_TEMPLATE_DELETE,
+  TOOL_TEMPLATE_SET_DEFAULT,
+]
 
+/**
+ * 构造全部 daily_log_* 工具定义，交给 register 决定注册到哪个 scope。
+ * 定义期只闭包 svc，不调用它 —— 因此可在 gate 里按 agent 生成新的一组。
+ */
+export function buildDailyLogTools(
+  svc: DailyLogService,
+  register: (definition: ToolDefinition) => void,
+): void {
   /* ----- 读工具 ----- */
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: TOOL_LIST_SOURCES,
     description: 'List all daily-log projects (one project = one unique directory path; git/dsh/claude/codex are channels aggregated per project at scan time): id, type, label, path.',
     parameters: {},
@@ -125,7 +139,7 @@ export function installDailyLogTools(ctx: Context): void {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: TOOL_SCAN,
     description: 'Scan data sources for activity entries (git commits / conversation turns) within a date range. '
       + 'Omit source_id to scan all sources. Returns structured entries; this is the data a report is built from. '
@@ -194,7 +208,7 @@ export function installDailyLogTools(ctx: Context): void {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: TOOL_LIST_REPORTS,
     description: 'List generated daily-log reports (id, title, dateRange, createdAt).',
     parameters: {},
@@ -237,7 +251,7 @@ export function installDailyLogTools(ctx: Context): void {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: TOOL_GET_REPORT,
     description: 'Read one generated report full markdown by id.',
     parameters: { report_id: { type: 'string', required: true, description: 'The report id from daily_log_list_reports.' } },
@@ -252,7 +266,7 @@ export function installDailyLogTools(ctx: Context): void {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: TOOL_LIST_TEMPLATES,
     description: 'List report templates (id, name, isBuiltin, isDefault). The default template is used when daily_log_prepare_report omits template_id.',
     parameters: {},
@@ -287,7 +301,7 @@ export function installDailyLogTools(ctx: Context): void {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: TOOL_GET_TEMPLATE,
     description: 'Read one template full markdown content by id.',
     parameters: { template_id: { type: 'string', required: true, description: 'The template id from daily_log_list_templates.' } },
@@ -304,7 +318,7 @@ export function installDailyLogTools(ctx: Context): void {
 
   /* ----- 写工具 ----- */
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: TOOL_ADD_SOURCE,
     description: 'Add a project (one unique directory path — a git repo or any working/project directory). At scan time all channels that hit the path (git commits / DSH / Claude / Codex sessions) are aggregated automatically.',
     parameters: {
@@ -330,7 +344,7 @@ export function installDailyLogTools(ctx: Context): void {
 
   /* prepare_report：进入生成阶段，返回模板引导（只读，不扫描） */
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: TOOL_PREPARE,
     description: 'Enter the generation phase: resolve the selected template guidance (optional instruction section + required skeleton section) and source count WITHOUT scanning again (scan results are already in context). You then write the report body yourself following the guidance.',
     parameters: {
@@ -368,7 +382,7 @@ export function installDailyLogTools(ctx: Context): void {
 
   /* save_report：把 LLM 撰写的正文落 reports 表（写，ask） */
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: TOOL_SAVE,
     description: 'Save a report the model authored (full markdown body) into the reports table. Only call AFTER the user confirms the report shown in chat. Returns the report id.',
     parameters: {
@@ -399,7 +413,7 @@ export function installDailyLogTools(ctx: Context): void {
 
   /* export_report：把已存报告导出为 .md（写，ask） */
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: TOOL_EXPORT,
     description: 'Export an existing report (from daily_log_list_reports / daily_log_save_report) to a markdown file under the configured output directory.',
     parameters: {
@@ -416,7 +430,7 @@ export function installDailyLogTools(ctx: Context): void {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: TOOL_DELETE_REPORT,
     description: 'Delete one report by id.',
     parameters: { report_id: { type: 'string', required: true, description: 'The report id from daily_log_list_reports.' } },
@@ -429,7 +443,7 @@ export function installDailyLogTools(ctx: Context): void {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: TOOL_TEMPLATE_CREATE,
     description: 'Create a report template: Markdown with an optional instruction section, the DATA marker (<!-- DATA -->), and a required skeleton section guiding the generation-phase LLM (no mustache placeholders).',
     parameters: {
@@ -446,7 +460,7 @@ export function installDailyLogTools(ctx: Context): void {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: TOOL_TEMPLATE_UPDATE,
     description: 'Update a template name and/or content.',
     parameters: {
@@ -468,7 +482,7 @@ export function installDailyLogTools(ctx: Context): void {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: TOOL_TEMPLATE_DELETE,
     description: 'Delete a template by id. The builtin default template cannot be deleted.',
     parameters: { template_id: { type: 'string', required: true, description: 'The template id from daily_log_list_templates.' } },
@@ -481,7 +495,7 @@ export function installDailyLogTools(ctx: Context): void {
     },
   }))
 
-  ctx.tools.register(defineTool({
+  register(defineTool({
     name: TOOL_TEMPLATE_SET_DEFAULT,
     description: 'Set a template as the default (used when daily_log_prepare_report omits template_id).',
     parameters: { template_id: { type: 'string', required: true, description: 'The template id from daily_log_list_templates.' } },
@@ -493,6 +507,11 @@ export function installDailyLogTools(ctx: Context): void {
       return { ok: await svc.setDefaultTemplate(args.template_id as TemplateId) }
     },
   }))
+}
+
+/** 全局注册全部 daily_log_* 工具 + guard + tools/pre-execute 钩子（行为不变）。 */
+export function installDailyLogTools(ctx: Context): void {
+  const svc = ctx.dailyLog
 
   // guard（单调拒绝）：内置模板不可修改/删除（service 已兜底，此处提前拒绝）。
   ctx.tools.guard((exec) => {
@@ -519,4 +538,7 @@ export function installDailyLogTools(ctx: Context): void {
     if (!dailyLogWriteShouldAsk(policy)) return next()
     return { kind: 'ask', reason: 'The agent wants to ' + describeAction(exec.name) + ' in daily-log.' }
   })
+
+  // 兼容入口：暂时把整组工具注册回全局（Task 7 起改用 ToolGate 按 agent 按需注入）。
+  buildDailyLogTools(ctx.dailyLog, (definition) => ctx.tools.register(definition))
 }
