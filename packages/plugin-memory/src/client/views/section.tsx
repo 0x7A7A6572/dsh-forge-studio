@@ -26,6 +26,7 @@ import {
   Modal,
   Pill,
 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { ChevronDown } from 'lucide-react'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { MemoryRemote } from '../core/remote.ts'
 import { ScaleSlider } from '../components/scale-slider.tsx'
@@ -693,7 +694,10 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
           />
         </div>
         <details className="mem-advanced">
-          <summary>高级 · 自动提炼</summary>
+          <summary>
+            <span>高级 · 自动提炼</span>
+            <ChevronDown className="mem-advanced-chevron" size={14} aria-hidden="true" />
+          </summary>
           <ScaleSlider
             label="提炼间隔"
             value={config?.captureEveryTurns ?? MEMORY_CONFIG_BASE.captureEveryTurns}

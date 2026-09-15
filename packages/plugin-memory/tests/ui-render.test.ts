@@ -178,5 +178,9 @@ describe('详情与沉淀面板', () => {
     expect(out).not.toContain('mem-raw-list')
     expect(out).not.toContain('mem-meta')
     expect(out).not.toContain('后台模型调用')
+    // 高级块：标题与右侧 chevron 同在 summary 里，且默认收起
+    expect(out).toContain('<details class="mem-advanced">')
+    expect(out).toMatch(/<summary>[\s\S]*?高级 · 自动提炼[\s\S]*?mem-advanced-chevron[\s\S]*?<\/summary>/)
+    expect(out).not.toContain('<details class="mem-advanced" open')
   })
 })

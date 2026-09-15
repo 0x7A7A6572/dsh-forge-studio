@@ -460,14 +460,33 @@ body[data-ds-dark-theme] .mem-select {
 }
 
 [data-dsh-memory-ui] .mem-advanced > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   cursor: pointer;
   user-select: none;
   opacity: 0.75;
+  list-style: none;
+}
+
+/* 去掉浏览器默认的展开三角，改用右侧 chevron（展开时转 180°）。 */
+[data-dsh-memory-ui] .mem-advanced > summary::-webkit-details-marker {
+  display: none;
+}
+
+[data-dsh-memory-ui] .mem-advanced-chevron {
+  flex: none;
+  transition: transform 0.15s ease;
 }
 
 [data-dsh-memory-ui] .mem-advanced[open] > summary {
   margin-bottom: 9px;
   opacity: 1;
+}
+
+[data-dsh-memory-ui] .mem-advanced[open] > summary .mem-advanced-chevron {
+  transform: rotate(180deg);
 }
 
 [data-dsh-memory-ui] .mem-advanced .mem-slider-wrap {
