@@ -13,7 +13,7 @@ import { DailyLogService } from './service.ts'
 import { installDailyLogSettings } from './settings.ts'
 import { builtinChannels } from './sources/index.ts'
 import { installDailyLogTools } from './agent/tools.ts'
-import { installDailyLogReferencePrompt } from './agent/reference.ts'
+import { installDailyLogPointerPrompt } from './agent/reference.ts'
 
 export const name = '@zzerx/dsh-plugin-daily-log'
 export const inject = ['storageDomain']
@@ -76,7 +76,7 @@ export function installDailyLogAgentBridgeWhenReady(ctx: Context): void {
   })
   void ctx.inject(['systemPrompt'], (promptCtx) => {
     try {
-      installDailyLogReferencePrompt(promptCtx)
+      installDailyLogPointerPrompt(promptCtx)
     } catch (error) {
       promptCtx.logger.warn('[plugin-daily-log] reference prompt disabled:', error)
     }
