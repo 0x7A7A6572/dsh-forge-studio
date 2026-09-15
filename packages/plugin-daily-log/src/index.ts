@@ -5,15 +5,23 @@
  *
  * DSH 会话渠道（sources/dsh.ts）直接读 <DSH_HOME>/sessions 下的会话文件：
  * 按会话头部 cwd 归属项目，正文为追加写的多帧 zstd，须逐帧解压。
+ *
+ * agent 侧按需注入：15 个 daily_log_* 工具与详细引导段默认不注册 ——
+ * 常态只挂一个常驻派发器工具 daily_log 与一句短指针；模型经 daily_log 工具或
+ * 用户敲 /report 触发 gate.enable(agent)，才把整组工具 + 详细段注入该 agent scope。
  */
 
 import { Context } from '@deepseek-ai/cordis'
 import { dailyLogDomain } from './domain.ts'
 import { DailyLogService } from './service.ts'
 import { installDailyLogSettings } from './settings.ts'
+import type { DailyLogSettingsAccess } from './settings.ts'
 import { builtinChannels } from './sources/index.ts'
-import { installDailyLogTools } from './agent/tools.ts'
-import { installDailyLogPointerPrompt } from './agent/reference.ts'
+import { buildDailyLogTools, installDailyLogTools } from './agent/tools.ts'
+import { createToolGate } from './agent/tool-gate.ts'
+import type { ToolGate } from './agent/tool-gate.ts'
+import { installDailyLogPointerPrompt, registerDailyLogGuidance } from './agent/reference.ts'
+import { installReportCommand } from './agent/command-report.ts'
 
 export const name = '@zzerx/dsh-plugin-daily-log'
 export const inject = ['storageDomain']
@@ -54,22 +62,39 @@ export async function apply(ctx: Context): Promise<void> {
       // 数据源页「DSH 工作区」组的候选来源（含每项目的 sessionIds，供 dsh 会话渠道）。
       workspaceProjects: () => readWorkspaceProjects(ctx),
     })
-    installDailyLogSettings(ctx)
-    installDailyLogAgentBridgeWhenReady(ctx)
+    // settings 句柄要交给 /report 指令（开关联动其注册与否），不再丢弃返回值。
+    const settings = installDailyLogSettings(ctx)
+    installDailyLogAgentBridgeWhenReady(ctx, settings)
   } catch (error) {
     void domain.close()
     throw error
   }
 }
 
+/** 建 gate：一次 enable 同时注入 15 个工具 + 详细引导段。 */
+export function createDailyLogGate(ctx: Context): ToolGate {
+  return createToolGate((scope) => {
+    const disposers: Array<() => void> = []
+    buildDailyLogTools(ctx.dailyLog, (definition) => {
+      disposers.push(scope.tools.register(definition))
+    })
+    disposers.push(registerDailyLogGuidance(scope))
+    return () => { for (const d of disposers.reverse()) d() }
+  })
+}
+
 /**
- * agent 桥可选增强：tools 服务注册后挂载 daily_log_* 工具，systemPrompt 注册后
- * 挂载报告引导。任何一步抛错只降级桥本身，不拖垮核心服务。
+ * agent 桥可选增强：tools 服务注册后挂常驻派发器（+ guard / pre-execute 钩子），
+ * systemPrompt 注册后挂常驻短指针；/report 指令交给 settings 开关联动。
+ * 任何一步抛错只降级桥本身，不拖垮核心服务。
  */
-export function installDailyLogAgentBridgeWhenReady(ctx: Context): void {
+export function installDailyLogAgentBridgeWhenReady(ctx: Context, settings: DailyLogSettingsAccess): void {
+  const gate = createDailyLogGate(ctx)
+  ctx.effect(() => () => gate.dispose())
+  // tools 与 systemPrompt 仍分开 inject：任一缺失只降级该部分（沿用原有容错姿态）。
   void ctx.inject(['tools'], (toolsCtx) => {
     try {
-      installDailyLogTools(toolsCtx)
+      installDailyLogTools(toolsCtx, gate)
     } catch (error) {
       toolsCtx.logger.error('[plugin-daily-log] agent tools install failed — daily_log_* unavailable to sessions:', error)
     }
@@ -78,7 +103,8 @@ export function installDailyLogAgentBridgeWhenReady(ctx: Context): void {
     try {
       installDailyLogPointerPrompt(promptCtx)
     } catch (error) {
-      promptCtx.logger.warn('[plugin-daily-log] reference prompt disabled:', error)
+      promptCtx.logger.error('[plugin-daily-log] pointer prompt install failed:', error)
     }
   })
+  installReportCommand(ctx, gate, settings)
 }

@@ -10,6 +10,8 @@
  *   判定见 dailyLogWriteShouldAsk；
  * - guard（单调拒绝）：内置模板不可修改/删除（service 已兜底，此处提前拒绝）。
  *
+ * 全局只注册 guard、tools/pre-execute 钩子与恒驻的 daily_log 派发器；15 个 daily_log_*
+ * 工具本身经 ToolGate 按 agent 按需注入（详见 index.ts 的 createDailyLogGate）。
  * 工具以 tools 服务判存后条件挂载（ctx.inject），纯 UI 宿主照常工作（不注册工具）。
  */
 
@@ -22,6 +24,8 @@ import { SOURCE_KINDS } from '../types.ts'
 import type { ActivityEntry, ReportId, SourceId, TemplateId } from '../types.ts'
 import { filterEntries, renderScan } from './scan-render.ts'
 import type { ScanLevel } from './scan-render.ts'
+import { createDailyLogDispatcher } from './tool-dispatcher.ts'
+import type { ToolGate } from './tool-gate.ts'
 
 export const DAILY_LOG_TOOL_PREFIX = 'daily_log_'
 
@@ -509,8 +513,12 @@ export function buildDailyLogTools(
   }))
 }
 
-/** 全局注册全部 daily_log_* 工具 + guard + tools/pre-execute 钩子（行为不变）。 */
-export function installDailyLogTools(ctx: Context): void {
+/**
+ * 全局只装 guard + tools/pre-execute 钩子，以及恒注册的派发器；
+ * 15 个 daily_log_* 工具与详细引导段改由 ToolGate 按 agent 按需注入
+ * （见 index.ts 的 createDailyLogGate），不再出现在全局 scope。
+ */
+export function installDailyLogTools(ctx: Context, gate: ToolGate): void {
   const svc = ctx.dailyLog
 
   // guard（单调拒绝）：内置模板不可修改/删除（service 已兜底，此处提前拒绝）。
@@ -539,6 +547,6 @@ export function installDailyLogTools(ctx: Context): void {
     return { kind: 'ask', reason: 'The agent wants to ' + describeAction(exec.name) + ' in daily-log.' }
   })
 
-  // 兼容入口：暂时把整组工具注册回全局（Task 7 起改用 ToolGate 按 agent 按需注入）。
-  buildDailyLogTools(ctx.dailyLog, (definition) => ctx.tools.register(definition))
+  // 派发器恒注册：模型唯一的按需发现入口（其余 15 个工具默认不注册）。
+  ctx.tools.register(createDailyLogDispatcher(gate))
 }
