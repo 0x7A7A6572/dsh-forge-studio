@@ -489,8 +489,17 @@ body[data-ds-dark-theme] .mem-select {
   transform: rotate(180deg);
 }
 
-[data-dsh-memory-ui] .mem-advanced .mem-slider-wrap {
-  margin-bottom: 10px;
+/* 高级项逐项拉开：卡片内的行间距是 10px，但滑杆块由「轨道+刻点+说明」三层组成，
+   10px 会把上一项的说明和下一项的轨道挤在一起，所以这里单独给到 18px。 */
+[data-dsh-memory-ui] .mem-advanced-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* 滑杆块在分区行里靠 flex:1 撑开，这里是纵向流式布局，不要让它参与伸缩。 */
+[data-dsh-memory-ui] .mem-advanced-body > * {
+  flex: none;
 }
 
 /* ---- 重要性：分级滑杆（原生 range + 自绘轨道/滑块，1-5 一档一停） ---- */

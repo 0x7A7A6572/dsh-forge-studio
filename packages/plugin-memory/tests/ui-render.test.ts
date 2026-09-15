@@ -182,5 +182,7 @@ describe('详情与沉淀面板', () => {
     expect(out).toContain('<details class="mem-advanced">')
     expect(out).toMatch(/<summary>[\s\S]*?高级 · 自动提炼[\s\S]*?mem-advanced-chevron[\s\S]*?<\/summary>/)
     expect(out).not.toContain('<details class="mem-advanced" open')
+    // 高级块内部有自己的纵向间距容器（逐项 gap，不靠 margin 拼）
+    expect(out).toMatch(/<div class="mem-advanced-body">[\s\S]*?aria-label="提炼间隔"[\s\S]*?助手回复也作为提炼素材/)
   })
 })

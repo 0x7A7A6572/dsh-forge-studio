@@ -698,40 +698,42 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
             <span>高级 · 自动提炼</span>
             <ChevronDown className="mem-advanced-chevron" size={14} aria-hidden="true" />
           </summary>
-          <ScaleSlider
-            label="提炼间隔"
-            value={config?.captureEveryTurns ?? MEMORY_CONFIG_BASE.captureEveryTurns}
-            steps={CAPTURE_EVERY_STEPS}
-            disabled={busy || config === null || locked}
-            describe={(value) => (value === 1 ? '每个回合都提炼一次' : '每 ' + value + ' 个回合提炼一次')}
-            valueText={(value) => value + ' 个回合一次'}
-            onChange={(captureEveryTurns) => { void run(async () => { await memory.setConfig({ captureEveryTurns }) }) }}
-          />
-          <ScaleSlider
-            label="转录轮数"
-            value={config?.captureMaxTurns ?? MEMORY_CONFIG_BASE.captureMaxTurns}
-            steps={CAPTURE_TURNS_STEPS}
-            disabled={busy || config === null || locked}
-            describe={(value) => '只把最近 ' + value + ' 轮对话送去提炼'}
-            valueText={(value) => value + ' 轮'}
-            onChange={(captureMaxTurns) => { void run(async () => { await memory.setConfig({ captureMaxTurns }) }) }}
-          />
-          <ScaleSlider
-            label="转录字符上限"
-            value={config?.captureMaxChars ?? MEMORY_CONFIG_BASE.captureMaxChars}
-            steps={CAPTURE_CHARS_STEPS}
-            disabled={busy || config === null || locked}
-            describe={(value) => value + ' 字，超出保留尾部'}
-            valueText={(value) => value + ' 字'}
-            onChange={(captureMaxChars) => { void run(async () => { await memory.setConfig({ captureMaxChars }) }) }}
-          />
-          <SwitchRow
-            title="助手回复也作为提炼素材"
-            desc="默认关闭：结论类记忆由 agent 主动写入，避免每轮顺手把排查过程也记下来。"
-            checked={config?.captureIncludeAssistant ?? false}
-            disabled={busy || config === null || locked}
-            onChange={(next) => { void run(async () => { await memory.setConfig({ captureIncludeAssistant: next }) }) }}
-          />
+          <div className="mem-advanced-body">
+            <ScaleSlider
+              label="提炼间隔"
+              value={config?.captureEveryTurns ?? MEMORY_CONFIG_BASE.captureEveryTurns}
+              steps={CAPTURE_EVERY_STEPS}
+              disabled={busy || config === null || locked}
+              describe={(value) => (value === 1 ? '每个回合都提炼一次' : '每 ' + value + ' 个回合提炼一次')}
+              valueText={(value) => value + ' 个回合一次'}
+              onChange={(captureEveryTurns) => { void run(async () => { await memory.setConfig({ captureEveryTurns }) }) }}
+            />
+            <ScaleSlider
+              label="转录轮数"
+              value={config?.captureMaxTurns ?? MEMORY_CONFIG_BASE.captureMaxTurns}
+              steps={CAPTURE_TURNS_STEPS}
+              disabled={busy || config === null || locked}
+              describe={(value) => '只把最近 ' + value + ' 轮对话送去提炼'}
+              valueText={(value) => value + ' 轮'}
+              onChange={(captureMaxTurns) => { void run(async () => { await memory.setConfig({ captureMaxTurns }) }) }}
+            />
+            <ScaleSlider
+              label="转录字符上限"
+              value={config?.captureMaxChars ?? MEMORY_CONFIG_BASE.captureMaxChars}
+              steps={CAPTURE_CHARS_STEPS}
+              disabled={busy || config === null || locked}
+              describe={(value) => value + ' 字，超出保留尾部'}
+              valueText={(value) => value + ' 字'}
+              onChange={(captureMaxChars) => { void run(async () => { await memory.setConfig({ captureMaxChars }) }) }}
+            />
+            <SwitchRow
+              title="助手回复也作为提炼素材"
+              desc="默认关闭：结论类记忆由 agent 主动写入，避免每轮顺手把排查过程也记下来。"
+              checked={config?.captureIncludeAssistant ?? false}
+              disabled={busy || config === null || locked}
+              onChange={(next) => { void run(async () => { await memory.setConfig({ captureIncludeAssistant: next }) }) }}
+            />
+          </div>
         </details>
       </div>
 
