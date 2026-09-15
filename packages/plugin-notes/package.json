@@ -48,6 +48,7 @@
   "scripts": {
     "prepublishOnly": "node scripts/build.mjs",
     "build": "node scripts/build.mjs",
+    "push:npm": "npm publish --registry=https://registry.npmjs.org",
     "watch": "node scripts/watch.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json",
     "test": "vitest run"

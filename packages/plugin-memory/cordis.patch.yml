@@ -2,5 +2,5 @@
 # layers. storageDomain / storage / tools / settings / systemPrompt come from
 # the dsh-base layer; this row only mounts the memory feature plugin.
 - insert:
-    - id: memory
+    - id: zzerx-memory
       name: '@zzerx/dsh-plugin-memory'

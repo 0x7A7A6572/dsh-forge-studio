@@ -2,5 +2,5 @@
 # layers. storageDomain / storage / tools / commands / settings come from the
 # dsh-base layer; this row only mounts the daily-log feature plugin.
 - insert:
-    - id: daily-log
+    - id: zzerx-daily-log
       name: '@zzerx/dsh-plugin-daily-log'
