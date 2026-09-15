@@ -694,7 +694,7 @@ const CSS = `
 }
 
 [data-dsh-dailylog-ui] .dl-textarea-prompt {
-  min-height: 90px;
+  min-height: 200px;
 }
 
 [data-dsh-dailylog-ui] .dl-textarea-skeleton {

@@ -30,6 +30,19 @@ export function SourcesView(props: {
 
   return (
     <div className="dl-pane">
+            <AddButton
+        label="新增数据源"
+        icon={<IconPlusOutline16 size={16} />}
+        disabled={props.busy}
+        onClick={() => { setAddOpen(true) }}
+      />
+      <div className="dl-add-row">
+        <button type="button" className="dl-text-btn" style={
+          {color: 'var(--dsw-alias-state-business-primary)'}
+        } onClick={() => { setImportOpen(true) }}>
+          从 Claude Code / Codex 会话库导入项目
+        </button>
+      </div>
       {props.sources.length === 0
         ? emptyHint('还没有数据源。数据源 = 一个项目路径，报告会聚合该项目在 Git / DSH / Claude / Codex 各渠道的活动。')
         : (
@@ -63,17 +76,7 @@ export function SourcesView(props: {
             </ul>
           </>
         )}
-      <AddButton
-        label="新增数据源"
-        icon={<IconPlusOutline16 size={16} />}
-        disabled={props.busy}
-        onClick={() => { setAddOpen(true) }}
-      />
-      <div className="dl-add-row">
-        <button type="button" className="dl-text-btn" onClick={() => { setImportOpen(true) }}>
-          从 Claude Code / Codex 会话库导入项目
-        </button>
-      </div>
+
       {addOpen && (
         <SourcesAddDialog
           dailyLog={props.dailyLog}
