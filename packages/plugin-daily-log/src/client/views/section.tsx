@@ -5,13 +5,18 @@
  * → 页签（报告 / 数据源 / 模板，带计数）→ 当前页的卡片栅格。
  * 数据读写仍走 Typert remote（ctx.remote.dailyLog.*）；报告正文由宿主聊天 agent 经
  * daily_log_* 工具生成，这里只负责查看、导出与配置。
+ *
+ * 顶部开关「注册 /report 指令」读写 ctx.settingsScope 绑定的设置命名空间
+ * （enableReportCommand，与 host 侧同一份）。它只管指令是否注册，工具按需注入
+ * 走的是 host 侧 gate，与开关无关 —— 文案里必须说清这一点，别让人当成插件总开关。
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { Button, IconSendOutline14, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { DailyLogRemote } from '../core/remote.ts'
-import type { ReportRecord, SourceRecord, TemplateRecord } from '../../types.ts'
+import type { DailyLogConfig, ReportRecord, SourceRecord, TemplateRecord } from '../../types.ts'
 import { errText } from './parts.tsx'
 import { pluginVersion } from '../../version.ts'
 import { ReportsView } from './reports-view.tsx'
@@ -30,7 +35,16 @@ const TABS: readonly { id: DailyLogTab; label: string }[] = [
 /** 注册侧注入的业务面（见 src/client/index.ts）。 */
 export interface DailyLogSectionInjected {
   dailyLog: DailyLogRemote
+  /** 设置命名空间 scope（enableReportCommand 开关的读写通道）。 */
+  scope: SettingsScope<DailyLogConfig>
 }
+
+/** 开关行文案：关掉后模型仍可自行启用 —— 这句话是「开关作用范围」的唯一出口。 */
+export const REPORT_COMMAND_SWITCH_TITLE = '注册 /report 指令'
+export const REPORT_COMMAND_SWITCH_DESC = '关闭后无法用 /report 触发；模型仍可在需要时自行启用。'
+export const REPORT_COMMAND_SWITCH_HINT =
+  '15 个工具默认不注册：新会话只挂一个 daily_log 派发器，其余工具与详细引导段在「按需启用」时才注入本会话。' +
+  '这个开关只决定 /report 指令是否注册，不是插件总开关。'
 
 /** 分区组件完整 props：设置外壳 owner props + 插件注入面。 */
 export type DailyLogSectionProps =
@@ -39,6 +53,14 @@ export type DailyLogSectionProps =
 /** 工作报告分区。 */
 export function DailyLogSection(props: DailyLogSectionProps): JSX.Element {
   const dailyLog = props.dailyLog
+  const scope = props.scope
+  // 设置快照：开关的当前值与可写性都从这里来（订阅变化 → 外部改动也实时反映）。
+  const settings = useSyncExternalStore(
+    useCallback((notify: () => void) => scope.subscribe(notify), [scope]),
+    () => scope.getSnapshot(),
+  )
+  const reportCommandEnabled = settings.value?.enableReportCommand ?? true
+  const settingsWritable = settings.writable && settings.status !== 'unavailable'
   const [tab, setTab] = useState<DailyLogTab>('reports')
   const [sources, setSources] = useState<readonly SourceRecord[]>([])
   const [reports, setReports] = useState<readonly ReportRecord[]>([])
@@ -77,6 +99,16 @@ export function DailyLogSection(props: DailyLogSectionProps): JSX.Element {
     }
   }
 
+  /** 切换 /report 指令注册开关；失败只提示，不回弹（快照仍是 host 的真值）。 */
+  async function toggleReportCommand(next: boolean): Promise<void> {
+    setError('')
+    try {
+      await scope.set('enableReportCommand', next)
+    } catch (e) {
+      setError(errText(e))
+    }
+  }
+
   const defaultTemplate = templates.find((t) => t.isDefault) ?? templates.find((t) => t.isBuiltin)
   const counts: Record<DailyLogTab, number> = {
     reports: reports.length,
@@ -93,6 +125,25 @@ export function DailyLogSection(props: DailyLogSectionProps): JSX.Element {
       <p className="dl-intro">
         把 Git 提交与本地 agent 会话，按模板整理成日报 / 周报 / 月报。正文由左侧对话里的 AI 撰写，这里管数据源、报告与模板。
       </p>
+
+      <div className="dl-switch-row">
+        <div className="dl-switch-copy">
+          <span className="dl-switch-title">{REPORT_COMMAND_SWITCH_TITLE}</span>
+          <p className="dl-switch-desc">{REPORT_COMMAND_SWITCH_DESC}</p>
+          <p className="dl-switch-hint">{REPORT_COMMAND_SWITCH_HINT}</p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={reportCommandEnabled}
+          aria-label={REPORT_COMMAND_SWITCH_TITLE}
+          disabled={!settingsWritable}
+          className={reportCommandEnabled ? 'dl-switch dl-switch-on' : 'dl-switch'}
+          onClick={() => { void toggleReportCommand(!reportCommandEnabled) }}
+        >
+          <span className="dl-switch-knob" />
+        </button>
+      </div>
 
       <div className="dl-generate">
         <div className="dl-generate-copy">

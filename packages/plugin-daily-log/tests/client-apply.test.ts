@@ -49,6 +49,18 @@ beforeAll(async () => {
   gatewayApply = exports.apply
 })
 
+/** settingsScope stub：分区在渲染时才读命名空间，注册链路只需要一个能 bind 的服务。 */
+function makeSettingsScope(): { bind: () => Record<string, unknown> } {
+  const scope = {
+    getSnapshot: () => ({ status: 'ready', value: { enableReportCommand: true }, writable: true }),
+    subscribe: () => () => {},
+    set: async () => {},
+    unset: async () => {},
+    mutate: async () => {},
+  }
+  return { bind: () => scope }
+}
+
 /** 捕获 apply 期间的 slot 注入与注册，替代真实 slots 服务。 */
 interface Captured {
   keys: string[]
@@ -90,6 +102,7 @@ describe('client apply：工作报告 = 设置面板一级分区', () => {
     const captured: Captured = { keys: [], registrations: [] }
     const slots = makeSlots(captured)
     await ctx.plugin({ apply: () => ctx.provide('slots', slots) })
+    await ctx.plugin({ apply: () => ctx.provide('settingsScope', makeSettingsScope()) })
 
     applyDailyLogClient(ctx)
     // 等嵌套 inject callback 完成（远程命名空间挂载 → 分区注册）。
@@ -105,11 +118,16 @@ describe('client apply：工作报告 = 设置面板一级分区', () => {
     expect(options.order).toBe(30)
     expect(typeof component).toBe('function')
 
-    // 注入面：视图取数用的 dailyLog 远程命名空间。
-    const inject = options.inject as (() => { dailyLog: unknown }) | undefined
+    // 注入面：视图取数用的 dailyLog 远程命名空间 + 设置开关用的命名空间 scope。
+    const inject = options.inject as (() => { dailyLog: unknown; scope: unknown }) | undefined
     expect(typeof inject).toBe('function')
     const face = inject!()
     expect(face.dailyLog).toBeDefined()
+    const scope = face.scope as Record<string, unknown> | undefined
+    expect(scope).toBeDefined()
+    for (const method of ['getSnapshot', 'subscribe', 'set', 'unset']) {
+      expect(typeof scope![method]).toBe('function')
+    }
     for (const method of ['listSources', 'listReports', 'listTemplates', 'addSource', 'exportReport']) {
       expect(typeof (face.dailyLog as Record<string, unknown>)[method]).toBe('function')
     }
@@ -137,6 +155,7 @@ describe('client apply：工作报告 = 设置面板一级分区', () => {
     gatewayApply(ctx)
     const captured: Captured = { keys: [], registrations: [] }
     await ctx.plugin({ apply: () => ctx.provide('slots', makeSlots(captured)) })
+    await ctx.plugin({ apply: () => ctx.provide('settingsScope', makeSettingsScope()) })
 
     applyDailyLogClient(ctx)
     await new Promise((resolve) => setTimeout(resolve, 200))

@@ -51,6 +51,86 @@ const CSS = `
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* 「注册 /report 指令」开关行：一个开关 + 解释文案（关掉后模型仍可自行启用，必须说清）。
+   位置在分区顶部：它决定指令是否存在，属于使用前先看一眼的配置。 */
+[data-dsh-dailylog-ui] .dl-switch-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 12px 16px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 14px;
+  background: var(--dsw-alias-bg-module-platform);
+}
+
+[data-dsh-dailylog-ui] .dl-switch-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+[data-dsh-dailylog-ui] .dl-switch-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+[data-dsh-dailylog-ui] .dl-switch-desc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-secondary);
+}
+
+[data-dsh-dailylog-ui] .dl-switch-hint {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+[data-dsh-dailylog-ui] .dl-switch {
+  position: relative;
+  flex: none;
+  width: 40px;
+  height: 24px;
+  margin-top: 2px;
+  padding: 0;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-module-platform);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+[data-dsh-dailylog-ui] .dl-switch:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+[data-dsh-dailylog-ui] .dl-switch-on {
+  /* 同 mem-switch：没有 --dsw-alias-bg-accent，品牌色是 state-business-primary。 */
+  background: var(--dsw-alias-state-business-primary, var(--dsw-alias-label-primary));
+  border-color: transparent;
+}
+
+[data-dsh-dailylog-ui] .dl-switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--dsw-alias-label-primary);
+  transition: transform 120ms ease, background 120ms ease;
+}
+
+[data-dsh-dailylog-ui] .dl-switch-on .dl-switch-knob {
+  transform: translateX(16px);
+  background: var(--dsw-alias-bg-module-platform);
+}
+
 /* 对话式生成：分区唯一的主操作，做成一块 framed 模块。 */
 [data-dsh-dailylog-ui] .dl-generate {
   display: flex;
