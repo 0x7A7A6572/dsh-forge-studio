@@ -621,6 +621,10 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
   // 冲突 = 硬锁：本插件整体让位，界面把所有操作入口关掉，只留红色警告。
   const locked = conflicts.length > 0
 
+  // 「生成对话记忆」关闭时宿主侧的自动提炼直接早退（src/agent/capture.ts），
+  // 高级 · 自动提炼 里的参数一律不生效 —— 界面同步置灰，免得调了没反应。
+  const captureOff = !locked && config !== null && !(config.autoCapture ?? false)
+
   return (
     <div className="mem-section" data-dsh-memory-ui="">
       <div className="mem-title-row">
@@ -702,12 +706,15 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
             <span>高级 · 自动提炼</span>
             <ChevronDown className="mem-advanced-chevron" size={14} aria-hidden="true" />
           </summary>
-          <div className="mem-advanced-body">
+          {captureOff && (
+            <p className="mem-advanced-hint">「生成对话记忆」已关闭，以下参数暂不生效。</p>
+          )}
+          <div className={captureOff ? 'mem-advanced-body mem-advanced-off' : 'mem-advanced-body'}>
             <ScaleSlider
               label="提炼间隔"
               value={config?.captureEveryTurns ?? MEMORY_CONFIG_BASE.captureEveryTurns}
               steps={CAPTURE_EVERY_STEPS}
-              disabled={busy || config === null || locked}
+              disabled={busy || config === null || locked || captureOff}
               describe={(value) => (value === 1 ? '每个回合都提炼一次' : '每 ' + value + ' 个回合提炼一次')}
               valueText={(value) => value + ' 个回合一次'}
               onChange={(captureEveryTurns) => { void run(async () => { await memory.setConfig({ captureEveryTurns }) }) }}
@@ -716,7 +723,7 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
               label="转录轮数"
               value={config?.captureMaxTurns ?? MEMORY_CONFIG_BASE.captureMaxTurns}
               steps={CAPTURE_TURNS_STEPS}
-              disabled={busy || config === null || locked}
+              disabled={busy || config === null || locked || captureOff}
               describe={(value) => '只把最近 ' + value + ' 轮对话送去提炼'}
               valueText={(value) => value + ' 轮'}
               onChange={(captureMaxTurns) => { void run(async () => { await memory.setConfig({ captureMaxTurns }) }) }}
@@ -725,7 +732,7 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
               label="转录字符上限"
               value={config?.captureMaxChars ?? MEMORY_CONFIG_BASE.captureMaxChars}
               steps={CAPTURE_CHARS_STEPS}
-              disabled={busy || config === null || locked}
+              disabled={busy || config === null || locked || captureOff}
               describe={(value) => value + ' 字，超出保留尾部'}
               valueText={(value) => value + ' 字'}
               onChange={(captureMaxChars) => { void run(async () => { await memory.setConfig({ captureMaxChars }) }) }}
@@ -734,7 +741,7 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
               title="助手回复也作为提炼素材"
               desc="默认关闭：结论类记忆由 agent 主动写入，避免每轮顺手把排查过程也记下来。"
               checked={config?.captureIncludeAssistant ?? false}
-              disabled={busy || config === null || locked}
+              disabled={busy || config === null || locked || captureOff}
               onChange={(next) => { void run(async () => { await memory.setConfig({ captureIncludeAssistant: next }) }) }}
             />
           </div>
