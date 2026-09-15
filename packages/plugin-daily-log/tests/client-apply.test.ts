@@ -28,7 +28,7 @@ import { createRequire } from 'node:module'
 import { Context } from '@deepseek-ai/cordis'
 import { TypertRegistry } from '@deepseek-ai/dsh-typert-registry'
 import { apply as applyDailyLogClient } from '../src/client/index.ts'
-import { dailyLogOf } from '../src/client/core/remote.ts'
+import { dailyLogOf, dailyLogRemoteContribution } from '../src/client/core/remote.ts'
 
 /** api-gateway/client 是浏览器 bundle：模拟 window.__ModuleLoader__ 截获注册，再跑 factory。 */
 let gatewayApply: (ctx: Context) => void
@@ -164,6 +164,48 @@ describe('client apply：工作报告 = 设置面板一级分区', () => {
     // 挂载时读 document 并插入 [data-dsh-dailylog-entry]）。
     expect(captured.keys).not.toContain('sidebar.footer.action')
     expect(typeof document).toBe('undefined')
+
+    await ctx.fiber.dispose()
+  })
+
+  it('exportReport 按 descriptor 形参个数传参，缺省位显式 undefined（client API 无可选形参）', async () => {
+    const ctx = new Context()
+    new TypertRegistry(ctx)
+    // 连接桩记录每次 RPC 的端点与 wire 实参：arity 错误发生在 client 层、到不了这里。
+    const calls: { endpoint: string; args: unknown }[] = []
+    const connection = {
+      rpc: {
+        open: undefined,
+        // gateway 的调用形态是 call(path, endpoint, payload, signal)。
+        call: async (_path: string, endpoint: string, payload: { args: unknown }) => {
+          calls.push({ endpoint, args: payload.args })
+          return { ok: true, value: '/tmp/报告.md' }
+        },
+      },
+      start: () => ({ stop: () => {} }),
+      generation: { getSnapshot: () => undefined },
+      isLoopback: true,
+      registerGenerationSource: () => () => {},
+    }
+    await ctx.plugin({ apply: () => ctx.provide('connection', connection) })
+    gatewayApply(ctx)
+    const captured: Captured = { keys: [], registrations: [] }
+    await ctx.plugin({ apply: () => ctx.provide('slots', makeSlots(captured)) })
+    await ctx.plugin({ apply: () => ctx.provide('settingsScope', makeSettingsScope()) })
+    applyDailyLogClient(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 200))
+
+    const descriptor = dailyLogRemoteContribution.descriptors.find((d) => d.id === 'dailyLog.exportReport')
+    expect(descriptor?.parameters).toHaveLength(2)
+
+    // 视图的调用形态：id + outputDir 占位。两个实参缺一不可 —— 曾因少传 outputDir 在
+    // 运行时报「client api: dailyLog/exportReport expected 2 argument(s), got 1」。
+    const res = await dailyLogOf(ctx).exportReport('r1' as never, undefined)
+    expect(res).toMatchObject({ ok: true, value: '/tmp/报告.md' })
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.endpoint).toBe('dailyLog/exportReport')
+    // undefined 不进 wire：host 收到 undefined → 目录回落设置 / ~/daily-log-reports。
+    expect(calls[0]!.args).toEqual({ id: 'r1' })
 
     await ctx.fiber.dispose()
   })
