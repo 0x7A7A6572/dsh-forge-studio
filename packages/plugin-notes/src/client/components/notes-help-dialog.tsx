@@ -8,6 +8,7 @@
 
 import { t } from '../core/theme-tokens.ts';
 import { HELP_MARKDOWN } from '../core/help-content.ts';
+import { pluginVersion } from '../../version.ts';
 import { NoteMarkdownView } from './note-preview.tsx';
 import { X } from 'lucide-react';
 // esbuild dataurl loader 内联的 data URI（见 src/client/assets.d.ts），运行时无外部请求。
@@ -29,6 +30,7 @@ export function NotesHelpDialog(props: NotesHelpDialogProps): JSX.Element {
       >
         <header style={headerStyle}>
           <span style={cardTitle}>智能便签 · 使用说明</span>
+          <span style={versionStyle}>v{pluginVersion()}</span>
           <button
             type="button"
             title="关闭说明"
@@ -85,6 +87,13 @@ const cardTitle: React.CSSProperties = {
   fontWeight: 600,
   fontSize: 14,
   color: t.labelPrimary,
+};
+const versionStyle: React.CSSProperties = {
+  // marginLeft:auto 吃掉剩余空间，让版本号和关闭钮一起靠右（不会被 space-between 推中间）。
+  marginLeft: 'auto',
+  fontSize: 12,
+  color: t.labelTertiary,
+  fontVariantNumeric: 'tabular-nums',
 };
 const bodyStyle: React.CSSProperties = {
   flex: 1,

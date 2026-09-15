@@ -185,4 +185,15 @@ describe('详情与沉淀面板', () => {
     // 高级块内部有自己的纵向间距容器（逐项 gap，不靠 margin 拼）
     expect(out).toMatch(/<div class="mem-advanced-body">[\s\S]*?aria-label="提炼间隔"[\s\S]*?助手回复也作为提炼素材/)
   })
+
+  it('分区标题旁显示当前插件版本（显示构建注入的值，不是写死的）', () => {
+    vi.stubGlobal('__PLUGIN_VERSION__', '9.9.9')
+    try {
+      const out = html(createElement(MemorySection as never, { close: () => {}, memory: memoryStub }))
+      expect(out).toContain('class="mem-title-row"')
+      expect(out).toMatch(/记忆<\/h2><span class="mem-version" title="插件版本">v9\.9\.9<\/span>/)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
 })

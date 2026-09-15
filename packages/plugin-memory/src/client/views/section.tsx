@@ -30,6 +30,7 @@ import { ChevronDown } from 'lucide-react'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { MemoryRemote } from '../core/remote.ts'
 import { ScaleSlider } from '../components/scale-slider.tsx'
+import { pluginVersion } from '../../version.ts'
 import {
   IMPORT_PROMPT_TEXT,
   MEMORY_CONFIG_BASE,
@@ -622,7 +623,10 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
 
   return (
     <div className="mem-section" data-dsh-memory-ui="">
-      <h2 className="mem-title">记忆</h2>
+      <div className="mem-title-row">
+        <h2 className="mem-title">记忆</h2>
+        <span className="mem-version" title="插件版本">v{pluginVersion()}</span>
+      </div>
       <p className="mem-intro">
         记住你的偏好和习惯，对话越多，它就越懂你。记忆内容本地保存，仅你本人可见。
       </p>

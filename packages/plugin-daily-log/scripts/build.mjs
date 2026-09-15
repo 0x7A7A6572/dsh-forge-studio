@@ -68,7 +68,8 @@ async function buildClient() {
     external: CLIENT_EXTERNAL,
     loader: { '.css': 'text', '.png': 'dataurl', '.webp': 'dataurl' },
     jsx: 'automatic',
-    define: { 'process.env.NODE_ENV': '"production"' },
+    // __PLUGIN_VERSION__：把 package.json 的版本号烧进客户端产物（见 src/version.ts）。
+    define: { 'process.env.NODE_ENV': '"production"', __PLUGIN_VERSION__: JSON.stringify(pkg.version) },
     minify: true,
     write: false,
   })

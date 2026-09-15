@@ -24,10 +24,24 @@ const CSS = `
 }
 
 /* 分区标题与引言（与 Agent 预设分区同规格）。 */
+[data-dsh-dailylog-ui] .dl-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
 [data-dsh-dailylog-ui] .dl-title {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
+}
+
+/* 版本号：贴着标题但不抢标题（基线对齐 + 弱化色 + 等宽数字）。 */
+[data-dsh-dailylog-ui] .dl-version {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
 }
 
 [data-dsh-dailylog-ui] .dl-intro {

@@ -19,10 +19,24 @@ const CSS = `
   font-family: inherit;
 }
 
+[data-dsh-memory-ui] .mem-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
 [data-dsh-memory-ui] .mem-title {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
+}
+
+/* 版本号：贴着标题但不抢标题（基线对齐 + 弱化色 + 等宽数字）。 */
+[data-dsh-memory-ui] .mem-version {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
 }
 
 [data-dsh-memory-ui] .mem-intro {
@@ -468,6 +482,7 @@ body[data-ds-dark-theme] .mem-select {
   user-select: none;
   opacity: 0.75;
   list-style: none;
+  padding: 10px 0;
 }
 
 /* 去掉浏览器默认的展开三角，改用右侧 chevron（展开时转 180°）。 */
@@ -494,7 +509,7 @@ body[data-ds-dark-theme] .mem-select {
 [data-dsh-memory-ui] .mem-advanced-body {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 30px;
 }
 
 /* 滑杆块在分区行里靠 flex:1 撑开，这里是纵向流式布局，不要让它参与伸缩。 */

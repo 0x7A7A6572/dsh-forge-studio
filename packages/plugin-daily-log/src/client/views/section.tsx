@@ -13,6 +13,7 @@ import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { DailyLogRemote } from '../core/remote.ts'
 import type { ReportRecord, SourceRecord, TemplateRecord } from '../../types.ts'
 import { errText } from './parts.tsx'
+import { pluginVersion } from '../../version.ts'
 import { ReportsView } from './reports-view.tsx'
 import { SourcesView } from './sources-view.tsx'
 import { TemplatesView } from './templates-view.tsx'
@@ -85,7 +86,10 @@ export function DailyLogSection(props: DailyLogSectionProps): JSX.Element {
 
   return (
     <div className="dl-section" data-dsh-dailylog-ui="">
-      <h2 className="dl-title">工作报告</h2>
+      <div className="dl-title-row">
+        <h2 className="dl-title">工作报告</h2>
+        <span className="dl-version" title="插件版本">v{pluginVersion()}</span>
+      </div>
       <p className="dl-intro">
         把 Git 提交与本地 agent 会话，按模板整理成日报 / 周报 / 月报。正文由左侧对话里的 AI 撰写，这里管数据源、报告与模板。
       </p>
