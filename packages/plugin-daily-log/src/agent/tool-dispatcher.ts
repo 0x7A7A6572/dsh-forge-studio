@@ -42,7 +42,7 @@ export function createDailyLogDispatcher(gate: ToolGate): ToolDefinition {
       if (agent === undefined) {
         return {
           enabled: false,
-          message: 'Cannot determine the calling session scope. Ask the user to run /report instead.',
+          message: 'Cannot determine the calling session scope, so the toolkit cannot be enabled. Ask the user to enable it (/report does that when the command is registered).',
           tools: [],
         }
       }
@@ -58,7 +58,7 @@ export function createDailyLogDispatcher(gate: ToolGate): ToolDefinition {
       } catch (error) {
         return {
           enabled: false,
-          message: 'Failed to enable the daily-log toolkit: ' + String(error) + '. Ask the user to run /report instead.',
+          message: 'Failed to enable the daily-log toolkit: ' + String(error) + '. Ask the user to enable it (/report does that when the command is registered).',
           tools: [],
         }
       }

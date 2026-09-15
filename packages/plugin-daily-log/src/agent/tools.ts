@@ -85,8 +85,9 @@ export function dailyLogWriteShouldAsk(policy: DailyLogApprovalPolicy | undefine
 
 /** 扫描工具描述里对 level 的说明（与 scan-render 的口径一致）。 */
 const SCAN_LEVEL_HINT =
-  'level=index（默认）给会话/分支级索引，行数只与分组数有关；level=summary 在索引上补每组"首问 + 末答"；' +
-  'level=raw 才是逐条明细（可用 session_id / keywords 下钻）。被折叠的分组会显式列出，不会静默丢弃。'
+  'level=index (default) lists one row per session/branch group, so rows track groups rather than messages; ' +
+  'level=summary adds each group first question and last answer; level=raw lists every entry. ' +
+  'Collapsed groups are always listed with names and counts, never silently dropped.'
 
 /** 15 个工具的名字（顺序与注册顺序一致）。 */
 export const DAILY_LOG_TOOL_NAMES: readonly string[] = [
@@ -108,7 +109,7 @@ export function buildDailyLogTools(
 
   register(defineTool({
     name: TOOL_LIST_SOURCES,
-    description: 'List all daily-log projects (one project = one unique directory path; git/dsh/claude/codex are channels aggregated per project at scan time): id, type, label, path.',
+    description: 'List daily-log projects (one project = one unique directory path; git / DSH / Claude / Codex channels aggregate per project). Returns id, type, label, path.',
     parameters: {},
     output: {
       schema: {
@@ -146,7 +147,7 @@ export function buildDailyLogTools(
   register(defineTool({
     name: TOOL_SCAN,
     description: 'Scan data sources for activity entries (git commits / conversation turns) within a date range. '
-      + 'Omit source_id to scan all sources. Returns structured entries; this is the data a report is built from. '
+      + 'Omit source_id to scan all sources; returns the entries plus a count. '
       + SCAN_LEVEL_HINT,
     parameters: {
       source_id: { type: 'string', description: 'Optional source id; omit to scan all sources.' },
@@ -214,7 +215,7 @@ export function buildDailyLogTools(
 
   register(defineTool({
     name: TOOL_LIST_REPORTS,
-    description: 'List generated daily-log reports (id, title, dateRange, createdAt).',
+    description: 'List generated daily-log reports; returns id, title, dateRange and createdAt per report.',
     parameters: {},
     output: {
       schema: {
@@ -257,7 +258,7 @@ export function buildDailyLogTools(
 
   register(defineTool({
     name: TOOL_GET_REPORT,
-    description: 'Read one generated report full markdown by id.',
+    description: 'Read one generated report by id; returns its title and full markdown body.',
     parameters: { report_id: { type: 'string', required: true, description: 'The report id from daily_log_list_reports.' } },
     output: {
       schema: { type: 'object', additionalProperties: false, properties: { title: { type: 'string', required: true }, markdown: { type: 'string', required: true } } },
@@ -272,7 +273,7 @@ export function buildDailyLogTools(
 
   register(defineTool({
     name: TOOL_LIST_TEMPLATES,
-    description: 'List report templates (id, name, isBuiltin, isDefault). The default template is used when daily_log_prepare_report omits template_id.',
+    description: 'List report templates; returns id, name, isBuiltin and isDefault per template. The default template is used when daily_log_prepare_report omits template_id.',
     parameters: {},
     output: {
       schema: {
@@ -307,7 +308,7 @@ export function buildDailyLogTools(
 
   register(defineTool({
     name: TOOL_GET_TEMPLATE,
-    description: 'Read one template full markdown content by id.',
+    description: 'Read one report template by id; returns its name and full markdown content.',
     parameters: { template_id: { type: 'string', required: true, description: 'The template id from daily_log_list_templates.' } },
     output: {
       schema: { type: 'object', additionalProperties: false, properties: { name: { type: 'string', required: true }, content: { type: 'string', required: true } } },
@@ -324,7 +325,7 @@ export function buildDailyLogTools(
 
   register(defineTool({
     name: TOOL_ADD_SOURCE,
-    description: 'Add a project (one unique directory path — a git repo or any working/project directory). At scan time all channels that hit the path (git commits / DSH / Claude / Codex sessions) are aggregated automatically.',
+    description: 'Add a project: one unique directory path (a git repo or any project directory). All channels that hit the path (git commits / DSH / Claude / Codex sessions) aggregate at scan time. Returns the new source id, label and type.',
     parameters: {
       path: { type: 'string', required: true, description: 'Absolute path of the project directory.' },
       label: { type: 'string', description: 'Optional display label.' },
@@ -350,7 +351,7 @@ export function buildDailyLogTools(
 
   register(defineTool({
     name: TOOL_PREPARE,
-    description: 'Enter the generation phase: resolve the selected template guidance (optional instruction section + required skeleton section) and source count WITHOUT scanning again (scan results are already in context). You then write the report body yourself following the guidance.',
+    description: 'Enter the generation phase: resolves the selected template guidance (instruction section + skeleton section) and the source count without scanning again. Returns templateName, skeletonSection and sourceCount; write the report body yourself following that skeleton.',
     parameters: {
       reportType: { type: 'string', required: true, description: 'Report type label, e.g. 日报 / 周报 / 月报.' },
       since: { type: 'string', required: true, description: 'Start date, e.g. "2026-06-30".' },
@@ -388,7 +389,7 @@ export function buildDailyLogTools(
 
   register(defineTool({
     name: TOOL_SAVE,
-    description: 'Save a report the model authored (full markdown body) into the reports table. Only call AFTER the user confirms the report shown in chat. Returns the report id.',
+    description: 'Save a report the model authored (full markdown body) into the reports table. Only call after the user has confirmed the report shown in chat. Returns the new report id and title.',
     parameters: {
       markdown: { type: 'string', required: true, description: 'The full markdown body the model wrote.' },
       title: { type: 'string', description: 'Optional report title; defaults to reportType + date range.' },
@@ -419,7 +420,7 @@ export function buildDailyLogTools(
 
   register(defineTool({
     name: TOOL_EXPORT,
-    description: 'Export an existing report (from daily_log_list_reports / daily_log_save_report) to a markdown file under the configured output directory.',
+    description: 'Export an existing report (report_id from daily_log_list_reports) to a markdown file under the configured output directory, or ~/daily-log-reports if none is set. Returns the written path.',
     parameters: {
       report_id: { type: 'string', required: true, description: 'The report id.' },
       output_dir: { type: 'string', description: 'Optional output directory; defaults to the configured one or ~/daily-log-reports.' },
@@ -436,7 +437,7 @@ export function buildDailyLogTools(
 
   register(defineTool({
     name: TOOL_DELETE_REPORT,
-    description: 'Delete one report by id.',
+    description: 'Delete one report by id; returns whether a report was deleted.',
     parameters: { report_id: { type: 'string', required: true, description: 'The report id from daily_log_list_reports.' } },
     output: {
       schema: { type: 'object', additionalProperties: false, properties: { deleted: { type: 'boolean', required: true } } },
@@ -449,7 +450,7 @@ export function buildDailyLogTools(
 
   register(defineTool({
     name: TOOL_TEMPLATE_CREATE,
-    description: 'Create a report template: Markdown with an optional instruction section, the DATA marker (<!-- DATA -->), and a required skeleton section guiding the generation-phase LLM (no mustache placeholders).',
+    description: 'Create a report template: Markdown with an optional instruction section, the DATA marker (<!-- DATA -->), and a required skeleton section guiding the generation phase (no mustache placeholders). Returns the new template id and name.',
     parameters: {
       name: { type: 'string', required: true, description: 'Template name.' },
       content: { type: 'string', required: true, description: 'Template content: optional instruction section above <!-- DATA --> and required skeleton section below it, guiding the LLM as it writes the report body (no mustache placeholders).' },
@@ -466,7 +467,7 @@ export function buildDailyLogTools(
 
   register(defineTool({
     name: TOOL_TEMPLATE_UPDATE,
-    description: 'Update a template name and/or content.',
+    description: 'Update the name and/or content of a template by id; returns the updated template id and name.',
     parameters: {
       template_id: { type: 'string', required: true, description: 'The template id from daily_log_list_templates.' },
       name: { type: 'string', description: 'New name.' },
@@ -488,7 +489,7 @@ export function buildDailyLogTools(
 
   register(defineTool({
     name: TOOL_TEMPLATE_DELETE,
-    description: 'Delete a template by id. The builtin default template cannot be deleted.',
+    description: 'Delete a template by id; returns whether a template was deleted. The builtin default template cannot be deleted.',
     parameters: { template_id: { type: 'string', required: true, description: 'The template id from daily_log_list_templates.' } },
     output: {
       schema: { type: 'object', additionalProperties: false, properties: { deleted: { type: 'boolean', required: true } } },
@@ -501,7 +502,7 @@ export function buildDailyLogTools(
 
   register(defineTool({
     name: TOOL_TEMPLATE_SET_DEFAULT,
-    description: 'Set a template as the default (used when daily_log_prepare_report omits template_id).',
+    description: 'Set a template as the default (the one used when daily_log_prepare_report omits template_id); returns whether the template existed.',
     parameters: { template_id: { type: 'string', required: true, description: 'The template id from daily_log_list_templates.' } },
     output: {
       schema: { type: 'object', additionalProperties: false, properties: { ok: { type: 'boolean', required: true } } },
