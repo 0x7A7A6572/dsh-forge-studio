@@ -16,7 +16,9 @@ describe('常驻短指针', () => {
   })
   it('告诉模型怎么启用', () => {
     expect(DAILY_LOG_POINTER_TEXT).toContain('daily_log')
-    expect(DAILY_LOG_POINTER_TEXT).toContain('/report')
+    // /report 指令可被 enableReportCommand 开关注销，常驻指针不得假设它一定存在，
+    // 也不该指示模型去宣传一个人可关闭的人类面入口。
+    expect(DAILY_LOG_POINTER_TEXT).not.toContain('/report')
   })
 })
 
