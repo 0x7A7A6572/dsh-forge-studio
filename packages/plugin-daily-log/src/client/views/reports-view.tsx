@@ -30,7 +30,9 @@ export function ReportsView(props: {
 
   async function doExport(id: string): Promise<void> {
     await props.run(async () => {
-      const res = await props.dailyLog.exportReport(id as never)
+      // 导出目录缺省时由 host 读设置（outputDir → ~/daily-log-reports）；client API 层没有
+      // 「可选形参」，缺省位必须显式传 undefined 占位，否则调用期抛 arity 错误。
+      const res = await props.dailyLog.exportReport(id as never, undefined)
       if (res.ok) window.alert('已导出：' + res.value)
       else throw new Error(errText(res.error))
     })

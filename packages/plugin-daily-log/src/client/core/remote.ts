@@ -5,7 +5,11 @@
  *
  * 约束（两处必须与 host 一致）：
  * - 端点 method 名 = host 方法名；
- * - 参数 wire 名 = host 方法形参名（input/id/range/patch）。
+ * - 参数 wire 名 = host 方法形参名（input/id/range/patch）；
+ * - 参数个数：client API 层**没有「可选形参」概念** —— descriptor 声明的形参必须逐个传值，
+ *   缺省语义用 undefined 占位（host 收到 undefined 即走缺省值）。少传一个即抛
+ *   `client api: <端点> expected N argument(s), got M`；类型上也照此写成必填
+ *   （`string | undefined`，不是 `string?`），让漏传在 typecheck 就红。
  * 参数 codec 用 strict（client API 层强制），result 用 src-json（透传）。
  */
 
@@ -123,7 +127,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'dailyLog/listReports': () => Promise<RemoteResult<readonly ReportRecord[]>>
     'dailyLog/getReport': (id: ReportId) => Promise<RemoteResult<ReportRecord | undefined>>
     'dailyLog/deleteReport': (id: ReportId) => Promise<RemoteResult<boolean>>
-    'dailyLog/exportReport': (id: ReportId, outputDir?: string) => Promise<RemoteResult<string>>
+    // outputDir 无缺省形参：必须显式传 undefined（见文件头「参数个数」约束）。
+    'dailyLog/exportReport': (id: ReportId, outputDir: string | undefined) => Promise<RemoteResult<string>>
     'dailyLog/listTemplates': () => Promise<RemoteResult<readonly TemplateRecord[]>>
     'dailyLog/getTemplate': (id: TemplateId) => Promise<RemoteResult<TemplateRecord | undefined>>
     'dailyLog/createTemplate': (input: { name: string; content: string }) => Promise<RemoteResult<TemplateRecord>>
@@ -147,7 +152,7 @@ export interface DailyLogRemote {
   listReports(): Promise<RemoteResult<readonly ReportRecord[]>>
   getReport(id: ReportId): Promise<RemoteResult<ReportRecord | undefined>>
   deleteReport(id: ReportId): Promise<RemoteResult<boolean>>
-  exportReport(id: ReportId, outputDir?: string): Promise<RemoteResult<string>>
+  exportReport(id: ReportId, outputDir: string | undefined): Promise<RemoteResult<string>>
   listTemplates(): Promise<RemoteResult<readonly TemplateRecord[]>>
   getTemplate(id: TemplateId): Promise<RemoteResult<TemplateRecord | undefined>>
   createTemplate(input: { name: string; content: string }): Promise<RemoteResult<TemplateRecord>>

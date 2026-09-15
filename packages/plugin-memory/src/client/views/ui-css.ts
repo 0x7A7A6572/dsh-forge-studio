@@ -127,6 +127,12 @@ const CSS = `
   transition: background 120ms ease, border-color 120ms ease;
 }
 
+/* 禁用态：锁定时整块开关都不给操作，鼠标也要如实反馈。 */
+[data-dsh-memory-ui] .mem-switch:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 [data-dsh-memory-ui] .mem-switch-on {
   /* 同样不存在 --dsw-alias-bg-accent；品牌色是 state-business-primary。 */
   background: var(--dsw-alias-state-business-primary, var(--dsw-alias-label-primary));
@@ -515,6 +521,25 @@ body[data-ds-dark-theme] .mem-select {
 /* 滑杆块在分区行里靠 flex:1 撑开，这里是纵向流式布局，不要让它参与伸缩。 */
 [data-dsh-memory-ui] .mem-advanced-body > * {
   flex: none;
+}
+
+/* 「生成对话记忆」关闭 → 整块联动参数置灰（宿主侧同样不生效，见 src/agent/capture.ts）。 */
+[data-dsh-memory-ui] .mem-advanced-off {
+  opacity: 0.6;
+}
+
+/* 组内不再叠第二层 disabled 透明，避免灰上加灰、开关糊成一片。 */
+[data-dsh-memory-ui] .mem-advanced-off .mem-switch:disabled,
+[data-dsh-memory-ui] .mem-advanced-off .mem-slider:disabled {
+  opacity: 1;
+  cursor: not-allowed;
+}
+
+[data-dsh-memory-ui] .mem-advanced-hint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-tertiary);
 }
 
 /* ---- 重要性：分级滑杆（原生 range + 自绘轨道/滑块，1-5 一档一停） ---- */

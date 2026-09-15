@@ -42,9 +42,9 @@ export interface DailyLogSectionInjected {
 /** 开关行文案：关掉后模型仍可自行启用 —— 这句话是「开关作用范围」的唯一出口。 */
 export const REPORT_COMMAND_SWITCH_TITLE = '注册 /report 指令'
 export const REPORT_COMMAND_SWITCH_DESC = '关闭后无法用 /report 触发；模型仍可在需要时自行启用。'
-export const REPORT_COMMAND_SWITCH_HINT =
-  '15 个工具默认不注册：新会话只挂一个 daily_log 派发器，其余工具与详细引导段在「按需启用」时才注入本会话。' +
-  '这个开关只决定 /report 指令是否注册，不是插件总开关。'
+export const REPORT_COMMAND_SWITCH_HINT = ''
+  // '15 个工具默认不注册：新会话只挂一个 daily_log 派发器，其余工具与详细引导段在「按需启用」时才注入本会话。' +
+  // '这个开关只决定 /report 指令是否注册，不是插件总开关。'
 
 /** 分区组件完整 props：设置外壳 owner props + 插件注入面。 */
 export type DailyLogSectionProps =
@@ -152,11 +152,11 @@ export function DailyLogSection(props: DailyLogSectionProps): JSX.Element {
             在左侧对话里对 AI 说一句「帮我生成本周周报」：它会先与你确认时间范围与项目，扫描提交与本地会话，
             按模板归纳成业务化报告，经你确认后存档到「报告」。
           </p>
-          <div className="dl-generate-meta">
+          {/* <div className="dl-generate-meta">
             <span>默认模板：{defaultTemplate?.name ?? '无'}{defaultTemplate?.isBuiltin === true ? '（内置）' : ''}</span>
             <span>数据源：{sources.length} 个</span>
             {sources.length === 0 && <Pill>先添加数据源</Pill>}
-          </div>
+          </div> */}
         </div>
         <div className="dl-generate-action">
           <Button

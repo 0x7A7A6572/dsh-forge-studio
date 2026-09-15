@@ -149,7 +149,7 @@ function TemplateEditDialog(props: {
       onClose={props.onClose}
       title={props.editing !== null ? '编辑模板' : '新增模板'}
       closeLabel="关闭"
-      description={'指令段（可选） + ' + DATA_MARKER + ' + 骨架段；内容作为结构引导喂给生成 AI。'}
+      description={''/* '指令段（可选） + ' + DATA_MARKER + ' + 骨架段；内容作为结构引导喂给生成 AI。' */}
       className="dl-dialog-md"
       footer={(
         <>
