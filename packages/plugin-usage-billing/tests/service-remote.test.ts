@@ -67,7 +67,8 @@ async function writeBaseSnapshot(svc: UsageBillingService): Promise<void> {
 
 /**
  * 目录层快照（`reason: 'install'`）：`catalogValueOf` 只重放 `install` /
- * `catalog-refresh` 两层，所以「目录原本多少钱」必须由这样的快照承载。
+ * `catalog-refresh` / `manual-refresh` 三层（`CATALOG_REASONS`），
+ * 所以「目录原本多少钱」必须由这样的快照承载。
  */
 async function writeCatalogSnapshot(svc: UsageBillingService): Promise<void> {
   const priv = svc as unknown as {
