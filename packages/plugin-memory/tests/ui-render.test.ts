@@ -14,7 +14,18 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => {
   const Stub = (props: { children?: ReactNode }): ReactNode => props.children ?? null
   const Null = (): null => null
   return {
-    Button: (props: { children?: ReactNode }) => createElement('button', null, props.children),
+    // Button 透传 disabled 与 aria-*（工具条的「更多」按钮靠 aria-haspopup/expanded 断言可达性），
+    // 其余属性照旧丢弃 —— 测的是我们传了什么，不是宿主原语怎么渲染。
+    Button: (props: {
+      children?: ReactNode
+      disabled?: boolean
+      'aria-haspopup'?: string
+      'aria-expanded'?: boolean
+    }) => createElement('button', {
+      disabled: props.disabled === true ? true : undefined,
+      'aria-haspopup': props['aria-haspopup'],
+      'aria-expanded': props['aria-expanded'],
+    }, props.children),
     // Input 渲染成真 input（只透传 placeholder / type）：摘要、别名这些单行输入
     // 在静态 HTML 里本来一个字符都不出现，就没法断言它们确实进了表单。
     Input: (props: { placeholder?: string; type?: string }) =>
@@ -22,7 +33,30 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => {
     Modal: (props: { open?: boolean; children?: ReactNode }) =>
       (props.open === true ? createElement('div', { role: 'dialog' }, props.children) : null),
     Pill: Stub,
+    // Menu：就地把 anchor 放出来；open 时才渲染条目（和真原语一致 —— 收起时
+    // 一个字符都不进 DOM，这正是工具条能变短的原因）。
+    Menu: (props: {
+      anchor?: ReactNode
+      open?: boolean
+      items?: readonly { id: string; type?: string; label?: ReactNode; disabled?: boolean; danger?: boolean }[]
+    }) => createElement(
+      'span',
+      { className: 'mem-menu' },
+      props.anchor,
+      props.open === true
+        ? createElement(
+          'div',
+          { role: 'menu' },
+          (props.items ?? []).map((item) => createElement(
+            'button',
+            { key: item.id, type: 'button', role: 'menuitem', disabled: item.disabled === true },
+            item.type === undefined ? item.label : null,
+          )),
+        )
+        : null,
+    ),
     IconArchiveOutline20: Null,
+    IconEllipsisOutline16: Null,
     IconChecklistOutline14: Null,
     IconCopyOutline16: Null,
     IconDownloadOutline16: Null,
@@ -49,6 +83,7 @@ import {
   MemoryDraftForm,
   MemorySection,
   memoryLinkCounts,
+  MORE_ACTIONS,
   ModalFeedback,
   nodeKindLabel,
   ORIGIN_LABELS,
@@ -205,11 +240,21 @@ describe('详情与沉淀面板', () => {
     expect(timeText(new Date(2026, 8, 14, 11, 1).getTime())).toBe('2026-09-14 11:01')
   })
 
-  it('分区静态渲染：工具条有「沉淀」，弹窗未打开时不留内容', () => {
+  it('分区静态渲染：工具条收敛成 新增 / 沉淀 / 更多，弹窗未打开时不留内容', () => {
     const out = html(createElement(MemorySection as never, { close: () => {}, memory: memoryStub }))
     expect(out).toContain('生成对话记忆')
-    expect(out).toContain('导入')
     expect(out).toContain('沉淀')
+    expect(out).toContain('更多')
+    expect(out).toContain('aria-haspopup="menu"')
+    // 收起状态下，下拉里的操作一个字都不进 DOM —— 工具条因此短了 4 个按钮。
+    expect(out).not.toContain('重建关联')
+    expect(out).not.toContain('整理（合并重复）')
+    expect(out).not.toContain('复制导出')
+    expect(out).not.toContain('重置当前页签')
+    // 它们仍然可达：条目表是「哪些操作被收起」的唯一真相来源。
+    expect(MORE_ACTIONS.map((action) => action.label)).toEqual(
+      ['整理（合并重复）', '重建关联', '复制导出', '导入', '重置当前页签'],
+    )
     expect(out).toContain('共 0 条')
     // 详情与沉淀面板都是 Modal(open=false)，SSR 里一个字符都不该出现
     expect(out).not.toContain('mem-raw-list')
@@ -365,7 +410,7 @@ describe('wiki 图层：摘要 / 别名 / 实体 / 关联', () => {
     expect(RELATION_OPTIONS).toHaveLength(9)
     expect(RELATION_OPTIONS.map((option) => option.label)).toContain('取代')
     expect(ENTITY_KIND_OPTIONS).toHaveLength(6)
-    // 工具条新增「重建关联」
-    expect(out).toContain('重建关联')
+    // 工具条：重建关联已收进「更多」下拉（收起时不进 DOM），可达性靠条目表守住
+    expect(MORE_ACTIONS.map((action) => action.label)).toContain('重建关联')
   })
 })

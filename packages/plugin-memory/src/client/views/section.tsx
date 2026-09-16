@@ -2,7 +2,8 @@
  * 记忆 —— dsh 设置面板里的一级分区（对齐 Agent 预设分区的布局语言）。
  *
  * 结构：标题 + 引言 → 记忆开关块（生成对话记忆 / 自动注入 / 注入条数与门槛）
- * → 「管理记忆」工具条（新增 / 整理 / 复制 / 重置 / 导入 / 编辑）
+ * → 「管理记忆」工具条（新增 / 沉淀 / 更多 ▾ —— 整理、重建关联、复制导出、导入、重置
+ *   都是维护类低频操作，收进下拉，工具条只占三个位置）
  * → 页签（全局记忆 / 项目记忆 / 实体，带计数）→ 记忆条目列表（可直接改正文）
  * → 详情弹窗里的「关联」区块（wiki 图层：实体 + 边，可连边 / 断边）。
  *
@@ -19,14 +20,17 @@ import {
   IconCopyOutline16,
   IconDownloadOutline16,
   IconEditOutline16,
+  IconEllipsisOutline16,
   IconListPenOutline16,
   IconPlusOutline16,
   IconRefreshOutline16,
   IconTrashOutline16,
   Input,
+  Menu,
   Modal,
   Pill,
 } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ChevronDown } from 'lucide-react'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { MemoryRemote } from '../core/remote.ts'
@@ -233,6 +237,23 @@ export function linkedMemoryIds(edges: readonly MemoryEdge[], entityId: string):
 }
 
 const SCOPE_LABELS: Record<MemoryScope, string> = { global: '全局记忆', project: '项目记忆' }
+
+/**
+ * 「更多」下拉里的次要操作。
+ * 工具条只留三个位置：新增（唯一的新建入口）、沉淀（看原文与后台调用）、更多。
+ * 整理 / 重建关联 / 复制导出 / 导入 / 重置都是维护类操作，低频且各占一个按钮宽度，
+ * 收进下拉后工具条从 7 个按钮缩到 3 个。
+ */
+export const MORE_ACTIONS = [
+  { id: 'tidy', label: '整理（合并重复）' },
+  { id: 'rebuild', label: '重建关联' },
+  { id: 'copy', label: '复制导出' },
+  { id: 'import', label: '导入' },
+  { id: 'reset', label: '重置当前页签' },
+] as const
+
+/** 「更多」里的一项动作 id。 */
+export type MemoryMoreAction = (typeof MORE_ACTIONS)[number]['id']
 
 /** 分段组按钮的选项：短枚举一律用组按钮，不用下拉（少一次点击、也不用展开面板）。 */
 export const SCOPE_OPTIONS = MEMORY_SCOPES.map((scope) => ({ value: scope, label: SCOPE_LABELS[scope] }))
@@ -555,6 +576,7 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
   const [neighborhood, setNeighborhood] = useState<MemoryNeighborhood | null>(null)
   const [linkDraft, setLinkDraft] = useState<LinkDraft | null>(null)
   const [busy, setBusy] = useState(false)
+  const [moreOpen, setMoreOpen] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
@@ -1145,6 +1167,55 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
   // 高级 · 自动提炼 里的参数一律不生效 —— 界面同步置灰，免得调了没反应。
   const captureOff = !locked && config !== null && !(config.autoCapture ?? false)
 
+  /**
+   * 「更多」下拉的条目。禁用条件与它们还是独立按钮时逐条对齐：
+   * 实体页签没有记忆条目可整理 / 复制 / 重置 / 导入，重建关联对两个页签都成立。
+   */
+  const moreEntries: MenuEntry[] = [
+    {
+      id: 'tidy',
+      label: '整理（合并重复）',
+      icon: <IconChecklistOutline14 size={14} />,
+      disabled: busy || locked || tab === 'entity',
+    },
+    {
+      id: 'rebuild',
+      label: '重建关联',
+      icon: <IconRefreshOutline16 size={14} />,
+      disabled: busy || locked,
+    },
+    {
+      id: 'copy',
+      label: '复制导出',
+      icon: <IconCopyOutline16 size={14} />,
+      disabled: busy || locked || tab === 'entity',
+    },
+    {
+      id: 'import',
+      label: '导入',
+      icon: <IconDownloadOutline16 size={14} />,
+      disabled: locked || tab === 'entity',
+    },
+    { type: 'separator', id: 'mem-more-separator' },
+    {
+      id: 'reset',
+      label: '重置当前页签',
+      icon: <IconTrashOutline16 size={14} />,
+      danger: true,
+      disabled: locked || tab === 'entity',
+    },
+  ]
+
+  /** 下拉选中 → 关菜单再执行原动作（顺序：先关，免得动作打开弹窗后菜单还浮在上层）。 */
+  function onMoreSelect(id: string): void {
+    setMoreOpen(false)
+    if (id === 'tidy') void runTidy()
+    else if (id === 'rebuild') void runRebuildEdges()
+    else if (id === 'copy') void copyExport()
+    else if (id === 'import') openModal(setImportOpen)
+    else if (id === 'reset') openModal(setResetOpen)
+  }
+
   return (
     <div className="mem-section" data-dsh-memory-ui="">
       <div className="mem-title-row">
@@ -1279,12 +1350,26 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
         <span className="mem-head-title">管理记忆</span>
         <div className="mem-toolbar">
           <Button variant="ghost" size="sm" icon={<IconPlusOutline16 size={14} />} disabled={locked || tab === 'entity'} onClick={startCreate}>新增</Button>
-          <Button variant="ghost" size="sm" icon={<IconChecklistOutline14 size={14} />} disabled={busy || locked || tab === 'entity'} onClick={() => { void runTidy() }}>整理</Button>
-          <Button variant="ghost" size="sm" icon={<IconRefreshOutline16 size={14} />} disabled={busy || locked} onClick={() => { void runRebuildEdges() }}>重建关联</Button>
-          <Button variant="ghost" size="sm" icon={<IconCopyOutline16 size={14} />} disabled={busy || locked || tab === 'entity'} onClick={() => { void copyExport() }}>复制</Button>
-          <Button variant="ghost" size="sm" icon={<IconRefreshOutline16 size={14} />} disabled={locked || tab === 'entity'} onClick={() => { openModal(setResetOpen) }}>重置</Button>
-          <Button variant="ghost" size="sm" icon={<IconDownloadOutline16 size={14} />} disabled={locked || tab === 'entity'} onClick={() => { openModal(setImportOpen) }}>导入</Button>
           <Button variant="ghost" size="sm" icon={<IconListPenOutline16 size={14} />} disabled={locked} onClick={openLedger}>沉淀</Button>
+          <Menu
+            anchor={(
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={<IconEllipsisOutline16 size={14} />}
+                disabled={locked}
+                aria-haspopup="menu"
+                aria-expanded={moreOpen}
+                onClick={() => { setMoreOpen((open) => !open) }}
+              >更多</Button>
+            )}
+            open={moreOpen}
+            items={moreEntries}
+            onSelect={onMoreSelect}
+            onClose={() => { setMoreOpen(false) }}
+            align="end"
+            dense
+          />
         </div>
       </div>
 
