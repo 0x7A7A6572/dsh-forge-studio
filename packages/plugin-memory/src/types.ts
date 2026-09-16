@@ -500,6 +500,11 @@ export interface MemoryConfig {
   autoCapture: boolean
   /** 自动注入：新会话开局把相关记忆注入系统提示。 */
   autoInject: boolean
+  /**
+   * 写入判定：写入前若附近已有「很像」的条目，让模型判一次「新建 / 并进哪一条 / 不用记」。
+   * 关掉就只走字符级阈值（同标题、别名、Dice 重叠）+ 疑似提示。
+   */
+  autoJudge: boolean
   /** 单次注入条数上限。 */
   maxInjected: number
   /** 注入重要性门槛（1-5）。 */
@@ -517,6 +522,7 @@ export interface MemoryConfig {
 export const MEMORY_CONFIG_BASE: MemoryConfig = {
   autoCapture: true,
   autoInject: true,
+  autoJudge: true,
   maxInjected: 6,
   importanceThreshold: 4,
   captureEveryTurns: 3,

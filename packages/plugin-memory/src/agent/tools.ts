@@ -37,6 +37,8 @@ export const TOOL_MOVE = MEMORY_TOOL_PREFIX + 'move'
 /** 实体与边的工具（wiki 图层）。 */
 export const TOOL_ENTITY = MEMORY_TOOL_PREFIX + 'entity'
 export const TOOL_LINK = MEMORY_TOOL_PREFIX + 'link'
+/** 方案 B：写入没自动合并、但附近有条很像的时，回给模型的一句提醒前缀。 */
+export const SUSPECT_HINT_PREFIX = '疑似同一条：'
 
 export function isMemoryTool(name: string): boolean {
   return name.startsWith(MEMORY_TOOL_PREFIX)
@@ -265,6 +267,37 @@ export interface InstallMemoryToolsOptions {
   onConflicts?: (conflicts: MemoryConflict[]) => void
 }
 
+/** memory_save 的结果文案（抽出来单独放，方便直接测「疑似同一条」这类提示）。 */
+export function renderSaveResult(v: {
+  readonly saved: Record<string, unknown>
+  readonly created: boolean
+  readonly merged_by?: string
+  readonly skipped?: boolean
+  readonly judge_reason?: string
+  readonly suspect_title?: string
+  readonly suspect_score?: number
+}): string {
+  const title = String(v.saved.title)
+  const lines: string[] = []
+  if (v.skipped === true) {
+    lines.push('没有写入：已有『' + title + '』完整覆盖了这条（模型判定）。')
+  } else if (v.created) {
+    lines.push('记忆已保存：' + title)
+  } else if (v.merged_by === 'judge') {
+    lines.push('记忆已并入已有条目（模型判定）：' + title)
+  } else {
+    lines.push('记忆已合并更新：' + title)
+  }
+  if (v.judge_reason !== undefined && v.judge_reason !== '') lines.push('判定理由：' + v.judge_reason)
+  if (v.suspect_title !== undefined) {
+    const score = typeof v.suspect_score === 'number' ? v.suspect_score.toFixed(2) : '?'
+    lines.push(SUSPECT_HINT_PREFIX + '已有『' + v.suspect_title + '』（相似度 ' + score + '）像是同一件事，但没有自动合并。'
+      + '确认是同一条：用 memory_update 把新信息改到那一条上，再用 memory_delete 删掉这条；'
+      + '只是相关：用 memory_link 把两条连起来。')
+  }
+  return lines.join('\n')
+}
+
 export function installMemoryTools(ctx: Context, options: InstallMemoryToolsOptions = {}): void {
   // 延后一个 macrotask 再注册：让同样在等 tools 就绪的插件（比如 dsh-mneme）先落地。
   // 否则「谁先跑谁占名」，后跑的那个会直接注册失败，探测就成了撞运气。
@@ -343,11 +376,47 @@ function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): voi
         properties: {
           saved: RECORD_ITEM_SCHEMA,
           created: { type: 'boolean', required: true },
+          // 落点：title（同标题）/ overlap（语义重叠）/ judge（模型判定）。
+          merged_by: { type: 'string' },
+          // 判定为「已有那条已覆盖」时没有写入。
+          skipped: { type: 'boolean' },
+          judge_reason: { type: 'string' },
+          // 疑似同一条（方案 B）：没有自动合并，但附近有条很像的。
+          suspect_title: { type: 'string' },
+          suspect_score: { type: 'number' },
         },
       },
       render: (_args, value) => {
-        const v = value as { saved: Record<string, unknown>; created: boolean }
-        return [{ type: 'text', text: (v.created ? '记忆已保存：' : '记忆已合并更新：') + String(v.saved.title) }]
+        const v = value as {
+          saved: Record<string, unknown>
+          created: boolean
+          merged_by?: string
+          skipped?: boolean
+          judge_reason?: string
+          suspect_title?: string
+          suspect_score?: number
+        }
+        const title = String(v.saved.title)
+        const lines: string[] = []
+        if (v.skipped === true) {
+          lines.push('没有写入：已有『' + title + '』完整覆盖了这条（模型判定）。')
+        } else if (v.created) {
+          lines.push('记忆已保存：' + title)
+        } else if (v.merged_by === 'judge') {
+          lines.push('记忆已并入已有条目（模型判定）：' + title)
+        } else {
+          lines.push('记忆已合并更新：' + title)
+        }
+        if (v.judge_reason !== undefined && v.judge_reason !== '') {
+          lines.push('判定理由：' + v.judge_reason)
+        }
+        if (v.suspect_title !== undefined) {
+          const score = typeof v.suspect_score === 'number' ? v.suspect_score.toFixed(2) : '?'
+          lines.push(SUSPECT_HINT_PREFIX + '已有『' + v.suspect_title + '』（相似度 ' + score + '）像是同一件事，但没有自动合并。'
+            + '确认是同一条：用 memory_update 把新信息改到那一条上，再用 memory_delete 删掉这条；'
+            + '只是相关：用 memory_link 把两条连起来。')
+        }
+        return [{ type: 'text', text: renderSaveResult(v) }]
       },
     },
     async execute(args, exec) {
@@ -370,7 +439,16 @@ function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): voi
         source: 'agent',
         ...(session.sessionId !== undefined ? { sessionId: session.sessionId } : {}),
       })
-      return { saved: describeRecord(outcome.record), created: outcome.created }
+      return {
+        saved: describeRecord(outcome.record),
+        created: outcome.created,
+        ...(outcome.mergedBy !== undefined ? { merged_by: outcome.mergedBy } : {}),
+        ...(outcome.skipped === true ? { skipped: true } : {}),
+        ...(outcome.judged?.reason !== undefined ? { judge_reason: outcome.judged.reason } : {}),
+        ...(outcome.suspect !== undefined
+          ? { suspect_title: outcome.suspect.title, suspect_score: Math.round(outcome.suspect.score * 100) / 100 }
+          : {}),
+      }
     },
   }))
 

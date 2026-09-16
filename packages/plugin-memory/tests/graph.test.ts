@@ -297,8 +297,10 @@ describe('清理与关联视图', () => {
   it('删记忆、删实体都不留悬空边', async () => {
     const svc = makeService()
     const entity = await svc.upsertEntity({ name: '共享主题' })
-    const a = await svc.save({ title: '甲条', content: '共享主题 出现在这里。' })
-    const b = await svc.save({ title: '乙条', content: '共享主题 出现在那里。' })
+    // 正文必须真的不一样：阈值降到 0.7 后，「只差一个字」的两条会被语义重叠合并，
+    // 那样就不是「两条记忆共享一个实体」了（这个测试要的是后者）。
+    const a = await svc.save({ title: '甲条', content: '甲条记录：共享主题 在这次讨论里出现了，讲的是甲方案。' })
+    const b = await svc.save({ title: '乙条', content: '乙条记录：另一件事也提到了 共享主题，但说的是乙方案，措辞不一样。' })
     expect((await svc.listEdges({})).length).toBe(3)
     await svc.removeMemory(b.id)
     const left = await svc.listEdges({ node: { kind: 'memory', id: a.id } })

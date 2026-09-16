@@ -149,6 +149,14 @@ export function durationText(ms: number): string {
 /** 原文留档来源标签。 */
 export const ORIGIN_LABELS: Record<string, string> = { import: '导入', capture: '对话提炼', manual: '手工' }
 
+/** 后台模型调用的用途标签（审计列表用）。 */
+export const AUDIT_KIND_LABELS: Record<string, string> = {
+  capture: '对话提炼',
+  extract: '原文抽取',
+  entity: '实体抽取',
+  judge: '写入判定',
+}
+
 /** 一条记忆的来源标签（面板详情用）。 */
 export function sourceLabel(source: string): string {
   if (source === 'agent') return '模型工具'
@@ -1179,6 +1187,13 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
           disabled={busy || config === null || locked}
           onChange={(next) => { void run(async () => { await memory.setConfig({ autoInject: next }) }) }}
         />
+        <SwitchRow
+          title="写入判定"
+          desc="写入前如果附近已经有很像的记忆，先让模型判一次「新建 / 并进哪一条 / 不用记」（一次一行 JSON，失败就退化成新建）。关掉只走字面阈值。"
+          checked={locked ? false : (config?.autoJudge ?? false)}
+          disabled={busy || config === null || locked}
+          onChange={(next) => { void run(async () => { await memory.setConfig({ autoJudge: next }) }) }}
+        />
         <div className="mem-field-row">
           <span>单次注入条数</span>
           <Input
@@ -1660,6 +1675,7 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
             {audits.map((entry) => (
               <div className="mem-audit-item" key={entry.id}>
                 <span className={entry.ok ? 'mem-audit-ok' : 'mem-audit-bad'}>{entry.ok ? '成功' : '失败'}</span>
+                <span className="mem-raw-meta">{AUDIT_KIND_LABELS[entry.kind] ?? entry.kind}</span>
                 <span className="mem-raw-meta">{timeText(entry.at)}</span>
                 <span className="mem-audit-model">{entry.provider + ' / ' + entry.model}</span>
                 <span className="mem-raw-meta">

@@ -34,6 +34,7 @@ function makeService() {
   let config: MemoryConfig = {
     autoCapture: true,
     autoInject: true,
+    autoJudge: true,
     maxInjected: 6,
     importanceThreshold: 4,
     captureEveryTurns: 3,

@@ -257,7 +257,7 @@ export function parseCapturedItems(text: string): CaptureParseResult {
  * 本插件只声明了部分 inject，属性访问未必看得见别的服务；两条都试，
  * 都没有才算不可用 —— 未声明的服务访问可能直接抛，所以两条都要包 try。
  */
-function serviceOf<T>(ctx: Context, name: string): T | undefined {
+export function serviceOf<T>(ctx: Context, name: string): T | undefined {
   try {
     const viaGet = (ctx as unknown as { get?: (key: string) => unknown }).get?.(name)
     if (viaGet !== undefined && viaGet !== null) return viaGet as T
@@ -269,8 +269,8 @@ function serviceOf<T>(ctx: Context, name: string): T | undefined {
   return undefined
 }
 
-/** 当前可用的模型路由；拿不到返回 undefined（本次不提炼）。 */
-function resolveRoute(ctx: Context, session: unknown): { provider: string; model: string } | undefined {
+/** 当前可用的模型路由；拿不到返回 undefined（本次不提炼 / 不判定）。 */
+export function resolveRoute(ctx: Context, session: unknown): { provider: string; model: string } | undefined {
   try {
     const header = (session as { requestHeader?: () => unknown } | undefined)?.requestHeader?.()
     const config = asRecord(asRecord(header)?.config)

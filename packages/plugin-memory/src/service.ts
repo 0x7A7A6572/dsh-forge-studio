@@ -38,10 +38,20 @@ export const MEMORY_AUDIT_LIMIT = 500
 export const MEMORY_CONTENT_LIMIT = 320
 /** 摄取条目的默认重要性（用户主动整理过的内容，高于自动提炼的 3）。 */
 export const IMPORT_IMPORTANCE = 4
-/** 语义重叠合并阈值：正文 Dice 达到即视为同一条。 */
-export const MEMORY_OVERLAP_CONTENT = 0.8
-/** 语义重叠合并阈值：标题 Dice 达到即视为同一条。 */
+/**
+ * 语义重叠合并阈值：正文 Dice 达到即视为同一条。
+ * 0.8 → 0.7（方案 A）：实测「同一条事换个说法」大量落在 0.7~0.8，卡在 0.8 会漏；
+ * 再低（0.6 档）开始把「同一主题的两件事」并掉，所以只降这一档。
+ */
+export const MEMORY_OVERLAP_CONTENT = 0.7
+/** 语义重叠合并阈值：标题 Dice 达到即视为同一条（标题短，误判代价大，维持 0.9）。 */
 export const MEMORY_OVERLAP_TITLE = 0.9
+/** 疑似同一条（方案 B）的提示下限：没到自动合并的线，但已经像到值得提醒模型。 */
+export const MEMORY_NEAR_FLOOR = 0.4
+/** 写入判定（方案 C）的下限：到这条线才值得让模型判一次（判定本身有成本）。 */
+export const MEMORY_JUDGE_FLOOR = 0.2
+/** 单次判定最多带几条候选（越靠前越像）。 */
+export const MEMORY_JUDGE_MAX_CANDIDATES = 3
 /** 行首的列表 / 编号 / markdown 标题标记（service 的单段校验与 capture 过滤共用）。 */
 export const MEMORY_LINE_MARKER_PATTERN = /^\s*(?:[-*+•]\s|\d+[.)]\s|#{1,6}\s)/
 
@@ -401,14 +411,70 @@ export function prunableRawIds(docs: readonly MemoryRawDocument[], limit: number
   return [...docs].sort(compareRawDocuments).slice(limit).map((doc) => doc.id)
 }
 
-/** 合并落点：'title' 同标题就地更新 / 'overlap' 语义重叠并入。 */
-export type MemoryMergeReason = 'title' | 'overlap'
+/** 合并落点：'title' 同标题 / 'overlap' 语义重叠 / 'judge' 模型判定。 */
+export type MemoryMergeReason = 'title' | 'overlap' | 'judge'
 
-/** saveWithOutcome 的结果：记录本身 + 这次是新建还是并进了哪一条。 */
+/** 写入判定的三个动作。 */
+export type MemoryJudgeDecision = 'add' | 'update' | 'skip'
+
+/** 判定候选（已按相似度从高到低排好，最多 MEMORY_JUDGE_MAX_CANDIDATES 条）。 */
+export interface MemoryJudgeCandidate {
+  readonly id: MemoryId
+  readonly kind: MemoryKind
+  readonly title: string
+  readonly content: string
+  /** 与待写入条目的相似度（标题 / 正文 Dice 取大者）。 */
+  readonly score: number
+}
+
+export interface MemoryJudgeRequest {
+  readonly title: string
+  readonly content: string
+  readonly summary: string
+  readonly scope: MemoryScope
+  readonly projectPath: string
+  readonly candidates: readonly MemoryJudgeCandidate[]
+}
+
+/** 判定结果。meta 由 agent 层填，服务端据此记一条审计。 */
+export interface MemoryJudgeVerdict {
+  readonly decision: MemoryJudgeDecision
+  readonly targetId?: MemoryId
+  readonly reason?: string
+  readonly meta?: {
+    readonly ok: boolean
+    readonly provider: string
+    readonly model: string
+    readonly durationMs: number
+    readonly inputChars: number
+    readonly outputChars: number
+    readonly tokensIn?: number
+    readonly tokensOut?: number
+    readonly error?: string
+  }
+}
+
+/** 判定钩子：返回 undefined = 本次没有判定（拿不到路由 / llm 不可用）。 */
+export type MemoryJudge = (request: MemoryJudgeRequest) => Promise<MemoryJudgeVerdict | undefined>
+
+/** 疑似同一条（方案 B）：没自动合并，但值得让调用方知道「附近有条很像的」。 */
+export interface MemorySuspect {
+  readonly id: MemoryId
+  readonly title: string
+  readonly score: number
+}
+
+/** saveWithOutcome 的结果：记录本身 + 这次是新建 / 并进了哪一条 / 有没有疑似重复。 */
 export interface MemorySaveOutcome {
   readonly record: MemoryRecord
   readonly created: boolean
   readonly mergedBy?: MemoryMergeReason
+  /** 模型判定为「已覆盖」而没有写入（record 是那条已有记忆）。 */
+  readonly skipped?: boolean
+  /** 判定结论（服务端把它写进审计，工具据此说明落点）。 */
+  readonly judged?: { readonly decision: MemoryJudgeDecision; readonly targetId?: MemoryId; readonly reason?: string }
+  /** 阈值没过、判定也没跑（或判定失败）时的「疑似同一条」提示。 */
+  readonly suspect?: MemorySuspect
 }
 
 export interface MemoryServiceConfig {
@@ -431,6 +497,8 @@ export class MemoryService extends TypertRemoteService {
 
   /** 与其它记忆插件的重名冲突（tools 桥探测后回填；空表示无冲突）。 */
   private conflicts: MemoryConflict[] = []
+  /** 写入判定钩子（agent 层注入）：没有就只走阈值判定 + 疑似提示。 */
+  private judge: MemoryJudge | undefined
 
   constructor(ctx: Context, config: MemoryServiceConfig) {
     super(ctx, 'memory')
@@ -548,6 +616,7 @@ export class MemoryService extends TypertRemoteService {
     return {
       autoCapture: true,
       autoInject: true,
+      autoJudge: true,
       maxInjected: 6,
       importanceThreshold: 4,
       captureEveryTurns: 3,
@@ -572,6 +641,58 @@ export class MemoryService extends TypertRemoteService {
   /** 回填 tools 桥探测到的重名冲突（host 内部调用，非远程方法）。 */
   setConflicts(conflicts: readonly MemoryConflict[]): void {
     this.conflicts = [...conflicts]
+  }
+
+  /** 装配写入判定钩子（host 内部调用，非远程方法）；传 undefined 即关掉判定。 */
+  setJudge(judge: MemoryJudge | undefined): void {
+    this.judge = judge
+  }
+
+  /** 判定是否生效：钩子装了 + 面板开关没关（settings 未就绪时按 base 默认值 true）。 */
+  private judgeEnabled(): boolean {
+    if (this.judge === undefined) return false
+    return this.config.settings?.get().autoJudge !== false
+  }
+
+  /** 跑一次判定：判定自己抛错也只当「没有判定」，绝不能影响写入。 */
+  private async runJudge(request: MemoryJudgeRequest): Promise<MemoryJudgeVerdict | undefined> {
+    if (this.judge === undefined) return undefined
+    try {
+      return await this.judge(request)
+    } catch {
+      return undefined
+    }
+  }
+
+  /** 判定调用记一条审计（面板「后台模型调用」里能看到它花了什么、判了什么）。 */
+  private async recordJudgeAudit(verdict: MemoryJudgeVerdict, sessionId?: string): Promise<void> {
+    const meta = verdict.meta
+    if (meta === undefined) return
+    const note = meta.error ?? verdict.reason
+    try {
+      await this.recordAudit({
+        kind: 'judge',
+        provider: meta.provider,
+        model: meta.model,
+        ok: meta.ok,
+        durationMs: meta.durationMs,
+        inputChars: meta.inputChars,
+        outputChars: meta.outputChars,
+        ...(meta.tokensIn !== undefined ? { tokensIn: meta.tokensIn } : {}),
+        ...(meta.tokensOut !== undefined ? { tokensOut: meta.tokensOut } : {}),
+        recordIds: verdict.targetId !== undefined ? [verdict.targetId] : [],
+        ...(sessionId !== undefined ? { sessionId } : {}),
+        ...(note !== undefined ? { error: note } : {}),
+      })
+    } catch { /* 审计写不进去不该影响这次写入 */ }
+  }
+
+  /** 按 id 在指定作用域内取一条（判定给回的 targetId 必须能在同一作用域里找到）。 */
+  private findInScope(id: MemoryId, scope: MemoryScope, projectPath: string): MemoryRecord | undefined {
+    const pathKey = normalizeProjectKey(projectPath)
+    return this.collect().find((record) => record.id === id
+      && record.scope === scope
+      && (scope !== 'project' || normalizeProjectKey(record.projectPath) === pathKey))
   }
 
   /** 读冲突列表（面板据此提示「已有另一个记忆插件」）。 */
@@ -1267,6 +1388,44 @@ export class MemoryService extends TypertRemoteService {
   }
 
   /**
+   * 同一作用域内最像的若干条（相似度 ≥ floor，降序，最多 limit 条）：
+   * 方案 B 的「疑似同一条」与方案 C 的判定候选都从这里取。
+   */
+  private findNearest(
+    incoming: { title: string; content: string },
+    scope: MemoryScope,
+    projectPath: string,
+    floor: number,
+    limit = MEMORY_JUDGE_MAX_CANDIDATES,
+  ): { record: MemoryRecord; score: number; candidates: MemoryJudgeCandidate[] } | undefined {
+    const pathKey = normalizeProjectKey(projectPath)
+    const scored: Array<{ record: MemoryRecord; score: number }> = []
+    for (const record of this.collect()) {
+      if (record.scope !== scope) continue
+      if (scope === 'project' && normalizeProjectKey(record.projectPath) !== pathKey) continue
+      const { titleScore, contentScore } = overlapScores(record, incoming)
+      const score = Math.max(titleScore, contentScore)
+      if (score < floor) continue
+      scored.push({ record, score })
+    }
+    if (scored.length === 0) return undefined
+    scored.sort((a, b) => b.score - a.score || b.record.updatedAt - a.record.updatedAt)
+    const top = scored.slice(0, Math.max(1, limit))
+    const head = top[0]!
+    return {
+      record: head.record,
+      score: head.score,
+      candidates: top.map((entry) => ({
+        id: entry.record.id,
+        kind: entry.record.kind,
+        title: entry.record.title,
+        content: entry.record.content,
+        score: entry.score,
+      })),
+    }
+  }
+
+  /**
    * 就地合并进已有条目：保留原 id 与标题，正文追加、取较大重要性，标签与别名求并集。
    * 摘要只在原来没有时补上（不覆盖已写好的那一行）。
    */
@@ -1303,7 +1462,13 @@ export class MemoryService extends TypertRemoteService {
 
   /**
    * 写入并回报落点：created=true 是新建；created=false 说明并进了已有条目，
-   * mergedBy 区分「同标题」与「语义重叠」（工具据此提示「已合并更新」）。
+   * mergedBy 区分「同标题 / 语义重叠 / 模型判定」。
+   *
+   * 落点判定顺序（从严到宽，前三道是纯代码、零成本）：
+   *   1) 同作用域同分类同标题（或命中别名）→ 就地更新；
+   *   2) 正文 Dice ≥ 0.7 或标题 Dice ≥ 0.9 → 语义重叠并入；
+   *   3) 附近有相似度 ≥ 0.2 的条目且判定开关打开 → 交给模型判 add/update/skip；
+   *   4) 都不成立 → 新建；若附近有 ≥ 0.4 的条目，顺带在结果里带一条「疑似同一条」。
    */
   async saveWithOutcome(input: MemorySaveInput): Promise<MemorySaveOutcome> {
     const title = input.title.trim()
@@ -1345,6 +1510,49 @@ export class MemoryService extends TypertRemoteService {
       await this.syncAutoEdges()
       return { record, created: false, mergedBy: 'overlap' }
     }
+    // 方案 B / C：没到自动合并的线，但附近已经有「很像」的条目。
+    const near = this.findNearest({ title, content }, scope, projectPath, MEMORY_JUDGE_FLOOR)
+    let judged: MemorySaveOutcome['judged']
+    // 批量导入（source=import）不判定：一次导入几十条就是几十次调用，而导入本身
+    // 已经有「同标题 / 语义重叠」两道代码闸门兜着。显式打开面板开关也仍然不判定。
+    const judgeAllowed = (input.source ?? 'agent') !== 'import'
+    if (judgeAllowed && near !== undefined && this.judgeEnabled()) {
+      const verdict = await this.runJudge({
+        title, content, summary, scope, projectPath, candidates: near.candidates,
+      })
+      if (verdict !== undefined) {
+        judged = {
+          decision: verdict.decision,
+          ...(verdict.targetId !== undefined ? { targetId: verdict.targetId } : {}),
+          ...(verdict.reason !== undefined ? { reason: verdict.reason } : {}),
+        }
+        await this.recordJudgeAudit(verdict, input.sessionId)
+        const target = verdict.targetId !== undefined
+          ? this.findInScope(verdict.targetId, scope, projectPath)
+          : undefined
+        if (verdict.decision === 'update' && target !== undefined) {
+          try {
+            const record = await this.mergeRecord(target, mergeInput)
+            await this.attachEntities(record, input.entities)
+            await this.syncAutoEdges()
+            return { record, created: false, mergedBy: 'judge', judged }
+          } catch {
+            // 合并会撞 320 字 / 单段闸门：判定说并，但并进去反而写不下 —— 退化成新建，
+            // 宁可多一条，也不要因为一次判定把这次写入丢掉。
+          }
+        }
+        if (verdict.decision === 'skip' && target !== undefined) {
+          // 判定说「已有那条已经覆盖」，那就不写；record 回已有那条，让调用方知道落点。
+          return { record: target, created: false, mergedBy: 'judge', skipped: true, judged }
+        }
+      }
+    }
+    // 判定没跑成（没装钩子 / 开关关了 / 拿不到路由 / 判定失败）才提示疑似重复：
+    // 判定成功时以判定结论为准，不再和它唱反调。
+    const suspect: MemorySuspect | undefined = judged === undefined
+      && near !== undefined && near.score >= MEMORY_NEAR_FLOOR
+      ? { id: near.record.id, title: near.record.title, score: near.score }
+      : undefined
     const now = Date.now()
     const record: MemoryRecord = {
       id: brandString<MemoryId>(randomUUID()),
@@ -1368,7 +1576,14 @@ export class MemoryService extends TypertRemoteService {
     // 先挂显式实体（origin=agent），再重算自动边，让共现边把这条也算进去。
     await this.attachEntities(record, input.entities)
     await this.syncAutoEdges()
-    return { record, created: true }
+    // 判定跑过（哪怕结论是 add、或 update 合并失败退回新建）也要把结论带回去：
+    // 调用方据此知道「模型已经看过、说可以新建」，而不是「附近没有像的」。
+    return {
+      record,
+      created: true,
+      ...(judged !== undefined ? { judged } : {}),
+      ...(suspect !== undefined ? { suspect } : {}),
+    }
   }
 
   /** 新增或合并一条记忆（同作用域 + 同分类 + 同标题，或语义重叠就地更新）。 */

@@ -19,6 +19,7 @@ import { installMemoryTools } from './agent/tools.ts'
 import { describeConflicts } from './conflicts.ts'
 import { installMemoryPrompt } from './agent/prompt.ts'
 import { installMemoryCapture } from './agent/capture.ts'
+import { createMemoryJudge } from './agent/judge.ts'
 
 export const name = '@zzerx/dsh-plugin-memory'
 export const inject = ['storageDomain']
@@ -56,6 +57,8 @@ export async function apply(ctx: Context): Promise<void> {
       settings,
       knownWorkspaces: () => readKnownWorkspaces(ctx),
     })
+    // 写入判定（方案 C）：路由与 llm 都在调用时才取，所以这里装配不影响启动顺序。
+    service.setJudge(createMemoryJudge(ctx))
     installMemoryAgentBridgeWhenReady(ctx, service, settings)
   } catch (error) {
     void domain.close()
