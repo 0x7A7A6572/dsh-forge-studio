@@ -168,16 +168,23 @@ function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): voi
   register(defineTool({
     name: TOOL_SAVE,
     description:
+      // 为后续会话持久化一条记忆：用户偏好、身份、项目状态、决策。
       'Persist one memory entry for future sessions (user preferences, identity, project state, decisions). '
-      + 'Merges into an existing entry when the title matches, so repeated saves never duplicate. '
+      // 标题相同、或正文高度重叠时会并入已有条目，重复写入不会产生多条。
+      + 'Merges into an existing entry when the title matches or the body substantially overlaps, so repeated saves never duplicate. '
+      // scope=global：换到任何项目都成立（语气、格式、风格、身份、广泛偏好）。
       + 'scope=global for anything true across projects (tone, format, style, identity, broad preferences); '
+      // scope=project：只对某一个工作区成立（习惯、决策、环境细节）。
       + 'scope=project for habits/decisions that only hold for one workspace directory. '
-      + 'Keep the body short and conclusion-only: it is capped at 800 characters (the merged length counts too) '
-      + 'and an over-limit save is rejected, not truncated. Skip task progress, in-flight snapshots, and '
-      + 're-runnable verification results (tests pass / tsc clean / build ok).',
+      // 正文必须是单段纯文本、只写结论、≤320 字（合并后的总长也算）。
+      + 'The body must be ONE plain paragraph of conclusion-only text, at most 320 characters (merged length counts too); '
+      // 含换行、列表或超长会被拒写，不会静默截断。
+      + 'line breaks, lists and over-limit bodies are rejected, not truncated. '
+      // 不要记任务进度、进行中的快照、可重跑的验证结果（测试全过 / tsc 干净 / build 成功）。
+      + 'Skip task progress, in-flight snapshots and re-runnable verification results (tests pass / tsc clean / build ok).',
     parameters: {
       title: { type: 'string', required: true, description: 'Short unique title; the dedup key within a scope.' },
-      content: { type: 'string', required: true, description: 'The memory body, in the user\'s own wording when possible. Conclusion-only, <=800 chars (hard cap).' },
+      content: { type: 'string', required: true, description: 'One plain paragraph, conclusion-only, <=320 chars, no line breaks or lists (hard cap).' },
       scope: {
         type: 'string',
         required: true,
@@ -207,13 +214,9 @@ function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): voi
       const session = sessionContextOf(exec)
       const scope = args.scope as MemoryScope
       const projectPath = scope === 'project' ? resolveProjectPath(args.project_path as string | undefined, session.cwd) : undefined
-      const before = await svc.list({
-        scope,
-        ...(projectPath !== undefined ? { projectPath } : {}),
-        includeArchived: true,
-      })
-      const existingTitles = new Set(before.map((record) => record.title.trim().toLowerCase()))
-      const saved = await svc.save({
+      // created 由服务端的落点决定：语义重叠并入时也是 false（提示「已合并更新」，
+      // 而不是「已保存」——模型据此知道这条并进了已有条目）。
+      const outcome = await svc.saveWithOutcome({
         title: args.title as string,
         content: args.content as string,
         scope,
@@ -224,8 +227,7 @@ function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): voi
         source: 'agent',
         ...(session.sessionId !== undefined ? { sessionId: session.sessionId } : {}),
       })
-      const created = !existingTitles.has((args.title as string).trim().toLowerCase())
-      return { saved: describeRecord(saved), created }
+      return { saved: describeRecord(outcome.record), created: outcome.created }
     },
   }))
 

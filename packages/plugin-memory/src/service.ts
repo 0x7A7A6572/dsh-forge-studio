@@ -32,9 +32,15 @@ export const MEMORY_RAW_LIMIT = 200
 /** 审计保留上限。 */
 export const MEMORY_AUDIT_LIMIT = 500
 /** 单条记忆的正文上限（字符）。超限拒绝写入，逼源头写短，而不是静默截断。 */
-export const MEMORY_CONTENT_LIMIT = 800
+export const MEMORY_CONTENT_LIMIT = 320
 /** 摄取条目的默认重要性（用户主动整理过的内容，高于自动提炼的 3）。 */
 export const IMPORT_IMPORTANCE = 4
+/** 语义重叠合并阈值：正文 Dice 达到即视为同一条。 */
+export const MEMORY_OVERLAP_CONTENT = 0.8
+/** 语义重叠合并阈值：标题 Dice 达到即视为同一条。 */
+export const MEMORY_OVERLAP_TITLE = 0.9
+/** 行首的列表 / 编号 / markdown 标题标记（service 的单段校验与 capture 过滤共用）。 */
+export const MEMORY_LINE_MARKER_PATTERN = /^\s*(?:[-*+•]\s|\d+[.)]\s|#{1,6}\s)/
 
 function amountOf(value: number | undefined): number {
   return value === undefined || !Number.isFinite(value) ? 0 : Math.max(0, Math.round(value))
@@ -76,15 +82,98 @@ function assertContentWithinLimit(text: string): void {
   )
 }
 
-/** 同一条目的重复写入：新内容已包含在旧内容里就保留旧的，否则追加一行。 */
+/**
+ * 单段纯文本校验：正文含换行、或以列表 / 编号 / markdown 标题标记开头，一律拒写。
+ * 记忆正文是「结论一句话」，允许换行就等于允许把排查过程整段贴进来。
+ * 只对非 import 来源生效（导入解析出来的是行式文本，不受这条约束）。
+ */
+function assertSingleParagraph(text: string): void {
+  const breaks = text.match(/\r\n|\r|\n/g)?.length ?? 0
+  if (breaks > 0) {
+    throw new Error(
+      '记忆正文必须是单段纯文本：当前含 ' + breaks + ' 处换行（上限 ' + MEMORY_CONTENT_LIMIT
+      + ' 字，请勿用换行/列表排版）',
+    )
+  }
+  const marker = MEMORY_LINE_MARKER_PATTERN.exec(text)
+  if (marker !== null) {
+    throw new Error(
+      '记忆正文必须是单段纯文本：检测到列表/编号/markdown 标题标记「' + marker[0].trim()
+      + '」（上限 ' + MEMORY_CONTENT_LIMIT + ' 字，请勿用换行/列表排版）',
+    )
+  }
+}
+
+/** 折叠成单段：去首尾空白，行内换行折算成空格。 */
+function flattenToParagraph(text: string): string {
+  return text.replace(/\s*[\r\n]+\s*/g, ' ').trim()
+}
+
+/**
+ * 同一条目的重复写入：新内容已包含在旧内容里就保留旧的，否则接在同一段里。
+ *
+ * 正文只允许单段纯文本，所以两边都先把换行折算成空格再合并 —— 合并结果仍是一段，
+ * 能过 assertSingleParagraph（历史库里可能存着多段的旧条目，一经合并即归一成单段）。
+ */
 export function mergeContent(previous: string, incoming: string): string {
-  const oldText = previous.trim()
-  const newText = incoming.trim()
+  const oldText = flattenToParagraph(previous)
+  const newText = flattenToParagraph(incoming)
   if (newText === '') return oldText
   if (oldText === '') return newText
   if (oldText.includes(newText)) return oldText
   if (newText.includes(oldText)) return newText
-  return oldText + '\n' + newText
+  return oldText + ' ' + newText
+}
+
+/** 记忆文本归一化：小写、只留字母数字与汉字（语义重叠比较的输入）。 */
+export function normalizeMemoryText(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]/g, '')
+}
+
+/**
+ * bigram Dice 相似度（0-1，1 = 完全相同）。二元组按出现次数取交集；
+ * 归一化后不足两个字符（单字）时退化为相等判断 —— 没有二元组可比，不硬凑。
+ */
+export function bigramDice(a: string, b: string): number {
+  if (a === b) return 1
+  if (a === '' || b === '') return 0
+  const gramCounts = (text: string): Map<string, number> => {
+    const out = new Map<string, number>()
+    for (let index = 0; index + 1 < text.length; index += 1) {
+      const gram = text.slice(index, index + 2)
+      out.set(gram, (out.get(gram) ?? 0) + 1)
+    }
+    return out
+  }
+  const left = gramCounts(a)
+  const right = gramCounts(b)
+  if (left.size === 0 || right.size === 0) return 0
+  let shared = 0
+  for (const [gram, count] of left) {
+    const other = right.get(gram)
+    if (other !== undefined) shared += Math.min(count, other)
+  }
+  let total = 0
+  for (const count of left.values()) total += count
+  for (const count of right.values()) total += count
+  return total === 0 ? 0 : (2 * shared) / total
+}
+
+/** 参与重叠比较的最小形状：已有条目与待写入内容都满足。 */
+export interface MemoryOverlapText {
+  readonly title: string
+  readonly content: string
+}
+
+/** 标题 / 正文各自的语义重叠分（归一化后算 bigram Dice）。 */
+export function overlapScores(
+  existing: MemoryOverlapText,
+  incoming: MemoryOverlapText,
+): { titleScore: number; contentScore: number } {
+  return {
+    titleScore: bigramDice(normalizeMemoryText(existing.title), normalizeMemoryText(incoming.title)),
+    contentScore: bigramDice(normalizeMemoryText(existing.content), normalizeMemoryText(incoming.content)),
+  }
 }
 
 /** 排序：置顶 → 重要性 → 最近更新。 */
@@ -230,6 +319,16 @@ export function prunableRawIds(docs: readonly MemoryRawDocument[], limit: number
   if (limit <= 0) return docs.map((doc) => doc.id)
   if (docs.length <= limit) return []
   return [...docs].sort(compareRawDocuments).slice(limit).map((doc) => doc.id)
+}
+
+/** 合并落点：'title' 同标题就地更新 / 'overlap' 语义重叠并入。 */
+export type MemoryMergeReason = 'title' | 'overlap'
+
+/** saveWithOutcome 的结果：记录本身 + 这次是新建还是并进了哪一条。 */
+export interface MemorySaveOutcome {
+  readonly record: MemoryRecord
+  readonly created: boolean
+  readonly mergedBy?: MemoryMergeReason
 }
 
 export interface MemoryServiceConfig {
@@ -473,6 +572,34 @@ export class MemoryService extends TypertRemoteService {
     return eligible.slice(0, Math.max(1, options.maxItems))
   }
 
+  /**
+   * 已有记忆的标题清单，喂给自动提炼当「别另起新标题」的参考：
+   * scope=global 或（scope=project 且 projectPath === 会话 cwd），按 updatedAt 倒序、去重。
+   * 同步方法（只读内存态），调用方拿不到也照常提炼。
+   */
+  overlapTitleHints(sessionCwd: string | undefined, limit = 30): string[] {
+    if (limit <= 0) return []
+    const cwdKey = sessionCwd === undefined ? undefined : normalizeProjectKey(sessionCwd)
+    const scoped = this.collect().filter((record) => {
+      if (record.scope === 'global') return true
+      if (cwdKey === undefined) return false
+      return normalizeProjectKey(record.projectPath) === cwdKey
+    })
+    scoped.sort((a, b) => b.updatedAt - a.updatedAt)
+    const seen = new Set<string>()
+    const out: string[] = []
+    for (const record of scoped) {
+      const title = record.title.trim()
+      if (title === '') continue
+      const key = normalizeProjectKey(title)
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push(title)
+      if (out.length >= limit) break
+    }
+    return out
+  }
+
   /* ---------------- 摄取管线（原文留档 → 抽取 → 条目） ---------------- */
 
   /**
@@ -651,6 +778,9 @@ export class MemoryService extends TypertRemoteService {
       ...(input.rawId !== undefined ? { rawId: input.rawId } : {}),
       ...(input.sessionId !== undefined ? { sessionId: input.sessionId } : {}),
       ...(input.error !== undefined ? { error: input.error } : {}),
+      ...(input.dropped !== undefined && input.dropped.length > 0
+        ? { dropped: input.dropped.map((item) => ({ title: item.title, reason: item.reason })) }
+        : {}),
     }
     await this.auditRows.put(entry.id, entry)
     const extra = this.collectAudits().sort((a, b) => b.at - a.at).slice(MEMORY_AUDIT_LIMIT)
@@ -672,8 +802,66 @@ export class MemoryService extends TypertRemoteService {
 
   /* ---------------- 写 ---------------- */
 
-  /** 新增或合并一条记忆（同作用域 + 同分类 + 同标题就地更新）。 */
-  async save(input: MemorySaveInput): Promise<MemoryRecord> {
+  /**
+   * 语义重叠的落点：同一作用域内（project 需同项目路径，**忽略 kind**）找一条
+   * 标题 Dice ≥ MEMORY_OVERLAP_TITLE 或正文 Dice ≥ MEMORY_OVERLAP_CONTENT 的条目。
+   * 同名标题已经由 findByTitle 处理，这里兜的是「同一条事换了个说法」。
+   */
+  private findOverlap(
+    incoming: { title: string; content: string },
+    scope: MemoryScope,
+    projectPath: string,
+  ): MemoryRecord | undefined {
+    const pathKey = normalizeProjectKey(projectPath)
+    let best: MemoryRecord | undefined
+    let bestScore = 0
+    for (const record of this.collect()) {
+      if (record.scope !== scope) continue
+      if (scope === 'project' && normalizeProjectKey(record.projectPath) !== pathKey) continue
+      const { titleScore, contentScore } = overlapScores(record, incoming)
+      if (titleScore < MEMORY_OVERLAP_TITLE && contentScore < MEMORY_OVERLAP_CONTENT) continue
+      const score = Math.max(titleScore, contentScore)
+      if (best === undefined || score > bestScore
+        || (score === bestScore && record.updatedAt > best.updatedAt)) {
+        best = record
+        bestScore = score
+      }
+    }
+    return best
+  }
+
+  /** 就地合并进已有条目：保留原 id 与标题，正文追加、取较大重要性、标签并集。 */
+  private async mergeRecord(
+    existing: MemoryRecord,
+    incoming: {
+      content: string
+      importance?: number
+      tags?: readonly string[]
+      pinned?: boolean
+      exemptParagraph: boolean
+    },
+  ): Promise<MemoryRecord> {
+    const mergedContent = mergeContent(existing.content, incoming.content)
+    assertContentWithinLimit(mergedContent)
+    if (!incoming.exemptParagraph) assertSingleParagraph(mergedContent)
+    const merged: MemoryRecord = {
+      ...existing,
+      content: mergedContent,
+      importance: Math.max(existing.importance, clampImportance(incoming.importance)),
+      tags: normalizeTags([...existing.tags, ...(incoming.tags ?? [])]),
+      pinned: incoming.pinned ?? existing.pinned,
+      archived: false,
+      updatedAt: Date.now(),
+    }
+    await this.memories.put(merged.id, merged)
+    return merged
+  }
+
+  /**
+   * 写入并回报落点：created=true 是新建；created=false 说明并进了已有条目，
+   * mergedBy 区分「同标题」与「语义重叠」（工具据此提示「已合并更新」）。
+   */
+  async saveWithOutcome(input: MemorySaveInput): Promise<MemorySaveOutcome> {
     const title = input.title.trim()
     if (title === '') throw new Error('memory title is required')
     const content = input.content.trim()
@@ -684,24 +872,28 @@ export class MemoryService extends TypertRemoteService {
       throw new Error('project-scoped memory requires a project path (workspace directory)')
     }
     const kind: MemoryKind = input.kind ?? 'fact'
-    const now = Date.now()
+    // import 是行式文本解析出来的，不受「单段纯文本」约束；长度上限对所有来源生效。
+    const exemptParagraph = (input.source ?? 'agent') === 'import'
+    assertContentWithinLimit(content)
+    if (!exemptParagraph) assertSingleParagraph(content)
+    const mergeInput = {
+      content,
+      ...(input.importance !== undefined ? { importance: input.importance } : {}),
+      ...(input.tags !== undefined ? { tags: input.tags } : {}),
+      ...(input.pinned !== undefined ? { pinned: input.pinned } : {}),
+      exemptParagraph,
+    }
     const existing = this.findByTitle(title, scope, projectPath, kind)
     if (existing !== undefined) {
-      const mergedContent = mergeContent(existing.content, content)
-      assertContentWithinLimit(mergedContent)
-      const merged: MemoryRecord = {
-        ...existing,
-        content: mergedContent,
-        importance: Math.max(existing.importance, clampImportance(input.importance)),
-        tags: normalizeTags([...existing.tags, ...(input.tags ?? [])]),
-        pinned: input.pinned ?? existing.pinned,
-        archived: false,
-        updatedAt: now,
-      }
-      await this.memories.put(merged.id, merged)
-      return merged
+      const record = await this.mergeRecord(existing, mergeInput)
+      return { record, created: false, mergedBy: 'title' }
     }
-    assertContentWithinLimit(content)
+    const overlapped = this.findOverlap({ title, content }, scope, projectPath)
+    if (overlapped !== undefined) {
+      const record = await this.mergeRecord(overlapped, mergeInput)
+      return { record, created: false, mergedBy: 'overlap' }
+    }
+    const now = Date.now()
     const record: MemoryRecord = {
       id: brandString<MemoryId>(randomUUID()),
       kind,
@@ -719,7 +911,12 @@ export class MemoryService extends TypertRemoteService {
       ...(input.sessionId !== undefined ? { sessionId: input.sessionId } : {}),
     }
     await this.memories.put(record.id, record)
-    return record
+    return { record, created: true }
+  }
+
+  /** 新增或合并一条记忆（同作用域 + 同分类 + 同标题，或语义重叠就地更新）。 */
+  async save(input: MemorySaveInput): Promise<MemoryRecord> {
+    return (await this.saveWithOutcome(input)).record
   }
 
   /** 局部修改；改 scope/项目时重新校验归属。 */
@@ -737,7 +934,12 @@ export class MemoryService extends TypertRemoteService {
     if (title === '') throw new Error('memory title must not be empty')
     const content = patch.content === undefined ? current.content : patch.content.trim()
     if (content === '') throw new Error('memory content must not be empty')
-    assertContentWithinLimit(content)
+    // 只在真的改正文时过闸门：历史库里可能存着超限 / 多段的旧条目，
+    // 它们仍可归档、改标题，不该因为旧数据过不了新闸门而卡死。
+    if (patch.content !== undefined) {
+      assertContentWithinLimit(content)
+      assertSingleParagraph(content)
+    }
     const next: MemoryRecord = {
       ...current,
       title,

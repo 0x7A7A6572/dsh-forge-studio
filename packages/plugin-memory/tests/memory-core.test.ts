@@ -58,7 +58,9 @@ describe('合并与排序', () => {
   it('重复内容不叠加，新内容包含旧内容时取新的', () => {
     expect(mergeContent('喜欢简短回答', '喜欢简短回答')).toBe('喜欢简短回答')
     expect(mergeContent('喜欢简短回答', '喜欢简短回答，不要客套')).toBe('喜欢简短回答，不要客套')
-    expect(mergeContent('A', 'B')).toBe('A\nB')
+    // 正文只允许单段：合并接在同一段里（换行折算成空格），不再追加一行
+    expect(mergeContent('A', 'B')).toBe('A B')
+    expect(mergeContent('第一行\n第二行', '第三行')).toBe('第一行 第二行 第三行')
   })
 
   it('排序：置顶 > 重要性 > 最近更新', () => {
@@ -267,16 +269,18 @@ describe('自动提炼', () => {
   })
 
   it('解析模型输出并丢弃非法项', () => {
-    const items = parseCapturedItems('前言 [{"title":"a","content":"b","kind":"preference","scope":"project"},'
+    const parsed = parseCapturedItems('前言 [{"title":"a","content":"b","kind":"preference","scope":"project"},'
       + '{"title":"","content":"x"},{"title":"c","content":"d","kind":"nope","scope":"nope"}] 后记')
-    expect(items).toHaveLength(2)
-    expect(items[0]).toEqual({ title: 'a', content: 'b', kind: 'preference', scope: 'project' })
-    expect(items[1]).toEqual({ title: 'c', content: 'd', kind: 'fact', scope: 'global' })
+    expect(parsed.items).toHaveLength(2)
+    expect(parsed.items[0]).toEqual({ title: 'a', content: 'b', kind: 'preference', scope: 'project' })
+    expect(parsed.items[1]).toEqual({ title: 'c', content: 'd', kind: 'fact', scope: 'global' })
+    // 缺标题/正文的项静默跳过（不进丢弃清单）
+    expect(parsed.dropped).toEqual([])
   })
 
   it('非 JSON 输出不抛错', () => {
-    expect(parseCapturedItems('没有值得记的')).toEqual([])
-    expect(parseCapturedItems('')).toEqual([])
+    expect(parseCapturedItems('没有值得记的')).toEqual({ items: [], dropped: [] })
+    expect(parseCapturedItems('')).toEqual({ items: [], dropped: [] })
   })
 })
 

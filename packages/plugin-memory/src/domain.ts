@@ -72,6 +72,8 @@ export const auditEntrySchema = z.object({
   rawId: z.string().optional(),
   sessionId: z.string().optional(),
   error: z.string().optional(),
+  /** 被代码硬闸门丢弃的提炼项（标题 + 原因）；缺省 = 本次没有丢弃。 */
+  dropped: z.array(z.object({ title: z.string().default(''), reason: z.string() })).optional(),
 }) as unknown as ZodType<MemoryAuditEntry>
 
 /** memory 域：memories（记忆条目）+ raw_documents（原文留档）+ audits（模型调用审计）。 */

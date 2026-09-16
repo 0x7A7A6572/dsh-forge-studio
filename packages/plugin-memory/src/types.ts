@@ -221,6 +221,8 @@ export interface MemoryAuditEntry {
   readonly rawId?: string
   readonly sessionId?: string
   readonly error?: string
+  /** 被代码硬闸门丢弃的条目（标题 + 原因），用来解释「这次为什么没记」。 */
+  readonly dropped?: readonly { title: string; reason: string }[]
 }
 
 /** 记一条审计的入参（id / at 由服务生成）。 */
@@ -238,6 +240,8 @@ export interface MemoryAuditInput {
   readonly rawId?: string
   readonly sessionId?: string
   readonly error?: string
+  /** 被代码硬闸门丢弃的条目（标题 + 原因）；没有就不用带。 */
+  readonly dropped?: readonly { title: string; reason: string }[]
 }
 
 /** 审计查询。 */

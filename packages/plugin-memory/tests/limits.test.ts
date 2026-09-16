@@ -51,13 +51,13 @@ describe('写入长度上限', () => {
 
   it('同标题合并后超过上限：拒绝这回写入，原条目保持不动', async () => {
     const svc = makeService()
-    await svc.save({ title: 'T', content: '甲'.repeat(600), scope: 'global' })
+    await svc.save({ title: 'T', content: '甲'.repeat(200), scope: 'global' })
     await expect(
-      svc.save({ title: 'T', content: '乙'.repeat(600), scope: 'global' }),
+      svc.save({ title: 'T', content: '乙'.repeat(200), scope: 'global' }),
     ).rejects.toThrow(/上限/)
     const rows = await svc.list({ scope: 'global' })
     expect(rows).toHaveLength(1)
-    expect(rows[0]!.content.length).toBe(600)
+    expect(rows[0]!.content.length).toBe(200)
   })
 
   it('合并后仍在限内：照常合并更新（回归）', async () => {
@@ -109,8 +109,8 @@ describe('提炼提示词限额（C1）', () => {
 describe('整理（tidy）也守上限', () => {
   it('合并重复条目顶破上限时：保留较完整正文，只并标签，不留超长条目', async () => {
     const svc = makeService()
-    const a = await svc.save({ title: 'T', content: '甲'.repeat(500), scope: 'global', tags: ['a'] })
-    const b = await svc.save({ title: 'U', content: '乙'.repeat(500), scope: 'global', tags: ['b'] })
+    const a = await svc.save({ title: 'T', content: '甲'.repeat(200), scope: 'global', tags: ['a'] })
+    const b = await svc.save({ title: 'U', content: '乙'.repeat(200), scope: 'global', tags: ['b'] })
     await svc.updateMemory(b.id, { title: 'T' })
 
     const result = await svc.tidy()
@@ -122,9 +122,50 @@ describe('整理（tidy）也守上限', () => {
     expect(a.id).toBeDefined()
   })
 })
+describe('单段纯文本闸门（C）', () => {
+  it('正文含换行：拒写并说明是单段纯文本要求，库里不出现该条', async () => {
+    const svc = makeService()
+    await expect(
+      svc.save({ title: '多行', content: '第一行\n第二行', scope: 'global' }),
+    ).rejects.toThrow(/单段纯文本/)
+    expect(await svc.list({ scope: 'global' })).toHaveLength(0)
+  })
+
+  it('正文以列表 / 编号 / markdown 标题标记开头：一律拒写', async () => {
+    const svc = makeService()
+    for (const content of ['- 一条', '* 一条', '+ 一条', '1. 一条', '2) 一条', '# 标题']) {
+      await expect(
+        svc.save({ title: 'T' + content, content, scope: 'global' }),
+      ).rejects.toThrow(/单段纯文本/)
+    }
+    expect(await svc.list({ scope: 'global' })).toHaveLength(0)
+  })
+
+  it('面板编辑同样守单段校验：updateMemory 拒写且不落库', async () => {
+    const svc = makeService()
+    const saved = await svc.save({ title: 'T', content: '短文', scope: 'global' })
+    await expect(
+      svc.updateMemory(saved.id, { content: '第一行\n第二行' }),
+    ).rejects.toThrow(/单段纯文本/)
+    expect((await svc.list({ scope: 'global' }))[0]!.content).toBe('短文')
+  })
+
+  it('导入路径（source=import）多行仍放行', async () => {
+    const svc = makeService()
+    const saved = await svc.save({
+      title: '导入多行',
+      content: '第一行\n第二行',
+      scope: 'global',
+      source: 'import',
+    })
+    expect(saved.content).toContain('\n')
+  })
+})
+
 describe('使用引导（注入给 agent 的写入纪律）', () => {
   it('写明上限与「不记任务进度 / 可重跑结果」', () => {
-    expect(MEMORY_USAGE_TEXT).toContain('800')
+    expect(MEMORY_USAGE_TEXT).toContain('320')
+    expect(MEMORY_USAGE_TEXT).toContain('必须是单段纯文本')
     expect(MEMORY_USAGE_TEXT).toMatch(/任务进度|进行中的快照/)
     expect(MEMORY_USAGE_TEXT).toMatch(/测试全过|build 成功|tsc/)
   })

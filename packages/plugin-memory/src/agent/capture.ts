@@ -11,7 +11,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { MEMORY_KINDS, type MemoryKind, type MemoryRawId, type MemoryScope } from '../types.ts'
-import { MEMORY_RAW_LIMIT, type MemoryService } from '../service.ts'
+import { MEMORY_LINE_MARKER_PATTERN, MEMORY_RAW_LIMIT, type MemoryService } from '../service.ts'
 import type { MemorySettingsAccess } from '../settings.ts'
 
 /** 提炼提示词。 */
@@ -23,8 +23,10 @@ export const CAPTURE_PROMPT = [
   '- 不要记：临时任务的中间步骤、可从代码直接读出的东西、你的推测、密钥令牌证件号等敏感数据。',
   '- 不要记任务进度与进行中的快照、排查过程的复述、提问与探索细节；可重跑得到的验证结果（测试全过 / tsc 干净 / build 成功）也不要记。',
   '',
-  '条数与长度上限（硬性）：最多输出 3 条，每条不超过 200 字。宁可少记，不要写长。',
-  'content 只写结论本身（是什么、为什么这么定、边界在哪），不要写“我排查了…”“待验证…”这类叙事；同一主题只输出一条。',
+  '条数与长度上限（硬性）：最多输出 3 条，每条不超过 200 字、必须是单段纯文本，不要换行、不要列表。宁可少记，不要写长；超出上限的条目会被代码直接丢弃。',
+  'content 只写结论本身（是什么、为什么这么定、边界在哪），不要写"我排查了…""待验证…"这类叙事；同一主题只输出一条。',
+  '只输出「以后还成立」的内容：偏好、纠正、身份、长期决策。以下一律不要输出（会污染记忆库）：发布/提交/安装/收录/部署的进度与状态（如"已发 npm""已合并""正在等 CI"）、本次任务做了什么、临时结论、可从代码或仓库直接读出的东西。',
+  '如果这段对话里没有上述「值得记」的内容，直接输出 []。空数组是正常且期望的结果，不要为了凑数而记。',
   '',
   '作用域判定：换到任何项目都成立 → global；只对某个工作区成立 → project。',
   '',
@@ -33,6 +35,19 @@ export const CAPTURE_PROMPT = [
   '',
   '没有值得记的内容就输出 []。',
 ].join('\n')
+
+/** 单次提炼最多采纳的条目数（模型多给了也只留前 N 条，其余记 too-many）。 */
+export const CAPTURE_MAX_ITEMS = 3
+/** 单条记忆正文的字符上限（与提示词里的 200 字承诺一致）。 */
+export const CAPTURE_MAX_CONTENT_CHARS = 200
+/** 单条记忆标题的字符上限。 */
+export const CAPTURE_MAX_TITLE_CHARS = 40
+/** 进度/状态快照的开头特征词（正文以此开头即视为状态快照）。 */
+export const CAPTURE_STATUS_PREFIXES = ['已', '当前', '目前', '正在', '待', '尚未'] as const
+/** 进度/状态快照的包含特征词（正文含其一即视为状态快照）。 */
+export const CAPTURE_STATUS_MARKERS = [
+  '已发布', '已提交', '已合并', '已部署', '进行中', '测试全过', 'tsc 干净', 'build 成功', '正在等',
+] as const
 
 /** 提炼出的一条候选记忆。 */
 export interface CapturedItem {
@@ -153,33 +168,88 @@ export function collectTranscript(session: unknown, maxTurns = 12, maxChars = 12
   }
 }
 
-/** 解析模型输出为候选记忆；容忍代码块围栏与前后噪声。非法项直接丢弃。 */
-export function parseCapturedItems(text: string): CapturedItem[] {
+/** 被代码硬闸门丢弃的一条（原因见 CaptureDropReason）。 */
+export interface CaptureDroppedItem {
+  readonly title: string
+  readonly reason: string
+}
+
+/** 丢弃原因：条数超限 / 标题过长 / 正文过长 / 多行排版 / 进度状态快照。 */
+export type CaptureDropReason = 'too-many' | 'title-too-long' | 'too-long' | 'multi-line' | 'status-snapshot'
+
+/** 解析结果：采纳的条目 + 被丢弃的条目（丢弃不截断，直接不要）。 */
+export interface CaptureParseResult {
+  readonly items: CapturedItem[]
+  readonly dropped: CaptureDroppedItem[]
+}
+
+/** 正文是不是多行 / 列表排版：含换行，或任一行以列表、编号、markdown 标题标记开头。 */
+export function isMultiLineContent(text: string): boolean {
+  if (/\r\n|\r|\n/.test(text)) return true
+  return text.split('\n').some((line) => MEMORY_LINE_MARKER_PATTERN.test(line))
+}
+
+/** 正文是不是进度 / 状态快照（以「已 / 当前 / …」开头，或含「已发布 / 进行中 / …」）。 */
+export function isStatusSnapshot(text: string): boolean {
+  if (CAPTURE_STATUS_PREFIXES.some((prefix) => text.startsWith(prefix))) return true
+  return CAPTURE_STATUS_MARKERS.some((marker) => text.includes(marker))
+}
+
+/**
+ * 解析模型输出为候选记忆；容忍代码块围栏与前后噪声。
+ *
+ * 这里是**代码级硬闸门**：提示词只是请求，闸门才是保证 —— 条数只留前 3 条，
+ * 标题 >40 字、正文 >200 字、多行/列表排版、进度状态快照，全部直接丢弃（不截断），
+ * 并连标题与原因一起回报，让审计与日志能解释「这次为什么没记」。
+ */
+export function parseCapturedItems(text: string): CaptureParseResult {
   const trimmed = text.trim()
-  if (trimmed === '') return []
+  if (trimmed === '') return { items: [], dropped: [] }
   const start = trimmed.indexOf('[')
   const end = trimmed.lastIndexOf(']')
-  if (start === -1 || end === -1 || end <= start) return []
+  if (start === -1 || end === -1 || end <= start) return { items: [], dropped: [] }
   let parsed: unknown
   try {
     parsed = JSON.parse(trimmed.slice(start, end + 1))
   } catch {
-    return []
+    return { items: [], dropped: [] }
   }
-  if (!Array.isArray(parsed)) return []
+  if (!Array.isArray(parsed)) return { items: [], dropped: [] }
   const items: CapturedItem[] = []
-  for (const raw of parsed) {
-    const record = asRecord(raw)
+  const dropped: CaptureDroppedItem[] = []
+  for (let index = 0; index < parsed.length; index += 1) {
+    const record = asRecord(parsed[index])
+    const title = record !== undefined && typeof record.title === 'string' ? record.title.trim() : ''
+    // 条数上限：第 4 条起一律丢弃（不因为它更长/更短而改变判定）。
+    if (index >= CAPTURE_MAX_ITEMS) {
+      dropped.push({ title, reason: 'too-many' })
+      continue
+    }
     if (record === undefined) continue
-    const title = typeof record.title === 'string' ? record.title.trim() : ''
     const content = typeof record.content === 'string' ? record.content.trim() : ''
+    // 结构不完整（缺标题或正文）的项静默跳过，不占丢弃清单。
     if (title === '' || content === '') continue
+    if (title.length > CAPTURE_MAX_TITLE_CHARS) {
+      dropped.push({ title, reason: 'title-too-long' })
+      continue
+    }
+    if (content.length > CAPTURE_MAX_CONTENT_CHARS) {
+      dropped.push({ title, reason: 'too-long' })
+      continue
+    }
+    if (isMultiLineContent(content)) {
+      dropped.push({ title, reason: 'multi-line' })
+      continue
+    }
+    if (isStatusSnapshot(content)) {
+      dropped.push({ title, reason: 'status-snapshot' })
+      continue
+    }
     const kind = MEMORY_KINDS.includes(record.kind as MemoryKind) ? (record.kind as MemoryKind) : 'fact'
     const scope: MemoryScope = record.scope === 'project' ? 'project' : 'global'
     items.push({ title, content, kind, scope })
-    if (items.length >= 8) break
   }
-  return items
+  return { items, dropped }
 }
 
 /**
@@ -315,6 +385,20 @@ export async function captureOne(
     return
   }
 
+  // 2b) 带上「已有的相关记忆标题」当参考：同一条事别另起新标题（同标题会原地合并）。
+  let systemText = CAPTURE_PROMPT
+  try {
+    const titles = service.overlapTitleHints(cwd)
+    if (titles.length > 0) {
+      systemText = CAPTURE_PROMPT + '\n' + [
+        '参考：这个用户已有的相关记忆标题如下。如果本次内容与其中之一是同一件事，不要另起新标题 —— 要么直接跳过不输出，要么用上面完全相同的标题输出（同标题会就地合并）。',
+        '- ' + titles.join('\n- '),
+      ].join('\n')
+    }
+  } catch (error) {
+    ctx.logger?.warn?.('[plugin-memory] capture title hints skipped: ' + errorText(error))
+  }
+
   const startedAt = Date.now()
   const controller = new AbortController()
   const timer = setTimeout(() => { controller.abort() }, 60_000)
@@ -328,7 +412,7 @@ export async function captureOne(
       model: route.model,
       // 一次性调用走 system 槽（GenerateOptions 的 purpose 是 'compaction' | 'session-title'
       // 的封闭联合，塞自定义值属于越界）。消息形状对齐 dsh-compaction-basic 的既有用法。
-      system: CAPTURE_PROMPT,
+      system: systemText,
       maxTokens: 2048,
       signal: controller.signal,
       messages: [
@@ -358,8 +442,16 @@ export async function captureOne(
     clearTimeout(timer)
   }
 
-  // 3) 写条目。
-  const items = failure === undefined ? parseCapturedItems(text) : []
+  // 3) 写条目：解析走代码级硬闸门，被丢弃的项连原因一起进审计与日志。
+  const parsed: CaptureParseResult = failure === undefined
+    ? parseCapturedItems(text)
+    : { items: [], dropped: [] }
+  const items = parsed.items
+  const dropped = parsed.dropped
+  if (dropped.length > 0) {
+    ctx.logger?.warn?.('[plugin-memory] capture dropped ' + dropped.length + ' item(s): '
+      + dropped.map((entry) => entry.reason + (entry.title === '' ? '' : '「' + entry.title + '」')).join('、'))
+  }
   const recordIds: string[] = []
   for (const item of items) {
     if (item.scope === 'project' && cwd === undefined) continue
@@ -403,6 +495,7 @@ export async function captureOne(
       ...(rawId !== undefined ? { rawId } : {}),
       ...(sessionId !== undefined ? { sessionId } : {}),
       ...(failure !== undefined ? { error: failure } : {}),
+      ...(dropped.length > 0 ? { dropped } : {}),
     })
   } catch (error) {
     ctx.logger?.warn?.('[plugin-memory] capture audit skipped: ' + errorText(error))
