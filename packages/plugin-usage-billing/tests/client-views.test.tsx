@@ -11,6 +11,8 @@ import { TabOverview } from '../src/client/views/tab-overview.tsx'
 import { TabTrend } from '../src/client/views/tab-trend.tsx'
 import { TabHeatmap } from '../src/client/views/tab-heatmap.tsx'
 import { TabDetail } from '../src/client/views/tab-detail.tsx'
+import { TabPricing } from '../src/client/views/tab-pricing.tsx'
+import { SettingsSection } from '../src/client/views/settings-section.tsx'
 import { evaluateBudget } from '../src/budget.ts'
 
 // 本仓没有 vitest 配置、`globals` 关闭，RTL 的自动 cleanup 依赖全局 afterEach 因而失效；
@@ -187,5 +189,49 @@ describe('TabDetail', () => {
   it('模型表带混合单价与未收录徽标位', async () => {
     render(<TabDetail billing={detailRemote()} store={createBillingStore({ open: true })} />)
     expect(await screen.findByText(/deepseek-v4-flash/)).toBeTruthy()
+  })
+})
+
+const pricingRemote = () => noopRemote({
+  pricing: async () => ({ ok: true, value: {
+    entries: { 'deepseek/deepseek-v4-flash': { input: 0.5, cacheRead: 0.1, cacheWrite: 0.5, output: 2, currency: 'CNY' } },
+    usdToCny: 7.1, usdToCnySource: 'default', snapshotId: 'snap-install',
+  } }),
+  status: async () => ({ ok: true, value: { installAt: 1_700_000_000_000, rows: 12, sessions: 3, snapshots: 2 } }),
+} as never)
+
+describe('TabPricing', () => {
+  it('列出价目并标注内置价来源', async () => {
+    render(<TabPricing billing={pricingRemote()} store={createBillingStore({ open: true })} />)
+    expect(await screen.findByText(/deepseek-v4-flash/)).toBeTruthy()
+    expect(screen.getByText(/内置价/)).toBeTruthy()
+  })
+  it('提供未计价历史重算入口', async () => {
+    render(<TabPricing billing={pricingRemote()} store={createBillingStore({ open: true })} />)
+    expect(await screen.findByText(/重算未计价历史/)).toBeTruthy()
+  })
+})
+
+describe('SettingsSection', () => {
+  it('渲染预算开关与常驻口径说明（不可关）', () => {
+    // brief 原文的假 scope 是 `{ get, watch }`：宿主真实面是 `SettingsScope.getSnapshot/subscribe`
+    // （@deepseek-ai/dsh-client-ui-settings 的 settings-contract.d.ts，plugin-daily-log 设置分区同姿态），
+    // 按影子契约写出来的组件在浏览器里会直接抛 `scope.getSnapshot is not a function`。假件改为真实面。
+    // 快照必须是同一个引用（useSyncExternalStore 靠它判变化）。
+    const snapshot = {
+      status: 'ready', value: { budget: { enabled: true, monthlyCny: 100 } },
+      base: undefined, user: undefined, revision: 1, writable: false, mode: 'memory',
+    }
+    const scope = {
+      getSnapshot: () => snapshot,
+      subscribe: () => () => {},
+      set: async () => {},
+      unset: async () => {},
+      mutate: async () => {},
+    }
+    render(<SettingsSection billing={pricingRemote()} scope={scope as never} />)
+    // brief 原文是 `getByText(/计费口径/)`：`<h3>计费口径</h3>` 与常驻说明段都命中，getByText 抛
+    // “Found multiple elements”。带冒号的正则只命中不可关的口径说明段（用例名要的正是它）。
+    expect(screen.getByText(/计费口径：/)).toBeTruthy()
   })
 })
