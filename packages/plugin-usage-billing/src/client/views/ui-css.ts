@@ -150,6 +150,33 @@ const CSS = `
 .ub-table-wrap { overflow-x: auto; }
 .ub-table-wrap .ub-table { min-width: 520px; }
 
+/* ---------- 列表工具条 / 可排序表头 / 分页器 ---------- */
+.ub-listbar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+/* 过滤框：弹性宽度，但窄屏下不低于 140px（再窄就只能看到几个字）。 */
+.ub-search { flex: 0 1 220px; min-width: 140px; }
+.ub-listbar-count {
+  font-size: 11.5px; color: ${TOKENS.labelTertiary}; font-variant-numeric: tabular-nums;
+}
+.ub-listbar-extra { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+/* 排序表头就是一个真按钮：键盘可达，读屏念「按 X 排序」。 */
+.ub-th-sort {
+  display: inline-flex; align-items: center; gap: 4px; padding: 0;
+  border: none; background: none; font: inherit; font-weight: 500;
+  color: inherit; cursor: pointer;
+}
+.ub-th-sort:hover { color: ${TOKENS.labelPrimary}; }
+.ub-table th[aria-sort='ascending'], .ub-table th[aria-sort='descending'] { color: ${TOKENS.labelPrimary}; }
+.ub-pager {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 10px; padding-top: 10px; border-top: 0.5px solid ${TOKENS.borderL4};
+}
+.ub-pager-sizes { display: flex; align-items: center; gap: 4px; }
+.ub-pager-nav { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.ub-pager-pos {
+  min-width: 52px; text-align: center; font-size: 11.5px;
+  color: ${TOKENS.labelSecondary}; font-variant-numeric: tabular-nums;
+}
+
 /* ---------- 列表（工作区 → 会话下钻） ---------- */
 .ub-list { display: flex; flex-direction: column; gap: 6px; }
 .ub-item {

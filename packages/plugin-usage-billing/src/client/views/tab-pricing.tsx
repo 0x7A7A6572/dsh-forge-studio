@@ -16,7 +16,7 @@ import type { UsageBillingRemote } from '../core/remote.ts'
 import type { BillingStore } from '../core/store.ts'
 import { Card, FieldRow } from './components/kit.tsx'
 import { DataTable } from './components/data-table.tsx'
-import type { DataTableColumn } from './components/data-table.tsx'
+import type { TableColumn } from './components/data-table.tsx'
 import type { Currency, CustomPriceInput, PriceEntry } from '../../types.ts'
 
 interface Draft {
@@ -43,6 +43,9 @@ interface AliasRow {
 }
 
 const EMPTY_DRAFT: Draft = { key: '', input: '', cacheRead: '', cacheWrite: '', output: '', currency: 'CNY' }
+
+/** 价表的可搜索文本（模块级常量：身份稳定）。 */
+const priceSearch = (row: PriceRow): string => row.key + ' ' + row.entry.currency
 
 /** 单个单价输入：空串/非数字/负数一律视为无效（null），而不是悄悄当成 0。 */
 function price(v: string): number | null {
@@ -227,11 +230,12 @@ export function TabPricing(props: {
     </FieldRow>
   )
 
-  const columns: ReadonlyArray<DataTableColumn<PriceRow>> = [
+  const columns: ReadonlyArray<TableColumn<PriceRow>> = [
     {
       key: 'model',
       header: '模型',
       main: true,
+      sortValue: (row) => row.key,
       render: (row) => (
         <>
           {row.key}
@@ -239,11 +243,11 @@ export function TabPricing(props: {
         </>
       ),
     },
-    { key: 'input', header: '输入', align: 'right', render: (row) => row.entry.input },
-    { key: 'cacheRead', header: '缓存读', align: 'right', render: (row) => row.entry.cacheRead },
-    { key: 'cacheWrite', header: '缓存写', align: 'right', render: (row) => row.entry.cacheWrite },
-    { key: 'output', header: '输出', align: 'right', render: (row) => row.entry.output },
-    { key: 'currency', header: '币种', render: (row) => row.entry.currency },
+    { key: 'input', header: '输入', align: 'right', sortValue: (row) => row.entry.input, render: (row) => row.entry.input },
+    { key: 'cacheRead', header: '缓存读', align: 'right', sortValue: (row) => row.entry.cacheRead, render: (row) => row.entry.cacheRead },
+    { key: 'cacheWrite', header: '缓存写', align: 'right', sortValue: (row) => row.entry.cacheWrite, render: (row) => row.entry.cacheWrite },
+    { key: 'output', header: '输出', align: 'right', sortValue: (row) => row.entry.output, render: (row) => row.entry.output },
+    { key: 'currency', header: '币种', sortValue: (row) => row.entry.currency, render: (row) => row.entry.currency },
     {
       key: 'ops',
       header: '操作',
@@ -335,7 +339,14 @@ export function TabPricing(props: {
       </Card>
 
       <Card title="生效中的价目" desc="「立即刷新」与「重算」都以那一刻的账本与价表为准。">
-        <DataTable columns={columns} rows={rows} rowKey={(row) => row.key} empty="价表是空的（还没拉到任何价目）。" />
+        <DataTable
+          columns={columns}
+          rows={rows}
+          rowKey={(row) => row.key}
+          empty="价表是空的（还没拉到任何价目）。"
+          searchText={priceSearch}
+          filterPlaceholder="过滤模型"
+        />
       </Card>
 
       <Card

@@ -10,9 +10,29 @@ import type { UsageBillingRemote } from '../core/remote.ts'
 import type { BillingStore } from '../core/store.ts'
 import { backfilledDisclosure, formatCny, formatDateTime, formatInt, isUnpricedTotal } from '../core/format.ts'
 import { DataTable } from './components/data-table.tsx'
-import type { DataTableColumn } from './components/data-table.tsx'
+import type { TableColumn } from './components/data-table.tsx'
 import { Card } from './components/kit.tsx'
+import { ListPager, ListToolbar, useList } from './components/list-controls.tsx'
 import type { ModelRow, WorkspaceRow } from '../../view.ts'
+
+/**
+ * 过滤/排序的取值函数放模块级：身份稳定，列表的 useMemo 才不会每帧重算
+ * （每次渲染现造闭包，等于把 memo 关掉）。
+ */
+const workspaceSearch = (w: WorkspaceRow): string =>
+  w.cwd + ' ' + w.sessions.map((s) => s.sessionId).join(' ')
+
+const workspaceSort = (w: WorkspaceRow, key: string): number | string => {
+  if (key === 'calls') return w.calls
+  if (key === 'cost') return w.costCny
+  return w.cwd
+}
+
+const modelSearch = (m: ModelRow): string =>
+  m.providers.join(' ') + ' ' + m.model + ' ' + m.rawModels.join(' ')
+
+/** 数据到达前的空列表：模块级常量，保证身份稳定。 */
+const NO_WORKSPACES: readonly WorkspaceRow[] = []
 
 /** 金额与披露标记同源：都来自同一次 byWorkspace / byModel 响应。 */
 interface DetailPayload {
@@ -31,6 +51,15 @@ export function TabDetail(props: {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot)
   const [data, setData] = useState<DetailPayload | null>(null)
   const [expanded, setExpanded] = useState<string | null>(null)
+
+  // 两个列表的过滤/排序/分页状态必须在早退**之前**声明（hook 顺序不能随数据到达而变）。
+  const workspaceList = useList<WorkspaceRow>({
+    rows: data?.workspaces ?? NO_WORKSPACES,
+    searchText: workspaceSearch,
+    sortValue: workspaceSort,
+    // 默认按费用从高到低：先看花钱最多的地方。
+    defaultSort: { key: 'cost', dir: 'desc' },
+  })
 
   useEffect(() => {
     if (billing === undefined) return
@@ -82,21 +111,23 @@ export function TabDetail(props: {
       : <>{formatCny(costCny)}</>
   )
 
-  const columns: ReadonlyArray<DataTableColumn<ModelRow>> = [
+  const columns: ReadonlyArray<TableColumn<ModelRow>> = [
     {
       key: 'model',
       header: '模型',
       main: true,
+      sortValue: (m) => m.model,
       // 同名模型跨 provider 并成一行：provider 一个都不丢，全列出来。
       render: (m) => m.providers.join(' / ') + ' / ' + m.model,
     },
-    { key: 'input', header: '输入', align: 'right', render: (m) => formatInt(m.input) },
-    { key: 'cacheRead', header: '缓存读', align: 'right', render: (m) => formatInt(m.cacheRead) },
-    { key: 'output', header: '输出', align: 'right', render: (m) => formatInt(m.output) },
+    { key: 'input', header: '输入', align: 'right', sortValue: (m) => m.input, render: (m) => formatInt(m.input) },
+    { key: 'cacheRead', header: '缓存读', align: 'right', sortValue: (m) => m.cacheRead, render: (m) => formatInt(m.cacheRead) },
+    { key: 'output', header: '输出', align: 'right', sortValue: (m) => m.output, render: (m) => formatInt(m.output) },
     {
       key: 'cost',
       header: '费用',
       align: 'right',
+      sortValue: (m) => m.costCny,
       // 未计价行绝不能显示 ¥0.00：那读起来是「免费」。零额 + 未计价时明确写未收录。
       render: (m) => (!m.priced && m.costCny === 0
         ? <span className="ub-unpriced">未收录</span>
@@ -121,8 +152,15 @@ export function TabDetail(props: {
       ) : null}
 
       <Card title="按工作区" desc="点一行展开到会话（子代理会话单独标注）。">
+        <ListToolbar
+          query={workspaceList.query}
+          onQuery={workspaceList.setQuery}
+          placeholder="过滤工作区"
+          total={workspaceList.view.total}
+          filtered={workspaceList.view.filtered}
+        />
         <div className="ub-list">
-          {workspaces.map((w) => {
+          {workspaceList.view.rows.map((w) => {
             const open = expanded === w.cwd
             return (
               <div className="ub-item" key={w.cwd}>
@@ -154,11 +192,29 @@ export function TabDetail(props: {
               </div>
             )
           })}
+          {workspaceList.view.rows.length === 0 ? (
+            <div className="ub-empty">没有匹配的工作区。</div>
+          ) : null}
         </div>
+        <ListPager
+          page={workspaceList.view.page}
+          pages={workspaceList.view.pages}
+          size={workspaceList.size}
+          onPage={workspaceList.setPage}
+          onSize={workspaceList.setSize}
+        />
       </Card>
 
       <Card title="按模型">
-        <DataTable columns={columns} rows={models} rowKey={(m) => m.key} empty="这个范围里还没有按模型的用量。" />
+        <DataTable
+          columns={columns}
+          rows={models}
+          rowKey={(m) => m.key}
+          empty="这个范围里还没有按模型的用量。"
+          defaultSort={{ key: 'cost', dir: 'desc' }}
+          searchText={modelSearch}
+          filterPlaceholder="过滤模型"
+        />
       </Card>
     </div>
   )

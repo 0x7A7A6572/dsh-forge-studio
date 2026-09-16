@@ -6,7 +6,7 @@
 ## 功能范围
 
 - 五维费用：provider / model / 天 / 会话 / 工作区（cwd）。
-- 侧栏入口卡（lucide 钱包图标 + 本月费用 + 今日 + 预算进度条，折叠成 36px rail 时只留图标）；点击打开全屏仪表盘（宿主 `Modal`，portal 到 body），含概览 / 趋势 / 热力图 / 明细 / 费率五个分区。侧栏刻意**不**显示日期、价表来源、未收录计数与估算角标 —— 这四样都有更合适的落点（弹窗 / 概览页 / 设置页），挤在 56px 宽的卡片里只会变成噪音。
+- 侧栏入口卡（lucide 钱包图标 + 本月费用 + 今日 + 预算进度条，折叠成 36px rail 时只留图标）；点击打开全屏仪表盘（宿主 `Modal`，portal 到 body），含概览 / 趋势 / 热力图 / 明细 / 费率五个分区。趋势图与热力图走 echarts（热力图用日历坐标系：一年每天一格 + 色阶），无 canvas 时自动降级到自绘 SVG / CSS grid；三张列表（逐日明细 / 按模型 / 生效价目）与工作区列表都带过滤框、可排序表头与分页。侧栏刻意**不**显示日期、价表来源、未收录计数与估算角标 —— 这四样都有更合适的落点（弹窗 / 概览页 / 设置页），挤在 56px 宽的卡片里只会变成噪音。
 - 设置页分区：预算、显示偏好（子代理口径 / 未收录提示条）、账本状态与口径说明；自定义单价与手工别名在仪表盘的「费率」分区。
 - 月度预算分档：跨 50% / 80% / 100% 各提醒一次，提醒显示在仪表盘弹窗顶部（月度口径，不受概览页所选范围影响），按「月份 + 档位」去重（记在设置 `notices.budgetNotified`）；进度条 ≥80% 琥珀、超支红。
 - 回填披露（三处，见下）。
@@ -76,7 +76,8 @@ client 侧 slot id 一律带前缀：`zzerx-usage-billing`（`sidebar.footer.act
 - **写价锁跨越网络往返**：目录刷新整个跑在价格写锁内（这是快照基线一致性的代价），而 `ctx.web.fetch` 没有超时 / `AbortSignal`，所以一次挂死的请求会连带阻塞 `setCustomPrice` / `removeCustomPrice`。
 - **缓存条目保留写入时的 TTL**：修改 `pricing.refreshHours` 要等当前缓存条目过期才生效，不会即时重算。
 - **性能（纯性能项）**：`activeOverridesAt` 对每条自定义记录重排并重解目录层，而非增量单遍；只影响刷新耗时，不影响正确性。
-- **无障碍（延后）**：仪表盘弹窗没有 Esc 关闭与焦点管理（spec §7.1 期望有 Esc）；热力图格子不可聚焦（只有悬停明细）；部分表格仍使用已废弃的 `<th align>`。
+- **无障碍**：仪表盘弹窗走宿主 `Modal`，Esc / 遮罩关闭 / `role=dialog` 已由它负责；表格排序表头是真按钮、可用键盘触发；热力图（echarts canvas）的单格明细只在悬停/触摸 tooltip 里，键盘用户读到的是上方的活跃天数与区间合计。
+- **组件来源**：宿主 UI 原语（`@deepseek-ai/dsh-client-ui-primitives`）**没有** Table / List / Pagination —— 它的全部导出是 Button / Pill / Tag / Switch / Input / Menu / Modal / Tooltip / HoverCard / JsonTree 与代码块组件。shadcn-ui 需要 Tailwind，而本仓库与宿主都没有 Tailwind，所以表格与分页是**按 shadcn 的架构**自己实现的：结构与数据逻辑分离（纯函数在 `client/core/list-state.ts`）、样式只走 `ub-` 类名与设计 token。若日后要整体换成 Tailwind + shadcn，替换点只有 `client/views/components/data-table.tsx` 与 `list-controls.tsx` 两个文件。
 - **快照 delta 键不再链式**：旧写法 `${prevId}#delta` 既是非法存储键，又随条数线性加长（每追加一条 +6 字符，迟早撑爆文件系统单段 255 上限）。现在键 = `snap__<reason>__<at>`，长度恒定；同一毫秒的两次写入由 `uniqueSnapshotDeltaKey` 按序号错开。价格读-改-写仍然**必须**走 `serialize()` 串行链（那是基线一致性的要求），但键的唯一性已不再依赖它。
 - **诊断表按上限裁剪**：`MAX_DIAGNOSTICS = 50`，整轮聚合末尾从最旧裁剪。若升级前已堆积大量旧诊断（例如实测故障期的 3014 条），下一次聚合会把它们收敛到上限内（这些记录属于本插件自己的 `diag` 表，不涉及其他插件的数据）。
 - **会话维度没有独立的 wire 端点**：会话行由 `byWorkspace` 的分组结果带回（明细页展开工作区时才可见），不单独提供按会话聚合的远程方法。

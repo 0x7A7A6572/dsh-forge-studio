@@ -12,13 +12,16 @@ import type { BillingStore } from '../core/store.ts'
 import { buildTrendOption } from '../core/trend-option.ts'
 import type { TrendPoint } from '../core/trend-option.ts'
 import { DataTable } from './components/data-table.tsx'
-import type { DataTableColumn } from './components/data-table.tsx'
+import type { TableColumn } from './components/data-table.tsx'
 import { Card } from './components/kit.tsx'
 import { TrendChart } from './trend-chart.tsx'
 import {
   NON_FINITE_PLACEHOLDER, backfilledDisclosure, formatCny, formatDay, formatInt, isUnpricedTotal,
 } from '../core/format.ts'
 import type { DailyPoint } from '../../view.ts'
+
+/** 过滤用的可搜索文本（模块级常量：身份稳定，列表的 useMemo 才不会每帧重算）。 */
+const daySearch = (d: DailyPoint): string => d.day
 
 /** 金额与披露标记**同源**：来自同一次 `daily` 响应，不存在「金额在、标记没了」的时间窗。 */
 interface TrendPayload {
@@ -75,18 +78,19 @@ export function TabTrend(props: {
   const points: TrendPoint[] = data.days.map((d, i) => ({ day: d.day, value: values[i] ?? 0 }))
   const labels = data.days.map((d) => formatDay(d.day))
 
-  const columns: ReadonlyArray<DataTableColumn<DailyPoint>> = [
-    { key: 'day', header: '日期', main: true, render: (d) => d.day },
-    { key: 'calls', header: '调用', align: 'right', render: (d) => formatInt(d.calls) },
+  const columns: ReadonlyArray<TableColumn<DailyPoint>> = [
+    { key: 'day', header: '日期', main: true, sortValue: (d) => d.day, render: (d) => d.day },
+    { key: 'calls', header: '调用', align: 'right', sortValue: (d) => d.calls, render: (d) => formatInt(d.calls) },
     {
       key: 'tokens',
       // 列头不能只写 'Token'：与上面那个指标 Pill 的文本完全一样，
       // 同一屏里两个同名元素对读屏和测试都是歧义。
       header: 'Token 用量',
       align: 'right',
+      sortValue: (d) => d.input + d.cacheRead + d.cacheWrite + d.output,
       render: (d) => formatInt(d.input + d.cacheRead + d.cacheWrite + d.output),
     },
-    { key: 'cost', header: '费用', align: 'right', render: (d) => money(d.costCny) },
+    { key: 'cost', header: '费用', align: 'right', sortValue: (d) => d.costCny, render: (d) => money(d.costCny) },
   ]
 
   return (
@@ -126,9 +130,12 @@ export function TabTrend(props: {
       <Card title="逐日明细">
         <DataTable
           columns={columns}
-          // 倒序：最近的一天在最上面（与图表从左到右的时间顺序互补）。
-          rows={[...data.days].reverse()}
+          rows={data.days}
           rowKey={(d) => d.day}
+          // 默认按日期倒序：最近的一天在最上面（与图表从左到右的时间顺序互补）。
+          defaultSort={{ key: 'day', dir: 'desc' }}
+          searchText={daySearch}
+          filterPlaceholder="过滤日期"
         />
       </Card>
     </div>

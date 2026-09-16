@@ -4,6 +4,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { BackfillLedgerNote, BackfillNotice } from '../src/client/views/backfill-notice.tsx'
 import { Dashboard } from '../src/client/views/dashboard.tsx'
 import { Sparkline, BarChart } from '../src/client/views/chart.tsx'
+import { DataTable } from '../src/client/views/components/data-table.tsx'
+import type { TableColumn } from '../src/client/views/components/data-table.tsx'
 import { createBillingStore } from '../src/client/core/store.ts'
 import type { UsageBillingRemote } from '../src/client/core/remote.ts'
 import type { DailyPoint, Overview } from '../src/view.ts'
@@ -1065,5 +1067,110 @@ describe('SettingsSection', () => {
     // 状态区停在 0 行（status 未到），页面本身必须正常渲染。
     expect(screen.getByText(/账本 0 行/)).toBeTruthy()
     expect(screen.getByText(/计费口径：/)).toBeTruthy()
+  })
+})
+
+/** 25 行的合成数据：过滤 / 排序 / 分页的边界（10 / 11 / 25）都在里面。 */
+interface FakeRow { id: string; name: string; cost: number }
+
+const FAKE_ROWS: FakeRow[] = Array.from({ length: 25 }, (_, i) => ({
+  id: 'r' + i,
+  name: 'model-' + i,
+  cost: i,
+}))
+
+const FAKE_COLUMNS: ReadonlyArray<TableColumn<FakeRow>> = [
+  { key: 'name', header: '模型名', main: true, sortValue: (row) => row.name, render: (row) => row.name },
+  { key: 'cost', header: '费用列', align: 'right', sortValue: (row) => row.cost, render: (row) => String(row.cost) },
+]
+
+const renderTable = () => render(
+  <DataTable
+    columns={FAKE_COLUMNS}
+    rows={FAKE_ROWS}
+    rowKey={(row) => row.id}
+    searchText={(row) => row.name}
+    filterPlaceholder="过滤模型"
+  />,
+)
+
+const bodyRowCount = (): number => screen.getAllByRole('row').length - 1
+const firstBodyRow = (): string => screen.getAllByRole('row')[1]!.textContent ?? ''
+
+describe('DataTable：过滤 / 排序 / 分页', () => {
+  it('默认每页 10 行，工具条说总数，分页器说第几页', () => {
+    renderTable()
+    expect(bodyRowCount()).toBe(10)
+    expect(screen.getByText('共 25 条')).toBeTruthy()
+    expect(screen.getByText('1 / 3')).toBeTruthy()
+    // 过滤框是一个有可访问名的真输入框（不是自绘的 div）。
+    expect(screen.getByLabelText('过滤模型')).toBeTruthy()
+  })
+
+  it('翻页只换可见行，过滤条件不受影响', () => {
+    renderTable()
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }))
+    expect(screen.getByText('2 / 3')).toBeTruthy()
+    expect(bodyRowCount()).toBe(10)
+    expect(firstBodyRow()).toContain('model-10')
+    // 到最后一页：下一页按钮必须禁用（而不是点了没反应）。
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }))
+    expect(screen.getByText('3 / 3')).toBeTruthy()
+    expect((screen.getByRole('button', { name: '下一页' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(bodyRowCount()).toBe(5)
+  })
+
+  it('表头是一个可点按钮：升 → 降 → 取消（aria-sort 跟着走）', () => {
+    renderTable()
+    const header = screen.getByRole('button', { name: '按费用列排序' })
+    fireEvent.click(header)
+    expect(firstBodyRow()).toContain('model-0')
+    expect(screen.getByRole('columnheader', { name: /费用列/ }).getAttribute('aria-sort')).toBe('ascending')
+    fireEvent.click(header)
+    expect(firstBodyRow()).toContain('model-24')
+    expect(screen.getByRole('columnheader', { name: /费用列/ }).getAttribute('aria-sort')).toBe('descending')
+    fireEvent.click(header)
+    // 第三次回到原始顺序（不是只能在升/降之间来回）。
+    expect(firstBodyRow()).toContain('model-0')
+    expect(screen.getByRole('columnheader', { name: /费用列/ }).getAttribute('aria-sort')).toBe('none')
+  })
+
+  it('过滤实时生效，命中数写进工具条；命中只剩 1 页时分页器消失', () => {
+    renderTable()
+    fireEvent.change(screen.getByLabelText('过滤模型'), { target: { value: 'model-1' } })
+    // model-1 与 model-10..model-19 共 11 行命中 → 2 页。
+    expect(screen.getByText('共 25 条 · 命中 11 条')).toBeTruthy()
+    expect(screen.getByText('1 / 2')).toBeTruthy()
+
+    fireEvent.change(screen.getByLabelText('过滤模型'), { target: { value: 'model-13' } })
+    expect(screen.getByText('共 25 条 · 命中 1 条')).toBeTruthy()
+    expect(screen.queryByText(/1 \/ 2/)).toBeNull()
+    expect(bodyRowCount()).toBe(1)
+  })
+
+  it('过滤到空集合时给的是「没有匹配」而不是一张空表', () => {
+    renderTable()
+    fireEvent.change(screen.getByLabelText('过滤模型'), { target: { value: 'zzz' } })
+    expect(screen.getByText('没有匹配的记录。')).toBeTruthy()
+    expect(screen.getByText('共 25 条 · 命中 0 条')).toBeTruthy()
+  })
+
+  it('翻到第 3 页后再过滤：页码自动回落，不会停在一张空表上', () => {
+    renderTable()
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }))
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }))
+    expect(screen.getByText('3 / 3')).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('过滤模型'), { target: { value: 'model-13' } })
+    expect(bodyRowCount()).toBe(1)
+    expect(firstBodyRow()).toContain('model-13')
+  })
+
+  it('换每页条数会回到第 1 页（10 → 20）', () => {
+    renderTable()
+    fireEvent.click(screen.getByRole('button', { name: '下一页' }))
+    expect(screen.getByText('2 / 3')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '每页 20 条' }))
+    expect(screen.getByText('1 / 2')).toBeTruthy()
+    expect(bodyRowCount()).toBe(20)
   })
 })

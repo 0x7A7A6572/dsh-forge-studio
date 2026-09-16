@@ -3,11 +3,11 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { UsageBillingRemote } from '../core/remote.ts'
 import type { BillingStore } from '../core/store.ts'
-import { calendarMatrix } from '../core/heatmap.ts'
 import {
   NON_FINITE_PLACEHOLDER, backfilledDisclosure, formatCny, isUnpricedTotal,
 } from '../core/format.ts'
 import { Card, StatCard } from './components/kit.tsx'
+import { HeatChart } from './heat-chart.tsx'
 import type { DailyPoint } from '../../view.ts'
 
 function longestStreak(days: readonly DailyPoint[]): number {
@@ -53,12 +53,6 @@ export function TabHeatmap(props: {
     return () => { alive = false }
   }, [billing, state.includeSubagents])
 
-  const matrix = useMemo(() => data === null ? [] : calendarMatrix(
-    data.days.map((d) => d.day),
-    new Map(data.days.map((d) => [d.day, d.costCny])),
-    { firstDayOfWeek: 1 },
-  ), [data])
-
   if (data === null) return <div className="ub-empty" data-dsh-ub-empty>正在读取用量…</div>
   if (data.days.length === 0) return <div className="ub-empty" data-dsh-ub-empty>这个范围里还没有用量记录。</div>
 
@@ -79,15 +73,7 @@ export function TabHeatmap(props: {
       </div>
 
       <Card title="每日费用" desc="色阶按当日费用分 5 档；悬停看当天金额。">
-        <div className="ub-heat" data-dsh-ub-heat>
-          {matrix.flat().map((cell, i) => (
-            <span
-              key={cell?.day ?? `pad-${i}`}
-              data-level={cell?.level ?? 0}
-              title={cell === null ? '' : `${cell.day}：${unpriced ? NON_FINITE_PLACEHOLDER : formatCny(cell.value)}`}
-            />
-          ))}
-        </div>
+        <HeatChart days={data.days} unpriced={unpriced} />
       </Card>
     </div>
   )
