@@ -40,7 +40,7 @@ describe('foldEvents', () => {
       id: 's1#2', sessionId: 's1', seq: 2,
       provider: 'deepseek', model: 'deepseek-v4-flash',
       input: 1_000_000, output: 1_000_000, costCny: 2, priced: true, snapshotId: 'snap-1',
-      cwd: 'D:\\codes\\demo', isSubagent: false,
+      cwd: 'D:\\codes\\demo', isSubagent: false, backfilled: false,
     })
   })
 
@@ -117,6 +117,7 @@ describe('foldEvents', () => {
   })
 
   it('空事件序列返回空结果', () => {
-    expect(foldEvents([], ctx())).toMatchObject({ rows: [], lastSeq: 0, lastTime: 0, calls: 0 })
+    // lastSeq 的空序列哨兵是 -1（与 aggregate 的 maxSeq 种子一致）：seq 0 才不会被水位吞掉。
+    expect(foldEvents([], ctx())).toMatchObject({ rows: [], lastSeq: -1, lastTime: 0, calls: 0 })
   })
 })

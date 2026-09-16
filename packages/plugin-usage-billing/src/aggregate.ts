@@ -16,6 +16,13 @@ export interface SessionSource {
   listSessions(): Promise<Array<{ header: SessionHeader }>>
   /** 只取元数据（`SessionEventRecord` 无 data），用于便宜地算最大 seq。 */
   listEvents(id: string): Promise<Array<{ seq: number }>>
+  /**
+   * 读取一个会话的**完整**事件序列。
+   *
+   * 必须包含 ≤ `maxSeq` 的全部 seq，不得截断、也不得挖空中间段：水位是
+   * `maxSeq === foldedThroughSeq` 的等值比较，返回不完整会让未读事件**永久**不再折叠
+   * （写时锁定意味着事后也无法补算）。分页/继承裁剪的实现必须把它们拼成完整序列再返回。
+   */
   readSession(id: string): Promise<{ session: SessionHeader; events: SessionEvent[] }>
 }
 
@@ -73,7 +80,7 @@ export async function aggregateOnce(
   for (const { header } of sessions) {
     try {
       const meta = await deps.source.listEvents(header.id)
-      const maxSeq = meta.reduce((m, e) => Math.max(m, e.seq), 0)
+      const maxSeq = meta.reduce((m, e) => Math.max(m, e.seq), -1)
       const wm = deps.folds.get(header.id)
       if (wm !== undefined && wm.foldedThroughSeq === maxSeq && wm.headerCreatedAt === header.createdAt) {
         skipped += 1
@@ -92,18 +99,23 @@ export async function aggregateOnce(
         foldedThroughSeq: result.lastSeq,
         lastTime: result.lastTime,
         headerCreatedAt: header.createdAt,
-        lastSnapshotId: snapshots.length > 0 ? snapshots[snapshots.length - 1]!.id : '',
+        lastSnapshotId: resolveSnapshotAt(result.lastTime, snapshots).snapshotId,
       })
       for (const m of result.unpricedModels) unpriced.add(m)
       folded += 1
       rows += result.rows.length
     } catch (error) {
       failures += 1
-      const id = `diag-${header.id}-${now()}`
-      await deps.diag.put(id, {
-        id, at: now(), kind: 'session-read',
-        detail: `${header.id}: ${error instanceof Error ? error.message : String(error)}`,
-      })
+      // 诊断写入本身还可能失败（storage 抖了），而它是唯一的副作用：让它自己兜住，
+      // 否则一个坏会话会把其余会话一起带走。header 也可能缺失，先本地取值再拼内容。
+      const sessionId = header?.id ?? '<unknown>'
+      try {
+        const id = `diag-${sessionId}-${now()}`
+        await deps.diag.put(id, {
+          id, at: now(), kind: 'session-read',
+          detail: `${sessionId}: ${error instanceof Error ? error.message : String(error)}`,
+        })
+      } catch { /* 诊断写不进去也不能中断后续会话 */ }
     }
   }
 

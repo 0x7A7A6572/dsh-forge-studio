@@ -26,7 +26,7 @@ export interface FoldResult {
   rows: LedgerRow[]
   lastSeq: number
   lastTime: number
-  /** 带 usage 的模型调用次数（含未计价）。 */
+  /** 模型调用次数（含无 usage 与未计价的调用）。 */
   calls: number
   /** 未命中的 `${provider}/${model}`，供 UI 提示计数。 */
   unpricedModels: Set<string>
@@ -41,7 +41,8 @@ export function foldEvents(events: readonly SessionEvent[], ctx: FoldContext): F
   const unpricedModels = new Set<string>()
   let fromContext: Attribution | undefined
   let fromHeader: Attribution | undefined
-  let lastSeq = 0
+  // 种子 -1：seq 0 的会话才有可用的空序列哨兵（0 会让它永远被水位跳过）。
+  let lastSeq = -1
   let lastTime = 0
   let calls = 0
 

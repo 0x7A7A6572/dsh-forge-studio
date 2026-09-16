@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { aggregateOnce, resetAggregateCache } from '../src/aggregate.ts'
@@ -25,7 +25,14 @@ const ev = (type: string, seq: number, time: number, data: unknown) => ({ type, 
 const usageEv = (seq: number) => ev('assistant/message', seq, 1_000 + seq, { usage: { inputTokens: 1_000_000, outputTokens: 0 } })
 const routeEv = () => ev('request/context', 1, 1_000, { provider: 'deepseek', model: 'deepseek-v4-flash' })
 
-function makeDeps(over: Partial<SessionSource> = {}, now = () => 1_000_000): {
+/** 额外假会话：默认复用 s1 的事件序列，`fails` 让它的 readSession 抛错；列在 s1 **之前**。 */
+interface ExtraSession { header: SessionHeader; events?: SessionEvent[]; fails?: boolean }
+
+function makeDeps(
+  over: Partial<SessionSource> = {},
+  now = () => 1_000_000,
+  extra: ExtraSession[] = [],
+): {
   deps: AggregateDeps; ledger: KvTable<string, LedgerRow>; folds: KvTable<string, FoldState>
   diag: KvTable<string, Diagnostic>; reads: () => number
 } {
@@ -33,11 +40,23 @@ function makeDeps(over: Partial<SessionSource> = {}, now = () => 1_000_000): {
   const diag = table<Diagnostic>(); const aliases = table<never>(); const snapshots = table<PriceSnapshot>()
   void snapshots.put(SNAP.id, SNAP)
   let readCount = 0
-  const events = [routeEv(), usageEv(2)]
+  const all = [
+    ...extra.map((s) => ({
+      header: s.header,
+      events: s.events ?? [routeEv(), usageEv(2)],
+      fails: s.fails ?? false,
+    })),
+    { header, events: [routeEv(), usageEv(2)], fails: false },
+  ]
   const source: SessionSource = {
-    listSessions: async () => [{ header }],
-    listEvents: async () => events.map((e) => ({ seq: e.seq })),
-    readSession: async () => { readCount += 1; return { session: header, events } },
+    listSessions: async () => all.map((s) => ({ header: s.header })),
+    listEvents: async (id) => (all.find((s) => s.header.id === id)?.events ?? []).map((e) => ({ seq: e.seq })),
+    readSession: async (id) => {
+      readCount += 1
+      const s = all.find((x) => x.header.id === id)!
+      if (s.fails) throw new Error('corrupt')
+      return { session: s.header, events: s.events }
+    },
     ...over,
   }
   const deps: AggregateDeps = {
@@ -96,13 +115,44 @@ describe('aggregateOnce', () => {
   })
 
   it('readSession 抛错 → 记诊断、不推进水位、其余会话不受影响', async () => {
-    const { deps, diag, folds } = makeDeps({
-      readSession: async () => { throw new Error('corrupt') },
+    // 两个会话：s2 排在前面且 readSession 抛错，s1 干净 —— s2 的失败不能吃掉后面的 s1。
+    const s2 = { ...header, id: 's2' } as unknown as SessionHeader
+    const { deps, diag, folds, ledger } = makeDeps({}, () => 1_000_000, [{ header: s2, fails: true }])
+    const stats = await aggregateOnce(deps)
+    expect(stats).toMatchObject({ sessions: 2, folded: 1, rows: 1, failures: 1 })
+    expect([...diag.entries()][0]![1]).toMatchObject({ kind: 'session-read' })
+    expect(folds.get('s2')).toBeUndefined()
+    // 干净会话照常折叠：水位推进 + 账本行落盘。
+    expect(folds.get('s1')!.foldedThroughSeq).toBe(2)
+    expect(ledger.get('s1#2')!.costCny).toBe(1)
+  })
+
+  it('seq 0 的会话首轮照折、次轮被水位跳过（种子 -1）', async () => {
+    const { deps, ledger, folds } = makeDeps({
+      listEvents: async () => [{ seq: 0 }],
+      readSession: async () => ({ session: header, events: [usageEv(0)] }),
+    })
+    const first = await aggregateOnce(deps)
+    expect(first).toMatchObject({ folded: 1, skipped: 0, failures: 0 })
+    expect(folds.get('s1')!.foldedThroughSeq).toBe(0)
+    // 单一事件会话没有归属事件，所以此行必然未计价 —— 关键是它真的落了账本。
+    expect(ledger.get('s1#0')).toMatchObject({ seq: 0, priced: false })
+    const second = await aggregateOnce(deps, { force: true })
+    expect(second).toMatchObject({ folded: 0, skipped: 1, failures: 0 })
+    expect(ledger.size).toBe(1)
+  })
+
+  it('无事件会话不抛错、不写账本（水位与 maxSeq 同为 -1）', async () => {
+    const { deps, ledger, folds } = makeDeps({
+      listEvents: async () => [],
+      readSession: async () => ({ session: header, events: [] }),
     })
     const stats = await aggregateOnce(deps)
-    expect(stats.failures).toBe(1)
-    expect([...diag.entries()][0]![1]).toMatchObject({ kind: 'session-read' })
-    expect(folds.get('s1')).toBeUndefined()
+    expect(stats).toMatchObject({ sessions: 1, folded: 1, skipped: 0, rows: 0, failures: 0 })
+    expect(folds.get('s1')!.foldedThroughSeq).toBe(-1)
+    expect(ledger.size).toBe(0)
+    const second = await aggregateOnce(deps, { force: true })
+    expect(second).toMatchObject({ folded: 0, skipped: 1, failures: 0 })
   })
 
   it('未收录模型出现在 stats.unpricedModels', async () => {
