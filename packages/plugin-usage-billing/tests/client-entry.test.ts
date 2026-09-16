@@ -20,7 +20,6 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', async () => await import('./pri
 import { Dashboard } from '../src/client/views/dashboard.tsx'
 import { EntryCard } from '../src/client/views/entry-card.tsx'
 import { createBillingStore } from '../src/client/core/store.ts'
-import { sparklinePoints } from '../src/client/core/chart-data.ts'
 import type { BillingStore } from '../src/client/core/store.ts'
 import type { UsageBillingRemote } from '../src/client/core/remote.ts'
 import type { Overview } from '../src/view.ts'
@@ -208,24 +207,33 @@ describe('入口卡的取数与占位', () => {
     }
   })
 
-  it('sparkline 由 views/chart.tsx 的 Sparkline 渲染，几何与 chart-data 逐点一致', async () => {
-    // 入口卡此前另抄了一份 inline `<svg><polyline>`，Sparkline 因此成了没有任何调用方的死代码。
-    // 这条断言钉的是「换用共享件之后画出来的点没有变」（等价性，而不是新增行为）。
-    const days = [
-      { day: '2026-09-10', costCny: 1, input: 0, cacheRead: 0, cacheWrite: 0, output: 0, calls: 1 },
-      { day: '2026-09-11', costCny: 3, input: 0, cacheRead: 0, cacheWrite: 0, output: 0, calls: 1 },
-    ]
+  it('视觉锚点是 lucide 图标（不再是那条 56×16、读不出趋势的迷你折线）', async () => {
     const store = createBillingStore()
+    const { container } = render(createElement(EntryCard, {
+      wide: true, billing: billingStub(overviewFixture()), store,
+    }))
+    await waitFor(() => { expect(amountOf(container)).toBe('¥12.34') })
+    const icon = container.querySelector('[data-dsh-ub-icon]')
+    expect(icon).not.toBeNull()
+    // lucide 图标渲染为 svg；它是纯装饰（口径在按钮的 aria-label 里），不进 a11y 树。
+    expect(icon!.querySelector('svg')).not.toBeNull()
+    expect(icon!.getAttribute('aria-hidden')).toBe('true')
+    expect(container.querySelector('polyline')).toBeNull()
+  })
+
+  it('只取一条 overview：不再为侧栏多跑一次 daily 全量聚合', async () => {
+    let dailyCalls = 0
     const billing = {
       overview: async () => ({
         ok: true, value: { overview: overviewFixture(), todayKey: '2026-09-16', budget: { enabled: false, monthlyCny: 0 } },
       }),
-      daily: async () => ({ ok: true, value: { days } }),
+      daily: async () => { dailyCalls += 1; return { ok: true, value: { days: [] } } },
     } as unknown as UsageBillingRemote
-    const { container } = render(createElement(EntryCard, { wide: true, billing, store }))
-    await waitFor(() => { expect(container.querySelector('polyline')).not.toBeNull() })
-    expect(container.querySelector('polyline')!.getAttribute('points'))
-      .toBe(sparklinePoints(days.map((d) => d.costCny), 56, 16))
+    const { container } = render(createElement(EntryCard, {
+      wide: true, billing, store: createBillingStore(),
+    }))
+    await waitFor(() => { expect(amountOf(container)).toBe('¥12.34') })
+    expect(dailyCalls).toBe(0)
   })
 })
 
@@ -282,7 +290,7 @@ describe('侧栏预算进度条', () => {
     expect(container.querySelector('[data-dsh-ub-bar]')?.closest('[aria-hidden="true"]')).not.toBeNull()
   })
 
-  it('窄态（56px rail）隐藏文字但金额仍在：side rail 也读得到本月费用', async () => {
+  it('窄态 rail：文字被隐藏，lucide 图标与 aria-label 仍在', async () => {
     const { container } = render(createElement(EntryCard, {
       wide: false,
       billing: billingStub(overviewFixture({ totalCny: 12.34 }), '2026-09-16', { enabled: true, monthlyCny: 100 }),

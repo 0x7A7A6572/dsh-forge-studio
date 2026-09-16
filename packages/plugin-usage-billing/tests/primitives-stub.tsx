@@ -26,9 +26,12 @@ export function Button({
   className?: string
   children?: ReactNode
 } & ButtonHTMLAttributes<HTMLButtonElement>): JSX.Element {
-  void variant; void size; void icon
+  void variant; void size
   return (
-    <button type={rest.type ?? 'button'} {...rest} className={className}>{children}</button>
+    <button type={rest.type ?? 'button'} {...rest} className={className}>
+      {icon === undefined || icon === null ? null : <span data-stub-icon>{icon}</span>}
+      {children}
+    </button>
   )
 }
 

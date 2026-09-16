@@ -10,6 +10,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
+import { Calculator, RefreshCw } from 'lucide-react'
 import { Button, Input, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { UsageBillingRemote } from '../core/remote.ts'
 import type { BillingStore } from '../core/store.ts'
@@ -266,7 +267,7 @@ export function TabPricing(props: {
         <span className="ub-sub">USD → CNY {usdToCny.toFixed(4)}</span>
         <div className="ub-toolbar">
           <Button
-            variant="outline" size="sm" disabled={busy}
+            variant="outline" size="sm" disabled={busy} icon={<RefreshCw size={14} />}
             onClick={async () => {
               if (billing === undefined) return
               setBusy(true)
@@ -284,7 +285,7 @@ export function TabPricing(props: {
             立即刷新
           </Button>
           <Button
-            variant="ghost" size="sm" disabled={busy}
+            variant="ghost" size="sm" disabled={busy} icon={<Calculator size={14} />}
             onClick={async () => {
               if (billing === undefined) return
               setBusy(true)

@@ -197,7 +197,16 @@ const CSS = `
 }
 
 /* ---------- 热力图 ---------- */
-.ub-heat { display: grid; grid-auto-flow: column; gap: 2px; }
+/*
+ * 日历热力图：7 行 = 一周 7 天，1 列 = 一周。只写 grid-auto-flow: column 而没给
+ * grid-template-rows 时，隐式网格只有一行 —— 整个日历会摊成一条横线（踩过）。
+ * （注意：这段注释在模板字面量里，一个反引号就会把 CSS 从中间截断。）
+ * matrix.flat() 是「按周优先」展开的，正好和列填充顺序一致。
+ */
+.ub-heat {
+  display: grid; grid-template-rows: repeat(7, 10px); grid-auto-flow: column;
+  grid-auto-columns: 10px; gap: 2px; overflow-x: auto; padding-bottom: 2px;
+}
 .ub-heat > span { width: 10px; height: 10px; border-radius: 2px; background: ${TOKENS.bgLayer2}; }
 .ub-heat > span[data-level='1'] {
   background: color-mix(in srgb, ${TOKENS.business} 25%, ${TOKENS.bgLayer2});
@@ -259,7 +268,7 @@ const CSS = `
   flex: none; font-size: 10.5px; color: ${TOKENS.labelTertiary};
   font-variant-numeric: tabular-nums;
 }
-.ub-entry-spark { flex: none; color: ${TOKENS.brand}; }
+.ub-entry-icon { flex: none; display: inline-flex; align-items: center; color: ${TOKENS.brand}; }
 .ub-badge { flex: none; font-size: 10px; color: ${TOKENS.error}; }
 `
 

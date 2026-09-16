@@ -66,6 +66,18 @@ describe('主题 token', () => {
   })
 })
 
+describe('热力图容器', () => {
+  it('日历格子必须同时给行数与列填充方向（只给其一就摊成一条横线）', () => {
+    // 真实踩过：只写 grid-auto-flow: column 而没给 grid-template-rows 时，隐式网格只有一行，
+    // 整个日历被压成一条横杠。这条断言把两半都钉住。
+    const rule = /\.ub-heat\s*\{([^}]*)\}/.exec(cssText())
+    expect(rule).not.toBeNull()
+    const body = rule![1]!
+    expect(body).toContain('grid-auto-flow: column')
+    expect(body).toMatch(/grid-template-rows:\s*repeat\(\s*7\s*,/)
+  })
+})
+
 describe('命名空间与语法', () => {
   it('CSS 大括号成对（模板字符串里漏一个 } 会让后面的规则被静默吞掉）', () => {
     const css = cssText()

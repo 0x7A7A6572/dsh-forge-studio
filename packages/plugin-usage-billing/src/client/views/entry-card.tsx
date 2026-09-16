@@ -1,5 +1,5 @@
 /**
- * 侧栏入口卡（slot: sidebar.footer.action）—— 本月费用 + 预算进度条 + 近 7 天 sparkline。
+ * 侧栏入口卡（slot: sidebar.footer.action）—— lucide 图标 + 本月费用 + 今日 + 预算进度条。
  *
  * 这一屏刻意**只留两个数字**（本月合计、今日）与一条预算进度条：
  * - 日期（`09-16`）：侧栏里没人靠它定位，今日费用自带「今日」两个字就够了；
@@ -13,14 +13,14 @@
  * 与概览页那条是同一个组件、同一份阈值。
  */
 
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
+import { Wallet } from 'lucide-react'
 import type { UsageBillingRemote } from '../core/remote.ts'
 import type { BillingStore } from '../core/store.ts'
 import { formatCny, formatPct, isUnpricedTotal } from '../core/format.ts'
 import { evaluateBudget } from '../../budget.ts'
 import { ProgressBar } from './components/progress-bar.tsx'
-import { Sparkline } from './chart.tsx'
-import type { DailyPoint, Overview } from '../../view.ts'
+import type { Overview } from '../../view.ts'
 
 /** 概览未到 / 整本账未定价时的占位：`¥0.00` 与真实零费用在界面上无法区分。 */
 const PENDING = '—'
@@ -54,7 +54,6 @@ export function EntryCard(props: EntryCardProps): JSX.Element {
   const includeSubagents = state.includeSubagents
   const [overview, setOverview] = useState<Overview | null>(null)
   const [budget, setBudget] = useState<{ enabled: boolean; monthlyCny: number } | null>(null)
-  const [days, setDays] = useState<DailyPoint[]>([])
   const [load, setLoad] = useState<LoadState>('loading')
 
   useEffect(() => {
@@ -67,20 +66,16 @@ export function EntryCard(props: EntryCardProps): JSX.Element {
     // 挂起兜底：到点还没拿到任何一帧就转失败态（下面的正常返回会清掉它）。
     const timer = setTimeout(() => { if (alive) setLoad((s) => (s === 'loading' ? 'failed' : s)) }, FETCH_TIMEOUT_MS)
     void (async () => {
-      // 只取两条：预算随 overview 一起回来，价表来源（曾经的「内置价」徽标）侧栏不再需要。
-      const [o, d] = await Promise.all([
-        billing.overview('month', includeSubagents),
-        billing.daily('7d', includeSubagents),
-      ])
+      // 只取一条：预算随 overview 一起回来。价表来源与 7 天折线都不再是侧栏要展示的东西，
+      // 少一条 daily('7d') 就少一次全量聚合——这个卡在每次会话列表重渲时都会被挂载。
+      const o = await billing.overview('month', includeSubagents)
       if (!alive) return
       clearTimeout(timer)
       if (o.ok) {
         setOverview(o.value.overview)
         setBudget(o.value.budget)
       }
-      if (d.ok) setDays(d.value.days)
-      // 两条里一条都没成功 = 这一屏没有可信数字，明说失败；否则算就绪。
-      setLoad(o.ok || d.ok ? 'ready' : 'failed')
+      setLoad(o.ok ? 'ready' : 'failed')
     })().catch(() => {
       // 远程调用 reject（wire 层异常）时必须吞掉：否则是一条 unhandled rejection。
       // 但也不能装作无事发生 —— 转失败态，卡片上给出可解释的「读取失败」。
@@ -90,10 +85,8 @@ export function EntryCard(props: EntryCardProps): JSX.Element {
     return () => { alive = false; clearTimeout(timer) }
   }, [billing, includeSubagents])
 
-  // 折线走 views/chart.tsx 的 Sparkline（此前这里另抄了一份 inline `<svg><polyline>`，
-  // 于是 Sparkline 成了没人用的死代码，两份实现还会各自漂移）；空数据时 Sparkline 自己
-  // 返回一个空 svg，这里按「有没有点」决定渲不渲染，保持原来的 DOM 形状。
-  const sparkValues = useMemo(() => days.map((d) => d.costCny), [days])
+  // 侧栏不再画 7 天折线：56×16 的迷你折线在这个宽度里读不出任何趋势，看着只是一道杂线，
+  // 换成 lucide 钱包图标 —— 折叠成 36px rail 时它是卡片里唯一还看得见的内容。
 
   // 一行都没定价（totalCny 为 0 且存在未收录模型）时，金额同样是不可信的 0 ——
   // 判据来自 client/core/format.ts 的唯一实现，与概览 / 趋势 / 热力图同一口径。
@@ -132,6 +125,9 @@ export function EntryCard(props: EntryCardProps): JSX.Element {
       aria-label={ariaLabel}
       onClick={() => store.togglePanel()}
     >
+      <span className="ub-entry-icon" data-dsh-ub-icon aria-hidden="true">
+        <Wallet size={16} />
+      </span>
       <span className="ub-entry-text" data-dsh-ub-entry-text>
         <span className="ub-entry-line">
           <span className="ub-entry-amount" data-dsh-ub-amount>{amountText}</span>
@@ -149,11 +145,6 @@ export function EntryCard(props: EntryCardProps): JSX.Element {
           </span>
         ) : null}
       </span>
-      {wide && sparkValues.length > 0 ? (
-        <span className="ub-entry-spark" aria-hidden="true">
-          <Sparkline values={sparkValues} width={56} height={16} />
-        </span>
-      ) : null}
       {failed ? <span className="ub-badge" data-dsh-ub-badge data-kind="error">读取失败</span> : null}
     </button>
   )
