@@ -47,6 +47,18 @@ describe('mergeByModel', () => {
     expect(out.map((r) => r.key).sort()).toEqual(['deepseek/m-a', 'deepseek/m-b'])
   })
 
+  it('别名为纯空白 canonical 时同样不并组（回退原始模型 id）', () => {
+    const aliases: ModelAlias[] = ['m-a', 'm-b'].map((raw) => ({
+      id: aliasId('deepseek', raw), provider: 'deepseek', rawModel: raw, canonicalModel: '   ',
+    }))
+    const out = mergeByModel([
+      row({ id: 'a', model: 'm-a' }),
+      row({ id: 'b', model: 'm-b' }),
+    ], aliases)
+    expect(out).toHaveLength(2)
+    expect(out.map((r) => r.key).sort()).toEqual(['deepseek/m-a', 'deepseek/m-b'])
+  })
+
   it('不同单价的合并行标 mixedRate', () => {
     const aliases: ModelAlias[] = [{
       id: aliasId('deepseek', 'v4f-x'), provider: 'deepseek', rawModel: 'v4f-x', canonicalModel: 'deepseek-v4-flash',

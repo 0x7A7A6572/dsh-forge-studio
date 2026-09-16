@@ -53,6 +53,20 @@ describe('设置访问句柄', () => {
     expect(seen).toEqual([22, 33])
   })
 
+  it('连续 bind 两个 scope：先解绑旧的，推送只到一次', () => {
+    const a = createUsageBillingSettingsAccess()
+    let push1: ((c: UsageBillingConfig) => void) | undefined
+    a.bind({ get: () => USAGE_BILLING_CONFIG_BASE, watch: (cb) => { push1 = cb; return () => { push1 = undefined } } })
+    let push2: ((c: UsageBillingConfig) => void) | undefined
+    a.bind({ get: () => USAGE_BILLING_CONFIG_BASE, watch: (cb) => { push2 = cb; return () => { push2 = undefined } } })
+    expect(push1).toBeUndefined()
+
+    const seen: number[] = []
+    a.watch((c) => seen.push(c.budget.monthlyCny))
+    push2!({ ...USAGE_BILLING_CONFIG_BASE, budget: { enabled: true, monthlyCny: 7 } })
+    expect(seen).toEqual([100, 7])
+  })
+
   it('dispose 后停止接收且 ready 为 false', () => {
     const a = createUsageBillingSettingsAccess()
     let push: ((c: UsageBillingConfig) => void) | undefined

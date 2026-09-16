@@ -74,8 +74,10 @@ export function mergeByModel(rows: readonly LedgerRow[], aliases: readonly Model
 
   for (const r of rows) {
     const provider = r.provider.trim().toLowerCase()
-    // 空 canonical 不是有效的合并目标：否则所有带该别名的模型会被并成一行。
-    const canonical = canon.get(aliasId(provider, r.model)) || r.model
+    // 空（含纯空白）canonical 不是有效的合并目标：priceKey 会把它 trim 掉，
+    // 于是所有带该别名的模型会被并成同一行 `provider/`。判定口径与 model-key.ts 一致：trim 后为空即无效。
+    const rawCanonical = canon.get(aliasId(provider, r.model))
+    const canonical = rawCanonical !== undefined && rawCanonical.trim() !== '' ? rawCanonical : r.model
     const key = priceKey(provider, canonical)
     let slot = byKey.get(key)
     if (slot === undefined) {
