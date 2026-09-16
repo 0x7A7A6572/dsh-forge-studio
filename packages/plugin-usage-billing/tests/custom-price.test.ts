@@ -64,7 +64,8 @@ describe('自定义单价', () => {
     await svc.setCustomPrice({ provider: 'deepseek', model: 'deepseek-v4-pro', currency: 'CNY', input: 99, cacheRead: 0, cacheWrite: 0, output: 99 })
     await svc.removeCustomPrice('deepseek/deepseek-v4-pro')
     const e = (await svc.pricing()).entries['deepseek/deepseek-v4-pro']
-    expect(e === undefined || e.input === 2).toBe(true)
+    // 必须是「回落到目录价」，不是「删掉条目」——后者会把目录已收录的模型显示成未收录。
+    expect(e?.input).toBe(2)
   })
 })
 
