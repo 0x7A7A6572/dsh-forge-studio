@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { diffEntries, planSnapshot, resolveSnapshotAt } from '../src/pricing/snapshot.ts'
+import { CATALOG_REASONS, diffEntries, planSnapshot, resolveLayerAt, resolveSnapshotAt } from '../src/pricing/snapshot.ts'
 import type { PriceEntry, PriceSnapshot } from '../src/types.ts'
 
 const e = (input: number): PriceEntry => ({ input, cacheRead: 0, cacheWrite: 0, output: 1, currency: 'CNY' })
@@ -132,5 +132,43 @@ describe('resolveSnapshotAt', () => {
       entries: {}, usdToCny: 0, usdToCnySource: 'default', snapshotId: '',
     })
     expect(resolveSnapshotAt(123, []).entries['a/1']).toBeUndefined()
+  })
+})
+
+describe('resolveLayerAt', () => {
+  const b = base(100, { 'a/1': e(1), 'a/2': e(2) })
+  const custom: PriceSnapshot = {
+    id: 'snap-200#delta', at: 200, kind: 'delta', reason: 'custom-price',
+    usdToCny: 7, usdToCnySource: 'default', entries: { 'a/1': e(99) },
+  }
+  const manual: PriceSnapshot = {
+    id: 'snap-250#delta', at: 250, kind: 'delta', reason: 'manual-refresh',
+    usdToCny: 7, usdToCnySource: 'default', entries: { 'a/3': e(3) },
+  }
+  const refresh: PriceSnapshot = {
+    id: 'snap-300#delta', at: 300, kind: 'delta', reason: 'catalog-refresh',
+    usdToCny: 7, usdToCnySource: 'default', entries: { 'a/4': e(4) }, removed: ['a/2'],
+  }
+  const ledger = [b, custom, manual, refresh]
+
+  it('按 reason 过滤：目录层口径排除覆盖价，且 resolveSnapshotAt 等同不过滤', () => {
+    // 不过滤 = 累计价表口径，看得到自定义覆盖。
+    expect(resolveLayerAt(400, ledger).entries['a/1']!.input).toBe(99)
+
+    // 目录层口径只重放 install / catalog-refresh / manual-refresh。
+    const catalogOnly = resolveLayerAt(400, ledger, CATALOG_REASONS)
+    expect(catalogOnly.entries['a/1']!.input).toBe(1)
+    expect(catalogOnly.entries['a/3']!.input).toBe(3)
+    expect(catalogOnly.entries['a/4']!.input).toBe(4)
+    expect(catalogOnly.entries['a/2']).toBeUndefined() // 目录层自己的 removed 照样生效
+
+    // 过滤后一条不剩 → 与空账本同一形状（不回填到别的层、不抛异常）。
+    expect(resolveLayerAt(400, [custom], CATALOG_REASONS)).toEqual({
+      entries: {}, usdToCny: 0, usdToCnySource: 'default', snapshotId: '',
+    })
+
+    // resolveSnapshotAt 是「不过滤」的一行委托：结果必须与不传 reasons 逐字相同。
+    expect(resolveSnapshotAt(400, ledger)).toEqual(resolveLayerAt(400, ledger))
+    expect(resolveSnapshotAt(250, [refresh, b, custom, manual])).toEqual(resolveLayerAt(250, [refresh, b, custom, manual]))
   })
 })

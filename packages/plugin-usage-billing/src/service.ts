@@ -14,9 +14,9 @@ import type { usageBillingDomain } from './domain.ts'
 import { aggregateOnce, resetAggregateCache } from './aggregate.ts'
 import type { SessionSource } from './aggregate.ts'
 import { aliasId, priceKeyCandidates } from './model-key.ts'
-import { priceKey } from './pricing/catalog.ts'
+import { DEFAULT_USD_TO_CNY, priceKey } from './pricing/catalog.ts'
 import { priceUsage } from './pricing/cost.ts'
-import { diffEntries, planSnapshot, resolveSnapshotAt } from './pricing/snapshot.ts'
+import { CATALOG_REASONS, diffEntries, planSnapshot, resolveLayerAt, resolveSnapshotAt } from './pricing/snapshot.ts'
 import { USAGE_BILLING_REMOTE_METHODS, USAGE_BILLING_METHOD_NAMES } from './remote-methods.ts'
 import type { UsageBillingSettingsAccess } from './settings.ts'
 import { dayKey, daysInRange, rangeToSpec } from './time.ts'
@@ -53,6 +53,13 @@ export class UsageBillingService extends TypertRemoteService {
   private readonly aliases: KvTable<string, ModelAlias>
   private readonly diag: KvTable<string, Diagnostic>
   private readonly config: UsageBillingServiceConfig
+  /**
+   * 价格写入的串行队列：账本快照是**唯一**持久化价目状态，而每次写入都是
+   * 「读当前表 → 算新表 → 追加快照」的读-改-写。同一毫秒内的两次调用若并行，
+   * 会各自读到同一份旧表、往同一个 `${prevId}#delta` 键上写，后一次 put 悄悄
+   * 丢掉前一次的改价。所有触碰价表的写入都必须过这里。
+   */
+  private chain: Promise<unknown> = Promise.resolve()
 
   constructor(ctx: Context, config: UsageBillingServiceConfig) {
     super(ctx, 'usageBilling')
@@ -66,16 +73,26 @@ export class UsageBillingService extends TypertRemoteService {
 
   private now(): number { return (this.config.now ?? Date.now)() }
 
+  /** 串行执行一次价表读-改-写；前一次失败不让链条卡死（rejection 只影响自己的返回值）。 */
+  private serialize<T>(work: () => Promise<T>): Promise<T> {
+    const run = this.chain.then(work)
+    this.chain = run.then(() => undefined, () => undefined)
+    return run
+  }
+
   /** 确保首条 base 快照存在（安装时打点，同时充当回填价表）。 */
-  private ensureBaseSnapshot(entries: Record<string, PriceEntry>, usdToCny: number, usdToCnySource: 'live' | 'default'): void {
-    if (this.snapshots.size > 0) return
-    const snap = planSnapshot(undefined, { entries, usdToCny, usdToCnySource },
-      { id: 'snap-install', at: this.config.installAt, reason: 'install' })
-    if (snap === null) return
-    void this.snapshots.put(snap.id, snap)
-    // 写入的价表就是聚合计价用的价表：与 appendDelta / repricing 同规则，必须让
-    // TTL 缓存立刻失效，否则最快 5s 内仍在用上一张表算钱。
-    resetAggregateCache()
+  private async ensureBaseSnapshot(entries: Record<string, PriceEntry>, usdToCny: number, usdToCnySource: 'live' | 'default'): Promise<void> {
+    return this.serialize(async () => {
+      // 只看 install 层：先写过自定义价（或任何非 install 快照）不该让安装基准永远缺席。
+      if ([...this.snapshots.entries()].some(([, s]) => s.reason === 'install')) return
+      const snap = planSnapshot(undefined, { entries, usdToCny, usdToCnySource },
+        { id: 'snap-install', at: this.config.installAt, reason: 'install' })
+      if (snap === null) return
+      await this.snapshots.put(snap.id, snap)
+      // 写入的价表就是聚合计价用的价表：与 appendDelta / repricing 同规则，必须让
+      // TTL 缓存立刻失效，否则最快 5s 内仍在用上一张表算钱。
+      resetAggregateCache()
+    })
   }
 
   /** 现算一次聚合（带水位与 TTL），返回账本行快照。 */
@@ -146,50 +163,49 @@ export class UsageBillingService extends TypertRemoteService {
   }
 
   async setCustomPrice(entry: CustomPriceInput): Promise<{ ok: true }> {
-    const current = await this.pricing()
-    const entries = { ...current.entries, [priceKey(entry.provider, entry.model)]: {
-      input: entry.input, cacheRead: entry.cacheRead, cacheWrite: entry.cacheWrite,
-      output: entry.output, currency: entry.currency,
-    } }
-    await this.appendDelta(entries, current.usdToCny, current.usdToCnySource, 'custom-price')
-    return { ok: true }
+    return this.serialize(async () => {
+      const current = await this.pricing()
+      const entries = { ...current.entries, [priceKey(entry.provider, entry.model)]: {
+        input: entry.input, cacheRead: entry.cacheRead, cacheWrite: entry.cacheWrite,
+        output: entry.output, currency: entry.currency,
+      } }
+      await this.appendDelta(entries, current.usdToCny, current.usdToCnySource, 'custom-price')
+      return { ok: true } as const
+    })
   }
 
   async removeCustomPrice(key: string): Promise<{ ok: boolean }> {
-    const current = await this.pricing()
-    const catalog = this.catalogValueOf(key)
-    const existing = current.entries[key]
-    // 目录层有价 → 恢复到目录价（不是把整个模型删掉）；只有「价完全来自自定义」时才删 key。
-    if (existing === undefined) return { ok: false }
-    if (catalog !== undefined) {
-      const same = diffEntries({ [key]: existing }, { [key]: catalog })
-      if (Object.keys(same.entries).length === 0 && same.removed.length === 0) return { ok: false }
-    }
-    const entries = { ...current.entries }
-    if (catalog === undefined) delete entries[key]
-    else entries[key] = { ...catalog }
-    await this.appendDelta(entries, current.usdToCny, current.usdToCnySource, 'custom-price')
-    return { ok: true }
+    return this.serialize(async () => {
+      const current = await this.pricing()
+      const catalog = this.catalogValueOf(key)
+      const existing = current.entries[key]
+      // 目录层有价 → 恢复到目录价（不是把整个模型删掉）；只有「价完全来自自定义」时才删 key。
+      if (existing === undefined) return { ok: false }
+      if (catalog !== undefined) {
+        const same = diffEntries({ [key]: existing }, { [key]: catalog })
+        if (Object.keys(same.entries).length === 0 && same.removed.length === 0) return { ok: false }
+      }
+      const entries = { ...current.entries }
+      if (catalog === undefined) delete entries[key]
+      else entries[key] = { ...catalog }
+      await this.appendDelta(entries, current.usdToCny, current.usdToCnySource, 'custom-price')
+      return { ok: true }
+    })
   }
 
   /**
-   * 目录层（`install` / `catalog-refresh`）里该 key 的最新取值。
+   * 目录层（`install` / `catalog-refresh` / `manual-refresh`）里该 key 的最新取值。
    *
-   * 自定义价与手动刷新都写进累计表，所以**无法**从累计表反推「目录原本多少钱」——
-   * 只能重放目录层：base 整体替换该层，delta 只增改它提到的 key，`removed` 删 key。
-   * `custom-price` / `manual-refresh` 的记录一律不参与这个重放。
+   * ⚠️ 已知边界（Task 14 落地时必须复核）：快照记录的 `entries` 是**相对累计表**的差分，
+   * 不是分层差分。所以当某个 key 既有自定义价覆盖、目录又改了它的价时，那次目录改动可能
+   * 根本没进差分（累计值没变），这里于是恢复出「刷新前的旧目录价」。危害有界且自愈：
+   * 下一次目录刷新会把累计表纠正回来，且绝不会恢复出错层的值。
+   * 彻底解法是 catalog / override 分层记录差分、解析器按层合成，与目录写入方契约一起在
+   * Task 14 定（见 ledger 的 T12 条目）。
    */
   private catalogValueOf(key: string): PriceEntry | undefined {
-    const layer: Record<string, PriceEntry> = {}
-    const ordered = [...this.snapshots.entries()].map(([, s]) => s)
-      .filter((s) => s.reason === 'install' || s.reason === 'catalog-refresh')
-      .sort((a, b) => a.at - b.at || a.id.localeCompare(b.id))
-    for (const snap of ordered) {
-      if (snap.kind === 'base') for (const k of Object.keys(layer)) delete layer[k]
-      for (const [k, v] of Object.entries(snap.entries)) layer[k] = { ...v }
-      for (const k of snap.removed ?? []) delete layer[k]
-    }
-    return layer[key]
+    const all = [...this.snapshots.entries()].map(([, s]) => s)
+    return resolveLayerAt(this.now(), all, CATALOG_REASONS).entries[key]
   }
 
   private async appendDelta(
@@ -199,8 +215,13 @@ export class UsageBillingService extends TypertRemoteService {
     const all = [...this.snapshots.entries()].map(([, s]) => s)
     // 基线必须是「此刻之前生效的完整状态」；上一条记录可能是 delta，只有差量。
     const prev = all.length === 0 ? undefined : resolveSnapshotAt(this.now(), all)
-    const snap = planSnapshot(prev, { entries, usdToCny, usdToCnySource },
-      { id: `${prev?.snapshotId ?? 'snap-0'}#delta`, at: this.now(), reason })
+    // 首条记录就是 base：空表合成出的 0 汇率不是真汇率，写进 base 会让所有 USD 条目永远
+    // 算不出钱，必须换成内置兜底汇率并如实标注来源。id 也要诚实——base 不该叫 `…#delta`。
+    const rate = prev === undefined && !(usdToCny > 0)
+      ? { usdToCny: DEFAULT_USD_TO_CNY, usdToCnySource: 'default' as const }
+      : { usdToCny, usdToCnySource }
+    const snap = planSnapshot(prev, { entries, ...rate },
+      { id: prev === undefined ? 'snap-base' : `${prev.snapshotId}#delta`, at: this.now(), reason })
     if (snap !== null) await this.snapshots.put(snap.id, snap)
     resetAggregateCache()
   }
@@ -217,8 +238,13 @@ export class UsageBillingService extends TypertRemoteService {
     if (input.canonicalModel === null) await this.aliases.delete(id)
     else await this.aliases.put(id, {
       id, provider: input.provider.trim().toLowerCase(),
-      rawModel: input.rawModel, canonicalModel: input.canonicalModel,
+      rawModel: input.rawModel,
+      // 展示合并按 trim 判定，计价解析却按原样拼接 —— 不 trim 就会出现「合并对了、自定义价永远
+      // 解析不到」。只去空白，**不要**过 normalizeModelId：带日期的目录 key 必须原样保留。
+      canonicalModel: input.canonicalModel.trim(),
     })
+    // 别名同时喂给展示合并与计价解析，改完必须让聚合 TTL 缓存失效（与其他写入路径同规则）。
+    resetAggregateCache()
     return { ok: true }
   }
 

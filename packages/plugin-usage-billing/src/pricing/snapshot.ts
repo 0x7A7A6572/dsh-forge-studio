@@ -6,6 +6,9 @@
 
 import type { PriceEntry, PriceSnapshot } from '../types.ts'
 
+/** 「目录层」的三类快照：内置目录（install）与两次刷新写入的都是目录价，不是覆盖价。 */
+export const CATALOG_REASONS = ['install', 'catalog-refresh', 'manual-refresh'] as const
+
 export interface SnapshotInput {
   entries: Record<string, PriceEntry>
   usdToCny: number
@@ -70,9 +73,18 @@ export function planSnapshot(
 /**
  * 解析时刻 `at` 生效的价表。t 早于首快照时用首快照（安装前历史的回填口径）。
  * 纯函数：先按 at 升序复制一份再累加，输入数组与快照对象都不被改动。
+ *
+ * `reasons` 限定只重放哪些来源的记录（缺省 = 全部，即累计价表口径）；
+ * 传入 `CATALOG_REASONS` 得到的就是「目录层今日取值」，覆盖价不参与。
  */
-export function resolveSnapshotAt(at: number, all: readonly PriceSnapshot[]): ResolvedTable {
-  const ordered = [...all].sort((a, b) => (a.at - b.at) || a.id.localeCompare(b.id))
+export function resolveLayerAt(
+  at: number,
+  all: readonly PriceSnapshot[],
+  reasons?: readonly PriceSnapshot['reason'][],
+): ResolvedTable {
+  const ordered = [...all]
+    .filter((s) => reasons === undefined || reasons.includes(s.reason))
+    .sort((a, b) => (a.at - b.at) || a.id.localeCompare(b.id))
   const first = ordered[0]
   if (first === undefined) {
     return { entries: {}, usdToCny: 0, usdToCnySource: 'default', snapshotId: '' }
@@ -100,4 +112,9 @@ export function resolveSnapshotAt(at: number, all: readonly PriceSnapshot[]): Re
     snapshotId = snap.id
   }
   return { entries, usdToCny, usdToCnySource, snapshotId }
+}
+
+/** 全量重放（不按来源过滤）——累计价表口径。 */
+export function resolveSnapshotAt(at: number, all: readonly PriceSnapshot[]): ResolvedTable {
+  return resolveLayerAt(at, all)
 }

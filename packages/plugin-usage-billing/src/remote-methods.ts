@@ -3,7 +3,7 @@
  *
  * 存在的理由（spec 承重事实 12）：client 的参数个数是硬契约，声明几个就必须传几个，
  * 少传会在运行时抛 `expected N argument(s), got M`。两侧各写一份必然漂移，
- * 所以名单只写一次，并用 tests/remote-contract.test.ts 钉住。
+ * 所以名单只写一次，并用 tests/service-remote.test.ts 钉住。
  */
 
 export const REMOTE_NAMESPACE = 'usageBilling'
