@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calendarMatrix, heatLevel } from '../src/client/core/heatmap.ts'
+import { HEAT_SCALE, calendarMatrix, heatLevel } from '../src/client/core/heatmap.ts'
 
 describe('heatLevel', () => {
   it('五档分档边界', () => {
@@ -13,6 +13,18 @@ describe('heatLevel', () => {
   it('max 为 0 时全部 0 档（不产生 NaN）', () => {
     expect(heatLevel(0, 0)).toBe(0)
     expect(heatLevel(5, 0)).toBe(0)
+  })
+  it('分档阈值直接取自 HEAT_SCALE（改常量不改函数会红）', () => {
+    const top = HEAT_SCALE.length - 1
+    for (let level = 1; level < top; level += 1) {
+      // HEAT_SCALE[level] 是第 level 档的右闭上界
+      expect(heatLevel(HEAT_SCALE[level], 1), `上界 ${HEAT_SCALE[level]}`).toBe(level)
+      // 区间内部代表值也落在同一档
+      expect(heatLevel((HEAT_SCALE[level - 1] + HEAT_SCALE[level]) / 2, 1)).toBe(level)
+    }
+    // 超过倒数第二个阈值即顶档，到 HEAT_SCALE 上限仍然成立
+    expect(heatLevel(HEAT_SCALE[top - 1] + 1e-9, 1)).toBe(4)
+    expect(heatLevel(HEAT_SCALE[top], 1)).toBe(4)
   })
 })
 
@@ -30,6 +42,29 @@ describe('calendarMatrix', () => {
   })
   it('空输入返回空矩阵', () => {
     expect(calendarMatrix([], new Map())).toEqual([])
+  })
+  it('畸形日期被跳过（NaN 不能写成 row[NaN] 幻影属性）', () => {
+    const m = calendarMatrix(['2026-09-01', 'abc-def-gh', '2026-09-02'], new Map(), { firstDayOfWeek: 1 })
+    expect(m).toHaveLength(1)
+    for (const week of m) {
+      expect(week).toHaveLength(7)
+      // 解构 'abc-def-gh' 得到的是 NaN 而不是 undefined：写入 row[NaN] 时
+      // 数组长度看着还是 7，但键会多出一个。
+      expect(Object.keys(week)).toHaveLength(7)
+      expect(week.every((c) => c === null || /^\d{4}-\d{2}-\d{2}$/.test(c.day))).toBe(true)
+    }
+    expect(m.flat().filter(Boolean)).toHaveLength(2)
+  })
+  it('同一天重复出现被跳过，不能把一周拆成两行', () => {
+    const m = calendarMatrix(
+      ['2026-09-01', '2026-09-02', '2026-09-02'],
+      new Map([['2026-09-02', 5]]),
+      { firstDayOfWeek: 1 },
+    )
+    expect(m).toHaveLength(1)
+    expect(m.flat().filter(Boolean)).toHaveLength(2)
+    expect(m[0]![2]!.day).toBe('2026-09-02')
+    expect(m[0]![2]!.value).toBe(5)
   })
   it('跨周必须分行：整周回绕（列号递减）不能并进同一行', () => {
     // firstDayOfWeek: 1（周一）下，2026-09-01 起连续 7 天覆盖周二..下周一，

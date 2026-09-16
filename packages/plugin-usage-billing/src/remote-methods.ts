@@ -14,7 +14,10 @@ export interface RemoteMethodSpec {
   params: readonly string[]
 }
 
-export const USAGE_BILLING_REMOTE_METHODS: readonly RemoteMethodSpec[] = Object.freeze([
+// `as const`（而不是 `: readonly RemoteMethodSpec[]` 标注）是**承重**的：client 侧
+// `(typeof USAGE_BILLING_REMOTE_METHODS)[number]['method']` 要靠它拿到字面量联合，
+// 否则推出 `string`，类型增广的键与手写接口就没法在编译期对齐（防漂移会退化成恒真）。
+export const USAGE_BILLING_REMOTE_METHODS = Object.freeze([
   { method: 'overview', params: ['rangeKind', 'includeSubagents'] },
   { method: 'daily', params: ['rangeKind', 'includeSubagents'] },
   { method: 'byModel', params: ['rangeKind', 'includeSubagents'] },
@@ -28,7 +31,7 @@ export const USAGE_BILLING_REMOTE_METHODS: readonly RemoteMethodSpec[] = Object.
   { method: 'aliasList', params: [] },
   { method: 'repricing', params: [] },
   { method: 'status', params: [] },
-])
+] as const) satisfies readonly RemoteMethodSpec[]
 
 export const USAGE_BILLING_METHOD_NAMES: readonly string[] =
   USAGE_BILLING_REMOTE_METHODS.map((m) => m.method)

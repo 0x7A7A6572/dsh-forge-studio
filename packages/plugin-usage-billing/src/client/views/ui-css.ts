@@ -1,7 +1,9 @@
 /**
- * usage-billing 样式（一次性注入，以 data 属性作用域）。
- * 配色只走宿主已声明的 13 个 --dsw-* 令牌，明暗自适应。
+ * usage-billing 样式（按 fiber 注入，以 data 属性作用域）。
+ * 配色只走宿主已声明的 10 个 --dsw-* 令牌，明暗自适应。
  */
+
+import type { Context } from '@deepseek-ai/cordis'
 
 export const TOKENS = {
   bgBase: 'var(--dsw-alias-bg-base)',
@@ -9,14 +11,11 @@ export const TOKENS = {
   bgLayer2: 'var(--dsw-alias-bg-layer-2)',
   bgOverlay: 'var(--dsw-alias-bg-overlay)',
   borderL1: 'var(--dsw-alias-border-l1)',
-  borderL2: 'var(--dsw-alias-border-l2)',
   brand: 'var(--dsw-alias-brand-primary)',
   labelPrimary: 'var(--dsw-alias-label-primary)',
   labelSecondary: 'var(--dsw-alias-label-secondary)',
   error: 'var(--dsw-alias-state-error-primary)',
-  success: 'var(--dsw-alias-state-success-primary)',
   warn: 'var(--dsw-alias-state-warn-primary)',
-  sidebarFill: 'var(--dsw-specific-sidebar-fill)',
 } as const
 
 const CSS = `
@@ -72,14 +71,20 @@ const CSS = `
 [data-dsh-ub-empty] { color: ${TOKENS.labelSecondary}; padding: 24px; text-align: center; }
 `
 
-let installed = false
-
-/** 一次性注入样式（幂等；无 DOM 环境时 no-op，便于在 node 里跑测试）。 */
-export function ensureUsageBillingStyle(): void {
-  if (installed || typeof document === 'undefined') return
-  installed = true
-  const el = document.createElement('style')
-  el.setAttribute('data-dsh-usage-billing-style', '')
-  el.textContent = CSS
-  document.head.appendChild(el)
+/**
+ * 注入样式（按 fiber 幂等；无 DOM 环境时 no-op，便于在 node 里跑测试）。
+ *
+ * 追加走 `ctx.effect`：fiber stop / 重新 apply 时节点随 fiber 一起回收，
+ * 不再有「模块级 `installed` 把节点留到进程结束」的泄漏。同进程并发 apply
+ * 会各留一份（内容逐字相同，且各自由自己的 fiber 回收），这里的插件只 apply 一次。
+ */
+export function ensureUsageBillingStyle(ctx: Context): void {
+  if (typeof document === 'undefined') return
+  ctx.effect(() => {
+    const el = document.createElement('style')
+    el.setAttribute('data-dsh-usage-billing-style', '')
+    el.textContent = CSS
+    document.head.appendChild(el)
+    return () => { el.remove() }
+  })
 }

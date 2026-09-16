@@ -8,7 +8,8 @@
  * - `settings.section` 设置页
  *
  * 全部经 `slots.inject` 声明感知注册，与加载顺序无关；每个注册的 disposer 由
- * `ctx.effect` 归还当前 fiber。
+ * `slots.inject` / `slots.register` 通过调用 fiber 回收（这里**不**额外调
+ * `ctx.effect`，多加一条 dispose 路径只会重复回收），样式注入才走 `ctx.effect`。
  */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -23,7 +24,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import { mountUsageBillingRemote, usageBillingOf } from './core/remote.ts'
-import { billingStore } from './core/store.ts'
+import { createBillingStore } from './core/store.ts'
 import { ensureUsageBillingStyle } from './views/ui-css.ts'
 import { EntryCard } from './views/entry-card.tsx'
 import { Dashboard } from './views/dashboard.tsx'
@@ -64,7 +65,10 @@ export function apply(ctx: Context): void {
     void mountUsageBillingRemote(c).catch((error: unknown) => {
       c.logger.warn('[usage-billing] 远程命名空间挂载失败', error)
     })
-    ensureUsageBillingStyle()
+    ensureUsageBillingStyle(c)
+    // 视图状态按 fiber 创建：模块级单例会在 fiber stop 后把上一轮的
+    // open/tab/range 带进下一次 apply（重新挂载的插件不该继承旧弹窗状态）。
+    const store = createBillingStore()
     const scope = c.settingsScope.bind<BillingConfigLike>({ namespace: USAGE_BILLING_NAMESPACE })
 
     c.slots.inject('sidebar.footer.action', () => c.slots.register({
@@ -72,7 +76,7 @@ export function apply(ctx: Context): void {
       id: ENTRY_SLOT_ID,
       order: 10,
       label: ENTRY_LABEL,
-      inject: () => ({ billing: usageBillingOf(c) }),
+      inject: () => ({ billing: usageBillingOf(c), store }),
     }, EntryCard))
 
     c.slots.inject('shell.overlay', () => c.slots.register({
@@ -80,7 +84,7 @@ export function apply(ctx: Context): void {
       id: OVERLAY_SLOT_ID,
       order: 10,
       label: ENTRY_LABEL,
-      inject: () => ({ billing: usageBillingOf(c), store: billingStore }),
+      inject: () => ({ billing: usageBillingOf(c), store }),
     }, Dashboard))
 
     c.slots.inject('settings.section', () => c.slots.register({

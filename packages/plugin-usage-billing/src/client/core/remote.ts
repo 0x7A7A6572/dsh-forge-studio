@@ -14,7 +14,6 @@ import { REMOTE_NAMESPACE, USAGE_BILLING_REMOTE_METHODS } from '../../remote-met
 import type {
   AliasInput, CustomPriceInput,
 } from '../../types.ts'
-import type { BudgetState } from '../../budget.ts'
 import type { DailyPoint, ModelRow, Overview, SessionRow, WorkspaceRow } from '../../view.ts'
 import type { PriceEntry } from '../../types.ts'
 import type { RangeKind } from '../../time.ts'
@@ -45,6 +44,37 @@ export const usageBillingRemoteContribution: TypertRemoteContribution = {
 
 /* ---------- 类型增广：ctx.remote.usageBilling 有类型 ---------- */
 
+/** host 名单里的方法名（唯一来源的类型投影）。 */
+export type UsageBillingRemoteMethod = (typeof USAGE_BILLING_REMOTE_METHODS)[number]['method']
+
+/**
+ * 类型增广键的运行时清单，同时是类型层守卫：
+ * `satisfies Record<UsageBillingRemoteMethod, true>` 要求与 host 名单**逐键相等**
+ * （漏一个 → 缺键报错；多一个 → 多余属性报错），`UsageBillingAugmentedRemoteMap`
+ * 又用它的键生成 `TypertRemoteMap` 的增广键。删掉 host 名单里的任一方法，
+ * 这里与 tests/remote-contract.test.ts 会一起红 —— 手写类型面不再能悄悄漂移。
+ */
+export const USAGE_BILLING_REMOTE_AUGMENTATIONS = {
+  overview: true,
+  daily: true,
+  byModel: true,
+  bySession: true,
+  byWorkspace: true,
+  pricing: true,
+  setCustomPrice: true,
+  removeCustomPrice: true,
+  refreshPricing: true,
+  setAlias: true,
+  aliasList: true,
+  repricing: true,
+  status: true,
+} as const satisfies Record<UsageBillingRemoteMethod, true>
+
+/** 由运行时清单推导的 `TypertRemoteMap` 增广（键与值都指向同一份手写类型面）。 */
+export type UsageBillingAugmentedRemoteMap = {
+  [K in keyof typeof USAGE_BILLING_REMOTE_AUGMENTATIONS as `${typeof REMOTE_NAMESPACE}/${K}`]: UsageBillingRemote[K]
+}
+
 export interface UsageBillingRemote {
   overview(rangeKind: RangeKind, includeSubagents: boolean): Promise<RemoteResult<{ overview: Overview; todayKey: string; budget: { enabled: boolean; monthlyCny: number } }>>
   daily(rangeKind: RangeKind, includeSubagents: boolean): Promise<RemoteResult<{ days: DailyPoint[] }>>
@@ -62,21 +92,7 @@ export interface UsageBillingRemote {
 }
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
-  interface TypertRemoteMap {
-    'usageBilling/overview': UsageBillingRemote['overview']
-    'usageBilling/daily': UsageBillingRemote['daily']
-    'usageBilling/byModel': UsageBillingRemote['byModel']
-    'usageBilling/bySession': UsageBillingRemote['bySession']
-    'usageBilling/byWorkspace': UsageBillingRemote['byWorkspace']
-    'usageBilling/pricing': UsageBillingRemote['pricing']
-    'usageBilling/setCustomPrice': UsageBillingRemote['setCustomPrice']
-    'usageBilling/removeCustomPrice': UsageBillingRemote['removeCustomPrice']
-    'usageBilling/refreshPricing': UsageBillingRemote['refreshPricing']
-    'usageBilling/setAlias': UsageBillingRemote['setAlias']
-    'usageBilling/aliasList': UsageBillingRemote['aliasList']
-    'usageBilling/repricing': UsageBillingRemote['repricing']
-    'usageBilling/status': UsageBillingRemote['status']
-  }
+  interface TypertRemoteMap extends UsageBillingAugmentedRemoteMap {}
   interface TypertRemoteNamespaceMap {
     usageBilling: TypertRemoteNamespace<'usageBilling'>
   }
