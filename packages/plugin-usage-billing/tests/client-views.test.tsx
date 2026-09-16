@@ -24,10 +24,15 @@ import { baseConfig, fakeScope } from './fake-scope.ts'
 afterEach(() => { cleanup() })
 
 describe('BackfillNotice', () => {
-  it('未关闭时显示提示，含安装时刻', () => {
-    render(<BackfillNotice installAt={Date.UTC(2026, 8, 16, 6, 0)} dismissed={false} writable onDismiss={() => {}} />)
-    expect(screen.getByText(/安装前/)).toBeTruthy()
-    expect(screen.getByText(/估算/)).toBeTruthy()
+  it('未关闭时显示提示，含估算起点时刻，并如实说明它来自本次宿主加载而非首次安装', () => {
+    const { container } = render(
+      <BackfillNotice installAt={Date.UTC(2026, 8, 16, 6, 0)} dismissed={false} writable onDismiss={() => {}} />,
+    )
+    expect(container.textContent).toContain('安装前的历史用量按')
+    expect(container.textContent).toContain('安装时点的价表估算')
+    expect(container.textContent).toContain('本次宿主加载')
+    // N-2：这个值每个宿主进程重新取一次，措辞不能说成「插件安装前」。
+    expect(container.textContent).not.toContain('插件安装前')
   })
 
   it('已关闭时完全不渲染', () => {
@@ -243,6 +248,35 @@ describe('Dashboard', () => {
     // 本地「知道了」只收起本次提示；「每月每档一次」由已落盘的标记保证。
     fireEvent.click(container.querySelector('[data-dsh-ub-budget-notice] button') as HTMLElement)
     expect(container.querySelector('[data-dsh-ub-budget-notice]')).toBeNull()
+  })
+
+  /**
+   * N-1：`notices` 的两个写者（关闭回填提示条 / 预算跨档标记）不能互相覆盖。
+   *
+   * `settle: true` 让「跨档写已排队、还没折回快照」这个窗口可复现：此时点「知道了」，
+   * 关闭写入读到的基数里还没有 `budgetNotified`。旧实现用本次渲染捕获的 `cfg.notices` 展开，
+   * 会把刚写的 `'2026-09': '2'` 整段还原成 `{}`（同一档位下次打开再提醒）；
+   * 现在两个写者共用一条写缝（写入时刻现取快照 + 写队列串行），两个子键都必须留下。
+   */
+  it('两个写者交错：关闭回填提示条不会把已落盘的预算跨档标记覆盖掉', async () => {
+    const h = fakeScope(baseConfig({ budget: { enabled: true, monthlyCny: 100 } }), { settle: true })
+    const { container } = render(
+      <Dashboard billing={budgetRemote(82)} store={createBillingStore({ open: true })} scope={h.scope} />,
+    )
+    // 跨档写已排队（尚未结算），提示条还在屏幕上。
+    await screen.findByText(/跨过 80% 档/)
+    await waitFor(() => { expect(h.writes).toHaveLength(1) })
+
+    // 结算窗口内点「知道了」：这一次写入必须等前一次落地后再现取快照。
+    await act(async () => { fireEvent.click(container.querySelector('[data-dsh-ub-notice] button') as HTMLElement) })
+    await act(async () => { await h.settle(0) })
+    await waitFor(() => { expect(h.writes).toHaveLength(2) })
+
+    const last = h.writes[1]!.value as { backfillDismissed: boolean; budgetNotified: Record<string, string> }
+    expect(last.backfillDismissed).toBe(true)
+    expect(last.budgetNotified).toEqual({ '2026-09': '2' })
+    await act(async () => { await h.settle(1) })
+    expect(h.value().notices).toEqual({ backfillDismissed: true, budgetNotified: { '2026-09': '2' } })
   })
 
   it('同一「月份 + 档位」已提醒过：不再提醒，也不再写宿主', async () => {
@@ -992,7 +1026,7 @@ describe('SettingsSection', () => {
       // installAt 未知时口径说明必须渲染占位：把「不知道」交给 formatDateTime 会印出
       // 「1970-01-01 08:00」，那是一个看起来像事实的假日期（ledger 已有此 ruling）。
       expect(container.textContent).not.toContain('1970')
-      expect(screen.getByText(/安装时刻 —/)).toBeTruthy()
+      expect(screen.getByText(/本次加载时刻 —/)).toBeTruthy()
       await waitFor(() => {
         expect(warn).toHaveBeenCalledWith('[usage-billing] 设置页取数通道异常', expect.anything())
       })
@@ -1007,7 +1041,7 @@ describe('SettingsSection', () => {
     const { container } = render(<SettingsSection billing={billing} scope={h.scope} store={createBillingStore({ open: true })} />)
     expect(await screen.findByText(/账本 0 行/)).toBeTruthy()
     expect(container.textContent).not.toContain('1970')
-    expect(screen.getByText(/安装时刻 —/)).toBeTruthy()
+    expect(screen.getByText(/本次加载时刻 —/)).toBeTruthy()
   })
 
   it('远程面缺席时 effect 早退（不抛 TypeError）', async () => {

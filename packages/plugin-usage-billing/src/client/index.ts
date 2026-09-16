@@ -8,8 +8,9 @@
  * - `settings.section` 设置页
  *
  * 全部经 `slots.inject` 声明感知注册，与加载顺序无关；每个注册的 disposer 由
- * `slots.inject` / `slots.register` 通过调用 fiber 回收（这里**不**额外调
- * `ctx.effect`，多加一条 dispose 路径只会重复回收），样式注入才走 `ctx.effect`。
+ * `slots.inject` / `slots.register` 通过调用 fiber 回收，样式注入与设置快照订阅则各走一条
+ * `ctx.effect`（下面 `d.effect`：订阅的 disposer 必须挂在 fiber 上，否则 stop 后订阅泄漏）。
+ * 两处回收路径不重叠：`ctx.effect` 只管它自己注册的那条副作用。
  *
  * **两层 inject**：`remote` 是**按 fiber 声明**的服务面 —— api-gateway 把每个命名空间
  * 注册成独立服务名 `remote.<namespace>`，cordis 只在「读过声明」的 fiber store 里解析它
