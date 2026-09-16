@@ -87,6 +87,14 @@ describe('aggregateOnce', () => {
     expect(reads()).toBe(1)
   })
 
+  it('force: false 与不传等价（选项是布尔，不是三态）', async () => {
+    const { deps, reads } = makeDeps()
+    await aggregateOnce(deps)
+    const stats = await aggregateOnce(deps, { force: false })
+    expect(stats.cached).toBe(true)
+    expect(reads()).toBe(1)
+  })
+
   it('readSession 抛错 → 记诊断、不推进水位、其余会话不受影响', async () => {
     const { deps, diag, folds } = makeDeps({
       readSession: async () => { throw new Error('corrupt') },
