@@ -3,10 +3,12 @@
  * shell.overlay 这一层是 click-through 的，所以遮罩自己带 pointer-events。
  */
 
-import { useCallback, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import type { UsageBillingRemote } from '../core/remote.ts'
 import type { BillingStore, TabId } from '../core/store.ts'
 import type { BillingConfig, BillingScope } from '../core/config.ts'
+import { BUDGET_TIERS, evaluateBudget } from '../../budget.ts'
+import { formatPct } from '../core/format.ts'
 import { BackfillNotice } from './backfill-notice.tsx'
 import { TabOverview } from './tab-overview.tsx'
 import { TabTrend } from './tab-trend.tsx'
@@ -39,6 +41,8 @@ export function Dashboard(props: {
     () => scope.getSnapshot(),
   )
   const cfg: BillingConfig = settings.value
+  /** 本次跨档的提醒（本地态：落盘后 `shouldNotify` 就变 null 了，提醒本身要留在屏幕上）。 */
+  const [budgetNotice, setBudgetNotice] = useState<{ tier: 1 | 2 | 3; pct: number } | null>(null)
 
   /** 一次性关闭：写回宿主 notices（快照更新后提示条永久消失，重开弹窗也不会回来）。 */
   const dismissBackfill = useCallback(() => {
@@ -46,6 +50,36 @@ export function Dashboard(props: {
     void scope.set('notices', { ...notices, backfillDismissed: true })
       .catch(() => { /* 写失败时不本地妥协：快照仍是 host 的真值，提示条留在原处 */ })
   }, [scope, cfg])
+
+  /**
+   * 预算跨档提醒（spec §6.7）：跨 50/80/100% 各提醒一次，按「月份 + 档位」去重。
+   * 数据用 `overview('month')`（预算本来就是月度口径，不能被概览页选中的范围窗口带偏），
+   * 「已提醒」写进设置 `notices.budgetNotified` —— 与下方回填提示条的关闭同一条写路径。
+   *
+   * 只在面板**真的打开**时才判定并落盘：没被看到的提醒不该被记成「已提醒」（否则用户
+   * 一次也没见到，却再也等不到第二次）。`overview` 取数失败就不提醒 —— 宁可不说，
+   * 也不能凭一个坏读报一个假档位。
+   */
+  useEffect(() => {
+    if (!state.open || billing === undefined || cfg === undefined) return
+    let alive = true
+    void billing.overview('month', state.includeSubagents).then((r) => {
+      if (!alive || !r.ok) return
+      const monthKey = r.value.todayKey.slice(0, 7)
+      const notified = cfg.notices?.budgetNotified ?? {}
+      const spend = evaluateBudget({
+        spentCny: r.value.overview.totalCny, monthlyCny: r.value.budget.monthlyCny,
+        enabled: r.value.budget.enabled, notified, monthKey,
+      })
+      if (spend.shouldNotify === null) return
+      setBudgetNotice({ tier: spend.shouldNotify, pct: spend.pct })
+      void scope.set('notices', {
+        ...(cfg.notices ?? { backfillDismissed: false, budgetNotified: {} }),
+        budgetNotified: { ...notified, [monthKey]: String(spend.shouldNotify) },
+      }).catch(() => { /* 写不进去不本地妥协：快照仍是 host 的真值，下次打开会再提醒一次 */ })
+    }).catch(() => { /* 取数通道异常：不提醒，也不制造 unhandled rejection */ })
+    return () => { alive = false }
+  }, [billing, state.open, state.includeSubagents, scope, cfg])
 
   if (!state.open) return null
   return (
@@ -69,6 +103,17 @@ export function Dashboard(props: {
             writable={settings.writable}
             onDismiss={dismissBackfill}
           />
+        ) : null}
+        {/* 跨档提醒：复用既有提示条面（与回填提示条同一姿态），关闭只影响本次弹窗，
+            「每月每档一次」由已落盘的 notices.budgetNotified 保证。 */}
+        {budgetNotice !== null ? (
+          <div data-dsh-usage-billing data-dsh-ub-budget-notice data-dsh-ub-estimate role="status">
+            <span>
+              月度预算已用 {formatPct(budgetNotice.pct, 0)}，跨过{' '}
+              {formatPct(BUDGET_TIERS[budgetNotice.tier - 1], 0)} 档 —— 每个「月份 + 档位」只提醒一次。
+            </span>
+            <button type="button" onClick={() => setBudgetNotice(null)}>知道了</button>
+          </div>
         ) : null}
         <nav data-dsh-ub-tabs>
           {TABS.map((t) => (

@@ -101,7 +101,9 @@ export function SettingsSection(props: {
       </div>
 
       <h3>计费口径</h3>
-      <BackfillLedgerNote installAt={status?.installAt ?? 0} snapshotId={snapshotId} />
+      {/* status 未到（或取数失败）时传 null：说明段渲染占位，绝不把「不知道」印成 1970。
+          status 到了但 installAt 不是正数（命名空间里从未落盘）同样按未知处理。 */}
+      <BackfillLedgerNote installAt={status === null ? null : status.installAt} snapshotId={snapshotId} />
     </section>
   )
 }

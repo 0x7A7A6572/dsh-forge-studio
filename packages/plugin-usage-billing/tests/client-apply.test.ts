@@ -1,13 +1,17 @@
 import { describe, expect, it, vi } from 'vitest'
 import { apply } from '../src/client/index.ts'
 import { ENTRY_SLOT_ID, OVERLAY_SLOT_ID, SETTINGS_SECTION_ID } from '../src/client/index.ts'
+import { baseConfig, fakeScope } from './fake-scope.ts'
 
 /**
  * 极简 slots 假实现：记录 inject/register，并**对齐真槽的两条行为**（否则用例会假绿）：
  * - `register` 对同一 `(slot, id, priority)` 抛错（真 list-slot 会抛）；
  * - `inject` 把回调返回的 disposer 收集起来（真槽通过调用 fiber 回收）。
+ *
+ * `scope` 默认是真实面的假件（`getSnapshot` / `subscribe` / `set`）：settingsScope 的影子契约
+ * `{ get, watch }` 在宿主里根本不存在，用它会让「设置回灌 store」这条路径在测试里假绿。
  */
-function fakeCtx() {
+function fakeCtx(scope = fakeScope(baseConfig()).scope) {
   const registered: Array<{
     slot: string
     id: string
@@ -46,7 +50,7 @@ function fakeCtx() {
       },
     },
     remote: { $mount: async () => async () => {} },
-    settingsScope: { bind: () => ({ get: () => ({}), watch: () => () => {} }) },
+    settingsScope: { bind: () => scope },
   }
   return { ctx, registered, injected, disposers }
 }
@@ -105,6 +109,28 @@ describe('client apply', () => {
     // 重新 apply 得到新的 store：不继承上一轮的 open/tab/range。
     expect(second[0]).not.toBe(first[0])
     expect((second[0] as { getSnapshot: () => { open: boolean } }).getSnapshot().open).toBe(false)
+  })
+
+  it('持久设置里的子代理口径回灌进 store（新 store 默认 true，快照 false 时必须收敛）', () => {
+    // 只写不回读的旧行为：重新挂载后勾选框（读设置快照）说不含子代理，四个分区（读 store）
+    // 却仍按 true 取数 —— 账里出现子代理行而勾选框说它们被排除。store 必须收敛到持久值。
+    const h = fakeScope(baseConfig({ display: { showUnpricedWarning: true, includeSubagents: false } }))
+    const { ctx, registered } = fakeCtx(h.scope)
+    apply(ctx as never)
+    const stores = registered.map((r) => r.inject().store as { includeSubagents: boolean })
+    expect(stores.length).toBeGreaterThan(0)
+    for (const s of stores) expect(s.includeSubagents).toBe(false)
+  })
+
+  it('设置后续变化仍会回灌（订阅，而不是只在挂载时读一次）', async () => {
+    const h = fakeScope(baseConfig({ display: { showUnpricedWarning: true, includeSubagents: false } }))
+    const { ctx, registered } = fakeCtx(h.scope)
+    apply(ctx as never)
+    const store = registered[0]!.inject().store as { includeSubagents: boolean }
+    expect(store.includeSubagents).toBe(false)
+
+    await h.scope.set('display', { showUnpricedWarning: true, includeSubagents: true })
+    expect(store.includeSubagents).toBe(true)
   })
 })
 
@@ -194,7 +220,7 @@ function fakeFaceScopedCtx() {
     Object.defineProperty(ctx, 'settingsScope', {
       get: () => {
         read('settingsScope')
-        return { bind: () => ({ get: () => ({}), watch: () => () => {}, subscribe: () => () => {} }) }
+        return { bind: () => fakeScope(baseConfig()).scope }
       },
     })
     Object.defineProperty(ctx, 'remote', {

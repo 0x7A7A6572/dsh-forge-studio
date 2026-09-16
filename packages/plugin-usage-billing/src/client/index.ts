@@ -79,6 +79,17 @@ export function apply(ctx: Context): void {
       // open/tab/range 带进下一次 apply（重新挂载的插件不该继承旧弹窗状态）。
       const store = createBillingStore()
       const scope = d.settingsScope.bind<BillingConfigLike>({ namespace: USAGE_BILLING_NAMESPACE })
+      // 持久设置 → store 回灌：store 是按 fiber 新建的（`includeSubagents: true`），复选框读的是
+      // 设置快照、四个分区读的却是 store。只在设置页「写」而从不「回读」，重新挂载后就会出现
+      // 「勾选框说不含子代理，账里却仍有子代理行」——两处口径必须收敛到同一个值。
+      // 快照未就绪（`value === undefined`，首帧的常态）时**保持 store 现值**，等真值到达再收敛；
+      // 绝不先翻成一个猜测再翻回来。字段缺席（旧 host）按勾选框的默认（含）处理。
+      const syncIncludeSubagents = (): void => {
+        const next = scope.getSnapshot().value
+        if (next === undefined) return
+        store.setIncludeSubagents(next.display?.includeSubagents !== false)
+      }
+      d.effect(() => { syncIncludeSubagents(); return scope.subscribe(syncIncludeSubagents) })
 
       d.slots.inject('sidebar.footer.action', () => d.slots.register({
         name: 'sidebar.footer.action',

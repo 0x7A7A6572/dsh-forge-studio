@@ -15,6 +15,7 @@ import { TabDetail } from '../src/client/views/tab-detail.tsx'
 import { TabPricing } from '../src/client/views/tab-pricing.tsx'
 import { SettingsSection } from '../src/client/views/settings-section.tsx'
 import { evaluateBudget } from '../src/budget.ts'
+import type { RangeKind } from '../src/time.ts'
 import { baseConfig, fakeScope } from './fake-scope.ts'
 
 // 本仓没有 vitest 配置、`globals` 关闭，RTL 的自动 cleanup 依赖全局 afterEach 因而失效；
@@ -166,6 +167,81 @@ describe('Dashboard', () => {
     expect(h.writes).toEqual([])
     // 提示条必须还在：不是本地藏起来，而是宿主根本没被写。
     expect(container.querySelector('[data-dsh-ub-notice]')).toBeTruthy()
+  })
+
+  /**
+   * 预算跨档提醒（spec §6.7）：跨 50/80/100% 各提醒一次，按「月份 + 档位」去重。
+   * 判定用的是 `overview('month')`（月度口径，不被概览页的范围窗口带偏），
+   * 落盘走 notices.budgetNotified（与回填提示条的关闭同一条写路径）。
+   */
+  const budgetRemote = (totalCny: number) => noopRemote({
+    overview: async () => ({ ok: true, value: {
+      overview: { ...emptyOverview, totalCny },
+      todayKey: '2026-09-16',
+      budget: { enabled: true, monthlyCny: 100 },
+    } }),
+  } as never)
+
+  it('跨档时弹窗里一次性提醒，并把「已提醒」按「月份 + 档位」写回宿主 notices', async () => {
+    const h = fakeScope(baseConfig({ budget: { enabled: true, monthlyCny: 100 } }))
+    const { container } = render(
+      <Dashboard billing={budgetRemote(82)} store={createBillingStore({ open: true })} scope={h.scope} />,
+    )
+    expect(await screen.findByText(/跨过 80% 档/)).toBeTruthy()
+    expect(container.querySelector('[data-dsh-ub-budget-notice]')).toBeTruthy()
+    // 只写当前月的那一档 + 保留 notices 的其他字段（不是整段覆盖成空对象）。
+    expect(h.writes).toContainEqual({
+      field: 'notices', value: { backfillDismissed: false, budgetNotified: { '2026-09': '2' } },
+    })
+    // 本地「知道了」只收起本次提示；「每月每档一次」由已落盘的标记保证。
+    fireEvent.click(container.querySelector('[data-dsh-ub-budget-notice] button') as HTMLElement)
+    expect(container.querySelector('[data-dsh-ub-budget-notice]')).toBeNull()
+  })
+
+  it('同一「月份 + 档位」已提醒过：不再提醒，也不再写宿主', async () => {
+    const h = fakeScope(baseConfig({
+      budget: { enabled: true, monthlyCny: 100 },
+      notices: { backfillDismissed: true, budgetNotified: { '2026-09': '2' } },
+    }))
+    const { container } = render(
+      <Dashboard billing={budgetRemote(90)} store={createBillingStore({ open: true })} scope={h.scope} />,
+    )
+    await screen.findByText('¥90.00')
+    await act(async () => { await Promise.resolve() })
+    expect(container.querySelector('[data-dsh-ub-budget-notice]')).toBeNull()
+    expect(h.writes).toEqual([])
+  })
+
+  it('未跨档（低于 50%）不提醒', async () => {
+    const h = fakeScope(baseConfig({ budget: { enabled: true, monthlyCny: 100 } }))
+    const { container } = render(
+      <Dashboard billing={budgetRemote(10)} store={createBillingStore({ open: true })} scope={h.scope} />,
+    )
+    await screen.findByText('¥10.00')
+    await act(async () => { await Promise.resolve() })
+    expect(container.querySelector('[data-dsh-ub-budget-notice]')).toBeNull()
+    expect(h.writes).toEqual([])
+  })
+
+  it('面板没打开时不判定也不落盘（没被看到的提醒不算「已提醒」）', async () => {
+    const h = fakeScope(baseConfig({ budget: { enabled: true, monthlyCny: 100 } }))
+    const ranges: string[] = []
+    const billing = noopRemote({
+      overview: async (rangeKind: RangeKind) => {
+        ranges.push(rangeKind)
+        return { ok: true, value: {
+          overview: { ...emptyOverview, totalCny: 82 }, todayKey: '2026-09-16',
+          budget: { enabled: true, monthlyCny: 100 },
+        } }
+      },
+    } as never)
+    const { container } = render(
+      <Dashboard billing={billing} store={createBillingStore({ open: false })} scope={h.scope} />,
+    )
+    await act(async () => { await Promise.resolve() })
+    expect(ranges).toEqual([])
+    expect(h.writes).toEqual([])
+    expect(container.querySelector('[data-dsh-ub-panel]')).toBeNull()
   })
 })
 
@@ -762,12 +838,27 @@ describe('SettingsSection', () => {
         status: async () => { throw new Error('wire down') },
         pricing: async () => { throw new Error('wire down') },
       } as never)
-      render(<SettingsSection billing={billing} scope={h.scope} store={createBillingStore({ open: true })} />)
+      const { container } = render(<SettingsSection billing={billing} scope={h.scope} store={createBillingStore({ open: true })} />)
       expect(await screen.findByText(/账本 0 行/)).toBeTruthy()
+      // installAt 未知时口径说明必须渲染占位：把「不知道」交给 formatDateTime 会印出
+      // 「1970-01-01 08:00」，那是一个看起来像事实的假日期（ledger 已有此 ruling）。
+      expect(container.textContent).not.toContain('1970')
+      expect(screen.getByText(/安装时刻 —/)).toBeTruthy()
       await waitFor(() => {
         expect(warn).toHaveBeenCalledWith('[usage-billing] 设置页取数通道异常', expect.anything())
       })
     } finally { warn.mockRestore() }
+  })
+
+  it('status 到了但 installAt 不是正数（命名空间从未落盘）同样渲染占位，不报 1970', async () => {
+    const h = fakeScope(baseConfig())
+    const billing = noopRemote({
+      status: async () => ({ ok: true, value: { installAt: 0, rows: 0, sessions: 0, snapshots: 0 } }),
+    } as never)
+    const { container } = render(<SettingsSection billing={billing} scope={h.scope} store={createBillingStore({ open: true })} />)
+    expect(await screen.findByText(/账本 0 行/)).toBeTruthy()
+    expect(container.textContent).not.toContain('1970')
+    expect(screen.getByText(/安装时刻 —/)).toBeTruthy()
   })
 
   it('远程面缺席时 effect 早退（不抛 TypeError）', async () => {
