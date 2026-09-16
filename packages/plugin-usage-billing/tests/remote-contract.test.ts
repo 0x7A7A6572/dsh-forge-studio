@@ -26,6 +26,9 @@ describe('Remote 契约防漂移', () => {
       const d = usageBillingRemoteContribution.descriptors.find((x) => x.method === spec.method)
       expect(d, `missing descriptor for ${spec.method}`).toBeDefined()
       expect(d!.parameters.map((p) => p.name)).toEqual([...spec.params])
+      // wire 名是 host 侧 arity 报错真正引用的名字（`expected 2 argument(s), got 1` 指向的就是它），
+      // 只钉 name 的话把 wire 改成 `${name}X` 也能全绿 —— 所以这里必须逐参钉住。
+      expect(d!.parameters.map((p) => p.wire)).toEqual([...spec.params])
       expect(d!.id).toBe(`usageBilling.${spec.method}`)
     }
   })
