@@ -5,6 +5,7 @@ import { UsageBillingService } from '../src/service.ts'
 import { aggregateOnce } from '../src/aggregate.ts'
 import type { AggregateDeps, SessionSource } from '../src/aggregate.ts'
 import { USAGE_BILLING_METHOD_NAMES } from '../src/remote-methods.ts'
+import { BUILTIN_CATALOG, DEFAULT_USD_TO_CNY } from '../src/pricing/catalog.ts'
 import { createUsageBillingSettingsAccess } from '../src/settings.ts'
 import type { Diagnostic, FoldState, LedgerRow, ModelAlias, PriceEntry, PriceSnapshot } from '../src/types.ts'
 
@@ -64,6 +65,17 @@ function writeBaseSnapshot(svc: UsageBillingService): void {
   }, 7, 'default')
 }
 
+/**
+ * 目录层快照（`reason: 'install'`）：`catalogValueOf` 只重放 `install` /
+ * `catalog-refresh` 两层，所以「目录原本多少钱」必须由这样的快照承载。
+ */
+function writeCatalogSnapshot(svc: UsageBillingService): void {
+  const priv = svc as unknown as {
+    ensureBaseSnapshot(entries: Record<string, PriceEntry>, usdToCny: number, src: 'live' | 'default'): void
+  }
+  priv.ensureBaseSnapshot({ ...BUILTIN_CATALOG }, DEFAULT_USD_TO_CNY, 'default')
+}
+
 describe('UsageBillingService', () => {
   it('标记的 Remote 方法名单与唯一来源一致', () => {
     const marked = (UsageBillingService.prototype as unknown as Record<string, { methods: Array<{ method: string }> }>)
@@ -106,6 +118,47 @@ describe('UsageBillingService', () => {
     const out = await svc.removeCustomPrice('deepseek/no-such-model')
     expect(out).toMatchObject({ ok: false })
     expect([...snapshots.entries()]).toHaveLength(1) // 只有 snap-1，没有追加
+  })
+
+  it('目录模型设置自定义价再取消：恢复目录价而非删除条目，未计价行可重算', async () => {
+    const { svc, ledger, snapshots } = makeService()
+    const key = 'deepseek/deepseek-v4-flash'
+    await snapshots.delete(SNAPSHOT.id) // ensureBaseSnapshot 只在空表时写
+    writeCatalogSnapshot(svc)
+    await svc.setCustomPrice({
+      provider: 'deepseek', model: 'deepseek-v4-flash', currency: 'CNY',
+      input: 99, cacheRead: 0, cacheWrite: 0, output: 99,
+    })
+    expect((await svc.pricing()).entries[key]).toMatchObject({ input: 99 })
+
+    // 该行按目录价窗口（time 早于自定义价快照）应能重算：价完全恢复后才会 priced。
+    await ledger.put('a', { ...ROW, id: 'a', time: 2_000, costCny: 0, priced: false })
+    expect(await svc.removeCustomPrice(key)).toEqual({ ok: true })
+
+    // 目录层有价 → 取消自定义价必须**恢复到目录价**，而不是把条目删成 undefined。
+    expect((await svc.pricing()).entries[key]).toEqual(BUILTIN_CATALOG[key])
+    expect(await svc.repricing()).toMatchObject({ changed: 1 })
+    expect(ledger.get('a')).toMatchObject({ priced: true, costCny: 0.5, currency: 'CNY' })
+  })
+
+  it('目录模型没有被自定义过时取消：报不成功且不动快照', async () => {
+    const { svc, snapshots } = makeService()
+    // snap-1 是 install 层（目录层），flash 的价就来自目录 —— 取消它不是「有自定义价可取消」。
+    const before = snapshots.size
+    expect(await svc.removeCustomPrice('deepseek/deepseek-v4-flash')).toEqual({ ok: false })
+    expect(snapshots.size).toBe(before)
+  })
+
+  it('价完全来自自定义价的模型：取消后 key 从价表消失', async () => {
+    const { svc } = makeService()
+    const key = 'acme/only-custom' // 目录层没有这个 key
+    await svc.setCustomPrice({
+      provider: 'acme', model: 'only-custom', currency: 'USD',
+      input: 1, cacheRead: 0, cacheWrite: 0, output: 2,
+    })
+    expect((await svc.pricing()).entries[key]).toBeDefined()
+    expect(await svc.removeCustomPrice(key)).toEqual({ ok: true })
+    expect((await svc.pricing()).entries[key]).toBeUndefined()
   })
 
   it('setAlias / aliasList 往返', async () => {

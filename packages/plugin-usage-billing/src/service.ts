@@ -157,15 +157,39 @@ export class UsageBillingService extends TypertRemoteService {
 
   async removeCustomPrice(key: string): Promise<{ ok: boolean }> {
     const current = await this.pricing()
-    const snapshot = [...this.snapshots.entries()].map(([, s]) => s)
-    const baseEntries = Object.fromEntries(
-      Object.entries(current.entries).filter(([k]) => k !== key),
-    )
-    const prev = resolveSnapshotAt(this.now() - 1, snapshot)
-    const delta = diffEntries(prev.entries, baseEntries)
-    if (Object.keys(delta.entries).length === 0 && delta.removed.length === 0) return { ok: false }
-    await this.appendDelta(baseEntries, current.usdToCny, current.usdToCnySource, 'custom-price')
+    const catalog = this.catalogValueOf(key)
+    const existing = current.entries[key]
+    // 目录层有价 → 恢复到目录价（不是把整个模型删掉）；只有「价完全来自自定义」时才删 key。
+    if (existing === undefined) return { ok: false }
+    if (catalog !== undefined) {
+      const same = diffEntries({ [key]: existing }, { [key]: catalog })
+      if (Object.keys(same.entries).length === 0 && same.removed.length === 0) return { ok: false }
+    }
+    const entries = { ...current.entries }
+    if (catalog === undefined) delete entries[key]
+    else entries[key] = { ...catalog }
+    await this.appendDelta(entries, current.usdToCny, current.usdToCnySource, 'custom-price')
     return { ok: true }
+  }
+
+  /**
+   * 目录层（`install` / `catalog-refresh`）里该 key 的最新取值。
+   *
+   * 自定义价与手动刷新都写进累计表，所以**无法**从累计表反推「目录原本多少钱」——
+   * 只能重放目录层：base 整体替换该层，delta 只增改它提到的 key，`removed` 删 key。
+   * `custom-price` / `manual-refresh` 的记录一律不参与这个重放。
+   */
+  private catalogValueOf(key: string): PriceEntry | undefined {
+    const layer: Record<string, PriceEntry> = {}
+    const ordered = [...this.snapshots.entries()].map(([, s]) => s)
+      .filter((s) => s.reason === 'install' || s.reason === 'catalog-refresh')
+      .sort((a, b) => a.at - b.at || a.id.localeCompare(b.id))
+    for (const snap of ordered) {
+      if (snap.kind === 'base') for (const k of Object.keys(layer)) delete layer[k]
+      for (const [k, v] of Object.entries(snap.entries)) layer[k] = { ...v }
+      for (const k of snap.removed ?? []) delete layer[k]
+    }
+    return layer[key]
   }
 
   private async appendDelta(
