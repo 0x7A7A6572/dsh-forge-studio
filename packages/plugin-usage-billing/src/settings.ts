@@ -5,10 +5,12 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import Schema from '@deepseek-ai/schemastery'
 import { USAGE_BILLING_NAMESPACE } from './types.ts'
 
 export { USAGE_BILLING_NAMESPACE }
+export type { SettingsProvider }
 
 export interface UsageBillingConfig {
   budget: { enabled: boolean; monthlyCny: number }
@@ -42,8 +44,11 @@ export const UsageBillingConfigSchema = Schema.object({
   }),
   notices: Schema.object({
     backfillDismissed: Schema.boolean().default(false),
-    // Schema.dict 的返回类型引用 @deepseek-ai/cosmokit 的 Dict（本包不可解析，导出常量的声明推断会 TS2742），
-    // 故改用 brief 允许的兜底写法 `Schema.object({})` + 类型断言（见 task-11-report.md）。
+    // Schema.dict 的返回类型引用 @deepseek-ai/cosmokit 的 Dict（schemastery 的传递依赖，pnpm 严格隔离下
+    // 本包不可解析），导出常量的声明推断会 TS2742 —— 链接 dsh-settings 后复测仍然如此，
+    // 故保留 brief Step 4 允许的兜底写法并记录诊断（见 task-11-report.md）：
+    //   src/settings.ts(32,14): error TS2742: The inferred type of 'UsageBillingConfigSchema' cannot be named
+    //   without a reference to '.pnpm/@deepseek-ai+cosmokit@1.8.3/node_modules/@deepseek-ai/cosmokit'.
     budgetNotified: Schema.object({}).default({}) as unknown as Schema<Record<string, string>>,
   }),
   installAt: Schema.number().default(0),
@@ -55,23 +60,13 @@ export interface UsageBillingSettingsAccess {
   watch(callback: (next: UsageBillingConfig) => void): () => void
 }
 
+/**
+ * 已注册命名空间的作用域（`SettingsProvider.register` 返回值的窄视图）：
+ * 只取本插件用到的读取与订阅能力，watch 回调忽略第二个 prev 参数。
+ */
 interface SettingsScopeLike {
   get(): UsageBillingConfig
   watch(callback: (next: UsageBillingConfig) => void): () => void
-}
-
-/**
- * `ctx.settings` 的最小窄视图。它的类型增强由 `@deepseek-ai/dsh-settings` 提供，但该包在本仓
- * 只写进了 package.json、未链接进 node_modules（也不在 pnpm-lock 的 importer 里），import 会
- * 直接 TS2307。运行时服务存在性由 `ctx.inject(['settings'])` 保证（本文件未新增跨插件运行时依赖），
- * 因此这里只声明用到的 register 能力；依赖被链接后可换回 `SettingsProvider`。
- */
-interface SettingsProviderLike {
-  register(
-    namespace: string,
-    schema: unknown,
-    options: { base: UsageBillingConfig; applies: 'live' },
-  ): SettingsScopeLike
 }
 
 export interface BindableUsageBillingSettingsAccess extends UsageBillingSettingsAccess {
@@ -113,8 +108,7 @@ export function createUsageBillingSettingsAccess(): BindableUsageBillingSettings
 export function installUsageBillingSettings(ctx: Context): UsageBillingSettingsAccess {
   const access = createUsageBillingSettingsAccess()
   ctx.inject(['settings'], (settingsCtx) => {
-    const settings = (settingsCtx as Context & { settings: SettingsProviderLike }).settings
-    access.bind(settings.register(USAGE_BILLING_NAMESPACE, UsageBillingConfigSchema, {
+    access.bind(settingsCtx.settings.register(USAGE_BILLING_NAMESPACE, UsageBillingConfigSchema, {
       base: USAGE_BILLING_CONFIG_BASE,
       applies: 'live',
     }))

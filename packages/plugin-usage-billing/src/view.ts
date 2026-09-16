@@ -33,6 +33,11 @@ export interface WorkspaceRow { cwd: string; calls: number; costCny: number; ses
 
 export interface Overview {
   totalCny: number; todayCny: number; weekCny: number; avgDailyCny: number
+  /**
+   * 缓存命中率 = cacheRead / (input + cacheRead)。
+   * 分母含未计价行（它们同样携带真实观测 token，剔除会让该比值与旁边的 token 合计口径打架）；
+   * 分母**不含 cacheWrite**（缓存写入不是「读取命中」的分母）。空分母时为 0。
+   */
   cacheHitRate: number; calls: number; unpricedModels: string[]
   unpricedRows: number; hasBackfilled: boolean
 }
@@ -138,6 +143,10 @@ export function buildByWorkspace(rows: readonly LedgerRow[]): WorkspaceRow[] {
   return [...byCwd.values()].sort((a, b) => b.costCny - a.costCny || a.cwd.localeCompare(b.cwd))
 }
 
+/**
+ * 概览指标。其中 `cacheHitRate = cacheRead / (input + cacheRead)`，**分母遍历全部行**
+ * （未计价行也计入：它们携带真实观测 token），且**不含 cacheWrite**；详见 `Overview.cacheHitRate`。
+ */
 export function buildOverview(
   rows: readonly LedgerRow[],
   opts: { todayKey: string; weekDays: readonly string[] },
