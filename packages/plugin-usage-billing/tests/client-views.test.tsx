@@ -9,6 +9,8 @@ import type { UsageBillingRemote } from '../src/client/core/remote.ts'
 import type { Overview } from '../src/view.ts'
 import { TabOverview } from '../src/client/views/tab-overview.tsx'
 import { TabTrend } from '../src/client/views/tab-trend.tsx'
+import { TabHeatmap } from '../src/client/views/tab-heatmap.tsx'
+import { TabDetail } from '../src/client/views/tab-detail.tsx'
 import { evaluateBudget } from '../src/budget.ts'
 
 // 本仓没有 vitest 配置、`globals` 关闭，RTL 的自动 cleanup 依赖全局 afterEach 因而失效；
@@ -139,5 +141,51 @@ describe('TabTrend', () => {
 
   it('evaluateBudget 与 UI 档位一致（同一份纯函数，不重复实现）', () => {
     expect(evaluateBudget({ spentCny: 150, monthlyCny: 100, enabled: true, notified: {}, monthKey: '2026-09' }).level).toBe('over')
+  })
+})
+
+const heatRemote = () => noopRemote({
+  daily: async () => ({ ok: true, value: { days: [
+    { day: '2026-09-01', costCny: 0, input: 0, cacheRead: 0, cacheWrite: 0, output: 0, calls: 0 },
+    { day: '2026-09-02', costCny: 5, input: 0, cacheRead: 0, cacheWrite: 0, output: 0, calls: 1 },
+  ] } }),
+} as never)
+
+const detailRemote = () => noopRemote({
+  byWorkspace: async () => ({ ok: true, value: { workspaces: [
+    { cwd: 'D:\\codes\\demo', calls: 2, costCny: 7, sessions: [
+      { sessionId: 's1', day: '2026-09-16', calls: 2, costCny: 7, lastTime: 1, isSubagent: false },
+    ] },
+  ] } }),
+  byModel: async () => ({ ok: true, value: { models: [
+    { key: 'deepseek/deepseek-v4-flash', provider: 'deepseek', model: 'deepseek-v4-flash', rawModels: ['deepseek-v4-flash'],
+      input: 10, cacheRead: 0, cacheWrite: 0, output: 5, reasoning: 0, costCny: 7, priced: true, mixedRate: false, calls: 2 },
+  ] } }),
+} as never)
+
+describe('TabHeatmap', () => {
+  it('渲染 5 档热力格，活跃天与总天数是文字', async () => {
+    const { container } = render(<TabHeatmap billing={heatRemote()} store={createBillingStore({ open: true })} />)
+    await screen.findByText(/活跃/)
+    expect(container.querySelectorAll('[data-dsh-ub-heat] > span').length).toBeGreaterThanOrEqual(2)
+  })
+  it('无数据时给空态而不是空白', async () => {
+    render(<TabHeatmap billing={noopRemote()} store={createBillingStore({ open: true })} />)
+    expect(await screen.findByText(/还没有用量记录/)).toBeTruthy()
+  })
+})
+
+describe('TabDetail', () => {
+  it('工作区行可展开到会话', async () => {
+    render(<TabDetail billing={detailRemote()} store={createBillingStore({ open: true })} />)
+    // brief 原文是 `/D:\\\\codes\\\\demo/`：正则里 `\\\\` 匹配两个字面反斜杠，而 fixture 的
+    // `'D:\\codes\\demo'` 求值后只有一个，永远匹配不到。改为与渲染文本同形的单反斜杠正则。
+    const w = await screen.findByText(/D:\\codes\\demo/)
+    w.click()
+    expect(await screen.findByText(/s1/)).toBeTruthy()
+  })
+  it('模型表带混合单价与未收录徽标位', async () => {
+    render(<TabDetail billing={detailRemote()} store={createBillingStore({ open: true })} />)
+    expect(await screen.findByText(/deepseek-v4-flash/)).toBeTruthy()
   })
 })
