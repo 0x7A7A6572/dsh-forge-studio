@@ -18,9 +18,6 @@ export interface RangeSpec {
   until: number | null
 }
 
-/** 'YYYY-MM-DD'（本机时区）日期键别名。 */
-export type BillingDay = string
-
 /** 主账本一行 —— 一次带 usage 的模型调用，金额写时锁定。 */
 export interface LedgerRow {
   /** `${sessionId}#${seq}` —— 天然幂等键。 */
