@@ -8,7 +8,7 @@ import { BUILTIN_CATALOG, DEFAULT_USD_TO_CNY } from '../src/pricing/catalog.ts'
 import { planSnapshot, resolveSnapshotAt } from '../src/pricing/snapshot.ts'
 import { UsageBillingService } from '../src/service.ts'
 import { USAGE_BILLING_CONFIG_BASE, createUsageBillingSettingsAccess } from '../src/settings.ts'
-import type { Diagnostic, FoldState, LedgerRow, ModelAlias, PriceSnapshot } from '../src/types.ts'
+import type { Diagnostic, FoldState, LedgerRow, ModelAlias, PriceEntry, PriceSnapshot } from '../src/types.ts'
 
 function table<V>(): KvTable<string, V> {
   const map = new Map<string, V>()
@@ -51,11 +51,16 @@ function web(routes: Record<string, () => Promise<unknown>>) {
   }
 }
 
-function deps(webImpl: ReturnType<typeof web>, snapshots: KvTable<string, PriceSnapshot>, now = () => 1_000_000) {
-  const base = planSnapshot(undefined, { entries: { ...BUILTIN_CATALOG }, usdToCny: DEFAULT_USD_TO_CNY, usdToCnySource: 'default' },
+function deps(
+  webImpl: ReturnType<typeof web>,
+  snapshots: KvTable<string, PriceSnapshot>,
+  now = () => 1_000_000,
+  entries: Record<string, PriceEntry> = { ...BUILTIN_CATALOG },
+) {
+  const base = planSnapshot(undefined, { entries, usdToCny: DEFAULT_USD_TO_CNY, usdToCnySource: 'default' },
     { id: 'snap-install', at: 0, reason: 'install' })!
   void snapshots.put(base.id, base)
-  return { web: webImpl, snapshots, installAt: 0, now }
+  return { web: webImpl, snapshots, now }
 }
 
 beforeEach(() => { resetPricingFetchCache() })
@@ -181,10 +186,85 @@ describe('fetchPricingFromNetwork', () => {
     }
   })
 
+  it('refreshHours 夹到上限一个月：离谱的大值不会把刷新永久关掉', async () => {
+    const snapshots = table<PriceSnapshot>()
+    const w = web({
+      'https://models.dev/api.json': text(JSON.stringify(MODELS_DEV)),
+      'https://open.er-api.com/v6/latest/USD': text(JSON.stringify({ rates: { CNY: 7.15 } })),
+    })
+    let clock = 1_000_000
+    const d = deps(w, snapshots, () => clock)
+    const modelsDevCalls = () => w.calls.filter((u) => u.includes('models.dev')).length
+    await fetchPricingFromNetwork(d, false, 100_000) // 11 年：夹到 30 天
+    clock += 29 * 24 * 60 * 60 * 1000 // 29 天 < 30 天：仍在窗口内
+    await fetchPricingFromNetwork(d, false, 100_000)
+    expect(modelsDevCalls()).toBe(1)
+    clock += 2 * 24 * 60 * 60 * 1000 // 累计 31 天 > 30 天：必须重新拉取
+    await fetchPricingFromNetwork(d, false, 100_000)
+    expect(modelsDevCalls()).toBe(2)
+  })
+
+  it('失败缓存最多 1 分钟：一次离线不会把重试锁死整个 TTL', async () => {
+    const snapshots = table<PriceSnapshot>()
+    const w = web({ 'https://models.dev/api.json': async () => { throw new Error('offline') } })
+    let clock = 1_000_000
+    const d = deps(w, snapshots, () => clock)
+    const modelsDevCalls = () => w.calls.filter((u) => u.includes('models.dev')).length
+    expect((await fetchPricingFromNetwork(d, false, 6)).ok).toBe(false)
+    expect(modelsDevCalls()).toBe(1)
+    clock += 30_000 // 30s < 60s：失败结果仍在短窗口内被复用（调度器每分钟重试不会打爆网络）
+    expect((await fetchPricingFromNetwork(d, false, 6)).ok).toBe(false)
+    expect(modelsDevCalls()).toBe(1)
+    clock += 31_000 // 累计 61s > 60s：必须真的重试
+    expect((await fetchPricingFromNetwork(d, false, 6)).ok).toBe(false)
+    expect(modelsDevCalls()).toBe(2)
+  })
+
+  it('成功仍按 TTL 缓存：60s 后不重试（与失败窗口不同）', async () => {
+    const snapshots = table<PriceSnapshot>()
+    const w = web({
+      'https://models.dev/api.json': text(JSON.stringify(MODELS_DEV)),
+      'https://open.er-api.com/v6/latest/USD': text(JSON.stringify({ rates: { CNY: 7.15 } })),
+    })
+    let clock = 1_000_000
+    const d = deps(w, snapshots, () => clock)
+    expect((await fetchPricingFromNetwork(d, false, 6)).ok).toBe(true)
+    clock += 61_000
+    expect((await fetchPricingFromNetwork(d, false, 6)).ok).toBe(true)
+    expect(w.calls.filter((u) => u.includes('models.dev'))).toHaveLength(1)
+  })
+
+  it('同表并发强制刷新只下载一次（in-flight 合并），也只写一条快照', async () => {
+    const snapshots = table<PriceSnapshot>()
+    const w = web({
+      'https://models.dev/api.json': text(JSON.stringify(MODELS_DEV)),
+      'https://open.er-api.com/v6/latest/USD': text(JSON.stringify({ rates: { CNY: 7.15 } })),
+    })
+    const d = deps(w, snapshots)
+    const [a, b] = await Promise.all([fetchPricingFromNetwork(d, true), fetchPricingFromNetwork(d, true)])
+    expect(a).toEqual(b)
+    expect(w.calls.filter((u) => u.includes('models.dev'))).toHaveLength(1)
+    // 两次同刻刷新若各写一份快照，还会撞同一个 `${prevId}#cat-${now}` 键。
+    expect(snapshots.size).toBe(2)
+  })
+
+  it('空账本上的目录刷新：base 用 base 命名（snap-base），不是 delta 形状的 id', async () => {
+    const snapshots = table<PriceSnapshot>()
+    const w = web({
+      'https://models.dev/api.json': text(JSON.stringify(MODELS_DEV)),
+      'https://open.er-api.com/v6/latest/USD': text(JSON.stringify({ rates: { CNY: 7.15 } })),
+    })
+    const out = await fetchPricingFromNetwork({ web: w, snapshots, now: () => 1_000_000 })
+    expect(out.ok).toBe(true)
+    const snaps = [...snapshots.entries()].map(([, s]) => s)
+    expect(snaps).toHaveLength(1)
+    expect(snaps[0]).toMatchObject({ id: 'snap-base', kind: 'base', reason: 'catalog-refresh' })
+  })
+
   it('两次完全相同的刷新（同值且同来源）→ 第二次不追加空 delta', async () => {
     const snapshots = table<PriceSnapshot>()
     const w = web({
-      'https://models.dev/api.json': text('{}'),
+      'https://models.dev/api.json': text(JSON.stringify(MODELS_DEV)),
       'https://open.er-api.com/v6/latest/USD': text(JSON.stringify({ rates: { CNY: DEFAULT_USD_TO_CNY } })),
     })
     const d = deps(w, snapshots)
@@ -196,13 +276,30 @@ describe('fetchPricingFromNetwork', () => {
     expect(snapshots.size).toBe(2)
   })
 
-  it('汇率数值不变但来源 default → live：仍追加一条记录（空 entries、无 removed），新来源可见', async () => {
+  it('models.dev 解析成功但 0 条（空投影）→ ok:false、不追加快照', async () => {
     const snapshots = table<PriceSnapshot>()
     const w = web({
       'https://models.dev/api.json': text('{}'),
-      'https://open.er-api.com/v6/latest/USD': text(JSON.stringify({ rates: { CNY: DEFAULT_USD_TO_CNY } })),
+      'https://open.er-api.com/v6/latest/USD': text(JSON.stringify({ rates: { CNY: 7.15 } })),
     })
     const out = await fetchPricingFromNetwork(deps(w, snapshots))
+    // 空投影若报成功，下一次 resolve 会把全部「只来自联网」的模型当成目录已删而抹掉。
+    expect(out.ok).toBe(false)
+    expect(out.reason).toMatch(/models\.dev/)
+    expect(snapshots.size).toBe(1)
+  })
+
+  it('汇率数值不变但来源 default → live：仍追加一条记录（空 entries、无 removed），新来源可见', async () => {
+    const snapshots = table<PriceSnapshot>()
+    const w = web({
+      'https://models.dev/api.json': text(JSON.stringify(MODELS_DEV)),
+      'https://open.er-api.com/v6/latest/USD': text(JSON.stringify({ rates: { CNY: DEFAULT_USD_TO_CNY } })),
+    })
+    // 基准里已经含本次要抓到的目录（空投影已按新语义判失败），于是这次刷新与此刻在效状态
+    // 只差「来源 default → live」这一项。
+    const out = await fetchPricingFromNetwork(deps(w, snapshots, () => 1_000_000, {
+      ...BUILTIN_CATALOG, ...projectModelsDev(MODELS_DEV),
+    }))
     expect(out).toMatchObject({ ok: true, usdToCny: DEFAULT_USD_TO_CNY })
     const snaps = [...snapshots.entries()].map(([, s]) => s)
     expect(snaps).toHaveLength(2)
@@ -274,10 +371,70 @@ describe('刷新与自定义价 / 账本', () => {
         readSession: async () => { throw new Error('unused') },
       },
       fetchPricing: (opts) =>
-        fetchPricingFromNetwork({ web: w, snapshots: h.snapshots, installAt: 0, now: clock }, opts.force, opts.ttlHours),
+        fetchPricingFromNetwork({ web: w, snapshots: h.snapshots, now: clock }, opts.force, opts.ttlHours),
       now: clock,
     })
   }
+
+  it('并发刷新与改价（不同 key）：刷新拉到的 key 不被改价的差分抹掉，且没有任何记录写 removed', async () => {
+    const h = harness()
+    const KEY_CUSTOM = 'deepseek/deepseek-v4-flash'
+    // gpt-4o 内置已有价、这次联网改了它；haiku 是「只来自联网」的新 key（不在内置表里）。
+    const KEY_CHANGED = 'openai/gpt-4o'
+    const KEY_NEW = 'anthropic/claude-haiku-4'
+    const CLOCK = 1_000_000
+    const changed: PriceEntry = { input: 2.5, cacheRead: 1.25, cacheWrite: 1.25, output: 10, currency: 'USD' }
+    const fresh: PriceEntry = { input: 1, cacheRead: 0.1, cacheWrite: 1.25, output: 5, currency: 'USD' }
+
+    // 确定性交错（不靠计时）：假刷新「先读基线、挂闸、后落盘」，闸门在发起改价之后打开。
+    // 未串行化时：改价先读到旧表 → 刷新落盘 → 改价的 appendDelta 才拿新表当基线做差分，
+    // diffEntries 于是对只来自联网的新 key 发 removed，并把联网改过价的 key 按旧值重新加回来。
+    let openRefreshWrite!: () => void
+    const writeGate = new Promise<void>((resolve) => { openRefreshWrite = resolve })
+    let baselineRead!: () => void
+    const baselineCaptured = new Promise<void>((resolve) => { baselineRead = resolve })
+
+    const svc = new UsageBillingService(new Context(), {
+      domain: h.domain,
+      settings: createUsageBillingSettingsAccess(),
+      installAt: 0,
+      source: {
+        listSessions: async () => [],
+        listEvents: async () => [],
+        readSession: async () => { throw new Error('unused') },
+      },
+      fetchPricing: async () => {
+        const all = [...h.snapshots.entries()].map(([, s]) => s)
+        const prev = resolveSnapshotAt(CLOCK, all)
+        const entries = { ...prev.entries, [KEY_CHANGED]: { ...changed }, [KEY_NEW]: { ...fresh } }
+        baselineRead()
+        await writeGate
+        const snap = planSnapshot(prev, { entries, usdToCny: 7.15, usdToCnySource: 'live' },
+          { id: `${prev.snapshotId}#cat-${CLOCK}`, at: CLOCK, reason: 'catalog-refresh' })
+        if (snap !== null) await h.snapshots.put(snap.id, snap)
+        return { ok: true, entries: 2, usdToCny: 7.15 }
+      },
+      now: () => CLOCK,
+    })
+
+    const refresh = svc.refreshPricing(true)
+    await baselineCaptured
+    const write = svc.setCustomPrice({
+      provider: 'deepseek', model: 'deepseek-v4-flash', currency: 'CNY',
+      input: 9, cacheRead: 9, cacheWrite: 9, output: 9,
+    })
+    openRefreshWrite()
+    expect((await refresh).ok).toBe(true)
+    await write
+
+    const entries = (await svc.pricing()).entries
+    expect(entries[KEY_NEW]).toMatchObject(fresh)
+    expect(entries[KEY_CHANGED]).toMatchObject(changed)
+    expect(entries[KEY_CUSTOM]).toMatchObject({ input: 9, cacheRead: 9, cacheWrite: 9, output: 9, currency: 'CNY' })
+    const bogusRemoved = [...h.snapshots.entries()].map(([, s]) => s)
+      .filter((s) => (s.removed ?? []).some((k) => k === KEY_NEW || k === KEY_CHANGED))
+    expect(bogusRemoved).toEqual([])
+  })
 
   it('成功刷新后自定义价仍在生效价表里', async () => {
     const h = harness()

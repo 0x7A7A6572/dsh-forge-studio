@@ -125,8 +125,8 @@ export function activeOverridesAt(at: number, all: readonly PriceSnapshot[]): Re
     for (const [k, v] of Object.entries(snap.entries)) {
       const cat = catalogThen[k]
       // 取消自定义价时写回的正是「当时的目录价」→ 该 key 已无自定义价。
-      if (cat !== undefined && cat.input === v.input && cat.cacheRead === v.cacheRead
-        && cat.cacheWrite === v.cacheWrite && cat.output === v.output && cat.currency === v.currency) {
+      // 用 sameEntry 而不是手抄五个字段：PriceEntry 将来多一个字段时，取消判定不会静默失效。
+      if (cat !== undefined && sameEntry(cat, v)) {
         delete active[k]
         continue
       }

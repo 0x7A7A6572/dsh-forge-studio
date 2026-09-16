@@ -32,6 +32,7 @@ import type {
 export interface PricingRefreshResult {
   ok: boolean
   reason?: string
+  /** **本次**从 models.dev 抓到的条目数，不是在效价表的总量。 */
   entries?: number
   usdToCny?: number
 }
@@ -83,8 +84,13 @@ export class UsageBillingService extends TypertRemoteService {
     return run
   }
 
-  /** 确保首条 base 快照存在（安装时打点，同时充当回填价表）。 */
-  private async ensureBaseSnapshot(entries: Record<string, PriceEntry>, usdToCny: number, usdToCnySource: 'live' | 'default'): Promise<void> {
+  /**
+   * 确保首条 base 快照存在（安装时打点，同时充当回填价表）。
+   *
+   * 公开给 host 入口调用：安装基准只有这一份实现（此前的内联副本用 `size === 0` 判据，
+   * 账本里只要有任何一条非 install 记录，安装基准就永远缺席）。
+   */
+  async ensureBaseSnapshot(entries: Record<string, PriceEntry>, usdToCny: number, usdToCnySource: 'live' | 'default'): Promise<void> {
     return this.serialize(async () => {
       // 只看 install 层：先写过自定义价（或任何非 install 快照）不该让安装基准永远缺席。
       if ([...this.snapshots.entries()].some(([, s]) => s.reason === 'install')) return
@@ -232,9 +238,12 @@ export class UsageBillingService extends TypertRemoteService {
   async refreshPricing(force: boolean): Promise<PricingRefreshResult> {
     // force 与 TTL 都必须真正送到拉取层：此前两者都被吞掉，「立即刷新」过不了 6h 缓存，
     // 配置里的 refreshHours 也从未被读过（TTL 是硬编码的）。
-    return await this.config.fetchPricing({
-      force, ttlHours: this.config.settings.get().pricing.refreshHours,
-    })
+    const settings = this.config.settings.get()
+    // 刷新本身也是「读当前表 → 算新表 → 追加快照」的价表写入，必须与 setCustomPrice /
+    // removeCustomPrice 走同一条串行链：否则一次重叠的改价会拿刷新前的旧表当 entries、
+    // 却拿刷新后的表当差分基线，把刚拉到的 key 判成 removed、并按旧值把它们加回来。
+    return await this.serialize(() =>
+      this.config.fetchPricing({ force, ttlHours: settings.pricing.refreshHours }))
   }
 
   async setAlias(input: AliasInput): Promise<{ ok: true }> {
