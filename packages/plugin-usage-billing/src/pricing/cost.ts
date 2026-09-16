@@ -47,11 +47,15 @@ export function priceUsage(
     const key = keys[rank]!
     const entry = table[key]
     if (entry === undefined) continue
+    if (entry.currency === 'USD' && !(usdToCny > 0)) {
+      // 汇率不可用：宁可标成「不可计价」也不锁一个 0 进账本。
+      // matchedKey 非 null 是它与「未收录」（matchedKey === null）的区别。
+      return { costCny: 0, currency: entry.currency, priced: false, matchedKey: key, matchRank: rank }
+    }
     const s = splitUsage(usage)
     const native = (s.input * entry.input + s.cacheRead * entry.cacheRead
       + s.cacheWrite * entry.cacheWrite + s.output * entry.output) / 1_000_000
-    const rate = usdToCny > 0 ? usdToCny : 0
-    const costCny = entry.currency === 'USD' ? native * rate : native
+    const costCny = entry.currency === 'USD' ? native * usdToCny : native
     return {
       costCny: Math.max(0, costCny),
       currency: entry.currency,

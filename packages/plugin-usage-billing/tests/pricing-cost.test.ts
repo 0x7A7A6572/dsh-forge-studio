@@ -65,5 +65,20 @@ describe('priceUsage', () => {
   it('汇率为 0 或负数时 USD 模型不折算成负数', () => {
     const r = priceUsage(usage(), { 'a/1': usd }, ['a/1'], 0)
     expect(r.costCny).toBeGreaterThanOrEqual(0)
+    // 汇率不可用 → 标「不可计价」，但 matchedKey 仍在：区别于未收录（null）。
+    expect(r.priced).toBe(false)
+    expect(r.matchedKey).toBe('a/1')
+    expect(r.matchRank).toBe(0)
+    const neg = priceUsage(usage(), { 'a/1': usd }, ['a/1'], -1)
+    expect(neg.costCny).toBe(0)
+    expect(neg.priced).toBe(false)
+    expect(neg.matchedKey).toBe('a/1')
+  })
+
+  it('汇率为 0 不影响 CNY 价目（原生币种不折算）', () => {
+    const r = priceUsage(usage(), { 'a/1': cny }, ['a/1'], 0)
+    expect(r.costCny).toBeCloseTo(11, 10)
+    expect(r.priced).toBe(true)
+    expect(r.matchedKey).toBe('a/1')
   })
 })

@@ -50,6 +50,24 @@ describe('planSnapshot', () => {
     expect(s).toMatchObject({ kind: 'delta', usdToCny: 7.3, usdToCnySource: 'live' })
     expect(s!.entries).toEqual({})
   })
+
+  it('基线是「生效状态」而非上一条记录：delta 账本下的删除仍被看见', () => {
+    const b = base(100, { 'a/1': e(1), 'b/1': e(1), 'c/1': e(1) })
+    const d: PriceSnapshot = {
+      id: 'snap-200#delta', at: 200, kind: 'delta', reason: 'custom-price',
+      usdToCny: 7, usdToCnySource: 'default', entries: { 'a/1': e(5) },
+    }
+    // delta 只含 a/1 的差量；基线若取上一条记录，b/1、c/1 会被当成「不存在」而漏掉。
+    const resolved = resolveSnapshotAt(300, [b, d])
+    expect(Object.keys(resolved.entries).sort()).toEqual(['a/1', 'b/1', 'c/1'])
+
+    const next = { ...resolved.entries }
+    delete next['c/1']
+    const s = planSnapshot(resolved, {
+      entries: next, usdToCny: resolved.usdToCny, usdToCnySource: resolved.usdToCnySource,
+    }, { id: 'snap-300#delta', at: 300, reason: 'catalog-refresh' })
+    expect(s).toMatchObject({ kind: 'delta', removed: ['c/1'] })
+  })
 })
 
 describe('resolveSnapshotAt', () => {
@@ -98,5 +116,21 @@ describe('resolveSnapshotAt', () => {
 
   it('乱序输入也按 at 升序累加', () => {
     expect(resolveSnapshotAt(250, [s3, s1, s2]).entries['a/1']!.input).toBe(5)
+  })
+
+  it('不改动输入数组顺序，返回表也不与快照共享条目对象', () => {
+    const shuffled = [s3, s1, s2]
+    const r = resolveSnapshotAt(250, shuffled)
+    expect(shuffled.map((s) => s.id)).toEqual(['snap-300', 'snap-100', 'snap-200'])
+    r.entries['a/1']!.input = 999
+    expect(s2.entries['a/1']!.input).toBe(5)
+    expect(s1.entries['a/1']!.input).toBe(1)
+  })
+
+  it('无快照时不抛异常：空表、查不到 key', () => {
+    expect(resolveSnapshotAt(123, [])).toEqual({
+      entries: {}, usdToCny: 0, usdToCnySource: 'default', snapshotId: '',
+    })
+    expect(resolveSnapshotAt(123, []).entries['a/1']).toBeUndefined()
   })
 })

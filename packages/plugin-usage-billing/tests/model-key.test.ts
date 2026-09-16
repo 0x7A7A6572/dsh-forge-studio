@@ -64,3 +64,9 @@ describe('priceKeyCandidates（查价档位顺序）', () => {
     expect(out).toEqual(['a/plain', 'a/*', '*/*'])
   })
 })
+
+describe('aliasId（别名存储键归一化）', () => {
+  it('两侧都归一化：provider 大小写与两侧空格不影响键', () => {
+    expect(aliasId(' Relay ', ' hy3 ')).toBe(aliasId('relay', 'hy3'))
+  })
+})

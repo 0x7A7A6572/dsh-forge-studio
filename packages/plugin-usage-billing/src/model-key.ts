@@ -12,9 +12,14 @@ import type { ModelAlias } from './types.ts'
 
 export const WILDCARD = '*'
 
+/** provider 归一化：去空格 + 小写（aliasId 与查价候选共用同一份规则）。 */
+function normalizeProvider(provider: string): string {
+  return provider.trim().toLowerCase()
+}
+
 /** 手工别名的存储键（用 NUL 分隔，避免与 id 里的斜杠混淆）。 */
 export function aliasId(provider: string, rawModel: string): string {
-  return `${provider.trim().toLowerCase()}\u0000${rawModel}`
+  return `${normalizeProvider(provider)}\u0000${rawModel.trim()}`
 }
 
 const DATE_SUFFIX = /-(?:\d{8}|\d{6}|\d{4}-\d{2})$/
@@ -33,7 +38,7 @@ export function normalizeModelId(raw: string): string {
  * 去重保序（原始 id 已规范时两者相同，只保留一个）。
  */
 export function priceKeyCandidates(provider: string, rawModel: string, alias?: ModelAlias): string[] {
-  const p = provider.trim().toLowerCase()
+  const p = normalizeProvider(provider)
   const raw = rawModel.trim()
   const normalized = normalizeModelId(raw)
   const out = [`${p}/${raw}`, `${p}/${normalized}`]

@@ -38,9 +38,13 @@ export function diffEntries(
 /**
  * 计划下一次快照：prev 不存在 → base；有实质变化（含汇率变化）→ delta；
  * 否则返回 null（不追加空 delta，避免账本膨胀）。
+ *
+ * `prev` 是「此刻之前生效的完整状态」，由调用方用 `resolveSnapshotAt` 取到；
+ * **绝不是上一条快照记录** —— delta 只含差量，拿它当基线会漏掉「目录删掉了某个模型」，
+ * 且每份 delta 都会退化成接近全量的 diff。
  */
 export function planSnapshot(
-  prev: PriceSnapshot | undefined,
+  prev: SnapshotInput | undefined,
   next: SnapshotInput,
   meta: { id: string; at: number; reason: PriceSnapshot['reason'] },
 ): PriceSnapshot | null {
@@ -76,13 +80,19 @@ export function resolveSnapshotAt(at: number, all: readonly PriceSnapshot[]): Re
   let entries: Record<string, PriceEntry> = {}
   let usdToCny = first.usdToCny
   let usdToCnySource = first.usdToCnySource
-  let snapshotId = first.id
-  if (first.kind === 'base') entries = { ...first.entries }
+  // at 早于首快照 → 回填口径：整体采用首快照，entries / 汇率 / id 三者必须一致。
+  const backfill = at < first.at
+  if (backfill) {
+    for (const [k, v] of Object.entries(first.entries)) entries[k] = { ...v }
+  }
+  let snapshotId = backfill ? first.id : ''
   for (const snap of ordered) {
     if (snap.at > at) break
-    if (snap.kind === 'base') entries = { ...snap.entries }
-    else {
-      for (const [k, v] of Object.entries(snap.entries)) entries[k] = v
+    if (snap.kind === 'base') {
+      entries = {}
+      for (const [k, v] of Object.entries(snap.entries)) entries[k] = { ...v }
+    } else {
+      for (const [k, v] of Object.entries(snap.entries)) entries[k] = { ...v }
       for (const k of snap.removed ?? []) delete entries[k]
     }
     usdToCny = snap.usdToCny
