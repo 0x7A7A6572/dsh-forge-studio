@@ -378,8 +378,13 @@ function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): voi
 
   register(defineTool({
     name: TOOL_SEARCH,
-    description: 'Search the cross-session memory store (substring match over title/content/tags). '
-      + 'Use when you need past context: how a problem was solved, user preferences, project decisions.',
+    description:
+      // 在跨会话记忆库里搜：标题 / 正文 / 摘要 / 别名 / 标签的包含匹配（大小写不敏感）。
+      'Search the cross-session memory store: substring match over title, content, summary, aliases and tags (case-insensitive). '
+      // 要回忆旧上下文时用：某个问题当初怎么解的、用户明确说过的偏好、项目层面的决策。
+      + 'Use it when you need past context: how a problem was solved, a stated preference, a project decision. '
+      // 命中别名也算命中那一条；换个说法搜不到时，换几个关键词再试一次。
+      + 'A hit on an alias counts as a hit on that entry; when a paraphrase misses, retry with different keywords.',
     parameters: {
       query: { type: 'string', required: true, description: 'Search text.' },
       scope: { type: 'string', enum: ['global', 'project'], description: 'Limit to one scope.' },
@@ -422,7 +427,13 @@ function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): voi
 
   register(defineTool({
     name: TOOL_LIST,
-    description: 'List memories by scope/kind, highest importance first. Use include_archived=true to see archived entries.',
+    description:
+      // 按作用域 / 分类列记忆，置顶与高重要性在前。
+      'List memories by scope / kind, pinned and highest-importance first. '
+      // 想把某个作用域下的条目一次看全时用；只要相关的那几条，用 memory_search 更省。
+      + 'Use it to review everything filed under one scope at once; use memory_search when you only need the few relevant ones. '
+      // 已归档条目只有 include_archived=true 才会出现。
+      + 'Archived entries only show up with include_archived=true.',
     parameters: {
       scope: { type: 'string', enum: ['global', 'project'], description: 'Limit to one scope.' },
       project_path: { type: 'string', description: 'Limit project memories to this workspace (defaults to the session cwd).' },
@@ -463,9 +474,13 @@ function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): voi
 
   register(defineTool({
     name: TOOL_UPDATE,
-    description: 'Modify an existing memory entry (title / content / summary / aliases / kind / scope / importance / tags / pinned). '
-      // 只改传入的字段；summary 与 aliases 是整体替换（不是追加）。
-      + 'Only the fields you pass change; summary and aliases replace those fields.',
+    description:
+      // 改一条已有记忆：标题 / 正文 / 摘要 / 别名 / 分类 / 作用域 / 重要性 / 标签 / 置顶。
+      'Modify an existing memory entry (title / content / summary / aliases / kind / scope / importance / tags / pinned). '
+      // 只改传入的字段，其余保持原样。
+      + 'Only the fields you pass change; everything else stays as it is. '
+      // summary 与 aliases 是整体替换（不是追加）；内容过时或写错时改这一条，别另存一条。
+      + 'summary and aliases replace those fields (not append); fix an outdated or wrong entry here instead of saving a new one.',
     parameters: {
       id: { type: 'string', required: true, description: 'Memory id from memory_search / memory_list.' },
       title: { type: 'string', description: 'New title.' },
@@ -513,7 +528,11 @@ function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): voi
 
   register(defineTool({
     name: TOOL_DELETE,
-    description: 'Permanently delete one memory entry by id. Prefer memory_archive when the entry may still be useful.',
+    description:
+      // 按 id 永久删除一条记忆，删了就没了。
+      'Permanently delete one memory entry by id — there is no undo. '
+      // 只是暂时不想再看到、或不确定以后还有没有用时，用 memory_archive（可恢复）。
+      + 'Prefer memory_archive when the entry may still be useful: archiving is recoverable, deleting is not.',
     parameters: {
       id: { type: 'string', required: true, description: 'Memory id.' },
     },
@@ -537,7 +556,11 @@ function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): voi
 
   register(defineTool({
     name: TOOL_ARCHIVE,
-    description: 'Archive a memory (hidden from lists/search/injection, still recoverable) or restore it with archived=false.',
+    description:
+      // 归档一条记忆：不再进列表 / 搜索 / 开场注入，但仍在库里、随时可恢复。
+      'Archive a memory: it leaves lists, search and session injection but stays in the store, still recoverable. '
+      // archived=false 就是恢复；归档不等于删除。
+      + 'Pass archived=false to restore it. Archiving is not deleting.',
     parameters: {
       id: { type: 'string', required: true, description: 'Memory id.' },
       archived: { type: 'boolean', description: 'true archives (default), false restores.' },
@@ -564,8 +587,12 @@ function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): voi
 
   register(defineTool({
     name: TOOL_MOVE,
-    description: 'Move a memory between global and project scope. Use when a memory was filed at the wrong level '
-      + '(e.g. a one-project habit landed in global, or a broad preference landed in a project).',
+    description:
+      // 把一条记忆在「全局」与「项目」之间搬作用域。
+      'Move a memory between global and project scope. '
+      // 判断错了地方时用：只对一个项目成立的习惯被记进了全局，或普适偏好被记进了某个项目。
+      + 'Use it when a memory was filed at the wrong level: a one-project habit that landed in global, '
+      + 'or a broad preference that landed in one project.',
     parameters: {
       id: { type: 'string', required: true, description: 'Memory id.' },
       scope: { type: 'string', required: true, enum: ['global', 'project'], description: 'Target scope.' },
