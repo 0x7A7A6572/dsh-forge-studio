@@ -38,9 +38,16 @@ export function TabHeatmap(props: {
     let alive = true
     // 一次取数：回填标记随 daily 一起回来，不再单独取 overview。
     void billing.daily('all', state.includeSubagents).then((r) => {
-      if (alive && r.ok) {
+      if (!alive) return
+      if (r.ok) {
         setData({ days: r.value.days, hasBackfilled: r.value.hasBackfilled, unpricedModels: r.value.unpricedModels })
+      } else {
+        // host 报错不是「没有用量」：停在「正在读取用量…」并留日志（不伪造色阶）。
+        console.warn('[usage-billing] 热力图取数失败', r.error)
       }
+    }).catch((error: unknown) => {
+      // wire 层 reject 同理：保持占位，绝不伪造一个零金额。
+      console.warn('[usage-billing] 热力图通道异常', error)
     })
     return () => { alive = false }
   }, [billing, state.includeSubagents])

@@ -3,7 +3,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { UsageBillingRemote } from '../core/remote.ts'
 import type { BillingStore } from '../core/store.ts'
-import { backfilledDisclosure, formatCny, formatDateTime, formatInt } from '../core/format.ts'
+import { backfilledDisclosure, formatCny, formatDateTime, formatInt, isUnpricedTotal } from '../core/format.ts'
 import type { ModelRow, WorkspaceRow } from '../../view.ts'
 
 /** 金额与披露标记同源：都来自同一次 byWorkspace / byModel 响应。 */
@@ -11,6 +11,8 @@ interface DetailPayload {
   workspaces: WorkspaceRow[]
   models: ModelRow[]
   hasBackfilled: boolean
+  /** byWorkspace 响应自带的未收录清单（与金额同源）——「一行都没定价」的唯一判据要用它。 */
+  unpricedModels: string[]
 }
 
 export function TabDetail(props: {
@@ -38,8 +40,17 @@ export function TabDetail(props: {
           workspaces: w.value.workspaces,
           models: m.value.models,
           hasBackfilled: w.value.hasBackfilled || m.value.hasBackfilled,
+          // 宽松 codec 透传：旧 host 可能没有这个字段，缺省按「没有未收录模型」处理。
+          unpricedModels: w.value.unpricedModels ?? [],
         })
+      } else {
+        // 任一失败都停在「正在读取用量…」并留下日志，绝不伪造金额。
+        if (!w.ok) console.warn('[usage-billing] 工作区取数失败', w.error)
+        if (!m.ok) console.warn('[usage-billing] 模型取数失败', m.error)
       }
+    }).catch((error: unknown) => {
+      // wire 层 reject（Promise.all 整体失败）：同样保持占位，不制造 unhandled rejection。
+      console.warn('[usage-billing] 明细通道异常', error)
     })
     return () => { alive = false }
   }, [billing, state.range, state.includeSubagents])
@@ -51,6 +62,17 @@ export function TabDetail(props: {
     return <div data-dsh-ub-empty>这个范围里还没有用量记录。</div>
   }
   const hasBackfilled = backfilledDisclosure(data.hasBackfilled)
+  // 与下面模型表同一条「未计价行不写 ¥0.00」的规则：整份账一行都没定价时（唯一判据
+  // isUnpricedTotal），工作区 / 会话这些金额列里的 0 同样是未知 —— 写「未收录」而不是 ¥0.00。
+  const unpriced = isUnpricedTotal(
+    workspaces.reduce((sum, w) => sum + w.costCny, 0),
+    data.unpricedModels,
+  )
+  const rowMoney = (costCny: number): JSX.Element => (
+    unpriced && costCny === 0
+      ? <span data-dsh-ub-estimate>未收录</span>
+      : <>{formatCny(costCny)}</>
+  )
 
   return (
     <div data-dsh-usage-billing>
@@ -64,13 +86,13 @@ export function TabDetail(props: {
         {workspaces.map((w) => (
           <li key={w.cwd}>
             <button type="button" onClick={() => setExpanded(expanded === w.cwd ? null : w.cwd)}>
-              {w.cwd} · {formatCny(w.costCny)} · {formatInt(w.calls)} 次
+              {w.cwd} · {rowMoney(w.costCny)} · {formatInt(w.calls)} 次
             </button>
             {expanded === w.cwd ? (
               <ul data-dsh-ub-sub>
                 {w.sessions.map((s) => (
                   <li key={s.sessionId}>
-                    {s.sessionId} · {formatCny(s.costCny)} · {formatInt(s.calls)} 次 · 最后活跃 {formatDateTime(s.lastTime)}
+                    {s.sessionId} · {rowMoney(s.costCny)} · {formatInt(s.calls)} 次 · 最后活跃 {formatDateTime(s.lastTime)}
                     {s.isSubagent ? ' · 子代理' : ''}
                   </li>
                 ))}

@@ -6,7 +6,16 @@
 
 import { formatDateTime } from '../core/format.ts'
 
-export function BackfillNotice(props: { installAt: number; dismissed: boolean; onDismiss(): void }): JSX.Element | null {
+export function BackfillNotice(props: {
+  installAt: number
+  dismissed: boolean
+  /**
+   * 只读 scope（`settings.writable === false`）下宿主会拒绝写入。
+   * 按钮**必须显式门控**（与设置页的三个开关同一姿态），否则它是一个按了没反应的按钮。
+   */
+  writable: boolean
+  onDismiss(): void
+}): JSX.Element | null {
   if (props.dismissed) return null
   return (
     <div data-dsh-usage-billing data-dsh-ub-notice role="status">
@@ -14,7 +23,7 @@ export function BackfillNotice(props: { installAt: number; dismissed: boolean; o
         插件安装前（{formatDateTime(props.installAt)}）的历史用量按<strong>安装时点的价表估算</strong>，
         可能与实际账单不一致。安装后的每一笔都按事件发生时刻的价格锁定，不再变动。
       </span>
-      <button type="button" onClick={props.onDismiss} aria-label="不再提示">知道了</button>
+      <button type="button" disabled={!props.writable} onClick={props.onDismiss} aria-label="不再提示">知道了</button>
     </div>
   )
 }

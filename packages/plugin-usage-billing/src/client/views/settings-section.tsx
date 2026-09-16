@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import type { UsageBillingRemote } from '../core/remote.ts'
 import type { BillingStore } from '../core/store.ts'
-import type { BillingConfigLike, BillingScope } from '../core/config.ts'
+import type { BillingScope } from '../core/config.ts'
 import { NON_FINITE_PLACEHOLDER } from '../core/format.ts'
 import { BackfillLedgerNote } from './backfill-notice.tsx'
 
@@ -39,7 +39,13 @@ export function SettingsSection(props: {
     void Promise.all([billing.status(), billing.pricing()]).then(([s, p]) => {
       if (!alive) return
       if (s.ok) setStatus(s.value)
+      // 取不到不是「0 行」：状态区停在占位（账本 0 行 / 快照 —）并留日志。
+      else console.warn('[usage-billing] 账本状态取数失败', s.error)
       if (p.ok) setSnapshotId(p.value.snapshotId)
+      else console.warn('[usage-billing] 价表快照取数失败', p.error)
+    }).catch((error: unknown) => {
+      // wire 层 reject 同理：状态区停在占位，绝不伪造行数或快照 id。
+      console.warn('[usage-billing] 设置页取数通道异常', error)
     })
     return () => { alive = false }
   }, [billing])

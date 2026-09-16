@@ -31,9 +31,16 @@ export function TabTrend(props: {
     // 只取一次：回填标记是 daily 响应自带的字段，不再第二次取 overview
     // （那次取数失败会让披露静默消失，而金额照常渲染）。
     void billing.daily(state.range, state.includeSubagents).then((r) => {
-      if (alive && r.ok) {
+      if (!alive) return
+      if (r.ok) {
         setData({ days: r.value.days, hasBackfilled: r.value.hasBackfilled, unpricedModels: r.value.unpricedModels })
+      } else {
+        // host 报错不是「没有花费」：停在「正在读取用量…」（无标记的金额绝不出现）并留日志。
+        console.warn('[usage-billing] 趋势取数失败', r.error)
       }
+    }).catch((error: unknown) => {
+      // wire 层 reject 同理：保持占位，绝不伪造一个零金额。
+      console.warn('[usage-billing] 趋势通道异常', error)
     })
     return () => { alive = false }
   }, [billing, state.range, state.includeSubagents])

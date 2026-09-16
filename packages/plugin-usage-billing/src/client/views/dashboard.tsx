@@ -65,6 +65,8 @@ export function Dashboard(props: {
           <BackfillNotice
             installAt={cfg.installAt}
             dismissed={cfg.notices?.backfillDismissed === true}
+            // 只读 scope 下写不入宿主：把按钮禁用，别留一个按了没反应的按钮。
+            writable={settings.writable}
             onDismiss={dismissBackfill}
           />
         ) : null}

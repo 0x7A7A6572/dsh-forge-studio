@@ -23,21 +23,31 @@ afterEach(() => { cleanup() })
 
 describe('BackfillNotice', () => {
   it('未关闭时显示提示，含安装时刻', () => {
-    render(<BackfillNotice installAt={Date.UTC(2026, 8, 16, 6, 0)} dismissed={false} onDismiss={() => {}} />)
+    render(<BackfillNotice installAt={Date.UTC(2026, 8, 16, 6, 0)} dismissed={false} writable onDismiss={() => {}} />)
     expect(screen.getByText(/安装前/)).toBeTruthy()
     expect(screen.getByText(/估算/)).toBeTruthy()
   })
 
   it('已关闭时完全不渲染', () => {
-    const { container } = render(<BackfillNotice installAt={1} dismissed onDismiss={() => {}} />)
+    const { container } = render(<BackfillNotice installAt={1} dismissed writable onDismiss={() => {}} />)
     expect(container.textContent).toBe('')
   })
 
   it('点关闭调用 onDismiss', () => {
     const onDismiss = vi.fn()
-    render(<BackfillNotice installAt={1} dismissed={false} onDismiss={onDismiss} />)
+    render(<BackfillNotice installAt={1} dismissed={false} writable onDismiss={onDismiss} />)
     screen.getByRole('button').click()
     expect(onDismiss).toHaveBeenCalledOnce()
+  })
+
+  it('只读时「知道了」被禁用，可写时可用（不留按了没反应的按钮）', () => {
+    const ro = render(<BackfillNotice installAt={1} dismissed={false} writable={false} onDismiss={() => {}} />)
+    const roButton = ro.container.querySelector('button') as HTMLButtonElement
+    expect(roButton.disabled).toBe(true)
+    expect(roButton.textContent).toBe('知道了')
+
+    const rw = render(<BackfillNotice installAt={1} dismissed={false} writable onDismiss={() => {}} />)
+    expect((rw.container.querySelector('button') as HTMLButtonElement).disabled).toBe(false)
   })
 })
 
@@ -143,6 +153,20 @@ describe('Dashboard', () => {
     const again = render(<Dashboard billing={noopRemote()} store={createBillingStore({ open: true })} scope={h.scope} />)
     expect(again.container.querySelector('[data-dsh-ub-notice]')).toBeNull()
   })
+
+  it('只读 scope：提示条的「知道了」被禁用，且点了不会写宿主（不是写了静默失败）', async () => {
+    const store = createBillingStore({ open: true })
+    const h = fakeScope(baseConfig(), { writable: false })
+    const { container } = render(<Dashboard billing={noopRemote()} store={store} scope={h.scope} />)
+    const dismiss = container.querySelector('[data-dsh-ub-notice] button') as HTMLButtonElement
+    // 门控与设置页的三个开关同一姿态（那里是 disabled={!settings.writable}）。
+    expect(dismiss.disabled).toBe(true)
+
+    await act(async () => { fireEvent.click(dismiss) })
+    expect(h.writes).toEqual([])
+    // 提示条必须还在：不是本地藏起来，而是宿主根本没被写。
+    expect(container.querySelector('[data-dsh-ub-notice]')).toBeTruthy()
+  })
 })
 
 const overviewRemote = (over: Record<string, unknown>, dailyOver: Record<string, unknown> = {}) => noopRemote({
@@ -198,6 +222,60 @@ describe('TabOverview', () => {
       expect(container.querySelector('[data-dsh-ub-hero]')?.textContent).toBe('¥0.00')
     })
     expect(screen.getByText('日均').parentElement!.textContent).toContain('¥0.00')
+  })
+
+  it('整份账一行都没定价：今日/本周也是占位（子集里的 0 同样是未知，不是真实零）', async () => {
+    render(<TabOverview
+      billing={overviewRemote({ totalCny: 0, todayCny: 0, weekCny: 0, avgDailyCny: 0, calls: 3, unpricedModels: ['x/mystery'], unpricedRows: 3 })}
+      store={createBillingStore({ open: true })} />)
+    const sub = (await screen.findByText(/当前范围合计/)).textContent ?? ''
+    expect(sub).toContain('今日 —')
+    expect(sub).toContain('本周 —')
+    expect(sub).not.toContain('¥0.00')
+  })
+
+  it('真实零（无未收录模型）：今日/本周保留 ¥0.00 —— 同一处占位不能吞掉合法结果', async () => {
+    render(<TabOverview
+      billing={overviewRemote({ totalCny: 0, todayCny: 0, weekCny: 0, avgDailyCny: 0, calls: 0, unpricedModels: [], unpricedRows: 0 })}
+      store={createBillingStore({ open: true })} />)
+    const sub = (await screen.findByText(/当前范围合计/)).textContent ?? ''
+    expect(sub).toContain('今日 ¥0.00')
+    expect(sub).toContain('本周 ¥0.00')
+  })
+
+  it('回填标记缺席（旧 host / 宽松 codec 透传）按 present 处理：估算角标照常显示', async () => {
+    // 与入口卡、明细、趋势、热力图同一个保守 helper；直接读 overview.hasBackfilled 会把
+    // 「标记缺席」当成「没有回填」而少披露。
+    render(<TabOverview billing={overviewRemote({ hasBackfilled: undefined })} store={createBillingStore({ open: true })} />)
+    expect(await screen.findByText(/含安装前估算/)).toBeTruthy()
+  })
+
+  it('host 返回 ok:false 时停在读取占位并留日志，绝不落到 ¥0.00', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      render(<TabOverview
+        billing={noopRemote({ overview: async () => ({ ok: false, error: { message: 'host down' } }) as never } as never)}
+        store={createBillingStore({ open: true })} />)
+      expect(await screen.findByText('正在读取用量…')).toBeTruthy()
+      expect(screen.queryByText('¥0.00')).toBeNull()
+      await waitFor(() => {
+        expect(warn).toHaveBeenCalledWith('[usage-billing] 概览取数失败', expect.anything())
+      })
+    } finally { warn.mockRestore() }
+  })
+
+  it('取数 reject 时停在读取占位并留日志（不是 unhandled rejection）', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      render(<TabOverview
+        billing={noopRemote({ overview: async () => { throw new Error('wire down') } } as never)}
+        store={createBillingStore({ open: true })} />)
+      expect(await screen.findByText('正在读取用量…')).toBeTruthy()
+      expect(screen.queryByText('¥0.00')).toBeNull()
+      await waitFor(() => {
+        expect(warn).toHaveBeenCalledWith('[usage-billing] 概览通道异常', expect.anything())
+      })
+    } finally { warn.mockRestore() }
   })
 
   it('远程面缺席时 effect 早退（不抛 TypeError）', async () => {
@@ -268,6 +346,19 @@ describe('TabTrend', () => {
     await waitFor(() => { expect(screen.getByText(/合计/).textContent).toContain('¥0.00') })
   })
 
+  it('取数 reject 时停在读取占位并留日志（不是 unhandled rejection）', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      render(<TabTrend billing={noopRemote({ daily: async () => { throw new Error('wire down') } } as never)}
+        store={createBillingStore({ open: true })} />)
+      expect(await screen.findByText('正在读取用量…')).toBeTruthy()
+      expect(screen.queryByText('¥0.00')).toBeNull()
+      await waitFor(() => {
+        expect(warn).toHaveBeenCalledWith('[usage-billing] 趋势通道异常', expect.anything())
+      })
+    } finally { warn.mockRestore() }
+  })
+
   it('远程面缺席时 effect 早退（不抛 TypeError）', async () => {
     render(<TabTrend billing={undefined} store={createBillingStore({ open: true })} />)
     expect(await screen.findByText('正在读取用量…')).toBeTruthy()
@@ -318,6 +409,25 @@ const detailMixedRemote = () => noopRemote({
   ], hasBackfilled: true, unpricedModels: ['openai/ghost-model'] } }),
 } as never)
 
+/**
+ * 整份账一行都没定价的明细 fixture：工作区 / 会话金额都是 0，而 `byWorkspace` **自己带着**
+ * `unpricedModels`。此前的明细把这份清单丢掉、金额列直接写 ¥0.00 —— 读起来就是「免费」。
+ */
+const detailUnpricedRemote = (unpricedModels: string[] = ['openai/ghost-model']) => noopRemote({
+  byWorkspace: async () => ({ ok: true, value: {
+    workspaces: [
+      { cwd: 'D:\\codes\\demo', calls: 2, costCny: 0, sessions: [
+        { sessionId: 's1', day: '2026-09-16', calls: 2, costCny: 0, lastTime: 1, isSubagent: false },
+      ] },
+    ],
+    hasBackfilled: false, unpricedModels,
+  } }),
+  byModel: async () => ({ ok: true, value: { models: unpricedModels.length === 0 ? [] : [
+    { key: 'openai/ghost-model', provider: 'openai', model: 'ghost-model', rawModels: ['ghost-model'],
+      input: 10, cacheRead: 0, cacheWrite: 0, output: 5, reasoning: 0, costCny: 0, priced: false, mixedRate: false, calls: 2 },
+  ], hasBackfilled: false, unpricedModels } }),
+} as never)
+
 describe('TabHeatmap', () => {
   it('渲染 5 档热力格，活跃天与总天数是文字', async () => {
     const { container } = render(<TabHeatmap billing={heatRemote()} store={createBillingStore({ open: true })} />)
@@ -353,6 +463,19 @@ describe('TabHeatmap', () => {
     expect(titles.join('|')).toContain('—')
     expect(titles.join('|')).not.toContain('¥0.00')
   })
+  it('取数 reject 时停在读取占位并留日志（不是 unhandled rejection）', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      render(<TabHeatmap billing={noopRemote({ daily: async () => { throw new Error('wire down') } } as never)}
+        store={createBillingStore({ open: true })} />)
+      expect(await screen.findByText('正在读取用量…')).toBeTruthy()
+      expect(screen.queryByText('¥0.00')).toBeNull()
+      await waitFor(() => {
+        expect(warn).toHaveBeenCalledWith('[usage-billing] 热力图通道异常', expect.anything())
+      })
+    } finally { warn.mockRestore() }
+  })
+
   it('远程面缺席时 effect 早退（不抛 TypeError）', async () => {
     render(<TabHeatmap billing={undefined} store={createBillingStore({ open: true })} />)
     expect(await screen.findByText('正在读取用量…')).toBeTruthy()
@@ -387,6 +510,38 @@ describe('TabDetail', () => {
   it('空账本给空态而不是两张空表', async () => {
     render(<TabDetail billing={noopRemote()} store={createBillingStore({ open: true })} />)
     expect(await screen.findByText(/还没有用量记录/)).toBeTruthy()
+  })
+
+  it('整份账一行都没定价：工作区 / 会话金额列写「未收录」而不是 ¥0.00', async () => {
+    const { container } = render(<TabDetail billing={detailUnpricedRemote()} store={createBillingStore({ open: true })} />)
+    const workspace = await screen.findByText(/D:\\codes\\demo/)
+    // 工作区行已经是「未收录」而不是 ¥0.00；展开到会话行同样。
+    expect(workspace.textContent).toContain('未收录')
+    workspace.click()
+    expect(await screen.findByText(/s1/)).toBeTruthy()
+    expect(container.textContent).not.toContain('¥0.00')
+    expect(screen.getAllByText('未收录').length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('真实零（响应没带未收录清单）：工作区金额列保留 ¥0.00 —— 同一处占位不能吞掉合法结果', async () => {
+    render(<TabDetail billing={detailUnpricedRemote([])} store={createBillingStore({ open: true })} />)
+    const workspace = await screen.findByText(/D:\\codes\\demo/)
+    expect(workspace.textContent).toContain('¥0.00')
+    expect(screen.queryByText('未收录')).toBeNull()
+  })
+
+  it('取数 reject 时停在读取占位并留日志（不是 unhandled rejection）', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      render(<TabDetail
+        billing={noopRemote({ byWorkspace: async () => { throw new Error('wire down') } } as never)}
+        store={createBillingStore({ open: true })} />)
+      expect(await screen.findByText('正在读取用量…')).toBeTruthy()
+      expect(screen.queryByText('¥0.00')).toBeNull()
+      await waitFor(() => {
+        expect(warn).toHaveBeenCalledWith('[usage-billing] 明细通道异常', expect.anything())
+      })
+    } finally { warn.mockRestore() }
   })
 
   it('远程面缺席时 effect 早退（不抛 TypeError）', async () => {
@@ -515,6 +670,39 @@ describe('TabPricing', () => {
     expect(h.setCalls).toHaveLength(0)
   })
 
+  it('删除时宿主写入失败（RemoteResult ok:false）报宿主错误，不误报成「没有生效中的自定义价」', async () => {
+    const key = 'deepseek/deepseek-v4-flash'
+    const billing = noopRemote({
+      pricing: async () => ({ ok: true, value: {
+        entries: { [key]: { input: 9, cacheRead: 0.1, cacheWrite: 0.5, output: 2, currency: 'CNY' } },
+        usdToCny: 7.1, usdToCnySource: 'default', snapshotId: 'snap-install', customKeys: [key],
+      } }),
+      removeCustomPrice: async () => ({ ok: false, error: { message: 'host is read-only' } }) as never,
+    } as never)
+    render(<TabPricing billing={billing} store={createBillingStore({ open: true })} />)
+    await screen.findByText('自定义')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: `删除 ${key}` })) })
+    expect(screen.getByText('删除失败：host is read-only')).toBeTruthy()
+    // 通道/宿主错误绝不能被说成「本来就没有自定义价」。
+    expect(screen.queryByText(/没有生效中的自定义价/)).toBeNull()
+  })
+
+  it('删除时业务返回 ok:false（这个 key 本来就没有自定义价）才报「没有生效中的自定义价」', async () => {
+    const key = 'deepseek/deepseek-v4-flash'
+    const billing = noopRemote({
+      pricing: async () => ({ ok: true, value: {
+        entries: { [key]: { input: 9, cacheRead: 0.1, cacheWrite: 0.5, output: 2, currency: 'CNY' } },
+        usdToCny: 7.1, usdToCnySource: 'default', snapshotId: 'snap-install', customKeys: [key],
+      } }),
+      removeCustomPrice: async () => ({ ok: true, value: { ok: false } }),
+    } as never)
+    render(<TabPricing billing={billing} store={createBillingStore({ open: true })} />)
+    await screen.findByText('自定义')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: `删除 ${key}` })) })
+    expect(screen.getByText(`删除失败：${key} 没有生效中的自定义价`)).toBeTruthy()
+    expect(screen.queryByText(/删除失败：host/)).toBeNull()
+  })
+
   it('远程面缺席时 effect 早退（不抛 TypeError）', async () => {
     render(<TabPricing billing={undefined} store={createBillingStore({ open: true })} />)
     expect(await screen.findByText('正在读取价表…')).toBeTruthy()
@@ -564,6 +752,22 @@ describe('SettingsSection', () => {
     render(<SettingsSection billing={pricingRemote()} scope={h.scope} store={createBillingStore({ open: true })} />)
     expect(screen.getByText(/预算金额：—/)).toBeTruthy()
     expect(screen.queryByText(/预算金额：0 元/)).toBeNull()
+  })
+
+  it('状态 / 价表取数 reject 时停在占位并留日志（不伪造行数或快照 id）', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const h = fakeScope(baseConfig())
+      const billing = noopRemote({
+        status: async () => { throw new Error('wire down') },
+        pricing: async () => { throw new Error('wire down') },
+      } as never)
+      render(<SettingsSection billing={billing} scope={h.scope} store={createBillingStore({ open: true })} />)
+      expect(await screen.findByText(/账本 0 行/)).toBeTruthy()
+      await waitFor(() => {
+        expect(warn).toHaveBeenCalledWith('[usage-billing] 设置页取数通道异常', expect.anything())
+      })
+    } finally { warn.mockRestore() }
   })
 
   it('远程面缺席时 effect 早退（不抛 TypeError）', async () => {

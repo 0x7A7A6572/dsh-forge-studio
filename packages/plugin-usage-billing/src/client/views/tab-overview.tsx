@@ -4,7 +4,9 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { UsageBillingRemote } from '../core/remote.ts'
 import type { BillingStore } from '../core/store.ts'
 import { evaluateBudget } from '../../budget.ts'
-import { NON_FINITE_PLACEHOLDER, formatCny, formatInt, formatPct, isUnpricedTotal } from '../core/format.ts'
+import {
+  NON_FINITE_PLACEHOLDER, backfilledDisclosure, formatCny, formatInt, formatPct, isUnpricedTotal,
+} from '../core/format.ts'
 import type { Overview } from '../../view.ts'
 
 export function TabOverview(props: {
@@ -21,7 +23,13 @@ export function TabOverview(props: {
     if (billing === undefined) return
     let alive = true
     void billing.overview(state.range, state.includeSubagents).then((r) => {
-      if (alive && r.ok) setData({ overview: r.value.overview, budget: r.value.budget })
+      if (!alive) return
+      if (r.ok) setData({ overview: r.value.overview, budget: r.value.budget })
+      // host 报错（!ok）不是「花了 0 元」：停在「正在读取用量…」并留下日志。
+      else console.warn('[usage-billing] 概览取数失败', r.error)
+    }).catch((error: unknown) => {
+      // wire 层 reject 同理（与入口卡同一处理）：保持占位，绝不伪造一个零金额。
+      console.warn('[usage-billing] 概览通道异常', error)
     })
     return () => { alive = false }
   }, [billing, state.range, state.includeSubagents])
@@ -29,8 +37,9 @@ export function TabOverview(props: {
   if (data === null) return <div data-dsh-ub-empty>正在读取用量…</div>
   const { overview, budget } = data
   // 唯一判据（client/core/format.ts）：整份账一行都没定价时，本分区的金额级数字
-  // （Hero 与日均）都显示占位，绝不把「未知」读成「没花钱」。今日/本周是总账的**子集**，
-  // 未收录计数只覆盖整个范围，拿它去否定某个子集是不成立的，所以那两处保持 formatCny。
+  // （Hero、今日/本周、日均）都显示占位，绝不把「未知」读成「没花钱」。判据只在
+  // `totalCny === 0 且存在未收录模型` 时成立 —— 此时今日/本周这些**子集**里的 0 同样是
+  // 未知（有记录但一条都没算钱），不是真实零；真实零（无未收录模型）仍旧走 formatCny。
   const unpriced = isUnpricedTotal(overview.totalCny, overview.unpricedModels)
   const money = (n: number): string => unpriced ? NON_FINITE_PLACEHOLDER : formatCny(n)
   const spend = evaluateBudget({
@@ -42,8 +51,9 @@ export function TabOverview(props: {
     <div data-dsh-usage-billing>
       <div data-dsh-ub-hero>{money(overview.totalCny)}</div>
       <div data-dsh-ub-sub>
-        当前范围合计 · 今日 {formatCny(overview.todayCny)} · 本周 {formatCny(overview.weekCny)}
-        {overview.hasBackfilled ? <span data-dsh-ub-estimate> · 含安装前估算</span> : null}
+        当前范围合计 · 今日 {money(overview.todayCny)} · 本周 {money(overview.weekCny)}
+        {/* 标记与金额同源（同一次 overview 响应）；缺席按 present 处理，与另外三个分区同一保守口径。 */}
+        {backfilledDisclosure(overview.hasBackfilled) ? <span data-dsh-ub-estimate> · 含安装前估算</span> : null}
       </div>
 
       {budget.enabled ? (

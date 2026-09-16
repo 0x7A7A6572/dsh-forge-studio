@@ -112,7 +112,13 @@ export function TabPricing(props: {
     setBusy(true)
     try {
       const r = await billing.removeCustomPrice(key)
-      setMsg(r.ok ? `已删除自定义价 ${key}（目录价已恢复）` : `删除失败：${key} 没有生效中的自定义价`)
+      // 两个失败分支不是一回事：`!r.ok` 是宿主写入/通道出错（例如只读 scope），
+      // `r.value.ok === false` 才是「这个 key 本来就没有生效中的自定义价」。
+      setMsg(!r.ok
+        ? `删除失败：${r.error.message}`
+        : r.value.ok
+          ? `已删除自定义价 ${key}（目录价已恢复）`
+          : `删除失败：${key} 没有生效中的自定义价`)
     } catch {
       setMsg('删除失败：远程通道不可用')
     } finally {
