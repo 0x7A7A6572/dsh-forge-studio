@@ -95,6 +95,9 @@ export function createUsageBillingSettingsAccess(): BindableUsageBillingSettings
       return () => { watchers.delete(callback) }
     },
     bind(scope) {
+      // 新的 bind 接管的是一个「活的」scope：必须复位 dispose 留下的闩。否则 publish 全部短路，
+      // 而 watch 会把 dispose 之前的陈旧 current 当成新 provider 的值重放（ready() 却仍为 true）。
+      disposed = false
       publish(scope.get())
       bound = scope.watch((next) => publish(next))
     },

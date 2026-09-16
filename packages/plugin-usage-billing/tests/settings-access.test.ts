@@ -27,9 +27,30 @@ describe('设置访问句柄', () => {
     push!({ ...USAGE_BILLING_CONFIG_BASE, budget: { enabled: true, monthlyCny: 7 } })
     off()
     push!({ ...USAGE_BILLING_CONFIG_BASE, budget: { enabled: true, monthlyCny: 9 } })
-    // 逐字用例断言 [7]，与上一用例「绑定后注册的 watcher 立即拿到一次」互斥（注册时已收到 base 的 100），
-    // 二者不可同时成立；此处保留「推送 7 已收到、退订后 9 未收到」的验证意图，详见 task-11-report.md。
     expect(seen).toEqual([100, 7])
+  })
+
+  it('dispose 后再次 bind 会复位：新 scope 的值与推送都生效', () => {
+    const a = createUsageBillingSettingsAccess()
+    a.bind({
+      get: () => ({ ...USAGE_BILLING_CONFIG_BASE, budget: { enabled: true, monthlyCny: 11 } }),
+      watch: () => () => {},
+    })
+    a.dispose()
+
+    let push: ((c: UsageBillingConfig) => void) | undefined
+    a.bind({
+      get: () => ({ ...USAGE_BILLING_CONFIG_BASE, budget: { enabled: true, monthlyCny: 22 } }),
+      watch: (cb) => { push = cb; return () => {} },
+    })
+    const seen: number[] = []
+    a.watch((c) => seen.push(c.budget.monthlyCny))
+
+    expect(a.ready()).toBe(true)
+    expect(a.get().budget.monthlyCny).toBe(22)
+
+    push!({ ...USAGE_BILLING_CONFIG_BASE, budget: { enabled: true, monthlyCny: 33 } })
+    expect(seen).toEqual([22, 33])
   })
 
   it('dispose 后停止接收且 ready 为 false', () => {

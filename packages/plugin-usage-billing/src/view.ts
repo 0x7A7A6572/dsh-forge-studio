@@ -16,7 +16,15 @@ export interface ModelRow {
   model: string
   rawModels: string[]
   input: number; cacheRead: number; cacheWrite: number; output: number; reasoning: number
-  costCny: number; priced: boolean; mixedRate: boolean; calls: number
+  costCny: number
+  /** 合并行上 `priced: false` 表示**至少一行**未计价；该行仍可能带着已计价行累加出的非零 `costCny`。 */
+  priced: boolean
+  /**
+   * 比较的是**混合后的每 token 成本比** `costCny / (input + cacheRead + cacheWrite + output)`，不是单价：
+   * 价格表不变而 token 结构不同也会置位；两种不同价格若比值四舍五入后相同则不置位。
+   */
+  mixedRate: boolean
+  calls: number
 }
 
 export interface DailyPoint {
@@ -38,7 +46,13 @@ export interface Overview {
    * 分母含未计价行（它们同样携带真实观测 token，剔除会让该比值与旁边的 token 合计口径打架）；
    * 分母**不含 cacheWrite**（缓存写入不是「读取命中」的分母）。空分母时为 0。
    */
-  cacheHitRate: number; calls: number; unpricedModels: string[]
+  cacheHitRate: number
+  calls: number
+  /**
+   * 未计价模型：刻意使用**账本原始** `provider/model` id —— `buildOverview` 拿不到别名表，
+   * 且原始 id 正是用户需要去补价格的那个名字。
+   */
+  unpricedModels: string[]
   unpricedRows: number; hasBackfilled: boolean
 }
 
@@ -60,7 +74,8 @@ export function mergeByModel(rows: readonly LedgerRow[], aliases: readonly Model
 
   for (const r of rows) {
     const provider = r.provider.trim().toLowerCase()
-    const canonical = canon.get(aliasId(provider, r.model)) ?? r.model
+    // 空 canonical 不是有效的合并目标：否则所有带该别名的模型会被并成一行。
+    const canonical = canon.get(aliasId(provider, r.model)) || r.model
     const key = priceKey(provider, canonical)
     let slot = byKey.get(key)
     if (slot === undefined) {
@@ -120,10 +135,11 @@ export function buildBySession(rows: readonly LedgerRow[]): SessionRow[] {
       s = {
         sessionId: r.sessionId, day: r.day, calls: 0, costCny: 0,
         lastTime: r.time, isSubagent: r.isSubagent,
-        ...(r.cwd === undefined ? {} : { cwd: r.cwd }),
       }
       byId.set(r.sessionId, s)
     }
+    // 取首个「已定义」的 cwd：首行缺 cwd 时后面的行可以补上。
+    if (s.cwd === undefined && r.cwd !== undefined) s.cwd = r.cwd
     s.calls += 1; s.costCny += r.costCny
     if (r.time > s.lastTime) s.lastTime = r.time
     if (r.day < s.day) s.day = r.day

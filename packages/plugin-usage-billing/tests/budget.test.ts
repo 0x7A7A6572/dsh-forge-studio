@@ -44,4 +44,9 @@ describe('evaluateBudget', () => {
     expect(call(100).tier).toBe(3)
     expect(call(49.99).tier).toBe(0)
   })
+
+  it('脏值不静默吞掉本月提醒（非数字按 0 处理）', () => {
+    expect(call(60, 100, { '2026-09': 'oops' })).toMatchObject({ tier: 1, shouldNotify: 1 })
+    expect(call(85, 100, { '2026-09': 'NaN' })).toMatchObject({ tier: 2, shouldNotify: 2 })
+  })
 })

@@ -35,6 +35,18 @@ describe('mergeByModel', () => {
     expect(out.map((r) => r.key).sort()).toEqual(['deepseek/deepseek-v4-flash', 'relay/deepseek-v4-flash'])
   })
 
+  it('别名为空 canonical 时不并组（回退原始模型 id）', () => {
+    const aliases: ModelAlias[] = ['m-a', 'm-b'].map((raw) => ({
+      id: aliasId('deepseek', raw), provider: 'deepseek', rawModel: raw, canonicalModel: '',
+    }))
+    const out = mergeByModel([
+      row({ id: 'a', model: 'm-a' }),
+      row({ id: 'b', model: 'm-b' }),
+    ], aliases)
+    expect(out).toHaveLength(2)
+    expect(out.map((r) => r.key).sort()).toEqual(['deepseek/m-a', 'deepseek/m-b'])
+  })
+
   it('不同单价的合并行标 mixedRate', () => {
     const aliases: ModelAlias[] = [{
       id: aliasId('deepseek', 'v4f-x'), provider: 'deepseek', rawModel: 'v4f-x', canonicalModel: 'deepseek-v4-flash',
@@ -44,6 +56,19 @@ describe('mergeByModel', () => {
       row({ id: 'b', model: 'v4f-x', input: 1_000_000, costCny: 3 }),
     ], aliases)
     expect(out[0]!.mixedRate).toBe(true)
+  })
+
+  it('同一单价的合并行 mixedRate=false', () => {
+    const aliases: ModelAlias[] = [{
+      id: aliasId('deepseek', 'v4f-y'), provider: 'deepseek', rawModel: 'v4f-y', canonicalModel: 'deepseek-v4-flash',
+    }]
+    const out = mergeByModel([
+      row({ id: 'a', input: 1_000_000, costCny: 1 }),
+      row({ id: 'b', model: 'v4f-y', input: 2_000_000, costCny: 2 }),
+    ], aliases)
+    expect(out).toHaveLength(1)
+    expect(out[0]!.costCny).toBe(3)
+    expect(out[0]!.mixedRate).toBe(false)
   })
 
   it('全未计价的行 priced=false 且不参与 mixedRate 判定', () => {
@@ -77,6 +102,16 @@ describe('buildByWorkspace', () => {
     expect(unknown.costCny).toBe(5)
     expect(unknown.sessions[0]!.sessionId).toBe('s2')
   })
+
+  it('会话取首个已定义的 cwd，后续行可以补上', () => {
+    const out = buildByWorkspace([
+      row({ id: 'a', sessionId: 's1', cwd: undefined, costCny: 1 }),
+      row({ id: 'b', sessionId: 's1', cwd: '/later', costCny: 2 }),
+    ])
+    expect(out).toHaveLength(1)
+    expect(out[0]!.cwd).toBe('/later')
+    expect(out[0]!.sessions[0]!.cwd).toBe('/later')
+  })
 })
 
 describe('filterRows', () => {
@@ -109,5 +144,27 @@ describe('buildOverview', () => {
   it('空行集不产生 NaN', () => {
     const o = buildOverview([], { todayKey: '2026-09-16', weekDays: [] })
     expect(o).toMatchObject({ totalCny: 0, todayCny: 0, weekCny: 0, avgDailyCny: 0, cacheHitRate: 0 })
+  })
+})
+
+describe('聚合不改写输入', () => {
+  it('view 聚合不修改传入的 rows 数组与行对象', () => {
+    const rows = [
+      row({ id: 'a', model: 'v4f-z', costCny: 1, cacheRead: 1_000 }),
+      row({ id: 'b', model: 'v4f-z', costCny: 3, cacheRead: 2_000, priced: false, isSubagent: true }),
+    ]
+    const before = rows.map((r) => ({ ...r }))
+    const aliases: ModelAlias[] = [{
+      id: aliasId('deepseek', 'v4f-z'), provider: 'deepseek', rawModel: 'v4f-z', canonicalModel: '',
+    }]
+
+    mergeByModel(rows, aliases)
+    filterRows(rows, { includeSubagents: false })
+    buildDaily(rows, ['2026-09-16'])
+    buildByWorkspace(rows)
+    buildOverview(rows, { todayKey: '2026-09-16', weekDays: ['2026-09-16'] })
+
+    expect(rows).toHaveLength(before.length)
+    expect(rows).toEqual(before)
   })
 })

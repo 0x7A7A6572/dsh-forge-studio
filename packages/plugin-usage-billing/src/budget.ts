@@ -21,9 +21,12 @@ export function evaluateBudget(input: {
     return { pct: 0, tier: 0, shouldNotify: null, level: 'ok' }
   }
   const pct = spentCny / monthlyCny
-  const reached: 0 | 1 | 2 | 3 = pct >= 1 ? 3 : pct >= 0.8 ? 2 : pct >= 0.5 ? 1 : 0
+  // 档位从 BUDGET_TIERS 推导：边界用 >=（恰好 50/80/100 命中 1/2/3，49.99 为 0）。
+  const reached = BUDGET_TIERS.filter((tier) => pct >= tier).length as 0 | 1 | 2 | 3
   const level = reached === 3 ? 'over' : reached === 2 ? 'warn' : 'ok'
-  const last = Number(notified[monthKey] ?? '0')
+  // 脏值容错：非数字会解析成 NaN，而 `reached > NaN` 恒为 false，一条坏记录就会静默吞掉整月提醒。
+  const parsed = Number(notified[monthKey] ?? '0')
+  const last = Number.isFinite(parsed) ? parsed : 0
   const shouldNotify = reached > last && reached > 0 ? (reached as 1 | 2 | 3) : null
   return { pct, tier: reached, shouldNotify, level }
 }
