@@ -56,7 +56,7 @@ describe('planSnapshot', () => {
   it('基线是「生效状态」而非上一条记录：delta 账本下的删除仍被看见', () => {
     const b = base(100, { 'a/1': e(1), 'b/1': e(1), 'c/1': e(1) })
     const d: PriceSnapshot = {
-      id: 'snap-200#delta', at: 200, kind: 'delta', reason: 'custom-price',
+      id: 'snap-200-delta', at: 200, kind: 'delta', reason: 'custom-price',
       usdToCny: 7, usdToCnySource: 'default', entries: { 'a/1': e(5) },
     }
     // delta 只含 a/1 的差量；基线若取上一条记录，b/1、c/1 会被当成「不存在」而漏掉。
@@ -67,7 +67,7 @@ describe('planSnapshot', () => {
     delete next['c/1']
     const s = planSnapshot(resolved, {
       entries: next, usdToCny: resolved.usdToCny, usdToCnySource: resolved.usdToCnySource,
-    }, { id: 'snap-300#delta', at: 300, reason: 'catalog-refresh' })
+    }, { id: 'snap-300-delta', at: 300, reason: 'catalog-refresh' })
     expect(s).toMatchObject({ kind: 'delta', removed: ['c/1'] })
   })
 })
@@ -140,15 +140,15 @@ describe('resolveSnapshotAt', () => {
 describe('resolveLayerAt', () => {
   const b = base(100, { 'a/1': e(1), 'a/2': e(2) })
   const custom: PriceSnapshot = {
-    id: 'snap-200#delta', at: 200, kind: 'delta', reason: 'custom-price',
+    id: 'snap-200-delta', at: 200, kind: 'delta', reason: 'custom-price',
     usdToCny: 7, usdToCnySource: 'default', entries: { 'a/1': e(99) },
   }
   const manual: PriceSnapshot = {
-    id: 'snap-250#delta', at: 250, kind: 'delta', reason: 'manual-refresh',
+    id: 'snap-250-delta', at: 250, kind: 'delta', reason: 'manual-refresh',
     usdToCny: 7, usdToCnySource: 'default', entries: { 'a/3': e(3) },
   }
   const refresh: PriceSnapshot = {
-    id: 'snap-300#delta', at: 300, kind: 'delta', reason: 'catalog-refresh',
+    id: 'snap-300-delta', at: 300, kind: 'delta', reason: 'catalog-refresh',
     usdToCny: 7, usdToCnySource: 'default', entries: { 'a/4': e(4) }, removed: ['a/2'],
   }
   const ledger = [b, custom, manual, refresh]
@@ -178,19 +178,19 @@ describe('resolveLayerAt', () => {
 describe('activeOverridesAt', () => {
   const b = base(100, { 'a/1': e(1), 'a/2': e(2) })
   const set: PriceSnapshot = {
-    id: 'snap-200#delta', at: 200, kind: 'delta', reason: 'custom-price',
+    id: 'snap-200-delta', at: 200, kind: 'delta', reason: 'custom-price',
     usdToCny: 7, usdToCnySource: 'default', entries: { 'a/1': e(99) },
   }
   /** 取消自定义价：写回的正是「取消当刻的目录价」。 */
   const cancel: PriceSnapshot = {
-    id: 'snap-300#delta', at: 300, kind: 'delta', reason: 'custom-price',
+    id: 'snap-300-delta', at: 300, kind: 'delta', reason: 'custom-price',
     usdToCny: 7, usdToCnySource: 'default', entries: { 'a/1': e(1) },
   }
 
   it('与目录价不同的自定义价仍然生效', () => {
     expect(activeOverridesAt(250, [b, set])).toEqual({ 'a/1': e(99) })
     // 目录层里根本没有该 key（目录删掉的模型）时，照样算自定义价。
-    const orphan: PriceSnapshot = { ...set, id: 'snap-201#delta', at: 201, entries: { 'zz/9': e(5) } }
+    const orphan: PriceSnapshot = { ...set, id: 'snap-201-delta', at: 201, entries: { 'zz/9': e(5) } }
     expect(activeOverridesAt(250, [b, orphan])).toEqual({ 'zz/9': e(5) })
   })
 
@@ -202,7 +202,7 @@ describe('activeOverridesAt', () => {
 
   it('目录在取消之后再次调价，也不会让已取消的自定义价复活', () => {
     const catLater: PriceSnapshot = {
-      id: 'snap-400#delta', at: 400, kind: 'delta', reason: 'catalog-refresh',
+      id: 'snap-400-delta', at: 400, kind: 'delta', reason: 'catalog-refresh',
       usdToCny: 7, usdToCnySource: 'default', entries: { 'a/1': e(7) },
     }
     expect(activeOverridesAt(500, [b, set, cancel, catLater])).toEqual({})
@@ -212,7 +212,7 @@ describe('activeOverridesAt', () => {
 
   it('removed 记录同样生效，且返回值不与快照共享条目对象', () => {
     const dropped: PriceSnapshot = {
-      id: 'snap-300#delta', at: 300, kind: 'delta', reason: 'custom-price',
+      id: 'snap-300-delta', at: 300, kind: 'delta', reason: 'custom-price',
       usdToCny: 7, usdToCnySource: 'default', entries: {}, removed: ['a/1'],
     }
     expect(activeOverridesAt(400, [b, set, dropped])).toEqual({})

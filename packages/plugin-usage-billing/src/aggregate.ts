@@ -3,13 +3,16 @@
  * 重折 → readSession 取正文 → foldEvents → 幂等 upsert 账本 → 写水位。
  *
  * 容错（spec §8）：单会话 readSession 抛错只跳过它、记诊断、**不推进水位**（下次重试），
- * 其余会话照常。全量结果有 TTL 缓存以合并密集轮询。
+ * 其余会话照常。诊断按 (sessionId, kind) 稳定键 upsert 并受上限约束，重试风暴不会涨存储。
+ * 全量结果有 TTL 缓存以合并密集轮询。
  */
 
 import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
+import { recordDiagnostic, trimDiagnostics } from './diag.ts'
 import { foldEvents } from './fold.ts'
 import { resolveSnapshotAt } from './pricing/snapshot.ts'
+import { foldKey } from './storage-key.ts'
 import type { Diagnostic, FoldState, LedgerRow, ModelAlias, PriceSnapshot } from './types.ts'
 
 export interface SessionSource {
@@ -53,7 +56,8 @@ export interface AggregateStats {
  *
  * 选项语义（**别改成三态**）：`force` 为真只绕过这个 TTL 缓存，**水位始终生效** ——
  * 手动刷新仍然便宜，因为没新事件的会话连 `readSession` 都不会调。
- * 不重复计费由账本行 id `${sessionId}#${seq}` 的幂等 upsert 保证，不靠水位。
+ * 不重复计费由账本行 id `ledgerKey(sessionId, seq)`（`<sessionId>__<seq>`）的幂等 upsert
+ * 保证，不靠水位。
  */
 let lastRun: { at: number; stats: AggregateStats } | undefined
 
@@ -81,7 +85,7 @@ export async function aggregateOnce(
     try {
       const meta = await deps.source.listEvents(header.id)
       const maxSeq = meta.reduce((m, e) => Math.max(m, e.seq), -1)
-      const wm = deps.folds.get(header.id)
+      const wm = deps.folds.get(foldKey(header.id))
       if (wm !== undefined && wm.foldedThroughSeq === maxSeq && wm.headerCreatedAt === header.createdAt) {
         skipped += 1
         continue
@@ -94,7 +98,7 @@ export async function aggregateOnce(
         resolvePrice: (at) => resolveSnapshotAt(at, snapshots),
       })
       for (const row of result.rows) await deps.ledger.put(row.id, row)
-      await deps.folds.put(header.id, {
+      await deps.folds.put(foldKey(header.id), {
         sessionId: header.id,
         foldedThroughSeq: result.lastSeq,
         lastTime: result.lastTime,
@@ -108,16 +112,23 @@ export async function aggregateOnce(
       failures += 1
       // 诊断写入本身还可能失败（storage 抖了），而它是唯一的副作用：让它自己兜住，
       // 否则一个坏会话会把其余会话一起带走。header 也可能缺失，先本地取值再拼内容。
+      // 键稳定于 (sessionId, kind)：同一个坏会话重试多少次都只 upsert 同一条，
+      // 不推进水位意味着它下轮还会被重试 —— 但重试只累加计数，不会再涨存储。
       const sessionId = header?.id ?? '<unknown>'
       try {
-        const id = `diag-${sessionId}-${now()}`
-        await deps.diag.put(id, {
-          id, at: now(), kind: 'session-read',
+        await recordDiagnostic(deps.diag, {
+          sessionId, kind: 'session-read', at: now(),
           detail: `${sessionId}: ${error instanceof Error ? error.message : String(error)}`,
         })
       } catch { /* 诊断写不进去也不能中断后续会话 */ }
     }
   }
+
+  // 上限收口放在整轮末尾（而不是每条失败一次）：一轮最多多出「本轮坏会话数」条，
+  // 结束后立刻回到上限之内 —— 重试风暴无法让 diag 表无界增长。清理失败不拖垮聚合。
+  try {
+    await trimDiagnostics(deps.diag)
+  } catch { /* 诊断清理失败只是留下多余记录，不该让本轮聚合失败 */ }
 
   const stats: AggregateStats = {
     sessions: sessions.length, folded, skipped, rows, failures,

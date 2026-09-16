@@ -13,12 +13,14 @@ import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { usageBillingDomain } from './domain.ts'
 import { aggregateOnce, resetAggregateCache } from './aggregate.ts'
 import type { SessionSource } from './aggregate.ts'
+import { latestDiagnostic } from './diag.ts'
 import { aliasId, priceKeyCandidates } from './model-key.ts'
 import { DEFAULT_USD_TO_CNY, priceKey } from './pricing/catalog.ts'
 import { priceUsage } from './pricing/cost.ts'
 import { CATALOG_REASONS, activeOverridesAt, diffEntries, planSnapshot, resolveLayerAt, resolveSnapshotAt } from './pricing/snapshot.ts'
 import { USAGE_BILLING_REMOTE_METHODS, USAGE_BILLING_METHOD_NAMES } from './remote-methods.ts'
 import type { UsageBillingSettingsAccess } from './settings.ts'
+import { SNAPSHOT_BASE_ID, SNAPSHOT_INSTALL_ID, uniqueSnapshotDeltaKey } from './storage-key.ts'
 import { dayKey, daysInRange, rangeToSpec } from './time.ts'
 import type { RangeKind } from './time.ts'
 import {
@@ -60,8 +62,9 @@ export class UsageBillingService extends TypertRemoteService {
   /**
    * 价格写入的串行队列：账本快照是**唯一**持久化价目状态，而每次写入都是
    * 「读当前表 → 算新表 → 追加快照」的读-改-写。同一毫秒内的两次调用若并行，
-   * 会各自读到同一份旧表、往同一个 `${prevId}#delta` 键上写，后一次 put 悄悄
-   * 丢掉前一次的改价。所有触碰价表的写入都必须过这里。
+   * 会各自读到同一份旧表、按照同一个 `(reason, at)` 算出同一个 delta 键，后一次 put
+   * 悄悄丢掉前一次的改价。所有触碰价表的写入都必须过这里（键本身由 `storage-key.ts` 生成，
+   * 序号只兜住极端撞键，不代替串行化）。
    */
   private chain: Promise<unknown> = Promise.resolve()
 
@@ -95,7 +98,7 @@ export class UsageBillingService extends TypertRemoteService {
       // 只看 install 层：先写过自定义价（或任何非 install 快照）不该让安装基准永远缺席。
       if ([...this.snapshots.entries()].some(([, s]) => s.reason === 'install')) return
       const snap = planSnapshot(undefined, { entries, usdToCny, usdToCnySource },
-        { id: 'snap-install', at: this.config.installAt, reason: 'install' })
+        { id: SNAPSHOT_INSTALL_ID, at: this.config.installAt, reason: 'install' })
       if (snap === null) return
       await this.snapshots.put(snap.id, snap)
       // 写入的价表就是聚合计价用的价表：与 appendDelta / repricing 同规则，必须让
@@ -127,12 +130,13 @@ export class UsageBillingService extends TypertRemoteService {
   /* ---------------- Remote 端点 ---------------- */
 
   async status(): Promise<{ installAt: number; rows: number; sessions: number; snapshots: number; lastDiag?: Diagnostic }> {
-    const diags = [...this.diag.entries()].map(([, d]) => d).sort((a, b) => b.at - a.at)
     const base = {
       installAt: this.config.installAt, rows: this.ledger.size,
       sessions: [...this.folds.entries()].length, snapshots: this.snapshots.size,
     }
-    return diags[0] === undefined ? base : { ...base, lastDiag: diags[0] }
+    // 单遍取最新一条：旧实现每次调用都把整张 diag 表排序（历史上曾积累 3014 条）。
+    const latest = latestDiagnostic(this.diag)
+    return latest === undefined ? base : { ...base, lastDiag: latest }
   }
 
   async overview(rangeKind: RangeKind, includeSubagents: boolean) {
@@ -227,14 +231,18 @@ export class UsageBillingService extends TypertRemoteService {
   ): Promise<void> {
     const all = [...this.snapshots.entries()].map(([, s]) => s)
     // 基线必须是「此刻之前生效的完整状态」；上一条记录可能是 delta，只有差量。
-    const prev = all.length === 0 ? undefined : resolveSnapshotAt(this.now(), all)
+    const at = this.now()
+    const prev = all.length === 0 ? undefined : resolveSnapshotAt(at, all)
     // 首条记录就是 base：空表合成出的 0 汇率不是真汇率，写进 base 会让所有 USD 条目永远
-    // 算不出钱，必须换成内置兜底汇率并如实标注来源。id 也要诚实——base 不该叫 `…#delta`。
+    // 算不出钱，必须换成内置兜底汇率并如实标注来源。id 也要诚实——base 不该叫 delta。
     const rate = prev === undefined && !(usdToCny > 0)
       ? { usdToCny: DEFAULT_USD_TO_CNY, usdToCnySource: 'default' as const }
       : { usdToCny, usdToCnySource }
-    const snap = planSnapshot(prev, { entries, ...rate },
-      { id: prev === undefined ? 'snap-base' : `${prev.snapshotId}#delta`, at: this.now(), reason })
+    // 键只由 storage-key.ts 产出（旧的 `${prevId}#delta` 不是路径安全键，真实后端必拒）。
+    const id = prev === undefined
+      ? SNAPSHOT_BASE_ID
+      : uniqueSnapshotDeltaKey(new Set(this.snapshots.keys()), reason, at)
+    const snap = planSnapshot(prev, { entries, ...rate }, { id, at, reason })
     if (snap !== null) await this.snapshots.put(snap.id, snap)
     resetAggregateCache()
   }

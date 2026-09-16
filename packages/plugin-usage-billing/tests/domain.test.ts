@@ -5,7 +5,7 @@ import {
 } from '../src/domain.ts'
 
 const row = {
-  id: 's1#7', sessionId: 's1', seq: 7, time: 1758000000000,
+  id: 's1__7', sessionId: 's1', seq: 7, time: 1758000000000,
   provider: 'deepseek', model: 'deepseek-v4-flash', day: '2026-09-16',
   isSubagent: false, input: 100, cacheRead: 20, cacheWrite: 0, output: 30,
   reasoning: 5, costCny: 0.001, currency: 'CNY', priced: true,
@@ -20,7 +20,7 @@ describe('usage_billing domain', () => {
   })
 
   it('账本行合法记录往返通过', () => {
-    expect(ledgerRowSchema.parse(row)).toMatchObject({ id: 's1#7', costCny: 0.001 })
+    expect(ledgerRowSchema.parse(row)).toMatchObject({ id: 's1__7', costCny: 0.001 })
   })
 
   it('账本行缺必填字段被拒', () => {
@@ -69,11 +69,22 @@ describe('usage_billing domain', () => {
   })
 
   it('diag：合法往返 + kind 只接受三种取值', () => {
-    const diag = { id: 'd1', at: 1, kind: 'pricing-fetch', detail: 'network down' }
+    const diag = { id: 'd1', at: 1, lastAt: 3, count: 2, kind: 'pricing-fetch', detail: 'network down' }
     expect(diagnosticSchema.parse(diag).kind).toBe('pricing-fetch')
+    expect(diagnosticSchema.parse(diag)).toMatchObject({ lastAt: 3, count: 2 })
     expect(() => diagnosticSchema.parse({ ...diag, kind: 'other' })).toThrow()
     const { detail, ...rest } = diag
     void detail
     expect(() => diagnosticSchema.parse(rest)).toThrow()
+  })
+
+  /**
+   * 稳定键之前落盘的诊断记录只有 `{id, at, kind, detail}`（用户家里就有 3014 条）。
+   * storage-domain 在 open() 时对**每条**记录跑 schema.parse，缺必填字段会让整个域打不开 ——
+   * 所以 lastAt / count 必须是带默认值的可选字段，老记录读得进来。
+   */
+  it('diag：老记录（缺 lastAt / count）仍可解析并补默认值', () => {
+    const parsed = diagnosticSchema.parse({ id: 'diag-x', at: 7, kind: 'session-read', detail: 'boom' })
+    expect(parsed).toMatchObject({ id: 'diag-x', at: 7, lastAt: 0, count: 1, kind: 'session-read' })
   })
 })

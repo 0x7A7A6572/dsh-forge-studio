@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { UsageBillingService } from '../src/service.ts'
 import { aggregateOnce } from '../src/aggregate.ts'
 import type { AggregateDeps, SessionSource } from '../src/aggregate.ts'
@@ -8,16 +7,7 @@ import { USAGE_BILLING_METHOD_NAMES, USAGE_BILLING_REMOTE_METHODS } from '../src
 import { BUILTIN_CATALOG, DEFAULT_USD_TO_CNY } from '../src/pricing/catalog.ts'
 import { createUsageBillingSettingsAccess } from '../src/settings.ts'
 import type { Diagnostic, FoldState, LedgerRow, ModelAlias, PriceSnapshot } from '../src/types.ts'
-
-function table<V>(): KvTable<string, V> {
-  const map = new Map<string, V>()
-  return {
-    get: (k) => map.get(k), entries: () => map.entries(), keys: () => map.keys(),
-    get size() { return map.size },
-    put: async (k, v) => { map.set(k, v) }, delete: async (k) => map.delete(k),
-    update: async (k, fn) => { const c = map.get(k); if (!c) throw new Error('missing-key'); const n = fn(c); map.set(k, n); return n },
-  }
-}
+import { fakeTable as table } from './fake-table.ts'
 
 const SNAPSHOT: PriceSnapshot = {
   id: 'snap-1', at: 0, kind: 'base', reason: 'install', usdToCny: 7, usdToCnySource: 'default',
@@ -25,7 +15,7 @@ const SNAPSHOT: PriceSnapshot = {
 }
 
 const ROW: LedgerRow = {
-  id: 's1#2', sessionId: 's1', seq: 2, time: 2_000, provider: 'deepseek', model: 'deepseek-v4-flash',
+  id: 's1__2', sessionId: 's1', seq: 2, time: 2_000, provider: 'deepseek', model: 'deepseek-v4-flash',
   day: '2026-09-16', cwd: '/w', isSubagent: false,
   input: 1_000_000, cacheRead: 0, cacheWrite: 0, output: 0, reasoning: 0,
   costCny: 1, currency: 'CNY', priced: true, snapshotId: 'snap-1', backfilled: false,
@@ -132,14 +122,16 @@ describe('UsageBillingService', () => {
   it('setCustomPrice 写入自定义价并追加 delta 快照', async () => {
     const { svc, snapshots } = makeService()
     await svc.setCustomPrice({ provider: 'deepseek', model: 'deepseek-v4-pro', currency: 'CNY', input: 1, cacheRead: 0, cacheWrite: 1, output: 2 })
-    expect([...snapshots.entries()].map(([k]) => k)).toContain('snap-1#delta')
+    // 键由 storage-key.ts 生成：`snap__<reason>__<at>`（now() = 3000），不是旧的 `${prevId}#delta`。
+    expect([...snapshots.entries()].map(([k]) => k)).toContain('snap__custom-price__3000')
     expect((await svc.pricing()).entries['deepseek/deepseek-v4-pro']).toMatchObject({ input: 1, output: 2 })
   })
 
   it('同一毫秒内两次 setCustomPrice 串行化：两笔价都在，账本记下 base + 两条 delta', async () => {
     const { svc, snapshots } = makeService()
-    // 不 await 第一笔就发第二笔：读-改-写不串行时两次都会读到同一份旧表、写同一个
-    // `${prevId}#delta` 键，后一笔 put 会把前一笔的改价悄悄盖掉（snapshot 账本是唯一持久价态）。
+    // 不 await 第一笔就发第二笔：读-改-写不串行时两次都会读到同一份旧表，算出同一个
+    // `snap__custom-price__<at>` 键，后一笔 put 会把前一笔的改价悄悄盖掉
+    //（snapshot 账本是唯一持久价态）。
     const p1 = svc.setCustomPrice({
       provider: 'acme', model: 'model-a', currency: 'CNY', input: 1, cacheRead: 0, cacheWrite: 0, output: 2,
     })
@@ -161,7 +153,7 @@ describe('UsageBillingService', () => {
     expect(new Set(all.map((s) => s.id)).size).toBe(all.length)
   })
 
-  it('价表为空时先写自定义价：首条 base 用兜底汇率且不叫 #delta，install 基准仍能补写', async () => {
+  it('价表为空时先写自定义价：首条 base 用兜底汇率且 id 是 base，install 基准仍能补写', async () => {
     const { svc, snapshots } = makeService()
     await snapshots.delete(SNAPSHOT.id)
     // 空价表解析出的是合成 0 汇率，直接落进 base 会让所有 USD 条目永远算不出钱。
@@ -170,7 +162,7 @@ describe('UsageBillingService', () => {
     })
     const first = [...snapshots.entries()].map(([, s]) => s)[0]!
     expect(first).toMatchObject({ kind: 'base', usdToCny: DEFAULT_USD_TO_CNY, usdToCnySource: 'default' })
-    expect(first.id.endsWith('#delta')).toBe(false)
+    expect(first.id).toBe('snap-base')
 
     // 旧守卫（「有任何快照就返回」）会在这里永久跳过 install 基准；新守卫只看有没有 install 层。
     await writeBaseSnapshot(svc)

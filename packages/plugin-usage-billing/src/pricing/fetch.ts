@@ -11,6 +11,7 @@
 
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { resetAggregateCache } from '../aggregate.ts'
+import { SNAPSHOT_BASE_ID, uniqueSnapshotDeltaKey } from '../storage-key.ts'
 import { BUILTIN_CATALOG, DEFAULT_USD_TO_CNY } from './catalog.ts'
 import { activeOverridesAt, planSnapshot, resolveSnapshotAt } from './snapshot.ts'
 import type { PricingRefreshResult } from '../service.ts'
@@ -149,8 +150,12 @@ async function runRefresh(deps: PricingFetchDeps, now: number): Promise<PricingR
   // 来源是 provenance：实时→默认的同值翻转必须如实写进快照（planSnapshot 也把 source 计入变化），
   // 否则「这次是回退到内置汇率」这件事会被静默抹掉，账本误报为 live。
   // 空账本上的第一条是 base：id 必须用 base 命名（同 appendDelta 的 `snap-base`），不能是 delta 形状。
+  // delta 键走 storage-key.ts（旧的 `${prevId}#cat-${now}` 不是路径安全键，真实后端每次写都失败）。
+  const id = prev === undefined
+    ? SNAPSHOT_BASE_ID
+    : uniqueSnapshotDeltaKey(new Set(deps.snapshots.keys()), 'catalog-refresh', now)
   const snap = planSnapshot(prev, { entries, usdToCny: fx.value, usdToCnySource: fx.source },
-    { id: prev === undefined ? 'snap-base' : `${prev.snapshotId}#cat-${now}`, at: now, reason: 'catalog-refresh' })
+    { id, at: now, reason: 'catalog-refresh' })
   if (snap !== null) {
     await deps.snapshots.put(snap.id, snap)
     // 价表写入后聚合 TTL 缓存必须立即失效（与 appendDelta / ensureBaseSnapshot 同规则）；
@@ -173,8 +178,9 @@ export async function fetchPricingFromNetwork(
   if (!force && last !== undefined && now - last.at < last.ttlMs) {
     return last.result
   }
-  // 同一张快照表的并发刷新（含两次 force）合并成一次下载：否则两次同刻刷新会写同一个
-  // `${prevId}#cat-${now}` 键，后一次还会悄悄吃掉前一次的结果。
+  // 同一张快照表的并发刷新（含两次 force）合并成一次下载：否则两次同刻刷新会算出
+  // 同一个 delta 键（storage-key.ts 用 (reason, at) + 序号保证不同刻/同刻都不撞），
+  // 后一次还会悄悄吃掉前一次的结果。
   if (state.inFlight !== undefined) return await state.inFlight
   const run = runRefresh(deps, now)
   state.inFlight = run

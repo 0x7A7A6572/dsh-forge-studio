@@ -37,7 +37,7 @@ describe('foldEvents', () => {
     ], ctx())
     expect(r.rows).toHaveLength(1)
     expect(r.rows[0]).toMatchObject({
-      id: 's1#2', sessionId: 's1', seq: 2,
+      id: 's1__2', sessionId: 's1', seq: 2,
       provider: 'deepseek', model: 'deepseek-v4-flash',
       input: 1_000_000, output: 1_000_000, costCny: 2, priced: true, snapshotId: 'snap-1',
       cwd: 'D:\\codes\\demo', isSubagent: false, backfilled: false,

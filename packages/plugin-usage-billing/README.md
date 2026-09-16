@@ -37,9 +37,11 @@ client 侧 slot id 一律带前缀：`zzerx-usage-billing`（`sidebar.footer.act
 
 ## 计费口径
 
-- **写时锁定**：每条 `assistant/message` 的 `usage` 按**该事件 `time`** 解析出的价表计价，金额一次写入账本，之后改价不影响历史。账本行 id = `${sessionId}#${seq}`，重复折叠幂等。
+- **写时锁定**：每条 `assistant/message` 的 `usage` 按**该事件 `time`** 解析出的价表计价，金额一次写入账本，之后改价不影响历史。账本行 id = `ledgerKey(sessionId, seq)`（即 `<sessionId>__<seq>`），重复折叠幂等。
+- **存储键路径安全**：per-record 后端的键会变成文件路径的一段，只接受 `/^[a-zA-Z0-9_-]+$/`，不匹配的键在写入时直接抛错。五张表的键**一律**由 `src/storage-key.ts` 产出：`[a-z0-9-]` 原样保留，其余（`#` / `_` / `/` / `.` / NUL / 大写 / 非 ASCII）逐码元转义成 `_hhhh`，分片之间用 `__` 连接（`_` 只作转义引导，故 `__` 不可能出现在分片内部，拼接无歧义）。编码单射且可逆，典型 `session-<uuid>` 原样不变。
 - **四桶与汇率**：计费输入 = `inputTokens + cacheReadTokens + cacheWriteTokens`（`inputTokens` 只含未命中缓存部分），`reasoningTokens` 已并入 output 计数、不单独计价。条目原生币种为 USD 时按**该快照锁定的 `usdToCny`** 折算。
-- **价表快照账本只追加**：一条 `base` 全量 + 后续 `delta` 差量（`reason: install | catalog-refresh | custom-price | manual-refresh`）。「时刻 t 生效的价表」= base 累加所有 `at <= t` 的 delta；自定义价在解析时覆盖目录价。
+- **价表快照账本只追加**：一条 `base` 全量 + 后续 `delta` 差量（`reason: install | catalog-refresh | custom-price | manual-refresh`）。「时刻 t 生效的价表」= base 累加所有 `at <= t` 的 delta；自定义价在解析时覆盖目录价。delta 键 = `snapshotDeltaKey(reason, at)`（`snap__<reason>__<at>`，键长恒定；同毫秒撞键由 `uniqueSnapshotDeltaKey` 顺延）。
+- **诊断有界**：诊断键稳定于 `(sessionId, kind)`，同一故障反复出现只 upsert（`{at, lastAt, count, detail}`），并保留最近 `MAX_DIAGNOSTICS = 50` 条（超限从最旧裁剪）。会话读取失败**不推进水位**（下一轮会重试），但重试只累加计数，不会让存储无界增长。
 - **查价顺序**：自定义价 → 目录价精确命中 `<provider>/<model>` → 别名解析后的 canonical key → 同 provider 兜底 `<provider>/*` → 全局兜底 `*/*` → **未收录**。
 - **未收录 vs 汇率不可用**：两者都**不写金额**（`priced: false, costCny: 0`）。未收录是价表里没有任何候选命中；汇率不可用是命中了 USD 条目但该快照 `usdToCny` 非正 —— 宁可标成不可计价，也不猜汇率、不锁一个 0 进账本。
 - **别名只在展示层**：账本永远保存原始 provider + model id；别名（内置规范化规则 + 手工绑定）只把多行在视图层相加，且**只在同一 provider 内合并**。别名变更立即影响展示，不触碰账本。
@@ -60,7 +62,7 @@ client 侧 slot id 一律带前缀：`zzerx-usage-billing`（`sidebar.footer.act
 ### 自定义单价与别名
 
 - 费率页可直接新增 / 删除自定义单价：key 支持 `<provider>/<model>`、`<provider>/*`、`*/*`，币种 CNY 或 USD，四个价（input / cacheRead / cacheWrite / output）。写入即追加 `custom-price` delta，立即影响此后折叠的事件；删除后回落到目录价。
-- 费率页可把某个未收录 / 疑似改名的原始 id 手工绑定到 canonical 模型（以 `provider` + `rawModel` 为键，仅同 provider 生效），解绑即恢复。
+- 费率页可把某个未收录 / 疑似改名的原始 id 手工绑定到 canonical 模型（以 `provider` + `rawModel` 为键，仅同 provider 生效），解绑即恢复。存储键 = `aliasKey(provider, rawModel)`（`<provider>__<rawModel>`，**不是** NUL 分隔 —— NUL 键在真实后端上不是路径安全键，每次写入都被拒）。
 
 ### 其他口径
 
@@ -75,5 +77,6 @@ client 侧 slot id 一律带前缀：`zzerx-usage-billing`（`sidebar.footer.act
 - **缓存条目保留写入时的 TTL**：修改 `pricing.refreshHours` 要等当前缓存条目过期才生效，不会即时重算。
 - **性能（纯性能项）**：`activeOverridesAt` 对每条自定义记录重排并重解目录层，而非增量单遍；只影响刷新耗时，不影响正确性。
 - **无障碍（延后）**：仪表盘弹窗没有 Esc 关闭与焦点管理（spec §7.1 期望有 Esc）；热力图格子不可聚焦（只有悬停明细）；部分表格仍使用已废弃的 `<th align>`。
-- **快照 id 的链式构造依赖写锁**：`snap-install#delta#delta` 由「上一份快照 id」拼出，同一毫秒内的两次写入只有经过 `serialize()` 串行化才会拿到不同的 prev；任何绕过串行链的新写入路径都会算出同一个键并覆盖彼此。当前唯一的写入路径都走 `serialize()`（`tests/service-remote.test.ts` 的「同一毫秒」用例钉住）。
+- **快照 delta 键不再链式**：旧写法 `${prevId}#delta` 既是非法存储键，又随条数线性加长（每追加一条 +6 字符，迟早撑爆文件系统单段 255 上限）。现在键 = `snap__<reason>__<at>`，长度恒定；同一毫秒的两次写入由 `uniqueSnapshotDeltaKey` 按序号错开。价格读-改-写仍然**必须**走 `serialize()` 串行链（那是基线一致性的要求），但键的唯一性已不再依赖它。
+- **诊断表按上限裁剪**：`MAX_DIAGNOSTICS = 50`，整轮聚合末尾从最旧裁剪。若升级前已堆积大量旧诊断（例如实测故障期的 3014 条），下一次聚合会把它们收敛到上限内（这些记录属于本插件自己的 `diag` 表，不涉及其他插件的数据）。
 - **会话维度没有独立的 wire 端点**：会话行由 `byWorkspace` 的分组结果带回（明细页展开工作区时才可见），不单独提供按会话聚合的远程方法。

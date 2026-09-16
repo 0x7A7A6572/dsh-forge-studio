@@ -3,17 +3,9 @@ import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { aggregateOnce, resetAggregateCache } from '../src/aggregate.ts'
 import type { AggregateDeps, SessionSource } from '../src/aggregate.ts'
+import { MAX_DIAGNOSTICS, seenAt } from '../src/diag.ts'
 import type { Diagnostic, FoldState, LedgerRow, PriceSnapshot } from '../src/types.ts'
-
-function table<V>(): KvTable<string, V> {
-  const map = new Map<string, V>()
-  return {
-    get: (k) => map.get(k), entries: () => map.entries(), keys: () => map.keys(),
-    get size() { return map.size },
-    put: async (k, v) => { map.set(k, v) }, delete: async (k) => map.delete(k),
-    update: async (k, fn) => { const c = map.get(k); if (!c) throw new Error('missing-key'); const n = fn(c); map.set(k, n); return n },
-  }
-}
+import { fakeTable as table } from './fake-table.ts'
 
 const SNAP: PriceSnapshot = {
   id: 'snap-1', at: 0, kind: 'base', reason: 'install', usdToCny: 7, usdToCnySource: 'default',
@@ -74,7 +66,7 @@ describe('aggregateOnce', () => {
     const { deps, ledger, folds } = makeDeps()
     const stats = await aggregateOnce(deps)
     expect(stats).toMatchObject({ sessions: 1, folded: 1, skipped: 0, rows: 1, failures: 0 })
-    expect(ledger.get('s1#2')!.costCny).toBe(1)
+    expect(ledger.get('s1__2')!.costCny).toBe(1)
     expect(folds.get('s1')!.foldedThroughSeq).toBe(2)
   })
 
@@ -95,7 +87,7 @@ describe('aggregateOnce', () => {
     const again = await aggregateOnce(deps, { force: true })
     expect(again.folded).toBe(1)
     expect(ledger.size).toBe(1)
-    expect(ledger.get('s1#2')!.costCny).toBe(1)
+    expect(ledger.get('s1__2')!.costCny).toBe(1)
   })
 
   it('TTL 内直接返回缓存结果（密集轮询合并）', async () => {
@@ -124,7 +116,7 @@ describe('aggregateOnce', () => {
     expect(folds.get('s2')).toBeUndefined()
     // 干净会话照常折叠：水位推进 + 账本行落盘。
     expect(folds.get('s1')!.foldedThroughSeq).toBe(2)
-    expect(ledger.get('s1#2')!.costCny).toBe(1)
+    expect(ledger.get('s1__2')!.costCny).toBe(1)
   })
 
   it('seq 0 的会话首轮照折、次轮被水位跳过（种子 -1）', async () => {
@@ -136,7 +128,7 @@ describe('aggregateOnce', () => {
     expect(first).toMatchObject({ folded: 1, skipped: 0, failures: 0 })
     expect(folds.get('s1')!.foldedThroughSeq).toBe(0)
     // 单一事件会话没有归属事件，所以此行必然未计价 —— 关键是它真的落了账本。
-    expect(ledger.get('s1#0')).toMatchObject({ seq: 0, priced: false })
+    expect(ledger.get('s1__0')).toMatchObject({ seq: 0, priced: false })
     const second = await aggregateOnce(deps, { force: true })
     expect(second).toMatchObject({ folded: 0, skipped: 1, failures: 0 })
     expect(ledger.size).toBe(1)
@@ -170,6 +162,68 @@ describe('aggregateOnce', () => {
     const { deps, ledger } = makeDeps()
     await (deps.snapshots as unknown as KvTable<string, PriceSnapshot>).delete('snap-1')
     await aggregateOnce(deps)
-    expect(ledger.get('s1#2')).toMatchObject({ priced: false, costCny: 0 })
+    expect(ledger.get('s1__2')).toMatchObject({ priced: false, costCny: 0 })
+  })
+})
+
+/**
+ * 实测故障的另一半：183 个坏会话每轮都 `put('diag-<id>-<now()>')`，
+ * 50 分钟涨到 3014 条、状态栏还要每次全表排序。这里钉住「重试不涨存储」。
+ */
+describe('诊断有界（重试风暴不涨存储）', () => {
+  const badSessions = (count: number): ExtraSession[] =>
+    Array.from({ length: count }, (_, i) => ({
+      header: { ...header, id: `bad-${i}` } as unknown as SessionHeader,
+      fails: true,
+    }))
+
+  /**
+   * 越界规模：跟着上限走，但**封顶 200**。否则有人（或 bite-check）把 `MAX_DIAGNOSTICS`
+   * 临时改大，这个用例会瞬间变成百万级压测而挂住 —— 用例本身不该是个陷阱。
+   */
+  const storm = Math.min(MAX_DIAGNOSTICS + 10, 200)
+
+  it('同一坏会话反复失败：只有一条诊断，count 累加，失败照常上报', async () => {
+    const { deps, diag } = makeDeps({}, () => 1_000_000, badSessions(1))
+    expect((await aggregateOnce(deps, { force: true })).failures).toBe(1)
+    expect((await aggregateOnce(deps, { force: true })).failures).toBe(1)
+    // 两轮各失败一次，但键稳定于 (sessionId, kind)：条数不涨，只累加计数与最近时刻。
+    expect(diag.size).toBe(1)
+    const row = [...diag.entries()][0]![1]
+    expect(row).toMatchObject({ id: 'diag__bad-0__session-read', count: 2, at: 1_000_000, lastAt: 1_000_000 })
+  })
+
+  it('坏会话数超过上限：整轮结束后 diag 回到上限之内', async () => {
+    const { deps, diag } = makeDeps({}, () => 1_000_000, badSessions(storm))
+    const stats = await aggregateOnce(deps, { force: true })
+    expect(stats.failures).toBe(storm)
+    expect(diag.size).toBe(MAX_DIAGNOSTICS)
+  })
+
+  it('旧版本堆下的超限诊断会被下一轮聚合清掉（这一轮没有任何失败也一样）', async () => {
+    const { deps, diag } = makeDeps()
+    for (let i = 0; i < storm; i += 1) {
+      await diag.put(`diag__legacy-${i}__session-read`, {
+        id: `diag__legacy-${i}__session-read`, at: i, lastAt: i, count: 1,
+        kind: 'session-read', detail: 'legacy',
+      })
+    }
+    const stats = await aggregateOnce(deps, { force: true })
+    expect(stats.failures).toBe(0)
+    expect(diag.size).toBe(MAX_DIAGNOSTICS)
+    // 留的是最近的（lastAt 大的），最旧那几条被清掉。
+    expect(diag.get('diag__legacy-0__session-read')).toBeUndefined()
+    expect(diag.get(`diag__legacy-${storm - 1}__session-read`)).toBeDefined()
+  })
+
+  it('坏会话不被静默跳过：诊断带着它的 id 与原始错误，水位不推进', async () => {
+    const { deps, diag, folds } = makeDeps({}, () => 1_000_000, badSessions(1))
+    await aggregateOnce(deps, { force: true })
+    const row = [...diag.entries()][0]![1]
+    expect(row.detail).toContain('bad-0')
+    expect(row.detail).toContain('corrupt')
+    // 水位没推进 → 下轮仍会重试（这是有意的），但重试只累加计数。
+    expect(folds.get('bad-0')).toBeUndefined()
+    expect(seenAt(row)).toBe(1_000_000)
   })
 })

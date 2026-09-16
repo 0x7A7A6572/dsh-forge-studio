@@ -24,7 +24,7 @@ export interface RangeSpec {
 
 /** 主账本一行 —— 一次带 usage 的模型调用，金额写时锁定。 */
 export interface LedgerRow {
-  /** `${sessionId}#${seq}` —— 天然幂等键。 */
+  /** `ledgerKey(sessionId, seq)`（`<sessionId>__<seq>`，见 `storage-key.ts`）—— 天然幂等键。 */
   id: string
   sessionId: string
   seq: number
@@ -75,17 +75,30 @@ export interface PriceSnapshot {
 
 /** 手工别名绑定（可撤销）。 */
 export interface ModelAlias {
-  /** `aliasId(provider, rawModel)`：provider 去空格 + 小写、rawModel 去空格，NUL 分隔。 */
+  /**
+   * `aliasId(provider, rawModel)`：provider 去空格 + 小写、rawModel 去空格，
+   * 再由 `storage-key.ts` 编码成路径安全键（`<provider>__<rawModel>`）。
+   */
   id: string
   provider: string
   rawModel: string
   canonicalModel: string
 }
 
-/** 诊断条目（会话损坏 / 联网失败 / 投影失败）。 */
+/**
+ * 诊断条目（会话损坏 / 联网失败 / 投影失败）。
+ *
+ * id 稳定于 `(sessionId, kind)`：同一故障反复出现只累加 `count`、刷新 `lastAt` 与 `detail`，
+ * 不再是「每次失败一个新键」的追加流（那会无界增长）。
+ */
 export interface Diagnostic {
   id: string
+  /** 首次出现的时刻。 */
   at: number
+  /** 最近一次出现的时刻；旧记录（稳定键之前落盘）缺省为 0，读时按 `at` 处理。 */
+  lastAt: number
+  /** 累计出现次数；旧记录缺省为 1。 */
+  count: number
   kind: 'session-read' | 'pricing-fetch' | 'projection'
   detail: string
 }

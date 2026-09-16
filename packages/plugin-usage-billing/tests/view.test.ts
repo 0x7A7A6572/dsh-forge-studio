@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { aliasId } from '../src/model-key.ts'
 import { UsageBillingService } from '../src/service.ts'
 import { createUsageBillingSettingsAccess } from '../src/settings.ts'
 import { buildByWorkspace, buildDaily, buildMarkers, buildOverview, filterRows, mergeByModel } from '../src/view.ts'
 import type { Diagnostic, FoldState, LedgerRow, ModelAlias, PriceSnapshot } from '../src/types.ts'
+import { fakeTable as t } from './fake-table.ts'
 
 const row = (over: Partial<LedgerRow> = {}): LedgerRow => ({
-  id: 's1#1', sessionId: 's1', seq: 1, time: 1_000, provider: 'deepseek',
+  id: 's1__1', sessionId: 's1', seq: 1, time: 1_000, provider: 'deepseek',
   model: 'deepseek-v4-flash', day: '2026-09-16', cwd: '/w', isSubagent: false,
   input: 1_000_000, cacheRead: 0, cacheWrite: 0, output: 0, reasoning: 0,
   costCny: 1, currency: 'CNY', priced: true, snapshotId: 'snap-1', backfilled: false,
@@ -203,16 +203,6 @@ describe('聚合不改写输入', () => {
     expect(rows).toEqual(before)
   })
 })
-
-function t<V>(): KvTable<string, V> {
-  const map = new Map<string, V>()
-  return {
-    get: (k) => map.get(k), entries: () => map.entries(), keys: () => map.keys(),
-    get size() { return map.size },
-    put: async (k, v) => { map.set(k, v) }, delete: async (k) => map.delete(k),
-    update: async (k, fn) => { const c = map.get(k); if (!c) throw new Error('missing-key'); const n = fn(c); map.set(k, n); return n },
-  }
-}
 
 describe('手工别名端到端', () => {
   function make() {

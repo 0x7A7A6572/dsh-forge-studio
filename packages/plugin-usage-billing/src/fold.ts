@@ -4,13 +4,15 @@
  * 归属规则（spec §5.1）：request/context 的 {provider, model} 优先于
  * request/header 的 data.header.config；两者皆缺记 'unknown'，不丢账。
  * 计价规则（spec §5.3/§5.4）：**每条事件用它自己的 time 解析价表**，金额随即锁定。
- * 行 id = `${sessionId}#${seq}`，因此重复折叠是幂等 upsert。
+ * 行 id = `ledgerKey(sessionId, seq)`（`<sessionId>__<seq>`，见 `storage-key.ts`），
+ * 因此重复折叠是幂等 upsert。
  */
 
 import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import { aliasId, priceKeyCandidates } from './model-key.ts'
 import { priceUsage } from './pricing/cost.ts'
 import type { ResolvedTable } from './pricing/snapshot.ts'
+import { ledgerKey } from './storage-key.ts'
 import { dayKey } from './time.ts'
 import type { LedgerRow, ModelAlias } from './types.ts'
 
@@ -79,7 +81,7 @@ export function foldEvents(events: readonly SessionEvent[], ctx: FoldContext): F
     if (!priced.priced) unpricedModels.add(modelLabel)
 
     rows.push({
-      id: `${ctx.session.id}#${event.seq}`,
+      id: ledgerKey(ctx.session.id, event.seq),
       sessionId: ctx.session.id,
       seq: event.seq,
       time: event.time,

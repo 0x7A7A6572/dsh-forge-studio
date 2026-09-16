@@ -6,19 +6,11 @@ import {
 } from '../src/pricing/fetch.ts'
 import { BUILTIN_CATALOG, DEFAULT_USD_TO_CNY } from '../src/pricing/catalog.ts'
 import { planSnapshot, resolveSnapshotAt } from '../src/pricing/snapshot.ts'
+import { uniqueSnapshotDeltaKey } from '../src/storage-key.ts'
 import { UsageBillingService } from '../src/service.ts'
 import { USAGE_BILLING_CONFIG_BASE, createUsageBillingSettingsAccess } from '../src/settings.ts'
 import type { Diagnostic, FoldState, LedgerRow, ModelAlias, PriceEntry, PriceSnapshot } from '../src/types.ts'
-
-function table<V>(): KvTable<string, V> {
-  const map = new Map<string, V>()
-  return {
-    get: (k) => map.get(k), entries: () => map.entries(), keys: () => map.keys(),
-    get size() { return map.size },
-    put: async (k, v) => { map.set(k, v) }, delete: async (k) => map.delete(k),
-    update: async (k, fn) => { const c = map.get(k); if (!c) throw new Error('missing-key'); const n = fn(c); map.set(k, n); return n },
-  }
-}
+import { fakeTable as table } from './fake-table.ts'
 
 /** models.dev 的真实投影形状（只保留本设计用到的字段）。 */
 const MODELS_DEV = {
@@ -244,7 +236,7 @@ describe('fetchPricingFromNetwork', () => {
     const [a, b] = await Promise.all([fetchPricingFromNetwork(d, true), fetchPricingFromNetwork(d, true)])
     expect(a).toEqual(b)
     expect(w.calls.filter((u) => u.includes('models.dev'))).toHaveLength(1)
-    // 两次同刻刷新若各写一份快照，还会撞同一个 `${prevId}#cat-${now}` 键。
+    // 两次同刻刷新若各写一份快照，还会算出同一个 `snap__catalog-refresh__<now>` 键。
     expect(snapshots.size).toBe(2)
   })
 
@@ -410,7 +402,8 @@ describe('刷新与自定义价 / 账本', () => {
         baselineRead()
         await writeGate
         const snap = planSnapshot(prev, { entries, usdToCny: 7.15, usdToCnySource: 'live' },
-          { id: `${prev.snapshotId}#cat-${CLOCK}`, at: CLOCK, reason: 'catalog-refresh' })
+          // 假实现照抄生产路径的键：delta 键只由 storage-key.ts 产出。
+          { id: uniqueSnapshotDeltaKey(new Set(h.snapshots.keys()), 'catalog-refresh', CLOCK), at: CLOCK, reason: 'catalog-refresh' })
         if (snap !== null) await h.snapshots.put(snap.id, snap)
         return { ok: true, entries: 2, usdToCny: 7.15 }
       },

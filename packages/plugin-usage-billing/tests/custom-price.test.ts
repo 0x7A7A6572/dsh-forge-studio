@@ -1,19 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { UsageBillingService } from '../src/service.ts'
 import { createUsageBillingSettingsAccess } from '../src/settings.ts'
 import type { Diagnostic, FoldState, LedgerRow, ModelAlias, PriceSnapshot } from '../src/types.ts'
-
-function table<V>(): KvTable<string, V> {
-  const map = new Map<string, V>()
-  return {
-    get: (k) => map.get(k), entries: () => map.entries(), keys: () => map.keys(),
-    get size() { return map.size },
-    put: async (k, v) => { map.set(k, v) }, delete: async (k) => map.delete(k),
-    update: async (k, fn) => { const c = map.get(k); if (!c) throw new Error('missing-key'); const n = fn(c); map.set(k, n); return n },
-  }
-}
+import { fakeTable as table } from './fake-table.ts'
 
 function make() {
   const ledger = table<LedgerRow>(); const folds = table<FoldState>()

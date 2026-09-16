@@ -3,16 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { apply, name } from '../src/index.ts'
 import type { Diagnostic, FoldState, LedgerRow, ModelAlias, PriceSnapshot } from '../src/types.ts'
-
-function table<V>(): KvTable<string, V> {
-  const map = new Map<string, V>()
-  return {
-    get: (k) => map.get(k), entries: () => map.entries(), keys: () => map.keys(),
-    get size() { return map.size },
-    put: async (k, v) => { map.set(k, v) }, delete: async (k) => map.delete(k),
-    update: async (k, fn) => { const c = map.get(k); if (!c) throw new Error('missing-key'); const n = fn(c); map.set(k, n); return n },
-  }
-}
+import { fakeTable as table } from './fake-table.ts'
 
 /** usage_billing 域的五张假表。 */
 function fakeTables() {
@@ -44,8 +35,8 @@ describe('host apply', () => {
     const t = fakeTables()
     // 一条非 install 记录先落盘（离线重装 / 先设过自定义价的账本）。
     // 旧的内联实现用 `snapshots.size === 0` 当判据，这种情况下安装基准会永远缺席。
-    await t.snapshots.put('snap-0#delta', {
-      id: 'snap-0#delta', at: 1, kind: 'delta', reason: 'custom-price',
+    await t.snapshots.put('snap__custom-price__1', {
+      id: 'snap__custom-price__1', at: 1, kind: 'delta', reason: 'custom-price',
       usdToCny: 7.1, usdToCnySource: 'default',
       entries: {
         'deepseek/deepseek-v4-flash': { input: 9, cacheRead: 9, cacheWrite: 9, output: 9, currency: 'CNY' },
