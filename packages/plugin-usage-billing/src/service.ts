@@ -71,7 +71,11 @@ export class UsageBillingService extends TypertRemoteService {
     if (this.snapshots.size > 0) return
     const snap = planSnapshot(undefined, { entries, usdToCny, usdToCnySource },
       { id: 'snap-install', at: this.config.installAt, reason: 'install' })
-    if (snap !== null) void this.snapshots.put(snap.id, snap)
+    if (snap === null) return
+    void this.snapshots.put(snap.id, snap)
+    // 写入的价表就是聚合计价用的价表：与 appendDelta / repricing 同规则，必须让
+    // TTL 缓存立刻失效，否则最快 5s 内仍在用上一张表算钱。
+    resetAggregateCache()
   }
 
   /** 现算一次聚合（带水位与 TTL），返回账本行快照。 */
