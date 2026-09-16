@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addDays, dayKey, daysInRange, rangeToSpec, startOfDayMs } from '../src/time.ts'
+import { addDays, dayKey, daysInRange, MAX_RANGE_DAYS, rangeToSpec, startOfDayMs } from '../src/time.ts'
 
 const d = (y: number, m: number, day: number, h = 0, min = 0) => new Date(y, m - 1, day, h, min).getTime()
 
@@ -47,5 +47,17 @@ describe('time', () => {
   it('all 范围用 90 天封顶，避免视图无限长', () => {
     const now = d(2026, 9, 16, 15)
     expect(daysInRange(rangeToSpec('all', now), now)).toHaveLength(90)
+  })
+
+  it('显式窗口在硬上限内时返回全部日期（不被 MAX_ALL_DAYS 误截）', () => {
+    const now = d(2026, 9, 16, 15)
+    const spec = { since: addDays(startOfDayMs(now), -99), until: now }
+    expect(daysInRange(spec, now)).toHaveLength(100)
+  })
+
+  it('显式给出超宽 since 时被 MAX_RANGE_DAYS 硬截断', () => {
+    const now = d(2026, 9, 16, 15)
+    const spec = { since: addDays(startOfDayMs(now), -499), until: now }
+    expect(daysInRange(spec, now)).toHaveLength(MAX_RANGE_DAYS)
   })
 })
