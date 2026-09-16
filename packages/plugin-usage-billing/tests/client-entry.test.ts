@@ -14,6 +14,7 @@ import { createElement } from 'react'
 import { Dashboard } from '../src/client/views/dashboard.tsx'
 import { EntryCard } from '../src/client/views/entry-card.tsx'
 import { createBillingStore } from '../src/client/core/store.ts'
+import { sparklinePoints } from '../src/client/core/chart-data.ts'
 import type { BillingStore } from '../src/client/core/store.ts'
 import type { UsageBillingRemote } from '../src/client/core/remote.ts'
 import type { Overview } from '../src/view.ts'
@@ -48,6 +49,8 @@ function billingStub(overview: Overview, todayKey = '2026-09-16'): UsageBillingR
       ok: true,
       value: { entries: {}, usdToCny: 7.1, usdToCnySource: 'live' as const, snapshotId: 'snap' },
     }),
+    // 浮层（同一份 billingStub 复用）读安装时刻；入口卡自己不调它。
+    status: async () => ({ ok: true, value: { installAt: 1_700_000_000_000, rows: 0, sessions: 0, snapshots: 0 } }),
   } as unknown as UsageBillingRemote
 }
 
@@ -177,5 +180,26 @@ describe('入口卡的取数与占位', () => {
     await act(async () => { await Promise.resolve() })
     expect(amountOf(container)).toBe('—')
     expect(container.textContent).not.toContain('¥0.00')
+  })
+
+  it('sparkline 由 views/chart.tsx 的 Sparkline 渲染，几何与 chart-data 逐点一致', async () => {
+    // 入口卡此前另抄了一份 inline `<svg><polyline>`，Sparkline 因此成了没有任何调用方的死代码。
+    // 这条断言钉的是「换用共享件之后画出来的点没有变」（等价性，而不是新增行为）。
+    const days = [
+      { day: '2026-09-10', costCny: 1, input: 0, cacheRead: 0, cacheWrite: 0, output: 0, calls: 1 },
+      { day: '2026-09-11', costCny: 3, input: 0, cacheRead: 0, cacheWrite: 0, output: 0, calls: 1 },
+    ]
+    const store = createBillingStore()
+    const billing = {
+      overview: async () => ({
+        ok: true, value: { overview: overviewFixture(), todayKey: '2026-09-16', budget: { enabled: false, monthlyCny: 0 } },
+      }),
+      daily: async () => ({ ok: true, value: { days } }),
+      pricing: async () => ({ ok: true, value: { entries: {}, usdToCny: 7.1, usdToCnySource: 'live' as const, snapshotId: 'snap' } }),
+    } as unknown as UsageBillingRemote
+    const { container } = render(createElement(EntryCard, { wide: true, billing, store }))
+    await waitFor(() => { expect(container.querySelector('polyline')).not.toBeNull() })
+    expect(container.querySelector('polyline')!.getAttribute('points'))
+      .toBe(sparklinePoints(days.map((d) => d.costCny), 56, 16))
   })
 })

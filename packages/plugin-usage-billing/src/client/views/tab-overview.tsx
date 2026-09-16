@@ -1,8 +1,9 @@
 /** 概览：Hero 本月费用 + 环比 + 预计 + KPI + 预算条 + 未收录提示 + 回填角标。 */
 
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import type { UsageBillingRemote } from '../core/remote.ts'
 import type { BillingStore } from '../core/store.ts'
+import type { BillingScope } from '../core/config.ts'
 import { evaluateBudget } from '../../budget.ts'
 import {
   NON_FINITE_PLACEHOLDER, backfilledDisclosure, formatCny, formatInt, formatPct, isUnpricedTotal,
@@ -13,10 +14,17 @@ export function TabOverview(props: {
   /** 远程面首帧可能未挂载（`$mount` 异步且失败只 warn）：类型如实写出，effect 早退。 */
   billing: UsageBillingRemote | undefined
   store: BillingStore
+  /** 显示偏好（`display.showUnpricedWarning`）读宿主设置；订阅，改完立即生效。 */
+  scope: BillingScope
 }): JSX.Element {
-  const { billing, store } = props
+  const { billing, store, scope } = props
   // 必须订阅（不订阅的话切范围/切子代理口径不会重取数据）：与 Dashboard / 入口卡同一姿态。
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot)
+  const settings = useSyncExternalStore(
+    useCallback((notify: () => void) => scope.subscribe(notify), [scope]),
+    () => scope.getSnapshot(),
+  )
+  const showUnpricedWarning = settings.value?.display?.showUnpricedWarning !== false
   const [data, setData] = useState<{ overview: Overview; budget: { enabled: boolean; monthlyCny: number } } | null>(null)
 
   useEffect(() => {
@@ -75,7 +83,9 @@ export function TabOverview(props: {
         </div>
       </section>
 
-      {overview.unpricedModels.length > 0 ? (
+      {/* 未收录提示条是**可关的偏好**（display.showUnpricedWarning）；上面的 KPI 计数与徽标
+          是事实，不受该开关影响 —— 关掉的只是这条解释性文案。 */}
+      {overview.unpricedModels.length > 0 && showUnpricedWarning ? (
         <p data-dsh-ub-estimate>
           {overview.unpricedRows} 条记录涉及 {overview.unpricedModels.length} 个未收录模型（
           {overview.unpricedModels.slice(0, 3).join('、')}），已按 ¥0 计但未静默忽略 —— 到「费率」页补单价即可。

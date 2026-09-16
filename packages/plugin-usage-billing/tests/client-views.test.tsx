@@ -7,13 +7,14 @@ import { Sparkline, BarChart } from '../src/client/views/chart.tsx'
 import { createBillingStore } from '../src/client/core/store.ts'
 import type { UsageBillingRemote } from '../src/client/core/remote.ts'
 import type { DailyPoint, Overview } from '../src/view.ts'
-import type { CustomPriceInput, PriceEntry } from '../src/types.ts'
+import type { AliasInput, CustomPriceInput, PriceEntry } from '../src/types.ts'
 import { TabOverview } from '../src/client/views/tab-overview.tsx'
 import { TabTrend } from '../src/client/views/tab-trend.tsx'
 import { TabHeatmap } from '../src/client/views/tab-heatmap.tsx'
 import { TabDetail } from '../src/client/views/tab-detail.tsx'
 import { TabPricing } from '../src/client/views/tab-pricing.tsx'
 import { SettingsSection } from '../src/client/views/settings-section.tsx'
+import type { BillingScope } from '../src/client/core/config.ts'
 import { evaluateBudget } from '../src/budget.ts'
 import type { RangeKind } from '../src/time.ts'
 import { baseConfig, fakeScope } from './fake-scope.ts'
@@ -76,9 +77,14 @@ const noopRemote = (over: Partial<UsageBillingRemote> = {}): UsageBillingRemote 
   overview: async () => ({ ok: true, value: { overview: emptyOverview, todayKey: '2026-09-16', budget: { enabled: false, monthlyCny: 0 } } }),
   daily: async () => ({ ok: true, value: { days: [], hasBackfilled: false, unpricedModels: [] } }),
   byModel: async () => ({ ok: true, value: { models: [], hasBackfilled: false, unpricedModels: [] } }),
-  bySession: async () => ({ ok: true, value: { sessions: [] } }),
   byWorkspace: async () => ({ ok: true, value: { workspaces: [], hasBackfilled: false, unpricedModels: [] } }),
   pricing: async () => ({ ok: true, value: { entries: {}, usdToCny: 7.1, usdToCnySource: 'default', snapshotId: 'snap-install', customKeys: [] } }),
+  // 安装时刻只从 status() 来（设置命名空间里没有这个字段）：默认给一个真实时刻，
+  // 回填提示条才会渲染；需要「取不到」的用例各自覆盖它。
+  status: async () => ({ ok: true, value: { installAt: 1_700_000_000_000, rows: 0, sessions: 0, snapshots: 0 } }),
+  // 费率页挂载即读别名表（手工别名的展示层合并），所有用它的假件都要能应答。
+  aliasList: async () => ({ ok: true, value: { aliases: [] } }),
+  setAlias: async () => ({ ok: true, value: { ok: true } }),
   ...over,
 } as UsageBillingRemote)
 
@@ -91,14 +97,32 @@ const dash = (props: {
     scope={fakeScope(baseConfig(), { writable: props.writable ?? true }).scope} />
 )
 
+/**
+ * TabOverview 需要设置面（`display.showUnpricedWarning`）；默认给一份缺省设置。
+ * 默认面必须是**模块级常量**：在 render 里现造会让 `getSnapshot()` 每次返回新对象，
+ * `useSyncExternalStore` 每帧都判定「变了」而无限重渲染。
+ */
+const DEFAULT_TAB_SCOPE = fakeScope(baseConfig()).scope
+const Tab = (props: {
+  billing: UsageBillingRemote | undefined
+  store: ReturnType<typeof createBillingStore>
+  scope?: BillingScope
+}) => (
+  <TabOverview billing={props.billing} store={props.store} scope={props.scope ?? DEFAULT_TAB_SCOPE} />
+)
+
 describe('Sparkline / BarChart', () => {
   it('空数据不渲染 svg 内部元素也不抛', () => {
     const { container } = render(<Sparkline values={[]} />)
     expect(container.querySelector('polyline')).toBeNull()
   })
-  it('柱状图每根柱都是 rect', () => {
-    const { container } = render(<BarChart values={[1, 2, 3]} labels={['a', 'b', 'c']} width={90} height={30} />)
+  it('柱状图每根柱都是 rect，tooltip 由调用方格式化（不打印原始浮点）', () => {
+    const { container } = render(
+      <BarChart values={[1, 2, 3]} labels={['a', 'b', 'c']} width={90} height={30}
+        formatValue={(n) => `¥${n.toFixed(2)}`} />,
+    )
     expect(container.querySelectorAll('rect')).toHaveLength(3)
+    expect(container.querySelector('title')!.textContent).toBe('a: ¥1.00')
   })
 })
 
@@ -140,7 +164,8 @@ describe('Dashboard', () => {
     const store = createBillingStore({ open: true })
     const h = fakeScope(baseConfig())
     const { container, unmount } = render(<Dashboard billing={noopRemote()} store={store} scope={h.scope} />)
-    expect(container.querySelector('[data-dsh-ub-notice]')).toBeTruthy()
+    // 安装时刻来自 status()（异步），提示条在 status 落地后才出现。
+    await waitFor(() => { expect(container.querySelector('[data-dsh-ub-notice]')).toBeTruthy() })
 
     const dismiss = container.querySelector('[data-dsh-ub-notice] button') as HTMLElement
     await act(async () => { fireEvent.click(dismiss) })
@@ -152,6 +177,7 @@ describe('Dashboard', () => {
     // 一次性：同一份宿主设置（已 dismissed）重新挂载也不再出现 —— 不是本地一次性 state。
     unmount()
     const again = render(<Dashboard billing={noopRemote()} store={createBillingStore({ open: true })} scope={h.scope} />)
+    await act(async () => { await Promise.resolve() })
     expect(again.container.querySelector('[data-dsh-ub-notice]')).toBeNull()
   })
 
@@ -159,6 +185,7 @@ describe('Dashboard', () => {
     const store = createBillingStore({ open: true })
     const h = fakeScope(baseConfig(), { writable: false })
     const { container } = render(<Dashboard billing={noopRemote()} store={store} scope={h.scope} />)
+    await waitFor(() => { expect(container.querySelector('[data-dsh-ub-notice] button')).toBeTruthy() })
     const dismiss = container.querySelector('[data-dsh-ub-notice] button') as HTMLButtonElement
     // 门控与设置页的三个开关同一姿态（那里是 disabled={!settings.writable}）。
     expect(dismiss.disabled).toBe(true)
@@ -167,6 +194,26 @@ describe('Dashboard', () => {
     expect(h.writes).toEqual([])
     // 提示条必须还在：不是本地藏起来，而是宿主根本没被写。
     expect(container.querySelector('[data-dsh-ub-notice]')).toBeTruthy()
+  })
+
+  it('安装时刻取不到（status 失败 / installAt 非正）就不渲染提示条：不报假日期', async () => {
+    const h = fakeScope(baseConfig())
+    const store = createBillingStore({ open: true })
+    // 设置快照里**没有** installAt 这个字段（宿主也从没写过它）—— 旧实现读 cfg.installAt 时
+    // 把这一条提示条永久关掉；若哪天又把它当成 0 交给格式化，这里会看到 1970。
+    const down = render(<Dashboard billing={noopRemote({
+      status: async () => { throw new Error('wire down') },
+    } as never)} store={store} scope={h.scope} />)
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect(down.container.querySelector('[data-dsh-ub-notice]')).toBeNull()
+    expect(down.container.textContent).not.toContain('1970')
+
+    const zero = render(<Dashboard billing={noopRemote({
+      status: async () => ({ ok: true, value: { installAt: 0, rows: 0, sessions: 0, snapshots: 0 } }),
+    } as never)} store={store} scope={h.scope} />)
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect(zero.container.querySelector('[data-dsh-ub-notice]')).toBeNull()
+    expect(zero.container.textContent).not.toContain('1970')
   })
 
   /**
@@ -252,7 +299,7 @@ const overviewRemote = (over: Record<string, unknown>, dailyOver: Record<string,
 
 describe('TabOverview', () => {
   it('Hero 显示本月费用与今日，未收录有提示，回填有估算角标', async () => {
-    render(<TabOverview billing={overviewRemote({})} store={createBillingStore({ open: true })} />)
+    render(<Tab billing={overviewRemote({})} store={createBillingStore({ open: true })} />)
     expect(await screen.findByText('¥42.00')).toBeTruthy()
     // brief 原文是 `getByText(/未收录/)`：KPI 标签「未收录模型」、KPI 值「1 未收录」与下方提示条
     // 三处都命中该正则，getByText 会抛 “Found multiple elements”。实现保持 brief 逐字不变，
@@ -263,21 +310,36 @@ describe('TabOverview', () => {
   })
 
   it('预算超支时进度条 level=over', async () => {
-    const { container } = render(<TabOverview billing={overviewRemote({ totalCny: 150 })} store={createBillingStore({ open: true })} />)
+    const { container } = render(<Tab billing={overviewRemote({ totalCny: 150 })} store={createBillingStore({ open: true })} />)
     await screen.findByText('¥150.00')
     expect(container.querySelector('[data-dsh-ub-bar]')!.getAttribute('data-level')).toBe('over')
   })
 
   it('未收录提示被关掉时不显示', async () => {
-    render(<TabOverview billing={overviewRemote({ unpricedModels: [] })} store={createBillingStore({ open: true })} />)
+    render(<Tab billing={overviewRemote({ unpricedModels: [] })} store={createBillingStore({ open: true })} />)
     await screen.findByText('¥42.00')
     // brief 原文是 `queryByText(/未收录/)`：常驻 KPI 标签「未收录模型」恒命中，永远不为 null；
     // 「关掉」的是未收录提示条，所以按提示条断言。
     expect(screen.queryByText(/条记录涉及/)).toBeNull()
   })
 
+  it('display.showUnpricedWarning 关掉时提示条消失，但计数与徽标（事实）照旧', async () => {
+    // 该设置此前只在 schema 里躺着（没有任何 UI、也没有任何读取方）：关掉它必须真的关掉
+    // 那条解释性文案，而未收录的**事实**（「1 未收录」与 KPI 计数）永远保留。
+    const h = fakeScope(baseConfig({ display: { showUnpricedWarning: false, includeSubagents: true } }))
+    render(<Tab billing={overviewRemote({})} store={createBillingStore({ open: true })} scope={h.scope} />)
+    await screen.findByText('¥42.00')
+    expect(screen.queryByText(/条记录涉及/)).toBeNull()
+    expect(screen.getByText('1 未收录')).toBeTruthy()
+  })
+
+  it('display.showUnpricedWarning 打开（缺省）时提示条照常显示', async () => {
+    render(<Tab billing={overviewRemote({})} store={createBillingStore({ open: true })} />)
+    expect(await screen.findByText(/条记录涉及/)).toBeTruthy()
+  })
+
   it('整份账一行都没定价：Hero 与日均显示占位，绝不显示 ¥0.00', async () => {
-    const { container } = render(<TabOverview
+    const { container } = render(<Tab
       billing={overviewRemote({ totalCny: 0, todayCny: 0, weekCny: 0, avgDailyCny: 0, calls: 3, unpricedModels: ['x/mystery'], unpricedRows: 3 })}
       store={createBillingStore({ open: true })} />)
     await waitFor(() => {
@@ -291,7 +353,7 @@ describe('TabOverview', () => {
   })
 
   it('真实零（无未收录模型）时 Hero 保留 ¥0.00 —— 占位不能吞掉合法结果', async () => {
-    const { container } = render(<TabOverview
+    const { container } = render(<Tab
       billing={overviewRemote({ totalCny: 0, todayCny: 0, weekCny: 0, avgDailyCny: 0, unpricedModels: [], unpricedRows: 0 })}
       store={createBillingStore({ open: true })} />)
     await waitFor(() => {
@@ -301,7 +363,7 @@ describe('TabOverview', () => {
   })
 
   it('整份账一行都没定价：今日/本周也是占位（子集里的 0 同样是未知，不是真实零）', async () => {
-    render(<TabOverview
+    render(<Tab
       billing={overviewRemote({ totalCny: 0, todayCny: 0, weekCny: 0, avgDailyCny: 0, calls: 3, unpricedModels: ['x/mystery'], unpricedRows: 3 })}
       store={createBillingStore({ open: true })} />)
     const sub = (await screen.findByText(/当前范围合计/)).textContent ?? ''
@@ -311,7 +373,7 @@ describe('TabOverview', () => {
   })
 
   it('真实零（无未收录模型）：今日/本周保留 ¥0.00 —— 同一处占位不能吞掉合法结果', async () => {
-    render(<TabOverview
+    render(<Tab
       billing={overviewRemote({ totalCny: 0, todayCny: 0, weekCny: 0, avgDailyCny: 0, calls: 0, unpricedModels: [], unpricedRows: 0 })}
       store={createBillingStore({ open: true })} />)
     const sub = (await screen.findByText(/当前范围合计/)).textContent ?? ''
@@ -322,14 +384,14 @@ describe('TabOverview', () => {
   it('回填标记缺席（旧 host / 宽松 codec 透传）按 present 处理：估算角标照常显示', async () => {
     // 与入口卡、明细、趋势、热力图同一个保守 helper；直接读 overview.hasBackfilled 会把
     // 「标记缺席」当成「没有回填」而少披露。
-    render(<TabOverview billing={overviewRemote({ hasBackfilled: undefined })} store={createBillingStore({ open: true })} />)
+    render(<Tab billing={overviewRemote({ hasBackfilled: undefined })} store={createBillingStore({ open: true })} />)
     expect(await screen.findByText(/含安装前估算/)).toBeTruthy()
   })
 
   it('host 返回 ok:false 时停在读取占位并留日志，绝不落到 ¥0.00', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
-      render(<TabOverview
+      render(<Tab
         billing={noopRemote({ overview: async () => ({ ok: false, error: { message: 'host down' } }) as never } as never)}
         store={createBillingStore({ open: true })} />)
       expect(await screen.findByText('正在读取用量…')).toBeTruthy()
@@ -343,7 +405,7 @@ describe('TabOverview', () => {
   it('取数 reject 时停在读取占位并留日志（不是 unhandled rejection）', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
-      render(<TabOverview
+      render(<Tab
         billing={noopRemote({ overview: async () => { throw new Error('wire down') } } as never)}
         store={createBillingStore({ open: true })} />)
       expect(await screen.findByText('正在读取用量…')).toBeTruthy()
@@ -355,7 +417,7 @@ describe('TabOverview', () => {
   })
 
   it('远程面缺席时 effect 早退（不抛 TypeError）', async () => {
-    render(<TabOverview billing={undefined} store={createBillingStore({ open: true })} />)
+    render(<Tab billing={undefined} store={createBillingStore({ open: true })} />)
     expect(await screen.findByText('正在读取用量…')).toBeTruthy()
   })
 })
@@ -370,6 +432,24 @@ describe('TabTrend', () => {
 
   it('evaluateBudget 与 UI 档位一致（同一份纯函数，不重复实现）', () => {
     expect(evaluateBudget({ spentCny: 150, monthlyCny: 100, enabled: true, notified: {}, monthKey: '2026-09' }).level).toBe('over')
+  })
+
+  it('柱状图 tooltip 走 format.ts：不打印原始浮点，Token 模式走 formatInt', async () => {
+    const store = createBillingStore({ open: true })
+    const billing = noopRemote({
+      daily: async () => ({ ok: true, value: {
+        days: [{ day: '2026-09-15', costCny: 1234.5678901234, input: 1234567, cacheRead: 0, cacheWrite: 0, output: 0, calls: 1 }],
+        hasBackfilled: false, unpricedModels: [],
+      } }),
+    } as never)
+    const { container } = render(<TabTrend billing={billing} store={store} />)
+    await screen.findByRole('img', { name: '柱状图' })
+    const costTitle = container.querySelector('title')!.textContent ?? ''
+    expect(costTitle).toContain('¥1,234.57')
+    expect(costTitle).not.toContain('1234.5678901234')
+
+    await act(async () => { screen.getByText('Token').click() })
+    expect(container.querySelector('title')!.textContent).toContain('1,234,567')
   })
 
   it('回填披露随 daily 响应同源到达：二次 overview 取数失败也不能让标记消失', async () => {
@@ -647,6 +727,9 @@ function pricingEditorRemote(opts: { flashIsCustom?: boolean } = {}) {
   let customKeys: string[] = opts.flashIsCustom === true ? [KEY] : []
   const setCalls: CustomPriceInput[] = []
   const removeCalls: string[] = []
+  const aliasCalls: AliasInput[] = []
+  const norm = (s: string): string => s.trim().toLowerCase()
+  let aliases: Array<{ provider: string; rawModel: string; canonicalModel: string }> = []
   const billing = noopRemote({
     pricing: async () => ({ ok: true, value: {
       entries: { ...entries }, usdToCny: 7.1, usdToCnySource: 'default', snapshotId: 'snap-install',
@@ -671,8 +754,20 @@ function pricingEditorRemote(opts: { flashIsCustom?: boolean } = {}) {
       customKeys = customKeys.filter((k) => k !== key)
       return { ok: true, value: { ok: true } }
     },
+    aliasList: async () => ({ ok: true, value: { aliases: aliases.map((a) => ({ ...a })) } }),
+    setAlias: async (input: AliasInput) => {
+      aliasCalls.push(input)
+      aliases = aliases.filter((a) => !(a.provider === norm(input.provider) && a.rawModel === input.rawModel.trim()))
+      if (input.canonicalModel !== null) {
+        aliases = [...aliases, {
+          provider: norm(input.provider), rawModel: input.rawModel.trim(),
+          canonicalModel: input.canonicalModel.trim(),
+        }]
+      }
+      return { ok: true, value: { ok: true } }
+    },
   } as never)
-  return { billing, setCalls, removeCalls, entriesNow: () => entries }
+  return { billing, setCalls, removeCalls, aliasCalls, aliasesNow: () => aliases, entriesNow: () => entries }
 }
 
 const fillDraft = (key: string, input: string, cacheRead: string, cacheWrite: string, output: string): void => {
@@ -746,6 +841,45 @@ describe('TabPricing', () => {
     expect(h.setCalls).toHaveLength(0)
   })
 
+  it('手工别名：绑定发的是完整 AliasInput，列表随 host 刷新', async () => {
+    const h = pricingEditorRemote()
+    render(<TabPricing billing={h.billing} store={createBillingStore({ open: true })} />)
+    await screen.findByText(/deepseek-v4-flash/)
+
+    fireEvent.change(screen.getByLabelText('原始 id'), { target: { value: 'deepseek/v4f-x' } })
+    fireEvent.change(screen.getByLabelText('canonical 模型'), { target: { value: 'deepseek-v4-flash' } })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '保存别名' })) })
+
+    expect(h.aliasCalls).toEqual([
+      { provider: 'deepseek', rawModel: 'v4f-x', canonicalModel: 'deepseek-v4-flash' },
+    ])
+    // 列表行（带空格的展示文本）——消息串「已绑定 deepseek/v4f-x → …」不带空格，两者不会混。
+    expect(await screen.findByText('deepseek / v4f-x → deepseek-v4-flash')).toBeTruthy()
+  })
+
+  it('手工别名：解绑发 canonicalModel:null，列表里不再有它', async () => {
+    const h = pricingEditorRemote()
+    await h.billing.setAlias({ provider: 'deepseek', rawModel: 'v4f-x', canonicalModel: 'deepseek-v4-flash' })
+    render(<TabPricing billing={h.billing} store={createBillingStore({ open: true })} />)
+    await screen.findByText('deepseek / v4f-x → deepseek-v4-flash')
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '解绑 deepseek/v4f-x' })) })
+    expect(h.aliasCalls.at(-1)).toEqual({ provider: 'deepseek', rawModel: 'v4f-x', canonicalModel: null })
+    await waitFor(() => { expect(screen.queryByText('deepseek / v4f-x → deepseek-v4-flash')).toBeNull() })
+  })
+
+  it('手工别名：残缺 key / 空 canonical 被拒绝，一次远程都不发', async () => {
+    const h = pricingEditorRemote()
+    render(<TabPricing billing={h.billing} store={createBillingStore({ open: true })} />)
+    await screen.findByText(/deepseek-v4-flash/)
+
+    fireEvent.change(screen.getByLabelText('原始 id'), { target: { value: 'no-slash' } })
+    fireEvent.change(screen.getByLabelText('canonical 模型'), { target: { value: 'x' } })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '保存别名' })) })
+    expect(await screen.findByText(/别名要写/)).toBeTruthy()
+    expect(h.aliasCalls).toEqual([])
+  })
+
   it('删除时宿主写入失败（RemoteResult ok:false）报宿主错误，不误报成「没有生效中的自定义价」', async () => {
     const key = 'deepseek/deepseek-v4-flash'
     const billing = noopRemote({
@@ -809,6 +943,21 @@ describe('SettingsSection', () => {
     expect(store.includeSubagents).toBe(false)
     // 快照折回后复选框必须跟着变（不是只在本地 state 里翻）。
     expect((screen.getByRole('checkbox', { name: /统计包含子代理会话/ }) as HTMLInputElement).checked).toBe(false)
+  })
+
+  it('未收录提示条开关往返：写 display.showUnpricedWarning 并随快照回弹', async () => {
+    const h = fakeScope(baseConfig())
+    render(<SettingsSection billing={pricingRemote()} scope={h.scope} store={createBillingStore({ open: true })} />)
+
+    const box = screen.getByRole('checkbox', { name: /未收录模型/ }) as HTMLInputElement
+    expect(box.checked).toBe(true)
+    await act(async () => { fireEvent.click(box) })
+
+    expect(h.writes).toContainEqual({
+      field: 'display', value: { showUnpricedWarning: false, includeSubagents: true },
+    })
+    // 快照折回后复选框必须跟着变（不是只在本地 state 里翻）。
+    expect((screen.getByRole('checkbox', { name: /未收录模型/ }) as HTMLInputElement).checked).toBe(false)
   })
 
   it('预算开关往返：写 budget.enabled 并随快照回弹', async () => {

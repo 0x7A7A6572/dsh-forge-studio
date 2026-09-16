@@ -56,6 +56,12 @@ export function calendarMatrix(
     if (!Number.isNaN(weekStart) && start !== weekStart) {
       rows.push(row)
       row = new Array(7).fill(null)
+      // 输入可能**跳周**：'all' 路径会把窗口之前的历史日期前置到序列头部（view.ts 的
+      // buildDaily），与 90 天窗口的尾部隔着若干周。只推一行会让那段历史紧贴窗口末尾，
+      // 色阶的时间轴就读错了 —— 中间每个缺失的整周都补一个空行。
+      if (start > weekStart) {
+        for (let w = weekStart + 7; w < start; w += 7) rows.push(new Array(7).fill(null))
+      }
     }
     weekStart = start
     const value = values.get(day) ?? 0

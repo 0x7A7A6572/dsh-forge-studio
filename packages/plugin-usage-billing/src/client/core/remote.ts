@@ -14,7 +14,7 @@ import { REMOTE_NAMESPACE, USAGE_BILLING_REMOTE_METHODS } from '../../remote-met
 import type {
   AliasInput, CustomPriceInput,
 } from '../../types.ts'
-import type { DailyPoint, LedgerMarkers, ModelRow, Overview, SessionRow, WorkspaceRow } from '../../view.ts'
+import type { DailyPoint, LedgerMarkers, ModelRow, Overview, WorkspaceRow } from '../../view.ts'
 import type { PriceEntry } from '../../types.ts'
 import type { RangeKind } from '../../time.ts'
 
@@ -58,7 +58,6 @@ export const USAGE_BILLING_REMOTE_AUGMENTATIONS = {
   overview: true,
   daily: true,
   byModel: true,
-  bySession: true,
   byWorkspace: true,
   pricing: true,
   setCustomPrice: true,
@@ -80,7 +79,6 @@ export interface UsageBillingRemote {
   /** 金额与披露标记**同源**：`hasBackfilled` / `unpricedModels` 随 days 一起返回，不再二次取数。 */
   daily(rangeKind: RangeKind, includeSubagents: boolean): Promise<RemoteResult<{ days: DailyPoint[] } & LedgerMarkers>>
   byModel(rangeKind: RangeKind, includeSubagents: boolean): Promise<RemoteResult<{ models: ModelRow[] } & LedgerMarkers>>
-  bySession(rangeKind: RangeKind, includeSubagents: boolean): Promise<RemoteResult<{ sessions: SessionRow[] }>>
   byWorkspace(rangeKind: RangeKind, includeSubagents: boolean): Promise<RemoteResult<{ workspaces: WorkspaceRow[] } & LedgerMarkers>>
   pricing(): Promise<RemoteResult<{
     entries: Record<string, PriceEntry>; usdToCny: number; usdToCnySource: 'live' | 'default'

@@ -59,6 +59,9 @@ export function TabPricing(props: {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT)
+  /** 手工别名草稿（`<provider>/<原始 model>` + canonical）。 */
+  const [aliasDraft, setAliasDraft] = useState({ key: '', canonical: '' })
+  const [aliases, setAliases] = useState<Array<{ provider: string; rawModel: string; canonicalModel: string }>>([])
 
   const reload = useCallback(async () => {
     if (billing === undefined) return
@@ -126,6 +129,63 @@ export function TabPricing(props: {
       setBusy(false)
     }
   }, [billing, reload])
+
+  /** 手工别名列表（host 侧实现并已测：`setAlias` / `aliasList`）。只影响展示层合并。 */
+  const reloadAliases = useCallback(async () => {
+    if (billing === undefined) return
+    const r = await billing.aliasList()
+    if (r.ok) setAliases(r.value.aliases)
+  }, [billing])
+
+  useEffect(() => {
+    if (billing === undefined) return
+    let alive = true
+    void billing.aliasList().then((r) => {
+      if (alive && r.ok) setAliases(r.value.aliases)
+    }).catch(() => {
+      // 别名表取不到就留空：它只影响展示层合并，不该把整张价表拖成错误态。
+    })
+    return () => { alive = false }
+  }, [billing])
+
+  /** 绑定：只按第一个 '/' 切（model id 自身可能带 '/'），三段都非空才发远程调用。 */
+  const bindAlias = useCallback(async () => {
+    if (billing === undefined) return
+    const slash = aliasDraft.key.indexOf('/')
+    const provider = slash < 0 ? '' : aliasDraft.key.slice(0, slash).trim()
+    const rawModel = slash < 0 ? '' : aliasDraft.key.slice(slash + 1).trim()
+    const canonicalModel = aliasDraft.canonical.trim()
+    if (provider === '' || rawModel === '' || canonicalModel === '') {
+      setMsg('别名要写「<provider>/<原始 model id>」与 canonical 模型名，两段都不能空')
+      return
+    }
+    setBusy(true)
+    try {
+      const r = await billing.setAlias({ provider, rawModel, canonicalModel })
+      setMsg(r.ok ? `已绑定 ${provider}/${rawModel} → ${canonicalModel}` : '绑定失败')
+      if (r.ok) setAliasDraft({ key: '', canonical: '' })
+    } catch {
+      setMsg('绑定失败：远程通道不可用')
+    } finally {
+      await reloadAliases().catch(() => { /* 保留上一次的列表 */ })
+      setBusy(false)
+    }
+  }, [billing, aliasDraft, reloadAliases])
+
+  /** 解绑：`canonicalModel: null`，之后该原始 id 恢复独立成行。 */
+  const unbindAlias = useCallback(async (provider: string, rawModel: string) => {
+    if (billing === undefined) return
+    setBusy(true)
+    try {
+      const r = await billing.setAlias({ provider, rawModel, canonicalModel: null })
+      setMsg(r.ok ? `已解绑 ${provider}/${rawModel}` : '解绑失败')
+    } catch {
+      setMsg('解绑失败：远程通道不可用')
+    } finally {
+      await reloadAliases().catch(() => { /* 同上 */ })
+      setBusy(false)
+    }
+  }, [billing, reloadAliases])
 
   if (entries === null) return <div data-dsh-ub-empty>正在读取价表…</div>
 
@@ -229,6 +289,49 @@ export function TabPricing(props: {
       </table>
       <p data-dsh-ub-sub>单位：每百万 token。「立即刷新」与「重算」都以那一刻的账本与价表为准。</p>
       <p data-dsh-ub-sub>上次快照时间以费率来源与「立即刷新」结果为准；账本记录每行都带所用快照 id 可追溯。</p>
+
+      <section style={{ marginTop: 16 }}>
+        <div data-dsh-ub-sub>
+          手工别名（把未收录 / 疑似改名的原始 id 绑到 canonical 模型；只在同一 provider 内合并展示，账本不动）
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 6 }}>
+          <label data-dsh-ub-sub>
+            原始 id
+            <input
+              placeholder="provider/raw-model"
+              value={aliasDraft.key}
+              onChange={(e) => setAliasDraft({ ...aliasDraft, key: e.target.value })}
+              style={{ width: 220, marginLeft: 4 }}
+            />
+          </label>
+          <label data-dsh-ub-sub>
+            canonical 模型
+            <input
+              placeholder="canonical-model"
+              value={aliasDraft.canonical}
+              onChange={(e) => setAliasDraft({ ...aliasDraft, canonical: e.target.value })}
+              style={{ width: 200, marginLeft: 4 }}
+            />
+          </label>
+          <button type="button" disabled={busy} onClick={() => { void bindAlias() }}>保存别名</button>
+        </div>
+        {aliases.length === 0 ? <p data-dsh-ub-sub>还没有手工别名。</p> : (
+          <ul data-dsh-ub-sub style={{ listStyle: 'none', padding: 0 }}>
+            {aliases.map((a) => (
+              <li key={`${a.provider}\u0000${a.rawModel}`}>
+                {a.provider} / {a.rawModel} → {a.canonicalModel}
+                <button
+                  type="button"
+                  disabled={busy}
+                  aria-label={`解绑 ${a.provider}/${a.rawModel}`}
+                  style={{ marginLeft: 8 }}
+                  onClick={() => { void unbindAlias(a.provider, a.rawModel) }}
+                >解绑</button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   )
 }

@@ -57,7 +57,6 @@ export function baseConfig(over: Partial<BillingConfigLike> = {}): BillingConfig
     display: { showUnpricedWarning: true, includeSubagents: true },
     pricing: { autoRefresh: true, refreshHours: 6 },
     notices: { backfillDismissed: false, budgetNotified: {} },
-    installAt: 1_700_000_000_000,
     ...over,
   }
 }

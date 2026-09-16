@@ -1,4 +1,8 @@
-/** usage-billing 共享类型（host 与 client 共用；client 只 type-only import）。 */
+/**
+ * usage-billing 共享类型（host 与 client 共用）。这里**除唯一的常量**外只有类型，
+ * client 对它们一律 type-only import；`USAGE_BILLING_NAMESPACE` 是零依赖的运行时值，
+ * client 必须 value-import（见 client/index.ts —— 从 settings.ts 取值会把 host 实现拖进浏览器产物）。
+ */
 
 /** 计价所用单价的原生币种。 */
 export type Currency = 'CNY' | 'USD'
@@ -71,7 +75,7 @@ export interface PriceSnapshot {
 
 /** 手工别名绑定（可撤销）。 */
 export interface ModelAlias {
-  /** `${provider}\u0000${rawModel}`。 */
+  /** `aliasId(provider, rawModel)`：provider 去空格 + 小写、rawModel 去空格，NUL 分隔。 */
   id: string
   provider: string
   rawModel: string

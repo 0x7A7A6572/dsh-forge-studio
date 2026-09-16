@@ -55,4 +55,12 @@ describe('Remote 契约防漂移', () => {
     expect(USAGE_BILLING_REMOTE_METHODS.map((m) => m.method))
       .toEqual(Object.keys(USAGE_BILLING_REMOTE_AUGMENTATIONS))
   })
+
+  it('bySession 端点已彻底删除（无消费方：会话行由 byWorkspace 分组带回）', () => {
+    // 半删半留是最坏的状态：descriptor 还在、类型面还在、没人调用。这里钉住它不会回来
+    // 除非同时补上真正的消费方（明细页已从 byWorkspace 的 sessions 里渲染会话行）。
+    expect(USAGE_BILLING_METHOD_NAMES).not.toContain('bySession')
+    expect(Object.keys(USAGE_BILLING_REMOTE_AUGMENTATIONS)).not.toContain('bySession')
+    expect(usageBillingRemoteContribution.descriptors.map((d) => d.method)).not.toContain('bySession')
+  })
 })

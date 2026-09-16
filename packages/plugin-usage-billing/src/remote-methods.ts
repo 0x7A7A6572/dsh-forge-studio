@@ -21,7 +21,6 @@ export const USAGE_BILLING_REMOTE_METHODS = Object.freeze([
   { method: 'overview', params: ['rangeKind', 'includeSubagents'] },
   { method: 'daily', params: ['rangeKind', 'includeSubagents'] },
   { method: 'byModel', params: ['rangeKind', 'includeSubagents'] },
-  { method: 'bySession', params: ['rangeKind', 'includeSubagents'] },
   { method: 'byWorkspace', params: ['rangeKind', 'includeSubagents'] },
   { method: 'pricing', params: [] },
   { method: 'setCustomPrice', params: ['entry'] },

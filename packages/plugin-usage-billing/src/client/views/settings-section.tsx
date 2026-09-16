@@ -72,6 +72,15 @@ export function SettingsSection(props: {
       .catch(() => { /* 同上 */ })
   }, [scope, store, cfg])
 
+  /**
+   * 未收录提示条开关：只关掉概览页那条解释性文案；未收录的计数与徽标是事实，永远保留
+   * （关掉「提醒」不等于把「未知」当成「没有」）。
+   */
+  const writeShowUnpricedWarning = useCallback((next: boolean) => {
+    void scope.set('display', { ...(cfg?.display ?? {}), showUnpricedWarning: next })
+      .catch(() => { /* 同上 */ })
+  }, [scope, cfg])
+
   return (
     <section data-dsh-usage-billing>
       <h3>月度预算</h3>
@@ -93,6 +102,10 @@ export function SettingsSection(props: {
       <label>
         <input type="checkbox" checked={cfg?.display?.includeSubagents ?? true} disabled={!settings.writable}
           onChange={(e) => { writeIncludeSubagents(e.target.checked) }} /> 统计包含子代理会话
+      </label>
+      <label>
+        <input type="checkbox" checked={cfg?.display?.showUnpricedWarning ?? true} disabled={!settings.writable}
+          onChange={(e) => { writeShowUnpricedWarning(e.target.checked) }} /> 概览页显示「未收录模型」提示条
       </label>
 
       <h3>状态</h3>

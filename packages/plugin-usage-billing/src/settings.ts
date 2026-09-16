@@ -1,7 +1,8 @@
 /**
  * 设置命名空间 `forge-studio-usage-billing`：host 注册 schema + 组合 base，
  * 并导出可订阅访问句柄（照抄 plugin-daily-log/src/settings.ts 的已验证模式）。
- * 预算 / 显示偏好 / 刷新策略 / 提示条状态 / installAt 都在这里。
+ * 预算 / 显示偏好 / 刷新策略 / 提示条状态都在这里（安装时刻**不**在这里：它由 host 装配时
+ * 决定并经 `status()` 端点读取，设置命名空间里既没有写入路径、也不需要一份可能过期的副本）。
  */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -17,8 +18,6 @@ export interface UsageBillingConfig {
   display: { showUnpricedWarning: boolean; includeSubagents: boolean }
   pricing: { autoRefresh: boolean; refreshHours: number }
   notices: { backfillDismissed: boolean; budgetNotified: Record<string, string> }
-  /** 首次装配时刻（回填判定基准，spec §5.6）。 */
-  installAt: number
 }
 
 export const USAGE_BILLING_CONFIG_BASE: UsageBillingConfig = {
@@ -26,7 +25,6 @@ export const USAGE_BILLING_CONFIG_BASE: UsageBillingConfig = {
   display: { showUnpricedWarning: true, includeSubagents: true },
   pricing: { autoRefresh: true, refreshHours: 6 },
   notices: { backfillDismissed: false, budgetNotified: {} },
-  installAt: 0,
 }
 
 export const UsageBillingConfigSchema = Schema.object({
@@ -51,7 +49,6 @@ export const UsageBillingConfigSchema = Schema.object({
     //   without a reference to '.pnpm/@deepseek-ai+cosmokit@1.8.3/node_modules/@deepseek-ai/cosmokit'.
     budgetNotified: Schema.object({}).default({}) as unknown as Schema<Record<string, string>>,
   }),
-  installAt: Schema.number().default(0),
 })
 
 export interface UsageBillingSettingsAccess {

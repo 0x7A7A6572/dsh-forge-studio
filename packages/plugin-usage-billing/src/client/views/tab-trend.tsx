@@ -76,7 +76,9 @@ export function TabTrend(props: {
           合计 {tokenMetric ? formatInt(values.reduce((a, b) => a + b, 0)) + ' tok' : money(totalCost)}
         </span>
       </div>
-      <BarChart values={values} labels={data.days.map((d) => formatDay(d.day))} width={960} height={180} />
+      <BarChart values={values} labels={data.days.map((d) => formatDay(d.day))} width={960} height={180}
+        // tooltip 与列表同一口径：费用走 money（含未定价占位），Token 走 formatInt。
+        formatValue={(n) => (tokenMetric ? formatInt(n) : money(n))} />
       <ul data-dsh-ub-sub style={{ marginTop: 10 }}>
         {[...data.days].reverse().slice(0, 7).map((d) => (
           <li key={d.day}>{d.day} · {money(d.costCny)} · {formatInt(d.calls)} 次调用</li>

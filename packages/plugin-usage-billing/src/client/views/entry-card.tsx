@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { UsageBillingRemote } from '../core/remote.ts'
 import type { BillingStore } from '../core/store.ts'
 import { backfilledDisclosure, formatCny, formatDay, isUnpricedTotal } from '../core/format.ts'
-import { sparklinePoints } from '../core/chart-data.ts'
+import { Sparkline } from './chart.tsx'
 import type { DailyPoint, Overview } from '../../view.ts'
 
 /** 概览未到 / 整本账未定价时的占位：`¥0.00` 与真实零费用在界面上无法区分。 */
@@ -56,10 +56,10 @@ export function EntryCard(props: EntryCardProps): JSX.Element {
     return () => { alive = false }
   }, [billing, includeSubagents])
 
-  const spark = useMemo(
-    () => sparklinePoints(days.map((d) => d.costCny), 56, 16),
-    [days],
-  )
+  // 折线走 views/chart.tsx 的 Sparkline（此前这里另抄了一份 inline `<svg><polyline>`，
+  // 于是 Sparkline 成了没人用的死代码，两份实现还会各自漂移）；空数据时 Sparkline 自己
+  // 返回一个空 svg，这里按「有没有点」决定渲不渲染，保持原来的 DOM 形状。
+  const sparkValues = useMemo(() => days.map((d) => d.costCny), [days])
 
   // 一行都没定价（totalCny 为 0 且存在未收录模型）时，金额同样是不可信的 0 ——
   // 判据来自 client/core/format.ts 的唯一实现，与概览 / 趋势 / 热力图同一口径。
@@ -88,10 +88,8 @@ export function EntryCard(props: EntryCardProps): JSX.Element {
           {todayKey === '' ? PENDING : formatDay(todayKey)} 今日 {todayText}
         </span>
       </span>
-      {wide && spark !== '' ? (
-        <svg width={56} height={16} aria-hidden="true">
-          <polyline points={spark} fill="none" stroke="currentColor" strokeWidth={1.5} />
-        </svg>
+      {wide && sparkValues.length > 0 ? (
+        <Sparkline values={sparkValues} width={56} height={16} />
       ) : null}
       {pricingDegraded ? <span data-dsh-ub-badge data-kind="warn">内置价</span> : null}
       {overview !== null && overview.unpricedModels.length > 0 ? (

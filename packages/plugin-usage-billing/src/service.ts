@@ -22,7 +22,7 @@ import type { UsageBillingSettingsAccess } from './settings.ts'
 import { dayKey, daysInRange, rangeToSpec } from './time.ts'
 import type { RangeKind } from './time.ts'
 import {
-  buildBySession, buildByWorkspace, buildDaily, buildMarkers, buildOverview, filterRows, mergeByModel,
+  buildByWorkspace, buildDaily, buildMarkers, buildOverview, filterRows, mergeByModel,
 } from './view.ts'
 import type {
   AliasInput, CustomPriceInput, Diagnostic, FoldState, LedgerRow,
@@ -154,11 +154,6 @@ export class UsageBillingService extends TypertRemoteService {
   async byModel(rangeKind: RangeKind, includeSubagents: boolean) {
     const rows = this.scoped(await this.rows(), rangeKind, includeSubagents)
     return { models: mergeByModel(rows, this.listAliases()), ...buildMarkers(rows) }
-  }
-
-  async bySession(rangeKind: RangeKind, includeSubagents: boolean) {
-    const rows = this.scoped(await this.rows(), rangeKind, includeSubagents)
-    return { sessions: buildBySession(rows) }
   }
 
   async byWorkspace(rangeKind: RangeKind, includeSubagents: boolean) {

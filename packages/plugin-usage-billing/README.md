@@ -7,7 +7,7 @@
 
 - 五维费用：provider / model / 天 / 会话 / 工作区（cwd）。
 - 侧栏入口卡（本月费用 + 7 天 sparkline，折叠 rail 退化为图标钮）；点击打开全屏仪表盘，含概览 / 趋势 / 热力图 / 明细 / 费率五个分区。
-- 设置页分区：预算、显示偏好、价表状态、自定义单价与手工别名、口径说明。
+- 设置页分区：预算、显示偏好（子代理口径 / 未收录提示条）、账本状态与口径说明；自定义单价与手工别名在仪表盘的「费率」分区。
 - 月度预算分档：跨 50% / 80% / 100% 各提醒一次，提醒显示在仪表盘弹窗顶部（月度口径，不受概览页所选范围影响），按「月份 + 档位」去重（记在设置 `notices.budgetNotified`）；进度条 ≥80% 琥珀、超支红。
 - 回填披露（三处，见下）。
 
@@ -50,7 +50,7 @@ client 侧 slot id 一律带前缀：`zzerx-usage-billing`（`sidebar.footer.act
 插件不可能知道安装前的真实价格，因此 `time < installAt` 的事件一律按安装时快照（`reason: 'install'`）估算，并分三处披露：
 
 1. 首次聚合后，入口卡与仪表盘顶部显示**一次性可关闭**的提示条（关闭状态写入设置 `notices.backfillDismissed`，之后不再出现）；入口卡另带常驻的「含安装前估算」标记。
-2. 概览 / 趋势 / 明细中所有属于回填区间的数值带**「估算」角标**，趋势图该区间底色区分。
+2. 概览 / 趋势 / 明细中所有属于回填区间的数值带**「估算」角标**（趋势图不做区间底色区分）。
 3. 设置页**常驻**口径说明（含 `installAt` 与回填快照 id），不可关闭。
 
 ### 价表来源与降级
@@ -60,7 +60,7 @@ client 侧 slot id 一律带前缀：`zzerx-usage-billing`（`sidebar.footer.act
 ### 自定义单价与别名
 
 - 费率页可直接新增 / 删除自定义单价：key 支持 `<provider>/<model>`、`<provider>/*`、`*/*`，币种 CNY 或 USD，四个价（input / cacheRead / cacheWrite / output）。写入即追加 `custom-price` delta，立即影响此后折叠的事件；删除后回落到目录价。
-- 设置页可把某个未收录 / 疑似改名的原始 id 手工绑定到 canonical 模型（以 `provider` + `rawModel` 为键，仅同 provider 生效），解绑即恢复。
+- 费率页可把某个未收录 / 疑似改名的原始 id 手工绑定到 canonical 模型（以 `provider` + `rawModel` 为键，仅同 provider 生效），解绑即恢复。
 
 ### 其他口径
 
@@ -75,3 +75,5 @@ client 侧 slot id 一律带前缀：`zzerx-usage-billing`（`sidebar.footer.act
 - **缓存条目保留写入时的 TTL**：修改 `pricing.refreshHours` 要等当前缓存条目过期才生效，不会即时重算。
 - **性能（纯性能项）**：`activeOverridesAt` 对每条自定义记录重排并重解目录层，而非增量单遍；只影响刷新耗时，不影响正确性。
 - **无障碍（延后）**：仪表盘弹窗没有 Esc 关闭与焦点管理（spec §7.1 期望有 Esc）；热力图格子不可聚焦（只有悬停明细）；部分表格仍使用已废弃的 `<th align>`。
+- **快照 id 的链式构造依赖写锁**：`snap-install#delta#delta` 由「上一份快照 id」拼出，同一毫秒内的两次写入只有经过 `serialize()` 串行化才会拿到不同的 prev；任何绕过串行链的新写入路径都会算出同一个键并覆盖彼此。当前唯一的写入路径都走 `serialize()`（`tests/service-remote.test.ts` 的「同一毫秒」用例钉住）。
+- **会话维度没有独立的 wire 端点**：会话行由 `byWorkspace` 的分组结果带回（明细页展开工作区时才可见），不单独提供按会话聚合的远程方法。

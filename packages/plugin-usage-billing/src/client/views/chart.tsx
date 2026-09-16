@@ -14,8 +14,14 @@ export function Sparkline(props: { values: number[]; width?: number; height?: nu
   )
 }
 
+/**
+ * 柱状图。`formatValue` 是**必填**的：tooltip 曾经直接插值 `props.values[i]`，把
+ * `1234.5678901234` 这种原始浮点印给用户，绕过了 `core/format.ts` 这个唯一的金额格式化
+ * 来源。调用方（趋势页）按当前指标（费用 / Token）各自传对应的格式化函数。
+ */
 export function BarChart(props: {
   values: number[]; labels: string[]; width: number; height: number; color?: string
+  formatValue: (value: number) => string
 }): JSX.Element {
   const bars = barGeometry(props.values, props.width, props.height)
   const slot = bars.length === 0 ? 0 : props.width / bars.length
@@ -31,7 +37,7 @@ export function BarChart(props: {
           fill={props.color ?? 'var(--dsw-alias-brand-primary)'}
           rx={1}
         >
-          <title>{`${props.labels[i] ?? ''}: ${props.values[i]}`}</title>
+          <title>{`${props.labels[i] ?? ''}: ${props.formatValue(props.values[i]!)}`}</title>
         </rect>
       ))}
     </svg>

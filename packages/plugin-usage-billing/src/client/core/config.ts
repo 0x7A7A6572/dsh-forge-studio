@@ -14,7 +14,6 @@ export interface BillingConfigLike {
   display: { showUnpricedWarning: boolean; includeSubagents: boolean }
   pricing: { autoRefresh: boolean; refreshHours: number }
   notices: { backfillDismissed: boolean; budgetNotified: Record<string, string> }
-  installAt: number
 }
 
 export type BillingScope = SettingsScope<BillingConfigLike>

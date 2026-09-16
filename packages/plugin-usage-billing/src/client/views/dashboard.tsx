@@ -43,6 +43,21 @@ export function Dashboard(props: {
   const cfg: BillingConfig = settings.value
   /** 本次跨档的提醒（本地态：落盘后 `shouldNotify` 就变 null 了，提醒本身要留在屏幕上）。 */
   const [budgetNotice, setBudgetNotice] = useState<{ tier: 1 | 2 | 3; pct: number } | null>(null)
+  /**
+   * 安装时刻**只能问 host**（`status()`）：设置命名空间里从来没有写过这个字段（base 是 0，
+   * 也没有任何写入路径），照 `cfg.installAt` 门控的旧写法等于把这条提示条永久关掉；
+   * 而把「未落盘」当成 0 交给格式化又会印出一个假的 1970。取不到就不渲染。
+   */
+  const [installAt, setInstallAt] = useState(0)
+
+  useEffect(() => {
+    if (billing === undefined) return
+    let alive = true
+    void billing.status().then((r) => {
+      if (alive && r.ok) setInstallAt(r.value.installAt)
+    }).catch(() => { /* 取不到安装时刻：不渲染提示条，也不伪造日期 */ })
+    return () => { alive = false }
+  }, [billing])
 
   /** 一次性关闭：写回宿主 notices（快照更新后提示条永久消失，重开弹窗也不会回来）。 */
   const dismissBackfill = useCallback(() => {
@@ -94,11 +109,12 @@ export function Dashboard(props: {
           <span data-dsh-ub-sub>真实用量 · 按事件时刻价表锁定</span>
           <button type="button" style={{ marginLeft: 'auto' }} onClick={() => store.closePanel()}>关闭</button>
         </header>
-        {/* 安装时刻未知（installAt 未落盘）时不渲染：宁可不说，也不能报一个假日期。 */}
-        {cfg !== undefined && cfg.installAt > 0 ? (
+        {/* 安装时刻未知（status 未到 / 取数失败 / installAt 非正）时不渲染：宁可不说，
+            也不能报一个假日期。 */}
+        {installAt > 0 ? (
           <BackfillNotice
-            installAt={cfg.installAt}
-            dismissed={cfg.notices?.backfillDismissed === true}
+            installAt={installAt}
+            dismissed={cfg?.notices?.backfillDismissed === true}
             // 只读 scope 下写不入宿主：把按钮禁用，别留一个按了没反应的按钮。
             writable={settings.writable}
             onDismiss={dismissBackfill}
@@ -121,7 +137,7 @@ export function Dashboard(props: {
               onClick={() => store.setTab(t.id)}>{t.label}</button>
           ))}
         </nav>
-        {state.tab === 'overview' ? <TabOverview billing={billing} store={store} /> : null}
+        {state.tab === 'overview' ? <TabOverview billing={billing} store={store} scope={scope} /> : null}
         {state.tab === 'trend' ? <TabTrend billing={billing} store={store} /> : null}
         {state.tab === 'heatmap' ? <TabHeatmap billing={billing} store={store} /> : null}
         {state.tab === 'detail' ? <TabDetail billing={billing} store={store} /> : null}

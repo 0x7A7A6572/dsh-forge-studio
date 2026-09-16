@@ -66,6 +66,17 @@ describe('calendarMatrix', () => {
     expect(m[0]![2]!.day).toBe('2026-09-02')
     expect(m[0]![2]!.value).toBe(5)
   })
+  it('跨多周的缺口补空行：孤立的历史日期不能贴到窗口末尾', () => {
+    // 'all' 路径会把 90 天窗口之前的历史日期前置到序列头部（view.ts 的 buildDaily）：
+    // 2026-01-05 与 2026-03-02 都是周一，中间隔着 7 个整周。只推一行的话这两周会相邻，
+    // 色阶的时间轴就读错了 —— 缺的每个整周都要补一个空行（行数 1 + 7 + 1 = 9）。
+    const m = calendarMatrix(['2026-01-05', '2026-03-02'], new Map([['2026-03-02', 5]]), { firstDayOfWeek: 1 })
+    expect(m).toHaveLength(9)
+    expect(m[0]![0]!.day).toBe('2026-01-05')
+    expect(m[8]![0]!.day).toBe('2026-03-02')
+    for (const w of m.slice(1, 8)) expect(w.every((c) => c === null)).toBe(true)
+  })
+
   it('跨周必须分行：整周回绕（列号递减）不能并进同一行', () => {
     // firstDayOfWeek: 1（周一）下，2026-09-01 起连续 7 天覆盖周二..下周一，
     // 列号序列为 1,2,3,4,5,6,0 —— 最后一天回绕到列 0。只看「列号是否被占」
