@@ -12,8 +12,8 @@ const usage = (over: Partial<TokenUsage> = {}): TokenUsage => ({
 
 describe('splitUsage', () => {
   it('四桶互斥，缺失的缓存字段按 0', () => {
-    expect(splitUsage(usage({ cacheReadTokens: 5 })))
-      .toEqual({ input: 1_000_000, cacheRead: 5, cacheWrite: 0, output: 1_000_000, reason: undefined })
+    expect(splitUsage(usage({ cacheReadTokens: 5, reasoningTokens: 3 })))
+      .toEqual({ input: 1_000_000, cacheRead: 5, cacheWrite: 0, output: 1_000_000, reason: 3 })
   })
 })
 
