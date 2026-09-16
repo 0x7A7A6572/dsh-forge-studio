@@ -14,9 +14,8 @@ import { REMOTE_NAMESPACE, USAGE_BILLING_REMOTE_METHODS } from '../../remote-met
 import type {
   AliasInput, CustomPriceInput,
 } from '../../types.ts'
-import type { DailyPoint, ModelRow, Overview, SessionRow, WorkspaceRow } from '../../view.ts'
-// brief 把 BudgetState 写成从 view.ts 引，但 view.ts 不导出它（它在 budget.ts）；仅改路径。
 import type { BudgetState } from '../../budget.ts'
+import type { DailyPoint, ModelRow, Overview, SessionRow, WorkspaceRow } from '../../view.ts'
 import type { PriceEntry } from '../../types.ts'
 import type { RangeKind } from '../../time.ts'
 
