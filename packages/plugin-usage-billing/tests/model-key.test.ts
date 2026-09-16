@@ -33,6 +33,9 @@ describe('priceKeyCandidates（查价档位顺序）', () => {
     expect(priceKeyCandidates('deepseek', 'deepseek-v4-flash-20260518')).toEqual([
       'deepseek/deepseek-v4-flash-20260518',
       'deepseek/deepseek-v4-flash',
+      // 同名兜底（跨 provider）：中转渠道调的官方模型靠这一档才「收录」
+      '*/deepseek-v4-flash',
+      '*/deepseek-v4-flash-20260518',
       'deepseek/*',
       '*/*',
     ])
@@ -45,6 +48,9 @@ describe('priceKeyCandidates（查价档位顺序）', () => {
     expect(priceKeyCandidates('relay', 'hy3', alias)).toEqual([
       'relay/hy3',
       'relay/deepseek-v4-flash',
+      // 别名的 canonical 也带同名兜底：绑定之后必须真的能查到目录价
+      '*/deepseek-v4-flash',
+      '*/hy3',
       'relay/*',
       '*/*',
     ])
@@ -56,12 +62,12 @@ describe('priceKeyCandidates（查价档位顺序）', () => {
 
   it('别名 canonicalModel 为空串时忽略', () => {
     const alias: ModelAlias = { id: 'i', provider: 'a', rawModel: 'b', canonicalModel: '' }
-    expect(priceKeyCandidates('a', 'b', alias)).toEqual(['a/b', 'a/*', '*/*'])
+    expect(priceKeyCandidates('a', 'b', alias)).toEqual(['a/b', '*/b', 'a/*', '*/*'])
   })
 
   it('候选去重后保序', () => {
     const out = priceKeyCandidates('a', 'plain')
-    expect(out).toEqual(['a/plain', 'a/*', '*/*'])
+    expect(out).toEqual(['a/plain', '*/plain', 'a/*', '*/*'])
   })
 })
 

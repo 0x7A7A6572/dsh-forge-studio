@@ -41,6 +41,8 @@ export const ledgerRowSchema = z.object({
 /** 每会话水位。 */
 export const foldStateSchema = z.object({
   sessionId: z.string(),
+  /** 会话变更戳；旧记录缺失 → 首轮重折一次后补上（不需要迁移）。 */
+  stamp: z.string().optional(),
   foldedThroughSeq: z.number(),
   lastTime: z.number(),
   headerCreatedAt: z.number(),

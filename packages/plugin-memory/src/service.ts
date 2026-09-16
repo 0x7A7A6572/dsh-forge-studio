@@ -18,6 +18,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type { memoryDomain } from './domain.ts'
+import { edgeKey } from './storage-key.ts'
 import { MEMORY_KINDS, MEMORY_KIND_LABELS, MEMORY_SYMMETRIC_RELATIONS } from './types.ts'
 import type { MemorySettingsAccess } from './settings.ts'
 import type {
@@ -1103,8 +1104,8 @@ export class MemoryService extends TypertRemoteService {
     if (current === undefined) return false
     await this.entities.delete(id)
     for (const edge of this.collectEdges()) {
-      if (edge.from.kind === 'entity' && edge.from.id === id) { await this.edges.delete(edge.id); continue }
-      if (edge.to.kind === 'entity' && edge.to.id === id) await this.edges.delete(edge.id)
+      if (edge.from.kind === 'entity' && edge.from.id === id) { await this.edges.delete(edgeKey(edge.id)); continue }
+      if (edge.to.kind === 'entity' && edge.to.id === id) await this.edges.delete(edgeKey(edge.id))
     }
     await this.syncAutoEdges()
     return true
@@ -1142,7 +1143,7 @@ export class MemoryService extends TypertRemoteService {
       ? [input.to, input.from]
       : [input.from, input.to]
     const now = Date.now()
-    const existing = await this.edges.get(id)
+    const existing = await this.edges.get(edgeKey(id))
     const note = input.note?.trim() ?? ''
     const edge: MemoryEdge = existing === undefined
       ? {
@@ -1165,15 +1166,15 @@ export class MemoryService extends TypertRemoteService {
           : existing.origin,
         updatedAt: now,
       }
-    await this.edges.put(edge.id, edge)
+    await this.edges.put(edgeKey(edge.id), edge)
     return edge
   }
 
   /** 断一条边；返回是否真的删掉了。 */
   async unlink(id: string): Promise<boolean> {
-    const current = await this.edges.get(id)
+    const current = await this.edges.get(edgeKey(id))
     if (current === undefined) return false
-    await this.edges.delete(id)
+    await this.edges.delete(edgeKey(id))
     return true
   }
 
@@ -1182,7 +1183,7 @@ export class MemoryService extends TypertRemoteService {
     const key = nodeKey(ref)
     for (const edge of this.collectEdges()) {
       if (nodeKey(edge.from) !== key && nodeKey(edge.to) !== key) continue
-      await this.edges.delete(edge.id)
+      await this.edges.delete(edgeKey(edge.id))
     }
   }
 
@@ -1317,11 +1318,11 @@ export class MemoryService extends TypertRemoteService {
     let removed = 0
     for (const [id, shape] of desired) {
       const auto = existingAuto.get(id)
-      const base = auto ?? await this.edges.get(id)
+      const base = auto ?? await this.edges.get(edgeKey(id))
       // 手工 / 模型显式连过同一条边：自动推导不覆盖它。
       if (base !== undefined && base.origin !== 'auto') continue
       if (auto !== undefined && auto.weight === shape.weight) continue
-      await this.edges.put(id, {
+      await this.edges.put(edgeKey(id), {
         id,
         from: shape.from,
         to: shape.to,
@@ -1336,7 +1337,7 @@ export class MemoryService extends TypertRemoteService {
     }
     for (const edge of existingAuto.values()) {
       if (desired.has(edge.id)) continue
-      await this.edges.delete(edge.id)
+      await this.edges.delete(edgeKey(edge.id))
       removed += 1
     }
     return { added, removed }

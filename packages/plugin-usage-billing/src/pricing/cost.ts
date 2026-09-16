@@ -6,6 +6,7 @@
  */
 
 import type { TokenUsage } from '@deepseek-ai/dsh-llm'
+import { WILDCARD, normalizeModelId } from '../model-key.ts'
 import type { Currency, PriceEntry } from '../types.ts'
 
 export interface SplitUsage {
@@ -36,7 +37,52 @@ export function splitUsage(usage: TokenUsage): SplitUsage {
   }
 }
 
-/** 按 keys 顺序查价并计价。 */
+/** 同名兜底候选的前缀：首段 `*` + 斜杠 + 模型名 = 「任何 provider 下叫这个名字的价」。 */
+const NAME_FALLBACK_PREFIX = `${WILDCARD}/`
+
+/**
+ * 表内「模型名 → 命中键」索引（延迟构建，按表的键**插入顺序**取第一条）。
+ *
+ * 插入顺序即优先级来源：内置目录在安装时就写进基准快照，网络刷新只会往后追加 delta，
+ * 所以同一个模型名有多个 provider 时先出现的（目录里的官方 provider）胜出 —— 确定性、可解释。
+ *
+ * 用 WeakMap 挂在价目表本身上：快照表是不可变对象，按表缓存不会串味，也不会泄漏。
+ */
+const nameIndexCache = new WeakMap<object, Map<string, string>>()
+
+/** 表内同名条目键；没有则 undefined。 */
+function sameNameEntryKey(table: Readonly<Record<string, PriceEntry>>, name: string): string | undefined {
+  let index = nameIndexCache.get(table)
+  if (index === undefined) {
+    index = new Map<string, string>()
+    for (const key of Object.keys(table)) {
+      const slash = key.indexOf('/')
+      if (slash <= 0) continue
+      const modelPart = key.slice(slash + 1)
+      // `<provider>/*` 与 `*/*` 是兜底价，不是「某个模型的同名价」。
+      if (modelPart === WILDCARD) continue
+      const normalized = normalizeModelId(modelPart)
+      if (normalized !== '' && !index.has(normalized)) index.set(normalized, key)
+    }
+    nameIndexCache.set(table, index)
+  }
+  return index.get(normalizeModelId(name))
+}
+
+/**
+ * 解析一个候选键：先按字面命中；首段为 `*` 的候选再走同名兜底。
+ * @param table - 该时刻解析出的价目表（`<provider>/<model>` → 单价）。
+ * @param key - 候选键，见 `priceKeyCandidates`。
+ */
+function entryFor(table: Readonly<Record<string, PriceEntry>>, key: string): PriceEntry | undefined {
+  const direct = table[key]
+  if (direct !== undefined) return direct
+  if (!key.startsWith(NAME_FALLBACK_PREFIX)) return undefined
+  const hit = sameNameEntryKey(table, key.slice(NAME_FALLBACK_PREFIX.length))
+  return hit === undefined ? undefined : table[hit]
+}
+
+/** 按 keys 顺序查价并计价（首段为 `*` 的候选 = 同名兜底，见 `priceKeyCandidates`）。 */
 export function priceUsage(
   usage: TokenUsage,
   table: Readonly<Record<string, PriceEntry>>,
@@ -45,7 +91,7 @@ export function priceUsage(
 ): PriceResult {
   for (let rank = 0; rank < keys.length; rank++) {
     const key = keys[rank]!
-    const entry = table[key]
+    const entry = entryFor(table, key)
     if (entry === undefined) continue
     if (entry.currency === 'USD' && !(usdToCny > 0)) {
       // 汇率不可用：宁可标成「不可计价」也不锁一个 0 进账本。

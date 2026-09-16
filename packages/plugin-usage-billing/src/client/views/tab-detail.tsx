@@ -1,4 +1,4 @@
-/** 明细：按工作区下钻到会话 + 按模型（provider/canonical model 分行，标注混合单价/未收录）。 */
+/** 明细：按工作区下钻到会话 + 按模型（**同名模型跨 provider 一行**，标注混合单价/未收录）。 */
 
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { UsageBillingRemote } from '../core/remote.ts'
@@ -113,7 +113,8 @@ export function TabDetail(props: {
         <tbody>
           {models.map((m) => (
             <tr key={m.key}>
-              <td>{m.provider} / {m.model}</td>
+              {/* 同名模型跨 provider 并成一行：provider 一个都不丢，全列出来。 */}
+              <td>{m.providers.join(' / ')} / {m.model}</td>
               <td align="right">{formatInt(m.input)}</td>
               <td align="right">{formatInt(m.cacheRead)}</td>
               <td align="right">{formatInt(m.output)}</td>

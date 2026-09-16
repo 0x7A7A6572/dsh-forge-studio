@@ -8,7 +8,7 @@
  *   显示真实金额，并用 `formatDay` 渲染日期标签。
  */
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { createElement } from 'react'
 import { Dashboard } from '../src/client/views/dashboard.tsx'
@@ -170,7 +170,7 @@ describe('入口卡的取数与占位', () => {
     expect(container.querySelector('[data-dsh-ub-estimate]')).toBeNull()
   })
 
-  it('远程调用 reject 时保留占位，不产生 unhandled rejection', async () => {
+  it('远程调用 reject 时转失败态（不产生 unhandled rejection，也不再装作"还没到"）', async () => {
     const store = createBillingStore()
     const down = async (): Promise<never> => { throw new Error('wire down') }
     const billing = {
@@ -178,8 +178,26 @@ describe('入口卡的取数与占位', () => {
     } as unknown as UsageBillingRemote
     const { container } = render(createElement(EntryCard, { wide: true, billing, store }))
     await act(async () => { await Promise.resolve() })
-    expect(amountOf(container)).toBe('—')
+    expect(amountOf(container)).toBe('!')
+    expect(container.textContent).toContain('读取失败')
+    expect(container.querySelector('[data-dsh-ub-entry]')?.getAttribute('data-dsh-ub-state')).toBe('failed')
     expect(container.textContent).not.toContain('¥0.00')
+  })
+
+  it('wire 挂起时按超时转失败态（这才是"接口全挂起"应有的界面反馈）', async () => {
+    vi.useFakeTimers()
+    try {
+      const store = createBillingStore()
+      const never = (): Promise<never> => new Promise<never>(() => {})
+      const billing = { overview: never, daily: never, pricing: never } as unknown as UsageBillingRemote
+      const { container } = render(createElement(EntryCard, { wide: true, billing, store }))
+      expect(amountOf(container)).toBe('—')
+      await act(async () => { await vi.advanceTimersByTimeAsync(15_000) })
+      expect(amountOf(container)).toBe('!')
+      expect(container.querySelector('[data-dsh-ub-entry]')?.getAttribute('data-dsh-ub-state')).toBe('failed')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('sparkline 由 views/chart.tsx 的 Sparkline 渲染，几何与 chart-data 逐点一致', async () => {

@@ -55,6 +55,11 @@ export interface LedgerRow {
 /** 每会话折叠水位。 */
 export interface FoldState {
   sessionId: string
+  /**
+   * 折叠时的会话变更戳（`sessionPersistence` 的 revision）—— **跳过判定的唯一依据**。
+   * 旧记录没有这个字段：首轮必然重折一次，随后补上（自愈，不需要迁移）。
+   */
+  stamp?: string
   foldedThroughSeq: number
   lastTime: number
   headerCreatedAt: number

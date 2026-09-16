@@ -359,7 +359,6 @@ describe('刷新与自定义价 / 账本', () => {
       installAt: 0,
       source: {
         listSessions: async () => [],
-        listEvents: async () => [],
         readSession: async () => { throw new Error('unused') },
       },
       fetchPricing: (opts) =>
@@ -392,7 +391,6 @@ describe('刷新与自定义价 / 账本', () => {
       installAt: 0,
       source: {
         listSessions: async () => [],
-        listEvents: async () => [],
         readSession: async () => { throw new Error('unused') },
       },
       fetchPricing: async () => {
@@ -506,7 +504,6 @@ describe('刷新与自定义价 / 账本', () => {
       installAt: 0,
       source: {
         listSessions: async () => [],
-        listEvents: async () => [],
         readSession: async () => { throw new Error('unused') },
       },
       fetchPricing: async (opts) => { seen.push(opts); return { ok: true, entries: 3, usdToCny: 7.15 } },

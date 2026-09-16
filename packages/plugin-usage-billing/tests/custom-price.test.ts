@@ -15,7 +15,7 @@ function make() {
   const domain = { table: (n: string) => ({ ledger, folds, snapshots, aliases, diag } as Record<string, unknown>)[n] } as never
   const svc = new UsageBillingService(new Context(), {
     domain, settings: createUsageBillingSettingsAccess(), installAt: 0,
-    source: { listSessions: async () => [], listEvents: async () => [], readSession: async () => { throw new Error('unused') } },
+    source: { listSessions: async () => [], readSession: async () => { throw new Error('unused') } },
     fetchPricing: async () => ({ ok: false, reason: 'test' }),
     now: () => 5_000,
   })

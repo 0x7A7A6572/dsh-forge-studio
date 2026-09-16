@@ -26,17 +26,31 @@ describe('mergeByModel', () => {
       row({ id: 'b', model: 'deepseek-v4-flash-20260518', costCny: 2 }),
     ], aliases)
     expect(out).toHaveLength(1)
-    expect(out[0]).toMatchObject({ key: 'deepseek/deepseek-v4-flash', costCny: 3, calls: 2 })
+    expect(out[0]).toMatchObject({ key: 'deepseek-v4-flash', costCny: 3, calls: 2, providers: ['deepseek'] })
     expect(out[0]!.rawModels.sort()).toEqual(['deepseek-v4-flash', 'deepseek-v4-flash-20260518'])
   })
 
-  it('不跨 provider 合并同名模型', () => {
+  it('同名模型跨 provider 并成一行，provider 一个都不丢', () => {
+    // relay 渠道拿到的 id 带组织前缀（`deepseek/deepseek-v4-flash`），归一后与直连的名字同名。
     const out = mergeByModel([
-      row({ id: 'a', provider: 'deepseek' }),
-      row({ id: 'b', provider: 'relay' }),
+      row({ id: 'a', provider: 'deepseek', model: 'deepseek-v4-flash', costCny: 1 }),
+      row({ id: 'b', provider: 'relay', model: 'deepseek/deepseek-v4-flash', costCny: 2 }),
     ], [])
-    expect(out).toHaveLength(2)
-    expect(out.map((r) => r.key).sort()).toEqual(['deepseek/deepseek-v4-flash', 'relay/deepseek-v4-flash'])
+    expect(out).toHaveLength(1)
+    expect(out[0]).toMatchObject({
+      key: 'deepseek-v4-flash', model: 'deepseek-v4-flash', costCny: 3, calls: 2,
+      providers: ['deepseek', 'relay'],
+    })
+    // 原始 id 一个都不丢：备注列要能看见「2 个原始 id」是哪两个。
+    expect([...out[0]!.rawModels].sort()).toEqual(['deepseek-v4-flash', 'deepseek/deepseek-v4-flash'])
+  })
+
+  it('带日期的快照是不同版本（单价不同），不与同名主干并组', () => {
+    const out = mergeByModel([
+      row({ id: 'a', model: 'claude-3-5-sonnet' }),
+      row({ id: 'b', model: 'claude-3-5-sonnet-20241022' }),
+    ], [])
+    expect(out.map((r) => r.key).sort()).toEqual(['claude-3-5-sonnet', 'claude-3-5-sonnet-20241022'])
   })
 
   it('别名为空 canonical 时不并组（回退原始模型 id）', () => {
@@ -48,7 +62,7 @@ describe('mergeByModel', () => {
       row({ id: 'b', model: 'm-b' }),
     ], aliases)
     expect(out).toHaveLength(2)
-    expect(out.map((r) => r.key).sort()).toEqual(['deepseek/m-a', 'deepseek/m-b'])
+    expect(out.map((r) => r.key).sort()).toEqual(['m-a', 'm-b'])
   })
 
   it('别名为纯空白 canonical 时同样不并组（回退原始模型 id）', () => {
@@ -60,7 +74,7 @@ describe('mergeByModel', () => {
       row({ id: 'b', model: 'm-b' }),
     ], aliases)
     expect(out).toHaveLength(2)
-    expect(out.map((r) => r.key).sort()).toEqual(['deepseek/m-a', 'deepseek/m-b'])
+    expect(out.map((r) => r.key).sort()).toEqual(['m-a', 'm-b'])
   })
 
   it('不同单价的合并行标 mixedRate', () => {
@@ -214,7 +228,7 @@ describe('手工别名端到端', () => {
     } as never
     const svc = new UsageBillingService(new Context(), {
       domain, settings: createUsageBillingSettingsAccess(), installAt: 0,
-      source: { listSessions: async () => [], listEvents: async () => [], readSession: async () => { throw new Error('unused') } },
+      source: { listSessions: async () => [], readSession: async () => { throw new Error('unused') } },
       fetchPricing: async () => ({ ok: false, reason: 'test' }),
       now: () => 5_000,
     })
@@ -231,7 +245,7 @@ describe('手工别名端到端', () => {
     await svc.setAlias({ provider: 'deepseek', rawModel: 'deepseek-v4-flash-20260518', canonicalModel: 'deepseek-v4-flash' })
     const merged = (await svc.byModel('all', true)).models
     expect(merged).toHaveLength(1)
-    expect(merged[0]).toMatchObject({ key: 'deepseek/deepseek-v4-flash', costCny: 3 })
+    expect(merged[0]).toMatchObject({ key: 'deepseek-v4-flash', costCny: 3 })
     expect(ledger.size).toBe(before)
     expect(ledger.get('b')!.costCny).toBe(2)
     // 别名只在展示层生效：账本行的 model 必须保持原始 id。展示聚合若把 canonical 写回
@@ -261,6 +275,6 @@ describe('手工别名端到端', () => {
     // 展示键必须逐字钉死：只断言 provider 集合时，一个「按 rawModel 全局解析别名、但仍按
     // provider/canonical 分键」的实现会把 relay-x 改名成 relay/deepseek-v4-flash 却照样两行。
     expect(rows.map((r) => r.provider).sort()).toEqual(['deepseek', 'relay'])
-    expect(rows.map((r) => r.key).sort()).toEqual(['deepseek/deepseek-v4-flash', 'relay/relay-x'])
+    expect(rows.map((r) => r.key).sort()).toEqual(['deepseek-v4-flash', 'relay-x'])
   })
 })

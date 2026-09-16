@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { TokenUsage } from '@deepseek-ai/dsh-llm'
 import { priceUsage, splitUsage } from '../src/pricing/cost.ts'
+import { priceKeyCandidates } from '../src/model-key.ts'
+import { BUILTIN_CATALOG, DEFAULT_USD_TO_CNY } from '../src/pricing/catalog.ts'
 import type { PriceEntry } from '../src/types.ts'
 
 const cny: PriceEntry = { input: 1, cacheRead: 0.1, cacheWrite: 2, output: 10, currency: 'CNY' }
@@ -14,6 +16,76 @@ describe('splitUsage', () => {
   it('四桶互斥，缺失的缓存字段按 0', () => {
     expect(splitUsage(usage({ cacheReadTokens: 5, reasoningTokens: 3 })))
       .toEqual({ input: 1_000_000, cacheRead: 5, cacheWrite: 0, output: 1_000_000, reason: 3 })
+  })
+})
+
+/**
+ * 实测故障：模型走中转渠道（`ds-hk` / `modlens-ds-hk`）而内置目录里只有
+ * `deepseek/deepseek-v4-flash` —— 查价档位全挂在 provider 前缀上，于是明明是同名的官方模型，
+ * 界面上永远是「未收录」。同名兜底（首段为 `*` 的候选）就是这一档。
+ */
+describe('同名兜底查价（跨 provider，按模型名）', () => {
+  const catalog = {
+    'deepseek/deepseek-v4-flash': cny,
+    'deepseek/deepseek-v4-pro': { ...cny, input: 4 },
+  }
+
+  it('中转 provider 的同名模型用目录价，不再是「未收录」', () => {
+    const keys = priceKeyCandidates('ds-hk', 'deepseek-v4-flash')
+    const r = priceUsage(usage(), catalog, keys, 7)
+    expect(r.priced).toBe(true)
+    expect(r.costCny).toBeCloseTo(11, 10)   // 1M input × 1 + 1M output × 10
+    expect(r.matchedKey).toBe('*/deepseek-v4-flash')
+  })
+
+  it('带组织前缀 / 日期后缀的写法同样能对上同名价', () => {
+    const prefixed = priceUsage(usage(), catalog, priceKeyCandidates('relay', 'deepseek/deepseek-v4-flash'), 7)
+    expect(prefixed.matchedKey).toBe('*/deepseek-v4-flash')
+    const dated = priceUsage(usage(), catalog, priceKeyCandidates('relay', 'deepseek-v4-flash-20260518'), 7)
+    expect(dated.matchedKey).toBe('*/deepseek-v4-flash')
+  })
+
+  it('精确命中优先于同名兜底', () => {
+    const table = { ...catalog, 'ds-hk/deepseek-v4-flash': { ...cny, input: 100 } }
+    const r = priceUsage(usage(), table, priceKeyCandidates('ds-hk', 'deepseek-v4-flash'), 7)
+    expect(r.matchedKey).toBe('ds-hk/deepseek-v4-flash')
+  })
+
+  it('provider 兜底优先于全局兜底，但低于同名兜底', () => {
+    const table = { ...catalog, 'ds-hk/*': { ...cny, input: 50 }, '*/*': { ...cny, input: 60 } }
+    expect(priceUsage(usage(), table, priceKeyCandidates('ds-hk', 'deepseek-v4-flash'), 7).matchedKey)
+      .toBe('*/deepseek-v4-flash')
+    // 名字对不上时才轮到 provider 兜底
+    expect(priceUsage(usage(), table, priceKeyCandidates('ds-hk', 'some-unknown'), 7).matchedKey)
+      .toBe('ds-hk/*')
+    // 连 provider 都没有时才用全局兜底
+    expect(priceUsage(usage(), table, priceKeyCandidates('other', 'some-unknown'), 7).matchedKey)
+      .toBe('*/*')
+  })
+
+  it('同名价有多个 provider 时取表内第一条（内置目录先写入，官方价优先）', () => {
+    const table = {
+      'deepseek/deepseek-v4-flash': { ...cny, input: 1 },
+      'openrouter/deepseek-v4-flash': { ...cny, input: 9 },
+    }
+    const r = priceUsage(usage(), table, priceKeyCandidates('ds-hk', 'deepseek-v4-flash'), 7)
+    // `matchedKey` 报的是命中**档位**（`*/` 候选），不是表内的具体 provider 键；
+    // 「谁被选中」体现在金额上：官方那条 1M×1 + 1M×10 = 11。
+    expect(r.matchedKey).toBe('*/deepseek-v4-flash')
+    expect(r.costCny).toBeCloseTo(11, 10)
+  })
+
+  it('用**真实内置目录**验证实测故障的那两个模型（ds-hk / modlens-ds-hk 调官方模型）', () => {
+    for (const [provider, model] of [['ds-hk', 'deepseek-v4-flash'], ['modlens-ds-hk', 'deepseek-v4-pro']] as const) {
+      const r = priceUsage(usage(), BUILTIN_CATALOG, priceKeyCandidates(provider, model), DEFAULT_USD_TO_CNY)
+      expect(r.priced, `${provider}/${model} 应当收录`).toBe(true)
+      expect(r.costCny).toBeGreaterThan(0)
+    }
+  })
+
+  it('目录里没有同名模型时仍然如实标记「未收录」', () => {
+    const r = priceUsage(usage(), catalog, priceKeyCandidates('ds-hk', 'ghost-model'), 7)
+    expect(r).toMatchObject({ priced: false, matchedKey: null, costCny: 0 })
   })
 })
 

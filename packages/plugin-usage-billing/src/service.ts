@@ -12,7 +12,7 @@ import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { usageBillingDomain } from './domain.ts'
 import { aggregateOnce, resetAggregateCache } from './aggregate.ts'
-import type { SessionSource } from './aggregate.ts'
+import type { AggregateStats, SessionSource } from './aggregate.ts'
 import { latestDiagnostic } from './diag.ts'
 import { aliasId, priceKeyCandidates } from './model-key.ts'
 import { DEFAULT_USD_TO_CNY, priceKey } from './pricing/catalog.ts'
@@ -68,6 +68,16 @@ export class UsageBillingService extends TypertRemoteService {
    */
   private chain: Promise<unknown> = Promise.resolve()
 
+  /**
+   * 正在跑的那一趟聚合（本实例内**合并**并发调用）。
+   *
+   * 为什么必须有：侧栏卡片一次就并发发 overview + daily，弹窗再叠几张 tab —— 每个读端点
+   * 都要聚合。此前没有任何合并，一次开面板 = 4~6 趟全量扫描同时压在 host 上，磁盘和
+   * 事件循环互相踩，看起来就是"所有接口都挂起"。现在同一时刻只有一趟，其余调用共享它。
+   * 单实例字段（不是模块级）：测试各自 new 一个服务，不会互相串。
+   */
+  private pass: Promise<AggregateStats> | undefined
+
   constructor(ctx: Context, config: UsageBillingServiceConfig) {
     super(ctx, 'usageBilling')
     this.config = config
@@ -107,16 +117,48 @@ export class UsageBillingService extends TypertRemoteService {
     })
   }
 
-  /** 现算一次聚合（带水位与 TTL），返回账本行快照。 */
-  private async rows(): Promise<LedgerRow[]> {
-    await aggregateOnce({
+  /**
+   * 跑一趟聚合（带变更戳与 TTL），并发调用合并成同一趟。
+   *
+   * host 入口的预热与所有读端点共用这一条通道，因此"预热还没完时用户点开面板"不会
+   * 再起第二趟扫描。
+   */
+  private aggregatePass(): Promise<AggregateStats> {
+    if (this.pass !== undefined) return this.pass
+    const run = aggregateOnce({
       source: this.config.source,
       ledger: this.ledger, folds: this.folds, diag: this.diag,
       aliases: this.aliases, snapshots: this.snapshots,
       installAt: this.config.installAt,
       now: this.config.now,
     })
+    const tracked = run.finally(() => { if (this.pass === tracked) this.pass = undefined })
+    this.pass = tracked
+    return tracked
+  }
+
+  /** host 入口的预热入口：与读端点共用同一趟合并通道。 */
+  warmup(): Promise<AggregateStats> { return this.aggregatePass() }
+
+  /**
+   * 读账本快照 —— **不在读路径上等整趟聚合**。
+   *
+   * 聚合是分钟级的全语料扫描（即便有了变更戳，也仍可能撞上大规模变更），而面板的每一个
+   * tab 都调这里。所以：账本已经有行时立刻返回当前快照，下一趟在后台跑完自然生效
+   * （stale-while-revalidate）；只有账本还一行都没有（插件刚起来、预热还没落盘）时才等，
+   * 否则界面会永远停在空白占位。
+   */
+  private async rows(): Promise<LedgerRow[]> {
+    const pass = this.aggregatePass()
+    if (this.ledger.size === 0) await pass.catch((error: unknown) => this.reportBackgroundFailure(error))
+    else void pass.catch((error: unknown) => this.reportBackgroundFailure(error))
     return [...this.ledger.entries()].map(([, r]) => r)
+  }
+
+  /** 后台失败的唯一出口：吞掉会变成 unhandled rejection，抛出去会打断读端点。 */
+  private reportBackgroundFailure(error: unknown): void {
+    const logger = (this.ctx as unknown as { logger?: { warn(...args: unknown[]): void } }).logger
+    logger?.warn('[plugin-usage-billing] 后台聚合失败：', error)
   }
 
   private scoped(rows: LedgerRow[], kind: RangeKind, includeSubagents: boolean): LedgerRow[] {

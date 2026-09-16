@@ -17,25 +17,38 @@ import {
 import { MEMORY_TOOL_NAMES, describeRecord, installMemoryTools } from '../src/agent/tools.ts'
 import { memoryEdgeSchema, memoryEntitySchema, memoryRecordSchema } from '../src/domain.ts'
 import type { MemoryEdge, MemoryEntity } from '../src/types.ts'
+import { SAFE_KEY_RE } from '../src/storage-key.ts'
 
-/** 每张表一个假的 Map 后端（service 只用到 get / entries / put / delete）。 */
-function fakeTable() {
+/**
+ * 每张表一个假的 Map 后端（service 只用到 get / entries / put / delete）。
+ *
+ * 写路径**照抄真实后端的键校验**（键会变成文件路径的一段，只接受 `[a-zA-Z0-9_-]+`，
+ * 不匹配时 putRecord / deleteRecord 抛错）。此前这里是纯 Map、从不校验键，于是
+ * 「边 id `memory:<id>|about|entity:<id>` 带 `|` 与 `:`」这个真实运行时**每一次连边写入都失败**
+ * 的 bug，在整套绿灯用例下藏了很久 —— 键的问题必须在写的时候暴露。
+ */
+function fakeTable(unit = 'memory') {
   const rows = new Map<string, unknown>()
+  const assertSafe = (key: string): void => {
+    if (!SAFE_KEY_RE.test(key)) {
+      throw new Error(`unit '${unit}': per-record key '${key}' is not path-safe (must match ${SAFE_KEY_RE})`)
+    }
+  }
   return {
     get: (key: string) => rows.get(key),
     entries: () => rows.entries(),
-    put: async (key: string, value: unknown) => { rows.set(key, value) },
-    delete: async (key: string) => rows.delete(key),
+    put: async (key: string, value: unknown) => { assertSafe(key); rows.set(key, value) },
+    delete: async (key: string) => { assertSafe(key); rows.delete(key) },
   }
 }
 
 function makeService() {
   const tables = {
-    memories: fakeTable(),
-    raw_documents: fakeTable(),
-    audits: fakeTable(),
-    entities: fakeTable(),
-    edges: fakeTable(),
+    memories: fakeTable('memories'),
+    raw_documents: fakeTable('raw_documents'),
+    audits: fakeTable('audits'),
+    entities: fakeTable('entities'),
+    edges: fakeTable('edges'),
   }
   const domain = { table: (name: keyof typeof tables) => tables[name] }
   const ctx = new Context()

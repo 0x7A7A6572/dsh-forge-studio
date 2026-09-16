@@ -572,7 +572,7 @@ const detailRemote = () => noopRemote({
     hasBackfilled: false, unpricedModels: [],
   } }),
   byModel: async () => ({ ok: true, value: { models: [
-    { key: 'deepseek/deepseek-v4-flash', provider: 'deepseek', model: 'deepseek-v4-flash', rawModels: ['deepseek-v4-flash'],
+    { key: 'deepseek-v4-flash', providers: ['deepseek'], provider: 'deepseek', model: 'deepseek-v4-flash', rawModels: ['deepseek-v4-flash'],
       input: 10, cacheRead: 0, cacheWrite: 0, output: 5, reasoning: 0, costCny: 7, priced: true, mixedRate: false, calls: 2 },
   ], hasBackfilled: false, unpricedModels: [] } }),
 } as never)
@@ -591,10 +591,10 @@ const detailMixedRemote = () => noopRemote({
     hasBackfilled: true, unpricedModels: ['openai/ghost-model'],
   } }),
   byModel: async () => ({ ok: true, value: { models: [
-    { key: 'deepseek/deepseek-v4-flash', provider: 'deepseek', model: 'deepseek-v4-flash',
+    { key: 'deepseek-v4-flash', providers: ['deepseek'], provider: 'deepseek', model: 'deepseek-v4-flash',
       rawModels: ['deepseek-v4-flash', 'deepseek-v4-flash-20260518'],
       input: 10, cacheRead: 0, cacheWrite: 0, output: 5, reasoning: 0, costCny: 7, priced: true, mixedRate: true, calls: 2 },
-    { key: 'openai/ghost-model', provider: 'openai', model: 'ghost-model', rawModels: ['ghost-model'],
+    { key: 'ghost-model', providers: ['openai'], provider: 'openai', model: 'ghost-model', rawModels: ['ghost-model'],
       input: 0, cacheRead: 0, cacheWrite: 0, output: 0, reasoning: 0, costCny: 0, priced: false, mixedRate: false, calls: 1 },
   ], hasBackfilled: true, unpricedModels: ['openai/ghost-model'] } }),
 } as never)
@@ -613,7 +613,7 @@ const detailUnpricedRemote = (unpricedModels: string[] = ['openai/ghost-model'])
     hasBackfilled: false, unpricedModels,
   } }),
   byModel: async () => ({ ok: true, value: { models: unpricedModels.length === 0 ? [] : [
-    { key: 'openai/ghost-model', provider: 'openai', model: 'ghost-model', rawModels: ['ghost-model'],
+    { key: 'ghost-model', providers: ['openai'], provider: 'openai', model: 'ghost-model', rawModels: ['ghost-model'],
       input: 10, cacheRead: 0, cacheWrite: 0, output: 5, reasoning: 0, costCny: 0, priced: false, mixedRate: false, calls: 2 },
   ], hasBackfilled: false, unpricedModels } }),
 } as never)

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { UsageBillingService } from '../src/service.ts'
-import { aggregateOnce } from '../src/aggregate.ts'
+import { aggregateOnce, resetAggregateCache } from '../src/aggregate.ts'
 import type { AggregateDeps, SessionSource } from '../src/aggregate.ts'
 import { USAGE_BILLING_METHOD_NAMES, USAGE_BILLING_REMOTE_METHODS } from '../src/remote-methods.ts'
 import { BUILTIN_CATALOG, DEFAULT_USD_TO_CNY } from '../src/pricing/catalog.ts'
@@ -21,7 +21,7 @@ const ROW: LedgerRow = {
   costCny: 1, currency: 'CNY', priced: true, snapshotId: 'snap-1', backfilled: false,
 }
 
-function makeService() {
+function makeService(over: Partial<SessionSource> = {}) {
   const ledger = table<LedgerRow>(); const folds = table<FoldState>()
   const snapshots = table<PriceSnapshot>(); const aliases = table<ModelAlias>(); const diag = table<Diagnostic>()
   void snapshots.put(SNAPSHOT.id, SNAPSHOT)
@@ -31,8 +31,8 @@ function makeService() {
   const settings = createUsageBillingSettingsAccess()
   const source: SessionSource = {
     listSessions: async () => [],
-    listEvents: async () => [],
     readSession: async () => { throw new Error('unused') },
+    ...over,
   }
   const svc = new UsageBillingService(new Context(), {
     domain,
@@ -251,6 +251,36 @@ describe('UsageBillingService', () => {
   it('refreshPricing 失败时降级并给出原因（不抛）', async () => {
     const { svc } = makeService()
     expect(await svc.refreshPricing(true)).toMatchObject({ ok: false })
+  })
+
+  it('并发读端点合并成一趟聚合（不再一个端点一趟全量扫描）', async () => {
+    resetAggregateCache()
+    let lists = 0
+    let release: (() => void) | undefined
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const { svc } = makeService({
+      listSessions: async () => { lists += 1; await gate; return [] },
+    })
+    const both = Promise.all([svc.overview('7d', true), svc.daily('7d', true)])
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(lists).toBe(1)
+    release?.()
+    await both
+    expect(lists).toBe(1)
+  })
+
+  it('账本已有行时读端点不等聚合（stale-while-revalidate）', async () => {
+    resetAggregateCache()
+    let release: (() => void) | undefined
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const { svc, ledger } = makeService({
+      // 这一趟聚合永远卡在列举里 —— 读端点必须照常返回，而不是跟着一起挂起。
+      listSessions: async () => { await gate; return [] },
+    })
+    await ledger.put(ROW.id, ROW)
+    const view = await svc.overview('7d', true)
+    expect(view.overview.totalCny).toBe(1)
+    release?.()
   })
 
   it('ensureBaseSnapshot 写基准快照后，下一次 aggregateOnce 不再吃缓存', async () => {

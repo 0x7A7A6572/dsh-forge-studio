@@ -11,7 +11,6 @@ import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import { usageBillingDomain } from './domain.ts'
 import { UsageBillingService } from './service.ts'
 import { installUsageBillingSettings } from './settings.ts'
-import { aggregateOnce } from './aggregate.ts'
 import type { SessionSource } from './aggregate.ts'
 import { BUILTIN_CATALOG, DEFAULT_USD_TO_CNY } from './pricing/catalog.ts'
 import { fetchPricingFromNetwork } from './pricing/fetch.ts'
@@ -27,8 +26,16 @@ const REFRESH_CHECK_MS = 60_000
  */
 interface SessionQueryLike {
   listSessions(): Promise<Array<{ header: SessionHeader }>>
-  listEvents(id: string): Promise<Array<{ seq: number }>>
   readSession(id: string): Promise<{ session: SessionHeader; events: SessionEvent[] }>
+}
+
+/**
+ * sessionPersistence 服务的最小视图：一次 `list()` 就给全每个会话的 header 与**变更戳**
+ * （后端用文件的 stat 身份生成，不读会话正文）。这是"这个会话变过没有"的便宜判据，
+ * 也是这套聚合能从分钟级降到毫秒级的关键。
+ */
+interface SessionPersistenceLike {
+  list(options?: { signal?: AbortSignal }): Promise<readonly { header: SessionHeader; revision: string }[]>
 }
 
 export async function apply(ctx: Context): Promise<void> {
@@ -55,17 +62,18 @@ export async function apply(ctx: Context): Promise<void> {
   // 刷新记录的账本，安装基准同样必须补上。
   const snapshots = domain.table('snapshots')
 
-  // sessionQuery 是可选依赖：它未装配时聚合退化为「空会话集」，不抛。
+  // sessionPersistence / sessionQuery 都是可选依赖：都没装配时聚合退化为「空会话集」，不抛。
   const source: SessionSource = {
     listSessions: async () => {
+      const persistence = ctx.get('sessionPersistence') as SessionPersistenceLike | undefined
+      if (persistence !== undefined) {
+        const listed = await persistence.list()
+        return listed.map((s) => ({ header: s.header, stamp: String(s.revision) }))
+      }
+      // 退化路径：拿不到变更戳就只能列头部，那一轮每个会话都会整会话重读（慢但正确）。
       const q = ctx.get('sessionQuery') as SessionQueryLike | undefined
       if (q === undefined) return []
-      return (await q.listSessions()).map((r) => ({ header: r.header }))
-    },
-    listEvents: async (id: string) => {
-      const q = ctx.get('sessionQuery') as SessionQueryLike | undefined
-      if (q === undefined) return []
-      return await q.listEvents(id as never)
+      return (await q.listSessions()).map((r) => ({ header: r.header, stamp: null }))
     },
     readSession: async (id: string) => {
       const q = ctx.get('sessionQuery') as SessionQueryLike | undefined
@@ -92,17 +100,23 @@ export async function apply(ctx: Context): Promise<void> {
 
   // 后台预热 + 定时刷新（timer 与 disposer 都归属当前 fiber）。
   ctx.effect(() => {
-    void aggregateOnce({
-      source,
-      ledger: domain.table('ledger'),
-      folds: domain.table('folds'),
-      diag: domain.table('diag'),
-      aliases: domain.table('aliases'),
-      snapshots,
-      installAt,
-    }).catch((error: unknown) => {
-      ctx.logger.warn('[plugin-usage-billing] 预热聚合失败：', error)
-    })
+    // 预热与读端点走**同一条合并通道**：用户此刻点开面板不会再另起一趟全量扫描。
+    //
+    // 预热之后再补一趟「未计价行重算」：价格规则升级（例如新增同名兜底）之前落下的
+    // 未计价行不会自己变成已计价 —— 而那些行正是用户盯着的金额（经中转渠道调的官方模型
+    // 全部显示「未收录」）。repricing 是 spec §5.7 的唯一例外通道，只碰 unpriced 行，
+    // 已锁定的行绝不改写；它不在读路径上，失败只记日志。稳态下这一趟找不到任何
+    // 可重算的行，等于一次空扫。
+    void service.warmup()
+      .then(() => service.repricing())
+      .then((result) => {
+        if (result.changed > 0) {
+          ctx.logger.info(`[plugin-usage-billing] 启动重算：${result.changed} 行未计价记录已按现价表补价`)
+        }
+      })
+      .catch((error: unknown) => {
+        ctx.logger.warn('[plugin-usage-billing] 预热聚合失败：', error)
+      })
 
     const timer = setInterval(() => {
       // 整个 tick 都在 guard 内：settings.get() 同步抛（provider 坏掉）也不能逃出

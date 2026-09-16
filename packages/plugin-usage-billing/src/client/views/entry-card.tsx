@@ -10,6 +10,19 @@ import type { DailyPoint, Overview } from '../../view.ts'
 /** 概览未到 / 整本账未定价时的占位：`¥0.00` 与真实零费用在界面上无法区分。 */
 const PENDING = '—'
 
+/** 取数失败的金额占位：必须与"还没到"区分开，否则 wire 挂起时界面永远看不出出事了。 */
+const FAILED = '!'
+
+/**
+ * 一次取数最多等这么久。价值不在"防止卡住"（读端点已经不阻塞在聚合上了），而在于让
+ * **真的挂起**（wire 断了、远程面没挂上）有一个可解释的出口：到点显示「读取失败」，
+ * 而不是让卡片永远停在 `—` —— 那正是这次故障里最误导人的地方。
+ */
+const FETCH_TIMEOUT_MS = 15_000
+
+/** 首次取数状态；一旦 `ready` 就不再回退（后续刷新失败不该把已有数字抹成失败）。 */
+type LoadState = 'loading' | 'ready' | 'failed'
+
 export interface EntryCardProps {
   /** ownerProps：sidebar 是否为宽态（false = 56px rail）。 */
   wide: boolean
@@ -28,6 +41,7 @@ export function EntryCard(props: EntryCardProps): JSX.Element {
   const [todayKey, setTodayKey] = useState('')
   const [days, setDays] = useState<DailyPoint[]>([])
   const [pricingDegraded, setPricingDegraded] = useState(false)
+  const [load, setLoad] = useState<LoadState>('loading')
 
   useEffect(() => {
     // 远程命名空间在 apply 里异步挂载；若本卡先渲染，`billing` 还是 undefined，
@@ -35,6 +49,9 @@ export function EntryCard(props: EntryCardProps): JSX.Element {
     // 卡片永远停在占位。缺席即早退，等 billing 变化后 effect 重跑。
     if (billing === undefined) return
     let alive = true
+    setLoad('loading')
+    // 挂起兜底：到点还没拿到任何一帧就转失败态（下面的正常返回会清掉它）。
+    const timer = setTimeout(() => { if (alive) setLoad((s) => (s === 'loading' ? 'failed' : s)) }, FETCH_TIMEOUT_MS)
     void (async () => {
       const [o, d, p] = await Promise.all([
         billing.overview('month', includeSubagents),
@@ -42,18 +59,22 @@ export function EntryCard(props: EntryCardProps): JSX.Element {
         billing.pricing(),
       ])
       if (!alive) return
+      clearTimeout(timer)
       if (o.ok) {
         setOverview(o.value.overview)
         setTodayKey(o.value.todayKey)
       }
       if (d.ok) setDays(d.value.days)
       if (p.ok) setPricingDegraded(p.value.usdToCnySource === 'default')
+      // 三条里一条都没成功 = 这一屏没有可信数字，明说失败；否则算就绪。
+      setLoad(o.ok || d.ok || p.ok ? 'ready' : 'failed')
     })().catch(() => {
-      // 远程调用 reject（wire 层异常）时必须吞掉：否则是一条 unhandled rejection，
-      // 而卡片本来就有「概览未到」的占位态 —— 保持占位即可。
+      // 远程调用 reject（wire 层异常）时必须吞掉：否则是一条 unhandled rejection。
+      // 但也不能装作无事发生 —— 转失败态，卡片上给出可解释的「读取失败」。
       // 刻意不写 console：宿主 UI 已有日志通道，且测试要求输出干净。
+      if (alive) { clearTimeout(timer); setLoad('failed') }
     })
-    return () => { alive = false }
+    return () => { alive = false; clearTimeout(timer) }
   }, [billing, includeSubagents])
 
   // 折线走 views/chart.tsx 的 Sparkline（此前这里另抄了一份 inline `<svg><polyline>`，
@@ -66,7 +87,9 @@ export function EntryCard(props: EntryCardProps): JSX.Element {
   const entirelyUnpriced = overview !== null
     && isUnpricedTotal(overview.totalCny, overview.unpricedModels)
   const priced = overview !== null && !entirelyUnpriced
-  const amountText = priced ? formatCny(overview.totalCny) : PENDING
+  // 失败态只在**从没拿到过概览**时取代占位：已显示的数字不因后续刷新失败被抹掉。
+  const failed = overview === null && load === 'failed'
+  const amountText = priced ? formatCny(overview.totalCny) : failed ? FAILED : PENDING
   const todayText = priced ? formatCny(overview.todayCny) : PENDING
   // 回填披露与金额同源（同一次 overview 响应），绝不二次取数；标记缺席按 present 处理。
   const backfilled = overview !== null && backfilledDisclosure(overview.hasBackfilled)
@@ -77,7 +100,8 @@ export function EntryCard(props: EntryCardProps): JSX.Element {
       data-dsh-usage-billing
       data-dsh-ub-entry
       data-wide={String(wide)}
-      title="计费"
+      data-dsh-ub-state={load}
+      title={failed ? '计费：数据读取失败（点击重试）' : '计费'}
       aria-label="计费"
       onClick={() => store.togglePanel()}
     >
@@ -91,6 +115,7 @@ export function EntryCard(props: EntryCardProps): JSX.Element {
       {wide && sparkValues.length > 0 ? (
         <Sparkline values={sparkValues} width={56} height={16} />
       ) : null}
+      {failed ? <span data-dsh-ub-badge data-kind="error">读取失败</span> : null}
       {pricingDegraded ? <span data-dsh-ub-badge data-kind="warn">内置价</span> : null}
       {overview !== null && overview.unpricedModels.length > 0 ? (
         <span data-dsh-ub-badge data-kind="error">{overview.unpricedModels.length} 未收录</span>

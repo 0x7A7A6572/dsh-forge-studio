@@ -49,10 +49,15 @@ describe('usage_billing domain', () => {
    */
   it('folds：合法往返 + 缺必填被拒', () => {
     const fold = {
-      sessionId: 's1', foldedThroughSeq: 7, lastTime: 1758000000000,
+      sessionId: 's1', stamp: 'rev-1', foldedThroughSeq: 7, lastTime: 1758000000000,
       headerCreatedAt: 1757000000000, lastSnapshotId: 'snap-1',
     }
     expect(foldStateSchema.parse(fold)).toMatchObject({ sessionId: 's1', foldedThroughSeq: 7 })
+    // 变更戳是跳过判定的**唯一依据**：schema 不认它就会被 zod 静默剥掉，
+    // 于是每个会话每轮都被重折 —— 优化悄悄失效，而且没有任何地方会报错。
+    expect(foldStateSchema.parse(fold).stamp).toBe('rev-1')
+    // 旧记录（没有 stamp）照常读入，不需要迁移。
+    expect(foldStateSchema.parse({ ...fold, stamp: undefined }).stamp).toBeUndefined()
     const { lastSnapshotId, ...rest } = fold
     void lastSnapshotId
     expect(() => foldStateSchema.parse(rest)).toThrow()

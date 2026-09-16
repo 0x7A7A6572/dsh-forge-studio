@@ -8,10 +8,15 @@
 
 import { aliasId } from './model-key.ts'
 import { priceKey } from './pricing/catalog.ts'
+import { sameModelName } from './model-key.ts'
 import type { LedgerRow, ModelAlias } from './types.ts'
 
 export interface ModelRow {
+  /** 同名模型的分组键（`sameModelName` 的结果），也是这一行的展示名。 */
   key: string
+  /** 这一行覆盖到的全部 provider（排序去重）。同名模型跨 provider 会并成一行，所以可能不止一个。 */
+  providers: string[]
+  /** 主 provider = `providers[0]`（单 provider 行的兼容字段）。 */
   provider: string
   model: string
   rawModels: string[]
@@ -87,13 +92,23 @@ export const UNKNOWN_WORKSPACE = '未知工作区'
 
 function emptyModel(key: string, provider: string, model: string): ModelRow {
   return {
-    key, provider, model, rawModels: [],
+    key, providers: [provider], provider, model, rawModels: [],
     input: 0, cacheRead: 0, cacheWrite: 0, output: 0, reasoning: 0,
     costCny: 0, priced: true, mixedRate: false, calls: 0,
   }
 }
 
-/** 按 (provider, 别名 canonical) 合并；同 provider 内才合并。 */
+/**
+ * 按**同名模型**合并（跨 provider）——「同名就是同一个模型，别拆成两行」。
+ *
+ * 分组键是 `sameModelName(canonical)`：手工别名的 canonical 优先（所以别名照旧能把
+ * 别名链上的 id 收拢到一行、也能强制改名），否则用原始 model id 归一后的名字。
+ * provider **不进分组键**，但一个都不丢：行的 `providers` 列全部覆盖到的 provider，
+ * 客户端把它们显示成 `a / b / 模型名`；`provider` 保留为 `providers[0]` 兼容单 provider 的读法。
+ *
+ * 跨 provider 合并会把两家的单价混进一行 —— 这正是 `mixedRate` 存在的地方：
+ * 它按行内「每 token 成本比」是否唯一置位，界面据此标注「混合单价」。
+ */
 export function mergeByModel(rows: readonly LedgerRow[], aliases: readonly ModelAlias[]): ModelRow[] {
   const canon = new Map<string, string>()
   for (const a of aliases) canon.set(a.id, a.canonicalModel)
@@ -101,17 +116,22 @@ export function mergeByModel(rows: readonly LedgerRow[], aliases: readonly Model
 
   for (const r of rows) {
     const provider = r.provider.trim().toLowerCase()
-    // 空（含纯空白）canonical 不是有效的合并目标：priceKey 会把它 trim 掉，
-    // 于是所有带该别名的模型会被并成同一行 `provider/`。判定口径与 model-key.ts 一致：trim 后为空即无效。
+    // 空（含纯空白）canonical 不是有效的合并目标：它 trim 后为空，并进去等于把所有同名行
+    // 都压成一行没有名字的东西。判定口径与 model-key.ts 一致：trim 后为空即无效。
     const rawCanonical = canon.get(aliasId(provider, r.model))
     const canonical = rawCanonical !== undefined && rawCanonical.trim() !== '' ? rawCanonical : r.model
-    const key = priceKey(provider, canonical)
+    const key = sameModelName(canonical)
     let slot = byKey.get(key)
     if (slot === undefined) {
-      slot = { row: emptyModel(key, provider, canonical), rates: new Set() }
+      slot = { row: emptyModel(key, provider, key), rates: new Set() }
       byKey.set(key, slot)
     }
     const m = slot.row
+    if (!m.providers.includes(provider)) {
+      m.providers.push(provider)
+      m.providers.sort()
+      m.provider = m.providers[0]!
+    }
     m.input += r.input; m.cacheRead += r.cacheRead; m.cacheWrite += r.cacheWrite
     m.output += r.output; m.reasoning += r.reasoning
     m.costCny += r.costCny; m.calls += 1

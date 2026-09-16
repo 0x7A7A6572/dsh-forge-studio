@@ -17,8 +17,11 @@ const ev = (type: string, seq: number, time: number, data: unknown) => ({ type, 
 const usageEv = (seq: number) => ev('assistant/message', seq, 1_000 + seq, { usage: { inputTokens: 1_000_000, outputTokens: 0 } })
 const routeEv = () => ev('request/context', 1, 1_000, { provider: 'deepseek', model: 'deepseek-v4-flash' })
 
-/** 额外假会话：默认复用 s1 的事件序列，`fails` 让它的 readSession 抛错；列在 s1 **之前**。 */
-interface ExtraSession { header: SessionHeader; events?: SessionEvent[]; fails?: boolean }
+/**
+ * 额外假会话：默认复用 s1 的事件序列，`fails` 让它的 readSession 抛错；列在 s1 **之前**。
+ * `stamp` 是变更戳（模拟后端的 revision）：改了它 = 这份日志变过。
+ */
+interface ExtraSession { header: SessionHeader; events?: SessionEvent[]; fails?: boolean; stamp?: string }
 
 function makeDeps(
   over: Partial<SessionSource> = {},
@@ -26,9 +29,21 @@ function makeDeps(
   extra: ExtraSession[] = [],
 ): {
   deps: AggregateDeps; ledger: KvTable<string, LedgerRow>; folds: KvTable<string, FoldState>
-  diag: KvTable<string, Diagnostic>; reads: () => number
+  diag: KvTable<string, Diagnostic>; reads: () => number; puts: () => number
 } {
-  const ledger = table<LedgerRow>(); const folds = table<FoldState>()
+  const inner = table<LedgerRow>()
+  let putCount = 0
+  // 包一层只为了数落盘次数：「行没变就不重写」这条优化必须能被用例看见。
+  const ledger: KvTable<string, LedgerRow> = {
+    get: (key) => inner.get(key),
+    entries: () => inner.entries(),
+    keys: () => inner.keys(),
+    get size() { return inner.size },
+    put: async (key, value) => { putCount += 1; await inner.put(key, value) },
+    delete: (key) => inner.delete(key),
+    update: (key, fn) => inner.update(key, fn),
+  }
+  const folds = table<FoldState>()
   const diag = table<Diagnostic>(); const aliases = table<never>(); const snapshots = table<PriceSnapshot>()
   void snapshots.put(SNAP.id, SNAP)
   let readCount = 0
@@ -37,12 +52,12 @@ function makeDeps(
       header: s.header,
       events: s.events ?? [routeEv(), usageEv(2)],
       fails: s.fails ?? false,
+      stamp: s.stamp ?? 'rev-1',
     })),
-    { header, events: [routeEv(), usageEv(2)], fails: false },
+    { header, events: [routeEv(), usageEv(2)], fails: false, stamp: 'rev-1' },
   ]
   const source: SessionSource = {
-    listSessions: async () => all.map((s) => ({ header: s.header })),
-    listEvents: async (id) => (all.find((s) => s.header.id === id)?.events ?? []).map((e) => ({ seq: e.seq })),
+    listSessions: async () => all.map((s) => ({ header: s.header, stamp: s.stamp })),
     readSession: async (id) => {
       readCount += 1
       const s = all.find((x) => x.header.id === id)!
@@ -56,7 +71,7 @@ function makeDeps(
     snapshots: snapshots as unknown as KvTable<string, PriceSnapshot>,
     installAt: 0, now, ttlMs: 5_000,
   }
-  return { deps, ledger, folds, diag, reads: () => readCount }
+  return { deps, ledger, folds, diag, reads: () => readCount, puts: () => putCount }
 }
 
 beforeEach(() => { resetAggregateCache() })
@@ -70,7 +85,7 @@ describe('aggregateOnce', () => {
     expect(folds.get('s1')!.foldedThroughSeq).toBe(2)
   })
 
-  it('maxSeq 未变时跳过 readSession（水位生效）', async () => {
+  it('变更戳未变时跳过 readSession（戳生效）', async () => {
     const { deps, reads } = makeDeps()
     await aggregateOnce(deps)
     const stats = await aggregateOnce(deps, { force: true })
@@ -119,9 +134,8 @@ describe('aggregateOnce', () => {
     expect(ledger.get('s1__2')!.costCny).toBe(1)
   })
 
-  it('seq 0 的会话首轮照折、次轮被水位跳过（种子 -1）', async () => {
+  it('seq 0 的会话首轮照折、次轮被变更戳跳过', async () => {
     const { deps, ledger, folds } = makeDeps({
-      listEvents: async () => [{ seq: 0 }],
       readSession: async () => ({ session: header, events: [usageEv(0)] }),
     })
     const first = await aggregateOnce(deps)
@@ -134,9 +148,8 @@ describe('aggregateOnce', () => {
     expect(ledger.size).toBe(1)
   })
 
-  it('无事件会话不抛错、不写账本（水位与 maxSeq 同为 -1）', async () => {
+  it('无事件会话不抛错、不写账本（水位 -1）', async () => {
     const { deps, ledger, folds } = makeDeps({
-      listEvents: async () => [],
       readSession: async () => ({ session: header, events: [] }),
     })
     const stats = await aggregateOnce(deps)
@@ -149,7 +162,6 @@ describe('aggregateOnce', () => {
 
   it('未收录模型出现在 stats.unpricedModels', async () => {
     const { deps } = makeDeps({
-      listEvents: async () => [{ seq: 2 }],
       readSession: async () => ({
         session: header,
         events: [ev('request/context', 1, 1_000, { provider: 'x', model: 'mystery' }), usageEv(2)],
@@ -163,6 +175,60 @@ describe('aggregateOnce', () => {
     await (deps.snapshots as unknown as KvTable<string, PriceSnapshot>).delete('snap-1')
     await aggregateOnce(deps)
     expect(ledger.get('s1__2')).toMatchObject({ priced: false, costCny: 0 })
+  })
+})
+
+/**
+ * 实测故障的主因：原先用 `sessionQuery.listEvents` 探水位，而它实现上是"整个语料再列一遍 +
+ * 整会话解码"，每个会话每轮都要付这个代价。现在跳过判定只认**变更戳**（一次 list() 全给），
+ * 这里钉住「戳没变就一次正文都不读」。
+ */
+describe('变更戳跳过（不再拿 listEvents 探水位）', () => {
+  it('戳没变：连 readSession 都不调', async () => {
+    const { deps, reads } = makeDeps()
+    await aggregateOnce(deps)
+    const stats = await aggregateOnce(deps, { force: true })
+    expect(reads()).toBe(1)
+    expect(stats).toMatchObject({ skipped: 1, folded: 0 })
+  })
+
+  it('只有戳变了的那个会话被重折', async () => {
+    const s2 = { ...header, id: 's2' } as unknown as SessionHeader
+    let stamp = 'rev-1'
+    let reads = 0
+    // readSession 被替换掉了，所以自己数（默认那个替身才会累加 makeDeps 的读计数）。
+    const { deps } = makeDeps({
+      listSessions: async () => [{ header, stamp }, { header: s2, stamp: 'rev-9' }],
+      readSession: async (id) => {
+        reads += 1
+        return { session: id === 's1' ? header : s2, events: [routeEv(), usageEv(2)] }
+      },
+    })
+    expect(await aggregateOnce(deps)).toMatchObject({ sessions: 2, folded: 2, skipped: 0 })
+    stamp = 'rev-2'
+    expect(await aggregateOnce(deps, { force: true })).toMatchObject({ folded: 1, skipped: 1 })
+    expect(reads).toBe(3)
+  })
+
+  it('戳为 null（后端给不出）：每轮整会话重读，语义仍然正确', async () => {
+    const { deps, reads, folds } = makeDeps({ listSessions: async () => [{ header, stamp: null }] })
+    await aggregateOnce(deps)
+    expect(await aggregateOnce(deps, { force: true })).toMatchObject({ folded: 1, skipped: 0 })
+    expect(reads()).toBe(2)
+    // 拿不到戳时不留戳：下一轮继续重读，等后端能给出戳为止。
+    expect(folds.get('s1')!.stamp).toBeUndefined()
+  })
+
+  it('戳变了但折叠结果逐字段相同：重折但不重写账本', async () => {
+    let stamp = 'rev-1'
+    const { deps, ledger, puts } = makeDeps({ listSessions: async () => [{ header, stamp }] })
+    await aggregateOnce(deps)
+    const after = puts()
+    expect(after).toBe(1)
+    stamp = 'rev-2'
+    expect(await aggregateOnce(deps, { force: true })).toMatchObject({ folded: 1, rows: 1 })
+    expect(puts()).toBe(after)
+    expect(ledger.size).toBe(1)
   })
 })
 
