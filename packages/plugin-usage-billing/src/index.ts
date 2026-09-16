@@ -81,10 +81,10 @@ export async function apply(ctx: Context): Promise<void> {
     settings,
     installAt,
     source,
-    fetchPricing: async () => {
+    fetchPricing: async ({ force, ttlHours }) => {
       const web = ctx.get('web')
       if (web === undefined) return { ok: false, reason: 'web 服务未装配' }
-      return await fetchPricingFromNetwork({ web, snapshots, installAt, now: () => Date.now() })
+      return await fetchPricingFromNetwork({ web, snapshots, installAt, now: () => Date.now() }, force, ttlHours)
     },
   })
   void service

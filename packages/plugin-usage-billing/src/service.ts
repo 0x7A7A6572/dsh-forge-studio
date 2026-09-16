@@ -41,8 +41,11 @@ export interface UsageBillingServiceConfig {
   settings: UsageBillingSettingsAccess
   source: SessionSource
   installAt: number
-  /** 联网拉价（Task 14 注入真实实现；测试注入假实现）。 */
-  fetchPricing: () => Promise<PricingRefreshResult>
+  /**
+   * 联网拉价（Task 14 注入真实实现；测试注入假实现）。
+   * `force` 由「立即刷新」按钮给出（绕过 TTL），`ttlHours` 取自 `settings.pricing.refreshHours`。
+   */
+  fetchPricing: (options: { force: boolean; ttlHours: number }) => Promise<PricingRefreshResult>
   now?: () => number
 }
 
@@ -227,10 +230,11 @@ export class UsageBillingService extends TypertRemoteService {
   }
 
   async refreshPricing(force: boolean): Promise<PricingRefreshResult> {
-    void force
-    const out = await this.config.fetchPricing()
-    if (!out.ok) return out
-    return out
+    // force 与 TTL 都必须真正送到拉取层：此前两者都被吞掉，「立即刷新」过不了 6h 缓存，
+    // 配置里的 refreshHours 也从未被读过（TTL 是硬编码的）。
+    return await this.config.fetchPricing({
+      force, ttlHours: this.config.settings.get().pricing.refreshHours,
+    })
   }
 
   async setAlias(input: AliasInput): Promise<{ ok: true }> {

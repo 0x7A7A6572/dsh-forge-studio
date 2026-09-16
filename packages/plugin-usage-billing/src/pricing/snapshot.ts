@@ -114,6 +114,29 @@ export function resolveLayerAt(
   return { entries, usdToCny, usdToCnySource, snapshotId }
 }
 
+/** 目前仍然生效的自定义价：重放自定义记录，丢掉「写回的就是当时目录价」的那些（即已取消的）。 */
+export function activeOverridesAt(at: number, all: readonly PriceSnapshot[]): Record<string, PriceEntry> {
+  const active: Record<string, PriceEntry> = {}
+  const ordered = [...all].sort((a, b) => a.at - b.at || a.id.localeCompare(b.id))
+  for (const snap of ordered) {
+    if (snap.at > at) break
+    if (snap.reason !== 'custom-price') continue
+    const catalogThen = resolveLayerAt(snap.at, all, CATALOG_REASONS).entries
+    for (const [k, v] of Object.entries(snap.entries)) {
+      const cat = catalogThen[k]
+      // 取消自定义价时写回的正是「当时的目录价」→ 该 key 已无自定义价。
+      if (cat !== undefined && cat.input === v.input && cat.cacheRead === v.cacheRead
+        && cat.cacheWrite === v.cacheWrite && cat.output === v.output && cat.currency === v.currency) {
+        delete active[k]
+        continue
+      }
+      active[k] = { ...v }
+    }
+    for (const k of snap.removed ?? []) delete active[k]
+  }
+  return active
+}
+
 /** 全量重放（不按来源过滤）——累计价表口径。 */
 export function resolveSnapshotAt(at: number, all: readonly PriceSnapshot[]): ResolvedTable {
   return resolveLayerAt(at, all)

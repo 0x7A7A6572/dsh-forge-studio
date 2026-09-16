@@ -12,7 +12,7 @@
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { resetAggregateCache } from '../aggregate.ts'
 import { BUILTIN_CATALOG, DEFAULT_USD_TO_CNY } from './catalog.ts'
-import { planSnapshot, resolveLayerAt, resolveSnapshotAt } from './snapshot.ts'
+import { activeOverridesAt, planSnapshot, resolveSnapshotAt } from './snapshot.ts'
 import type { PricingRefreshResult } from '../service.ts'
 import type { PriceEntry, PriceSnapshot } from '../types.ts'
 
@@ -64,8 +64,16 @@ export interface PricingFetchDeps {
   now: () => number
 }
 
+/** brief 的缺省 TTL = 6h；`settings.pricing.refreshHours` 缺失 / 非正时回退到它。 */
 const TTL_MS = 6 * 60 * 60 * 1000
 let lastFetch: { at: number; result: PricingRefreshResult } | undefined
+
+/** 配置里的刷新间隔（小时）→ 毫秒；不可用（缺失 / 非有限 / ≤ 0）时回退缺省。 */
+function ttlMsOf(refreshHours: number | undefined): number {
+  return typeof refreshHours === 'number' && Number.isFinite(refreshHours) && refreshHours > 0
+    ? refreshHours * 60 * 60 * 1000
+    : TTL_MS
+}
 
 export function resetPricingFetchCache(): void { lastFetch = undefined }
 
@@ -93,9 +101,11 @@ export async function fetchUsdCny(
 export async function fetchPricingFromNetwork(
   deps: PricingFetchDeps,
   force = false,
+  refreshHours?: number,
 ): Promise<PricingRefreshResult> {
   const now = deps.now()
-  if (!force && lastFetch !== undefined && now - lastFetch.at < TTL_MS) {
+  const ttlMs = ttlMsOf(refreshHours)
+  if (!force && lastFetch !== undefined && now - lastFetch.at < ttlMs) {
     return lastFetch.result
   }
 
@@ -108,17 +118,18 @@ export async function fetchPricingFromNetwork(
     }
     const fx = await fetchUsdCny(deps)
     const all = [...deps.snapshots.entries()].map(([, s]) => s)
-    // 刷新写的是**目录层**：先铺内置表与实时目录，再把用户的覆盖价盖回最上面。
-    // 少了最后一步，每次刷新都会把用户设过的自定义价整片抹掉（覆盖价的唯一来源）。
-    const overrides = resolveLayerAt(now, all, ['custom-price']).entries
+    // 刷新写的是**目录层**：先铺内置表与实时目录，再把**仍然生效**的自定义价盖回最上面。
+    // 少了最后一步，每次刷新都会把用户设过的自定义价整片抹掉（覆盖价的唯一来源）；
+    // 但也不能原样重放整个 custom-price 层——一条「取消记录」携带的是取消当刻的目录价，
+    // 整层重放会把它当成自定义价重新盖上，该 key 从此再也跟不上目录调价。
+    const overrides = all.length === 0 ? {} : activeOverridesAt(now, all)
     const entries: Record<string, PriceEntry> = { ...BUILTIN_CATALOG, ...fetched, ...overrides }
 
     // 同 appendDelta：拿完整状态当基线，否则目录里被删掉的模型会永远留在价表里。
     const prev = all.length === 0 ? undefined : resolveSnapshotAt(now, all)
-    // 汇率数值与在效状态一模一样时保留原 provenance：来源只是标注，数值才影响折算。
-    // 否则「实时拉到 7.1、恰好等于内置 7.1」会为一次纯标注变化追加一条空 delta。
-    const usdToCnySource = prev !== undefined && prev.usdToCny === fx.value ? prev.usdToCnySource : fx.source
-    const snap = planSnapshot(prev, { entries, usdToCny: fx.value, usdToCnySource },
+    // 来源是 provenance：实时→默认的同值翻转必须如实写进快照（planSnapshot 也把 source 计入变化），
+    // 否则「这次是回退到内置汇率」这件事会被静默抹掉，账本误报为 live。
+    const snap = planSnapshot(prev, { entries, usdToCny: fx.value, usdToCnySource: fx.source },
       { id: `${prev?.snapshotId ?? 'snap-0'}#cat-${now}`, at: now, reason: 'catalog-refresh' })
     if (snap !== null) await deps.snapshots.put(snap.id, snap)
     // 价表写入后聚合 TTL 缓存必须立即失效（与 appendDelta / ensureBaseSnapshot 同规则）。

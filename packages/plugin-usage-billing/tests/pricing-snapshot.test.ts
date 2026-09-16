@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { CATALOG_REASONS, diffEntries, planSnapshot, resolveLayerAt, resolveSnapshotAt } from '../src/pricing/snapshot.ts'
+import {
+  CATALOG_REASONS, activeOverridesAt, diffEntries, planSnapshot, resolveLayerAt, resolveSnapshotAt,
+} from '../src/pricing/snapshot.ts'
 import type { PriceEntry, PriceSnapshot } from '../src/types.ts'
 
 const e = (input: number): PriceEntry => ({ input, cacheRead: 0, cacheWrite: 0, output: 1, currency: 'CNY' })
@@ -170,5 +172,53 @@ describe('resolveLayerAt', () => {
     // resolveSnapshotAt 是「不过滤」的一行委托：结果必须与不传 reasons 逐字相同。
     expect(resolveSnapshotAt(400, ledger)).toEqual(resolveLayerAt(400, ledger))
     expect(resolveSnapshotAt(250, [refresh, b, custom, manual])).toEqual(resolveLayerAt(250, [refresh, b, custom, manual]))
+  })
+})
+
+describe('activeOverridesAt', () => {
+  const b = base(100, { 'a/1': e(1), 'a/2': e(2) })
+  const set: PriceSnapshot = {
+    id: 'snap-200#delta', at: 200, kind: 'delta', reason: 'custom-price',
+    usdToCny: 7, usdToCnySource: 'default', entries: { 'a/1': e(99) },
+  }
+  /** 取消自定义价：写回的正是「取消当刻的目录价」。 */
+  const cancel: PriceSnapshot = {
+    id: 'snap-300#delta', at: 300, kind: 'delta', reason: 'custom-price',
+    usdToCny: 7, usdToCnySource: 'default', entries: { 'a/1': e(1) },
+  }
+
+  it('与目录价不同的自定义价仍然生效', () => {
+    expect(activeOverridesAt(250, [b, set])).toEqual({ 'a/1': e(99) })
+    // 目录层里根本没有该 key（目录删掉的模型）时，照样算自定义价。
+    const orphan: PriceSnapshot = { ...set, id: 'snap-201#delta', at: 201, entries: { 'zz/9': e(5) } }
+    expect(activeOverridesAt(250, [b, orphan])).toEqual({ 'zz/9': e(5) })
+  })
+
+  it('取消记录（entries 写回当时目录价）之后该 key 不再算自定义价', () => {
+    expect(activeOverridesAt(350, [b, set, cancel])).toEqual({})
+    // 取消记录之前的时刻不受影响。
+    expect(activeOverridesAt(250, [b, set, cancel])).toEqual({ 'a/1': e(99) })
+  })
+
+  it('目录在取消之后再次调价，也不会让已取消的自定义价复活', () => {
+    const catLater: PriceSnapshot = {
+      id: 'snap-400#delta', at: 400, kind: 'delta', reason: 'catalog-refresh',
+      usdToCny: 7, usdToCnySource: 'default', entries: { 'a/1': e(7) },
+    }
+    expect(activeOverridesAt(500, [b, set, cancel, catLater])).toEqual({})
+    // 判定基准是「取消当刻的目录价」（1），而不是之后的新目录价（7）。
+    expect(resolveLayerAt(500, [b, set, cancel, catLater], CATALOG_REASONS).entries['a/1']!.input).toBe(7)
+  })
+
+  it('removed 记录同样生效，且返回值不与快照共享条目对象', () => {
+    const dropped: PriceSnapshot = {
+      id: 'snap-300#delta', at: 300, kind: 'delta', reason: 'custom-price',
+      usdToCny: 7, usdToCnySource: 'default', entries: {}, removed: ['a/1'],
+    }
+    expect(activeOverridesAt(400, [b, set, dropped])).toEqual({})
+
+    const active = activeOverridesAt(250, [b, set])
+    active['a/1']!.input = 999
+    expect(set.entries['a/1']!.input).toBe(99)
   })
 })
