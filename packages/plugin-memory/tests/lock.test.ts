@@ -12,13 +12,24 @@ import { MemoryService } from '../src/service.ts'
 import type { MemoryConfig, MemoryRecord } from '../src/types.ts'
 
 /** 最小 KvTable 假实现（service 只用到这几个方法）。 */
-function makeService() {
+function fakeTable() {
   const rows = new Map<string, MemoryRecord>()
-  const table = {
+  return {
     get: (key: string) => rows.get(key),
     entries: () => rows.entries(),
     put: async (key: string, value: MemoryRecord) => { rows.set(key, value) },
     delete: async (key: string) => rows.delete(key),
+  }
+}
+
+/** 每张表一个独立 Map：service 现在要读 entities / edges，不能共用一张表。 */
+function makeService() {
+  const tables = {
+    memories: fakeTable(),
+    raw_documents: fakeTable(),
+    audits: fakeTable(),
+    entities: fakeTable(),
+    edges: fakeTable(),
   }
   let config: MemoryConfig = {
     autoCapture: true,
@@ -36,7 +47,8 @@ function makeService() {
     ready: () => true,
   }
   const ctx = new Context()
-  const service = new MemoryService(ctx, { domain: { table: () => table }, settings } as never)
+  const domain = { table: (name: keyof typeof tables) => tables[name] }
+  const service = new MemoryService(ctx, { domain, settings } as never)
   return service
 }
 

@@ -15,7 +15,10 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => {
   const Null = (): null => null
   return {
     Button: (props: { children?: ReactNode }) => createElement('button', null, props.children),
-    Input: Null,
+    // Input 渲染成真 input（只透传 placeholder / type）：摘要、别名这些单行输入
+    // 在静态 HTML 里本来一个字符都不出现，就没法断言它们确实进了表单。
+    Input: (props: { placeholder?: string; type?: string }) =>
+      createElement('input', { placeholder: props.placeholder, type: props.type ?? 'text' }),
     Modal: (props: { open?: boolean; children?: ReactNode }) =>
       (props.open === true ? createElement('div', { role: 'dialog' }, props.children) : null),
     Pill: Stub,
@@ -35,16 +38,48 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => {
 import { renderToStaticMarkup } from 'react-dom/server'
 import {
   durationText,
+  ENTITY_KIND_OPTIONS,
+  EdgeList,
+  EntityDraftForm,
+  entityKindClass,
+  entityMentionCounts,
   KIND_OPTIONS,
+  linkedMemoryIds,
+  MEMORY_TABS,
   MemoryDraftForm,
   MemorySection,
+  memoryLinkCounts,
   ModalFeedback,
+  nodeKindLabel,
   ORIGIN_LABELS,
+  parseAliases,
+  RELATION_OPTIONS,
   SCOPE_OPTIONS,
   Segmented,
   sourceLabel,
   timeText,
 } from '../src/client/views/section.tsx'
+import type { MemoryEdge, MemoryEdgeRelation, MemoryNodeRef } from '../src/types.ts'
+
+/** 造一条边（只关心端点与关系，其余字段固定）。 */
+function edge(partial: {
+  id: string
+  from: MemoryNodeRef
+  to: MemoryNodeRef
+  relation?: MemoryEdgeRelation
+}): MemoryEdge {
+  return {
+    id: partial.id,
+    from: partial.from,
+    to: partial.to,
+    relation: partial.relation ?? 'related',
+    note: '',
+    weight: 1,
+    origin: 'auto',
+    createdAt: 1,
+    updatedAt: 1,
+  }
+}
 
 /** 渲染任意组件到静态 HTML。 */
 function html(element: Parameters<typeof renderToStaticMarkup>[0]): string {
@@ -74,7 +109,7 @@ describe('分段组按钮（替代下拉）', () => {
 
   it('重要性是 5 档滑杆 + 底部中文等级描述，且不带 ★', () => {
     const out = html(createElement(MemoryDraftForm, {
-      draft: { id: null, title: 't', content: 'c', kind: 'fact' as const, importance: 3, scope: 'global' as const, projectPath: '' },
+      draft: { id: null, title: 't', summary: '', aliases: '', content: 'c', kind: 'fact' as const, importance: 3, scope: 'global' as const, projectPath: '' },
       onChange: () => {},
     }))
     expect(out).toContain('type="range"')
@@ -120,7 +155,7 @@ describe('弹窗结果提示', () => {
 })
 
 describe('新增 / 编辑表单', () => {
-  const draft = { id: null, title: 't', content: 'c', kind: 'fact' as const, importance: 3, scope: 'global' as const, projectPath: '' }
+  const draft = { id: null, title: 't', summary: '', aliases: '', content: 'c', kind: 'fact' as const, importance: 3, scope: 'global' as const, projectPath: '' }
 
   it('弹窗正文包含两组组按钮 + 一个滑杆 + 正文输入，且没有下拉', () => {
     const out = html(createElement(MemoryDraftForm, { draft, onChange: () => {} }))
@@ -149,6 +184,8 @@ describe('详情与沉淀面板', () => {
     stats: async () => ({ ok: true, value: null }),
     projects: async () => ({ ok: true, value: [] }),
     getConflicts: async () => ({ ok: true, value: [] }),
+    listEntities: async () => ({ ok: true, value: [] }),
+    listEdges: async () => ({ ok: true, value: [] }),
   }
 
   it('来源标签把内部 code 翻成人话', () => {
@@ -195,5 +232,140 @@ describe('详情与沉淀面板', () => {
     } finally {
       vi.unstubAllGlobals()
     }
+  })
+})
+
+describe('wiki 图层：摘要 / 别名 / 实体 / 关联', () => {
+  /** SSR 不跑 useEffect，取数桩只会被「渲染期直接调用」的路径碰到。 */
+  const wikiStub = {
+    list: async () => ({ ok: true, value: [] }),
+    getConfig: async () => ({ ok: true, value: {} }),
+    stats: async () => ({ ok: true, value: null }),
+    projects: async () => ({ ok: true, value: [] }),
+    getConflicts: async () => ({ ok: true, value: [] }),
+    listEntities: async () => ({ ok: true, value: [] }),
+    listEdges: async () => ({ ok: true, value: [] }),
+  }
+
+  const draft = {
+    id: null,
+    title: 't',
+    summary: '',
+    aliases: '',
+    content: 'c',
+    kind: 'fact' as const,
+    importance: 3,
+    scope: 'global' as const,
+    projectPath: '',
+  }
+
+  it('记忆表单支持摘要与别名（别名用 / 、 逗号分隔）', () => {
+    const out = html(createElement(MemoryDraftForm, {
+      draft: { ...draft, summary: '一行摘要', aliases: 'a / b、c' },
+      onChange: () => {},
+    }))
+    expect(out).toContain('摘要（可选，一行说清这条讲什么）')
+    expect(out).toContain('别名（可选，用 / 、 或逗号分隔）')
+    // 表单项本身仍是原样：两组组按钮 + 一个滑杆 + 正文输入
+    expect(count(out, 'role="radiogroup"')).toBe(2)
+    expect(out).toContain('<textarea')
+  })
+
+  it('parseAliases 按 / 、 , ， 拆分，去空项去重复', () => {
+    expect(parseAliases('a / b')).toEqual(['a', 'b'])
+    expect(parseAliases('a、b, c，d')).toEqual(['a', 'b', 'c', 'd'])
+    // 空格不是分隔符：别名本身可以是多个词
+    expect(parseAliases('DeepSeek Harness')).toEqual(['DeepSeek Harness'])
+    expect(parseAliases('  a  ,  a ')).toEqual(['a'])
+    expect(parseAliases('')).toEqual([])
+  })
+
+  it('实体表单：名称 / 6 个类别 / 别名 / 说明', () => {
+    const out = html(createElement(EntityDraftForm, {
+      draft: { id: null, name: 'n', kind: 'tool' as const, aliases: '', summary: '' },
+      onChange: () => {},
+    }))
+    expect(count(out, 'role="radio"')).toBe(6)
+    expect(out).toContain('aria-label="类别"')
+    expect(out).toContain('工具')
+    expect(out).toContain('名称（同名或同别名会自动并入已有实体）')
+  })
+
+  it('关联数：memory 端点两侧都算一条', () => {
+    const edges = [
+      edge({ id: 'e1', from: { kind: 'memory', id: 'm1' }, to: { kind: 'entity', id: 'x1' }, relation: 'about' }),
+      edge({ id: 'e2', from: { kind: 'memory', id: 'm1' }, to: { kind: 'memory', id: 'm2' } }),
+      edge({ id: 'e3', from: { kind: 'memory', id: 'm2' }, to: { kind: 'entity', id: 'x1' } }),
+    ]
+    const counts = memoryLinkCounts(edges)
+    expect(counts.get('m1')).toBe(2)
+    expect(counts.get('m2')).toBe(2)
+    expect(counts.get('x1')).toBeUndefined()
+  })
+
+  it('被提及数按去重后的记忆数计，实体→实体的边不参与', () => {
+    const edges = [
+      edge({ id: 'e1', from: { kind: 'memory', id: 'm1' }, to: { kind: 'entity', id: 'x1' }, relation: 'about' }),
+      edge({ id: 'e2', from: { kind: 'entity', id: 'x1' }, to: { kind: 'memory', id: 'm1' }, relation: 'mentions' }),
+      edge({ id: 'e3', from: { kind: 'memory', id: 'm2' }, to: { kind: 'entity', id: 'x1' }, relation: 'about' }),
+      edge({ id: 'e4', from: { kind: 'entity', id: 'x1' }, to: { kind: 'entity', id: 'x2' }, relation: 'part-of' }),
+    ]
+    expect(entityMentionCounts(edges).get('x1')).toBe(2)
+    // 只被实体→实体边连着的实体没有「被记忆提及」，面板按 ?? 0 显示
+    expect(entityMentionCounts(edges).get('x2')).toBeUndefined()
+    expect(linkedMemoryIds(edges, 'x1')).toEqual(['m1', 'm2'])
+  })
+
+  it('关联列表：关系 / 来源中文标签、实体类别徽标、备注、记忆节点可点、断开按钮', () => {
+    const edges = [
+      edge({ id: 'e1', from: { kind: 'memory', id: 'm0' }, to: { kind: 'memory', id: 'm1' }, relation: 'refines' }),
+      edge({ id: 'e2', from: { kind: 'memory', id: 'm0' }, to: { kind: 'entity', id: 'x1' }, relation: 'about' }),
+      edge({ id: 'e3', from: { kind: 'memory', id: 'm0' }, to: { kind: 'memory', id: 'gone' }, relation: 'contradicts' }),
+    ]
+    const out = html(createElement(EdgeList, {
+      edges,
+      related: [
+        { edgeId: 'e1', node: { ref: { kind: 'memory' as const, id: 'm1' }, label: '被细化的那条', kind: 'fact', archived: false } },
+        { edgeId: 'e2', node: { ref: { kind: 'entity' as const, id: 'x1' }, label: 'dsh-forge-studio', kind: 'project', archived: false } },
+      ],
+      onJump: () => {},
+      onUnlink: () => {},
+    }))
+    // 关系与来源都翻成中文
+    expect(out).toContain('细化')
+    expect(out).toContain('冲突')
+    expect(out).toContain('关于')
+    expect(out).toContain('自动')
+    // 记忆节点是按钮（可跳详情），实体节点带类别徽标
+    expect(out).toContain('mem-edge-jump')
+    expect(out).toContain('被细化的那条')
+    expect(out).toContain('mem-entity-project')
+    expect(out).toContain('dsh-forge-studio')
+    // 端点被删掉的那条不炸，只提示
+    expect(out).toContain('端点已删除')
+    // 三条边各有一个「断开」
+    expect(count(out, '断开')).toBe(3)
+  })
+
+  it('节点类别标签与实体着色类：实体走实体类别，记忆走记忆分类', () => {
+    expect(nodeKindLabel({ ref: { kind: 'entity', id: 'x' }, label: 'X', kind: 'tool', archived: false })).toBe('工具')
+    expect(nodeKindLabel({ ref: { kind: 'memory', id: 'm' }, label: 'M', kind: 'preference', archived: false })).toBe('指令')
+    expect(entityKindClass('person')).toBe('mem-entity-person')
+    expect(entityKindClass('不认识的类别')).toBe('mem-entity-other')
+  })
+
+  it('分区渲染出第三个「实体」页签，关系 / 类别选项全量', () => {
+    const out = html(createElement(MemorySection as never, { close: () => {}, memory: wikiStub }))
+    expect(MEMORY_TABS).toEqual(['global', 'project', 'entity'])
+    // 当前页签是「全局记忆」（mem-tab mem-tab-active），另外两个是纯 mem-tab
+    expect(count(out, 'class="mem-tab"')).toBe(2)
+    expect(out).toContain('实体')
+    expect(count(out, 'mem-tab-count')).toBe(3)
+    // 关系下拉 9 种全在；实体类别 6 种全在
+    expect(RELATION_OPTIONS).toHaveLength(9)
+    expect(RELATION_OPTIONS.map((option) => option.label)).toContain('取代')
+    expect(ENTITY_KIND_OPTIONS).toHaveLength(6)
+    // 工具条新增「重建关联」
+    expect(out).toContain('重建关联')
   })
 })

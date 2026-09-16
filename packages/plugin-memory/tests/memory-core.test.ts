@@ -25,6 +25,8 @@ function record(overrides: Partial<MemoryRecord> = {}): MemoryRecord {
     projectPath: '',
     title: 'T',
     content: 'C',
+    summary: '',
+    aliases: [],
     importance: 3,
     tags: [],
     pinned: false,

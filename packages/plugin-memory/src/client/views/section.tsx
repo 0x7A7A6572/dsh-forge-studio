@@ -3,7 +3,8 @@
  *
  * 结构：标题 + 引言 → 记忆开关块（生成对话记忆 / 自动注入 / 注入条数与门槛）
  * → 「管理记忆」工具条（新增 / 整理 / 复制 / 重置 / 导入 / 编辑）
- * → 页签（全局记忆 / 项目记忆，带计数）→ 记忆条目列表（可直接改正文）。
+ * → 页签（全局记忆 / 项目记忆 / 实体，带计数）→ 记忆条目列表（可直接改正文）
+ * → 详情弹窗里的「关联」区块（wiki 图层：实体 + 边，可连边 / 断边）。
  *
  * 读写全部走 Typert remote（ctx.remote.memory.*）；开关写的是设置命名空间的用户层，
  * 与插件设置卡片同源，改完即时生效。
@@ -34,6 +35,11 @@ import { pluginVersion } from '../../version.ts'
 import {
   IMPORT_PROMPT_TEXT,
   MEMORY_CONFIG_BASE,
+  MEMORY_EDGE_ORIGIN_LABELS,
+  MEMORY_EDGE_RELATION_LABELS,
+  MEMORY_EDGE_RELATIONS,
+  MEMORY_ENTITY_KINDS,
+  MEMORY_ENTITY_KIND_LABELS,
   MEMORY_IMPORTANCE_LABELS,
   MEMORY_KINDS,
   MEMORY_KIND_LABELS,
@@ -44,8 +50,15 @@ import type {
   MemoryAuditEntry,
   MemoryConfig,
   MemoryConflict,
+  MemoryEdge,
+  MemoryEdgeRelation,
+  MemoryEntity,
+  MemoryEntityKind,
+  MemoryGraphNode,
   MemoryId,
   MemoryKind,
+  MemoryNeighborhood,
+  MemoryNodeKind,
   MemoryProjectSummary,
   MemoryRawDocument,
   MemoryRawId,
@@ -63,15 +76,44 @@ export interface MemorySectionInjected {
 export type MemorySectionProps =
   PropsRuntime<'settings.section'> & InjectFace<MemorySectionInjected>
 
+/** 页签：两个记忆作用域 + wiki 图层的实体目录。 */
+export type MemoryTab = MemoryScope | 'entity'
+
+/** 页签顺序（记忆两个作用域在前，实体在后）。 */
+export const MEMORY_TABS: readonly MemoryTab[] = ['global', 'project', 'entity']
+
+const TAB_LABELS: Record<MemoryTab, string> = { global: '全局记忆', project: '项目记忆', entity: '实体' }
+
 /** 编辑中的草稿（id 为 null 表示新增）。 */
 interface Draft {
   id: string | null
   title: string
+  /** 一行摘要（列表卡与关联视图用）。 */
+  summary: string
+  /** 别名原文；保存时按 parseAliases 拆成数组。 */
+  aliases: string
   content: string
   kind: MemoryKind
   importance: number
   scope: MemoryScope
   projectPath: string
+}
+
+/** 实体草稿（id 为 null 表示新建）。 */
+interface EntityDraft {
+  id: string | null
+  name: string
+  kind: MemoryEntityKind
+  aliases: string
+  summary: string
+}
+
+/** 详情弹窗里「连一条边」的表单。 */
+interface LinkDraft {
+  toKind: MemoryNodeKind
+  toId: string
+  relation: MemoryEdgeRelation
+  note: string
 }
 
 function errText(error: unknown): string {
@@ -116,11 +158,89 @@ export function sourceLabel(source: string): string {
   return source
 }
 
+/**
+ * 别名输入 → 数组：按 / 、 , ， 分隔，去掉空项与重复项。
+ * 刻意不把空格当分隔符 —— 别名可以本身就是多个词（DeepSeek Harness）。
+ */
+export function parseAliases(text: string): string[] {
+  const parts = text
+    .split(/[/、,，]+/)
+    .map((item) => item.trim())
+    .filter((item) => item !== '')
+  return [...new Set(parts)]
+}
+
+/** 关联视图里节点的类别标签：实体走实体类别，记忆走记忆分类。 */
+export function nodeKindLabel(node: MemoryGraphNode): string {
+  if (node.ref.kind === 'entity') return MEMORY_ENTITY_KIND_LABELS[node.kind as MemoryEntityKind] ?? node.kind
+  return MEMORY_KIND_LABELS[node.kind as MemoryKind] ?? node.kind
+}
+
+/** 实体类别徽标的着色类名（类别未知时退回 other，不落空类）。 */
+export function entityKindClass(kind: string): string {
+  return MEMORY_ENTITY_KINDS.includes(kind as MemoryEntityKind) ? 'mem-entity-' + kind : 'mem-entity-other'
+}
+
+/** 每条记忆的关联数：端点 kind === 'memory' 的两侧都算一条（一次 listEdges 的结果在内存里聚合）。 */
+export function memoryLinkCounts(edges: readonly MemoryEdge[]): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const edge of edges) {
+    for (const node of [edge.from, edge.to]) {
+      if (node.kind !== 'memory') continue
+      counts.set(node.id, (counts.get(node.id) ?? 0) + 1)
+    }
+  }
+  return counts
+}
+
+/** 每个实体被多少条记忆提及（同一条记忆只算一次，按记忆去重）。 */
+export function entityMentionCounts(edges: readonly MemoryEdge[]): Map<string, number> {
+  const seen = new Map<string, Set<string>>()
+  for (const edge of edges) {
+    const from = edge.from
+    const to = edge.to
+    const memorySide = from.kind === 'memory' ? from : to.kind === 'memory' ? to : undefined
+    const entitySide = from.kind === 'entity' ? from : to.kind === 'entity' ? to : undefined
+    if (memorySide === undefined || entitySide === undefined) continue
+    const ids = seen.get(entitySide.id) ?? new Set<string>()
+    ids.add(memorySide.id)
+    seen.set(entitySide.id, ids)
+  }
+  return new Map([...seen].map(([id, ids]) => [id, ids.size]))
+}
+
+/** 与某个实体相连的记忆 id（按边的顺序去重），用于「实体 → 关联记忆」映射。 */
+export function linkedMemoryIds(edges: readonly MemoryEdge[], entityId: string): string[] {
+  const ids: string[] = []
+  for (const edge of edges) {
+    const entitySide = edge.from.kind === 'entity' && edge.from.id === entityId
+      ? edge.from
+      : edge.to.kind === 'entity' && edge.to.id === entityId ? edge.to : undefined
+    if (entitySide === undefined) continue
+    const other = edge.from === entitySide ? edge.to : edge.from
+    if (other.kind !== 'memory') continue
+    if (!ids.includes(other.id)) ids.push(other.id)
+  }
+  return ids
+}
+
 const SCOPE_LABELS: Record<MemoryScope, string> = { global: '全局记忆', project: '项目记忆' }
 
 /** 分段组按钮的选项：短枚举一律用组按钮，不用下拉（少一次点击、也不用展开面板）。 */
 export const SCOPE_OPTIONS = MEMORY_SCOPES.map((scope) => ({ value: scope, label: SCOPE_LABELS[scope] }))
 export const KIND_OPTIONS = MEMORY_KINDS.map((kind) => ({ value: kind, label: MEMORY_KIND_LABELS[kind] }))
+/** 实体类别选项（与记忆分类共用同一套组按钮语言）。 */
+export const ENTITY_KIND_OPTIONS = MEMORY_ENTITY_KINDS.map((kind) => ({ value: kind, label: MEMORY_ENTITY_KIND_LABELS[kind] }))
+/** 边的目标端点类型（记忆 / 实体）。 */
+export const NODE_KIND_OPTIONS: readonly { value: MemoryNodeKind; label: string }[] = [
+  { value: 'memory', label: '记忆' },
+  { value: 'entity', label: '实体' },
+]
+/** 关系选项：9 种关系全列 + 中文标签（下拉用，位置不够时不挤成一行按钮）。 */
+export const RELATION_OPTIONS = MEMORY_EDGE_RELATIONS.map((relation) => ({
+  value: relation,
+  label: MEMORY_EDGE_RELATION_LABELS[relation],
+}))
 /** 重要性 5 档：中文等级名 + 一句话说明（滑杆下方显示当前档）。 */
 export const IMPORTANCE_LEVELS = [
   { value: 1, label: MEMORY_IMPORTANCE_LABELS[0], desc: '边缘信息，几乎不会用到' },
@@ -238,6 +358,16 @@ export function MemoryDraftForm(props: {
             placeholder="标题（同作用域下同名会自动合并）"
             onChange={(event) => { setDraft({ ...current, title: event.currentTarget.value }) }}
           />
+          <Input
+            value={current.summary}
+            placeholder="摘要（可选，一行说清这条讲什么）"
+            onChange={(event) => { setDraft({ ...current, summary: event.currentTarget.value }) }}
+          />
+          <Input
+            value={current.aliases}
+            placeholder="别名（可选，用 / 、 或逗号分隔）"
+            onChange={(event) => { setDraft({ ...current, aliases: event.currentTarget.value }) }}
+          />
           <Segmented
             label="作用域"
             value={current.scope}
@@ -291,6 +421,95 @@ export function MemoryDraftForm(props: {
     )
   }
 
+/** 实体表单（新建 / 编辑共用，渲染在弹窗里）。模块级组件，便于单测直接渲染。 */
+export function EntityDraftForm(props: {
+  draft: EntityDraft
+  disabled?: boolean
+  onChange: (next: EntityDraft) => void
+}): JSX.Element {
+  const current = props.draft
+  const setDraft = props.onChange
+  return (
+    <div className="mem-modal-body" data-dsh-memory-ui="">
+      <div className="mem-draft-form">
+        <Input
+          value={current.name}
+          placeholder="名称（同名或同别名会自动并入已有实体）"
+          onChange={(event) => { setDraft({ ...current, name: event.currentTarget.value }) }}
+        />
+        <Segmented
+          label="类别"
+          value={current.kind}
+          options={ENTITY_KIND_OPTIONS}
+          disabled={props.disabled === true}
+          onChange={(kind) => { setDraft({ ...current, kind }) }}
+        />
+        <Input
+          value={current.aliases}
+          placeholder="别名（可选，用 / 、 或逗号分隔）"
+          onChange={(event) => { setDraft({ ...current, aliases: event.currentTarget.value }) }}
+        />
+        <Input
+          value={current.summary}
+          placeholder="一行说明（可选）"
+          onChange={(event) => { setDraft({ ...current, summary: event.currentTarget.value }) }}
+        />
+      </div>
+    </div>
+  )
+}
+
+/** 关联列表：关系标签 + 另一端节点（记忆可点进去 / 实体按类别着色）+ 来源 + 备注 + 断开。 */
+export function EdgeList(props: {
+  edges: readonly MemoryEdge[]
+  related: readonly { readonly edgeId: string; readonly node: MemoryGraphNode }[]
+  disabled?: boolean
+  onJump: (id: string) => void
+  onUnlink: (edge: MemoryEdge) => void
+}): JSX.Element {
+  const relatedByEdge = new Map<string, MemoryGraphNode>(
+    props.related.map((item) => [item.edgeId, item.node] as const),
+  )
+  return (
+    <div className="mem-edge-list">
+      {props.edges.map((edge) => {
+        const node = relatedByEdge.get(edge.id)
+        return (
+          <div className="mem-edge-item" key={edge.id}>
+            <span className="mem-edge-relation">{MEMORY_EDGE_RELATION_LABELS[edge.relation]}</span>
+            {node === undefined ? (
+              <span className="mem-raw-meta">端点已删除</span>
+            ) : node.ref.kind === 'memory' ? (
+              <button
+                type="button"
+                className="mem-edge-node mem-edge-jump"
+                title="查看这条记忆"
+                onClick={() => { props.onJump(node.ref.id) }}
+              >
+                {node.label}
+              </button>
+            ) : (
+              <span className="mem-edge-node">
+                <span className={'mem-entity-badge ' + entityKindClass(node.kind)}>{nodeKindLabel(node)}</span>
+                {node.label}
+              </span>
+            )}
+            <span className="mem-raw-meta">{MEMORY_EDGE_ORIGIN_LABELS[edge.origin]}</span>
+            {edge.note !== '' && <span className="mem-edge-note">{edge.note}</span>}
+            <Button
+              variant="ghost" size="sm" disabled={props.disabled === true}
+              title="断开这条关联"
+              onClick={() => { props.onUnlink(edge) }}
+            >
+              断开
+            </Button>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 /** 记忆分区。 */
 export function MemorySection(props: MemorySectionProps): JSX.Element {
   const memory = props.memory
@@ -298,7 +517,7 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
   const [stats, setStats] = useState<MemoryStats | null>(null)
   const [projects, setProjects] = useState<readonly MemoryProjectSummary[]>([])
   const [records, setRecords] = useState<readonly MemoryRecord[]>([])
-  const [tab, setTab] = useState<MemoryScope>('global')
+  const [tab, setTab] = useState<MemoryTab>('global')
   const [projectPath, setProjectPath] = useState('')
   const [keyword, setKeyword] = useState('')
   const [includeArchived, setIncludeArchived] = useState(false)
@@ -316,6 +535,17 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
   /** 展开过的原文全文（按留档 id 缓存，列表本身不带全文）。 */
   const [rawText, setRawText] = useState<Record<string, string>>({})
   const [conflicts, setConflicts] = useState<readonly MemoryConflict[]>([])
+  /** wiki 图层：实体目录 + 全量边（关联数、被提及数都在内存里聚合）。 */
+  const [entities, setEntities] = useState<readonly MemoryEntity[]>([])
+  const [edges, setEdges] = useState<readonly MemoryEdge[]>([])
+  /** 实体表单草稿（id 为 null 表示新建）。 */
+  const [entityDraft, setEntityDraft] = useState<EntityDraft | null>(null)
+  /** 展开查看「关联记忆」的实体 id 与它那一次 listEdges 的结果。 */
+  const [openEntityId, setOpenEntityId] = useState<string | null>(null)
+  const [entityEdges, setEntityEdges] = useState<readonly MemoryEdge[]>([])
+  /** 详情弹窗的关联视图与「连一条边」表单。 */
+  const [neighborhood, setNeighborhood] = useState<MemoryNeighborhood | null>(null)
+  const [linkDraft, setLinkDraft] = useState<LinkDraft | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -338,17 +568,33 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
   }, [memory])
 
   const refreshRecords = useCallback(async () => {
-    const query: Record<string, unknown> = { scope: tab }
+    // 实体页签不按作用域筛选：拉全量条目（含归档），供「实体 → 关联记忆」在内存里映射。
+    const query: Record<string, unknown> = tab === 'entity' ? { includeArchived: true } : { scope: tab }
     if (tab === 'project' && projectPath !== '') query.projectPath = projectPath
-    if (keyword.trim() !== '') query.keyword = keyword.trim()
-    if (includeArchived) query.includeArchived = true
+    if (tab !== 'entity' && keyword.trim() !== '') query.keyword = keyword.trim()
+    if (tab !== 'entity' && includeArchived) query.includeArchived = true
     const result = await memory.list(query)
     if (result.ok) setRecords(result.value)
     else setError(errText(result.error))
   }, [memory, tab, projectPath, keyword, includeArchived])
 
+  /** wiki 图层的取数：实体目录 + 全量边（一次拉全，关联数在内存里聚合）。 */
+  const refreshWiki = useCallback(async () => {
+    const [entityResult, edgeResult] = await Promise.all([
+      // 远程端点有形参 arity 校验：不传对象会在客户端直接抛「expected 1 argument(s), got 0」，
+      // 传空对象才是「不过滤、拉全量」。
+      memory.listEntities({}),
+      memory.listEdges({}),
+    ])
+    if (entityResult.ok) setEntities(entityResult.value)
+    else setError(errText(entityResult.error))
+    if (edgeResult.ok) setEdges(edgeResult.value)
+    else setError(errText(edgeResult.error))
+  }, [memory])
+
   useEffect(() => { void refreshOverview() }, [refreshOverview])
   useEffect(() => { void refreshRecords() }, [refreshRecords])
+  useEffect(() => { void refreshWiki() }, [refreshWiki])
 
   /** 统一包一层 busy/error 处理并刷新。 */
   async function run(action: () => Promise<unknown>, done?: string): Promise<void> {
@@ -358,6 +604,7 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
       await action()
       await refreshOverview()
       await refreshRecords()
+      await refreshWiki()
       if (done !== undefined) setNotice(done)
     } catch (e) {
       setError(errText(e))
@@ -377,6 +624,8 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
     setDraft({
       id: record.id,
       title: record.title,
+      summary: record.summary,
+      aliases: record.aliases.join(' / '),
       content: record.content,
       kind: record.kind,
       importance: record.importance,
@@ -389,12 +638,23 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
     setDraft({
       id: null,
       title: '',
+      summary: '',
+      aliases: '',
       content: '',
       kind: 'fact',
       importance: 3,
-      scope: tab,
+      scope: tab === 'project' ? 'project' : 'global',
       projectPath: tab === 'project' ? projectPath : '',
     })
+  }
+
+  /** 切页签：顺手清掉编辑态，免得弹窗开着、内容已经换了页。 */
+  function switchTab(next: MemoryTab): void {
+    setTab(next)
+    setDraft(null)
+    setEntityDraft(null)
+    setOpenEntityId(null)
+    setEntityEdges([])
   }
 
   async function saveDraft(): Promise<void> {
@@ -414,6 +674,8 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
         const result = await memory.save({
           title,
           content,
+          summary: draft.summary.trim(),
+          aliases: parseAliases(draft.aliases),
           kind: draft.kind,
           scope: draft.scope,
           ...(draft.scope === 'project' ? { projectPath: draft.projectPath.trim() } : {}),
@@ -425,6 +687,8 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
         const result = await memory.updateMemory(draft.id as MemoryId, {
           title,
           content,
+          summary: draft.summary.trim(),
+          aliases: parseAliases(draft.aliases),
           kind: draft.kind,
           importance: draft.importance,
           scope: draft.scope,
@@ -453,6 +717,7 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
   }
 
   async function copyExport(): Promise<void> {
+    if (tab === 'entity') return
     await run(async () => {
       const result = await memory.exportText(tab, tab === 'project' ? projectPath : undefined)
       if (!result.ok) throw new Error(errText(result.error))
@@ -472,7 +737,160 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
     })
   }
 
+  /** 重建自动边：共享实体的记忆两两相连，并清掉不再成立的自动边。 */
+  async function runRebuildEdges(): Promise<void> {
+    await run(async () => {
+      const result = await memory.rebuildEdges()
+      if (!result.ok) throw new Error(errText(result.error))
+      setNotice('已重建关联：新增 ' + result.value.added + ' / 清理 ' + result.value.removed + '。')
+    })
+  }
+
+  /* ---------- wiki 图层：实体 ---------- */
+
+  function startCreateEntity(): void {
+    setError('')
+    setNotice('')
+    setEntityDraft({ id: null, name: '', kind: 'project', aliases: '', summary: '' })
+  }
+
+  function startEditEntity(entity: MemoryEntity): void {
+    setEntityDraft({
+      id: entity.id,
+      name: entity.name,
+      kind: entity.kind,
+      aliases: entity.aliases.join(' / '),
+      summary: entity.summary,
+    })
+  }
+
+  async function saveEntityDraft(): Promise<void> {
+    if (entityDraft === null) return
+    const name = entityDraft.name.trim()
+    if (name === '') {
+      setError('实体名称不能为空')
+      return
+    }
+    await run(async () => {
+      const result = await memory.upsertEntity({
+        ...(entityDraft.id !== null ? { id: entityDraft.id } : {}),
+        name,
+        kind: entityDraft.kind,
+        aliases: parseAliases(entityDraft.aliases),
+        summary: entityDraft.summary.trim(),
+      })
+      if (!result.ok) throw new Error(errText(result.error))
+      setEntityDraft(null)
+    }, '已保存实体。')
+  }
+
+  async function removeEntity(entity: MemoryEntity): Promise<void> {
+    await run(async () => {
+      const result = await memory.removeEntity(entity.id)
+      if (!result.ok) throw new Error(errText(result.error))
+      if (!result.value) throw new Error('未找到该实体')
+      if (openEntityId === entity.id) {
+        setOpenEntityId(null)
+        setEntityEdges([])
+      }
+    }, '已删除实体。')
+  }
+
+  /** 展开 / 收起实体的关联记忆：展开时按需拉这个实体相连的边。 */
+  async function toggleEntityMemories(id: string): Promise<void> {
+    if (openEntityId === id) {
+      setOpenEntityId(null)
+      setEntityEdges([])
+      return
+    }
+    setOpenEntityId(id)
+    setEntityEdges([])
+    await run(async () => {
+      const result = await memory.listEdges({ node: { kind: 'entity', id } })
+      if (!result.ok) throw new Error(errText(result.error))
+      setEntityEdges(result.value)
+    })
+  }
+
+  /* ---------- wiki 图层：详情里的关联 ---------- */
+
+  /** 取一条记忆的关联视图（详情弹窗的「关联」区块）。 */
+  async function loadNeighborhood(id: string): Promise<void> {
+    const result = await memory.neighborhood(id)
+    if (result.ok) setNeighborhood(result.value ?? null)
+    else setError(errText(result.error))
+  }
+
+  /** 打开详情：先用列表里的快照立即渲染，再补取关联数据。 */
+  async function openDetail(record: MemoryRecord): Promise<void> {
+    setError('')
+    setNotice('')
+    setDetail(record)
+    setNeighborhood(null)
+    setLinkDraft(null)
+    await run(async () => { await loadNeighborhood(record.id) })
+  }
+
+  /** 关掉详情：连关联数据一起清掉，免得下次打开先闪一眼上一条的边。 */
+  function closeDetail(): void {
+    setDetail(null)
+    setNeighborhood(null)
+    setLinkDraft(null)
+  }
+
+  /** 从关联里的记忆节点跳到它的详情（可能不在当前列表，故整条取回）。 */
+  async function jumpToMemory(id: string): Promise<void> {
+    setError('')
+    setNotice('')
+    setLinkDraft(null)
+    await run(async () => {
+      const result = await memory.neighborhood(id)
+      if (!result.ok) throw new Error(errText(result.error))
+      if (result.value === undefined) throw new Error('未找到该记忆')
+      setDetail(result.value.memory)
+      setNeighborhood(result.value)
+    })
+  }
+
+  /** 断开一条关联。 */
+  async function removeEdge(edge: MemoryEdge): Promise<void> {
+    if (detail === null) return
+    const memoryId = detail.id
+    await run(async () => {
+      const result = await memory.unlink(edge.id)
+      if (!result.ok) throw new Error(errText(result.error))
+      if (!result.value) throw new Error('未找到该关联')
+      await loadNeighborhood(memoryId)
+      setNotice('已断开关联。')
+    })
+  }
+
+  /** 从详情弹窗连一条边：from 固定是当前这条记忆，to 由表单指定。 */
+  async function submitLink(): Promise<void> {
+    if (detail === null || linkDraft === null) return
+    const toId = linkDraft.toId.trim()
+    if (toId === '') {
+      setError(linkDraft.toKind === 'memory' ? '请先选择或填写目标记忆' : '请先选择或填写目标实体')
+      return
+    }
+    const memoryId = detail.id
+    const note = linkDraft.note.trim()
+    await run(async () => {
+      const result = await memory.link({
+        from: { kind: 'memory', id: memoryId },
+        to: { kind: linkDraft.toKind, id: toId },
+        relation: linkDraft.relation,
+        ...(note !== '' ? { note } : {}),
+      })
+      if (!result.ok) throw new Error(errText(result.error))
+      await loadNeighborhood(memoryId)
+      setLinkDraft(null)
+      setNotice('已建立关联。')
+    })
+  }
+
   async function runImport(): Promise<void> {
+    if (tab === 'entity') return
     if (importText.trim() === '') {
       setError('请先粘贴要导入的内容')
       return
@@ -557,6 +975,7 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
   }
 
   async function runReset(): Promise<void> {
+    if (tab === 'entity') return
     if (tab === 'project' && projectPath === '') {
       setError('请先选择要重置的项目')
       return
@@ -569,11 +988,16 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
     })
   }
 
-  const counts: Record<MemoryScope, number> = {
+  const counts: Record<MemoryTab, number> = {
     global: stats?.global ?? 0,
     project: stats?.project ?? 0,
+    entity: stats?.entities ?? 0,
   }
   const activeProjectLabel = projects.find((item) => item.path === projectPath)?.label ?? projectPath
+
+  /** 内存聚合：每条记忆的关联数 / 每个实体的被提及数（只依赖那一次 listEdges 的结果）。 */
+  const linkCounts = memoryLinkCounts(edges)
+  const mentionCounts = entityMentionCounts(edges)
 
   /** 单条记忆（正常态）。 */
   function renderRecord(record: MemoryRecord): JSX.Element {
@@ -583,10 +1007,11 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
           <Pill>{MEMORY_KIND_LABELS[record.kind]}</Pill>
           <span className="mem-item-title" title={record.title}>{record.title}</span>
           <Pill>{importanceLabel(record.importance)}</Pill>
+          <Pill>{'关联 ' + (linkCounts.get(record.id) ?? 0)}</Pill>
           <div className="mem-item-actions">
             <Button
-              variant="ghost" size="sm" title="查看元数据与全文"
-              onClick={() => { setError(''); setNotice(''); setDetail(record) }}
+              variant="ghost" size="sm" title="查看元数据、关联与全文"
+              onClick={() => { void openDetail(record) }}
             >
               详情
             </Button>
@@ -611,9 +1036,96 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
             />
           </div>
         </div>
+        {record.summary !== '' && <p className="mem-item-summary">{record.summary}</p>}
+        {record.aliases.length > 0 && (
+          <span className="mem-item-alias">{'别名：' + record.aliases.join(' / ')}</span>
+        )}
         <p className="mem-item-body">{record.content}</p>
         {record.archived && <span className="mem-notice">已归档（不参与注入，可随时恢复）</span>}
       </div>
+    )
+  }
+
+  /** 实体页签：目录 + 每个实体关联的记忆（点开才取那一次的边）。 */
+  function renderEntities(): JSX.Element {
+    const linkedIds = openEntityId === null ? [] : linkedMemoryIds(entityEdges, openEntityId)
+    const linkedRecords = linkedIds
+      .map((id) => records.find((record) => record.id === id))
+      .filter((record): record is MemoryRecord => record !== undefined)
+    return (
+      <>
+        <div className="mem-head">
+          <span className="mem-head-title">实体目录</span>
+          <div className="mem-toolbar">
+            <Button
+              variant="ghost" size="sm" icon={<IconPlusOutline16 size={14} />}
+              disabled={locked} onClick={startCreateEntity}
+            >
+              新建实体
+            </Button>
+          </div>
+        </div>
+        <p className="mem-row-desc">
+          实体是 wiki 图层里的「名词」（项目 / 工具 / 人…）：记忆通过「关于 / 提及」挂到它上面，
+          共享同一个实体的记忆会自动连成「相关」。写记忆时声明实体，或在这里手工维护。
+        </p>
+        <div className="mem-list">
+          {entities.map((entity) => (
+            <div className="mem-item" key={entity.id}>
+              <div className="mem-item-head">
+                <span className={'mem-entity-badge ' + entityKindClass(entity.kind)}>
+                  {MEMORY_ENTITY_KIND_LABELS[entity.kind]}
+                </span>
+                <button
+                  type="button"
+                  className="mem-item-title mem-entity-name"
+                  title="查看关联的记忆"
+                  onClick={() => { void toggleEntityMemories(entity.id) }}
+                >
+                  {entity.name}
+                </button>
+                <span className="mem-raw-meta">{'被提及 ' + (mentionCounts.get(entity.id) ?? 0) + ' 条'}</span>
+                <div className="mem-item-actions">
+                  <Button
+                    variant="ghost" size="sm" icon={<IconEditOutline16 size={14} />} title="编辑"
+                    onClick={() => { startEditEntity(entity) }}
+                  />
+                  <Button
+                    variant="ghost" size="sm" icon={<IconTrashOutline16 size={14} />} title="删除"
+                    onClick={() => { void removeEntity(entity) }}
+                  />
+                </div>
+              </div>
+              {entity.aliases.length > 0 && (
+                <span className="mem-item-alias">{'别名：' + entity.aliases.join(' / ')}</span>
+              )}
+              {entity.summary !== '' && <p className="mem-item-summary">{entity.summary}</p>}
+              {openEntityId === entity.id && (
+                <div className="mem-entity-links">
+                  {linkedRecords.length === 0 ? (
+                    <span className="mem-row-desc">还没有记忆关联到这个实体。</span>
+                  ) : linkedRecords.map((record) => (
+                    <button
+                      key={record.id}
+                      type="button"
+                      className="mem-entity-link"
+                      title="查看这条记忆"
+                      onClick={() => { void openDetail(record) }}
+                    >
+                      {record.title}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+          {entities.length === 0 && (
+            <div className="mem-empty">
+              还没有实体。写记忆时声明「这条讲的是谁」，或点上面的「新建实体」手工加一个。
+            </div>
+          )}
+        </div>
+      </>
     )
   }
 
@@ -751,64 +1263,29 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
       <div className="mem-head">
         <span className="mem-head-title">管理记忆</span>
         <div className="mem-toolbar">
-          <Button variant="ghost" size="sm" icon={<IconPlusOutline16 size={14} />} disabled={locked} onClick={startCreate}>新增</Button>
-          <Button variant="ghost" size="sm" icon={<IconChecklistOutline14 size={14} />} disabled={busy || locked} onClick={() => { void runTidy() }}>整理</Button>
-          <Button variant="ghost" size="sm" icon={<IconCopyOutline16 size={14} />} disabled={busy || locked} onClick={() => { void copyExport() }}>复制</Button>
-          <Button variant="ghost" size="sm" icon={<IconRefreshOutline16 size={14} />} disabled={locked} onClick={() => { openModal(setResetOpen) }}>重置</Button>
-          <Button variant="ghost" size="sm" icon={<IconDownloadOutline16 size={14} />} disabled={locked} onClick={() => { openModal(setImportOpen) }}>导入</Button>
+          <Button variant="ghost" size="sm" icon={<IconPlusOutline16 size={14} />} disabled={locked || tab === 'entity'} onClick={startCreate}>新增</Button>
+          <Button variant="ghost" size="sm" icon={<IconChecklistOutline14 size={14} />} disabled={busy || locked || tab === 'entity'} onClick={() => { void runTidy() }}>整理</Button>
+          <Button variant="ghost" size="sm" icon={<IconRefreshOutline16 size={14} />} disabled={busy || locked} onClick={() => { void runRebuildEdges() }}>重建关联</Button>
+          <Button variant="ghost" size="sm" icon={<IconCopyOutline16 size={14} />} disabled={busy || locked || tab === 'entity'} onClick={() => { void copyExport() }}>复制</Button>
+          <Button variant="ghost" size="sm" icon={<IconRefreshOutline16 size={14} />} disabled={locked || tab === 'entity'} onClick={() => { openModal(setResetOpen) }}>重置</Button>
+          <Button variant="ghost" size="sm" icon={<IconDownloadOutline16 size={14} />} disabled={locked || tab === 'entity'} onClick={() => { openModal(setImportOpen) }}>导入</Button>
           <Button variant="ghost" size="sm" icon={<IconListPenOutline16 size={14} />} disabled={locked} onClick={openLedger}>沉淀</Button>
         </div>
       </div>
 
-      <div className="mem-tabs" aria-label="记忆作用域">
-        {MEMORY_SCOPES.map((scope) => (
+      <div className="mem-tabs" aria-label="记忆视图">
+        {MEMORY_TABS.map((item) => (
           <button
-            key={scope}
+            key={item}
             type="button"
-            aria-current={tab === scope ? 'true' : undefined}
-            className={tab === scope ? 'mem-tab mem-tab-active' : 'mem-tab'}
-            onClick={() => { setTab(scope); setDraft(null) }}
+            aria-current={tab === item ? 'true' : undefined}
+            className={tab === item ? 'mem-tab mem-tab-active' : 'mem-tab'}
+            onClick={() => { switchTab(item) }}
           >
-            {SCOPE_LABELS[scope]}
-            <span className="mem-tab-count">{counts[scope]}</span>
+            {TAB_LABELS[item]}
+            <span className="mem-tab-count">{counts[item]}</span>
           </button>
         ))}
-      </div>
-
-      <div className="mem-field-row">
-        {tab === 'project' && (
-          <>
-            <span>项目</span>
-            <select
-              className="mem-select"
-              value={projectPath}
-              onChange={(event) => { setProjectPath(event.currentTarget.value); setDraft(null) }}
-            >
-              <option value="">选择工作区…</option>
-              {projects.map((item) => (
-                <option key={item.path} value={item.path}>{item.label + '（' + item.count + ' 条）'}</option>
-              ))}
-            </select>
-          </>
-        )}
-        <Input
-          className="mem-search"
-          value={keyword}
-          placeholder="搜索标题 / 正文 / 标签"
-          onChange={(event) => { setKeyword(event.currentTarget.value) }}
-        />
-        <label className="mem-field-row">
-          <input
-            type="checkbox"
-            checked={includeArchived}
-            onChange={(event) => { setIncludeArchived(event.currentTarget.checked) }}
-          />
-          <span>含已归档</span>
-        </label>
-        <span>共 {records.length} 条</span>
-        {stats !== null && (
-          <span>原文 {stats.raw} · 调用 {stats.audits}</span>
-        )}
       </div>
 
       <datalist id="mem-project-options">
@@ -818,16 +1295,56 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
       {error !== '' && <span className="mem-error">{error}</span>}
       {notice !== '' && <span className="mem-notice">{notice}</span>}
 
-      <div className="mem-list">
-        {records.map((record) => renderRecord(record))}
-        {records.length === 0 && (
-          <div className="mem-empty">
-            {tab === 'global'
-              ? '还没有全局记忆。和 AI 多聊几句，它会自动记住你的偏好；也可以点「新增」或「导入」手工添加。'
-              : '还没有这个项目的记忆。在对应工作区里对话后，与项目相关的习惯会自动记到这里。'}
+      {tab === 'entity' ? renderEntities() : (
+        <>
+          <div className="mem-field-row">
+            {tab === 'project' && (
+              <>
+                <span>项目</span>
+                <select
+                  className="mem-select"
+                  value={projectPath}
+                  onChange={(event) => { setProjectPath(event.currentTarget.value); setDraft(null) }}
+                >
+                  <option value="">选择工作区…</option>
+                  {projects.map((item) => (
+                    <option key={item.path} value={item.path}>{item.label + '（' + item.count + ' 条）'}</option>
+                  ))}
+                </select>
+              </>
+            )}
+            <Input
+              className="mem-search"
+              value={keyword}
+              placeholder="搜索标题 / 正文 / 摘要 / 别名 / 标签"
+              onChange={(event) => { setKeyword(event.currentTarget.value) }}
+            />
+            <label className="mem-field-row">
+              <input
+                type="checkbox"
+                checked={includeArchived}
+                onChange={(event) => { setIncludeArchived(event.currentTarget.checked) }}
+              />
+              <span>含已归档</span>
+            </label>
+            <span>共 {records.length} 条</span>
+            {stats !== null && (
+              <span>原文 {stats.raw} · 调用 {stats.audits}</span>
+            )}
           </div>
-        )}
-      </div>
+
+          <div className="mem-list">
+            {records.map((record) => renderRecord(record))}
+            {records.length === 0 && (
+              <div className="mem-empty">
+                {tab === 'global'
+                  ? '还没有全局记忆。和 AI 多聊几句，它会自动记住你的偏好；也可以点「新增」或「导入」手工添加。'
+                  : '还没有这个项目的记忆。在对应工作区里对话后，与项目相关的习惯会自动记到这里。'}
+              </div>
+            )}
+          </div>
+        </>
+      )}
 
       <Modal
         className="mem-modal-wide"
@@ -886,7 +1403,7 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
         onClose={() => { setResetOpen(false) }}
         title="重置记忆"
         closeLabel="关闭"
-        description={'将清空「' + SCOPE_LABELS[tab] + (tab === 'project' && activeProjectLabel !== '' ? ' · ' + activeProjectLabel : '') + '」的全部记忆'}
+        description={'将清空「' + (tab === 'project' ? SCOPE_LABELS.project : SCOPE_LABELS.global) + (tab === 'project' && activeProjectLabel !== '' ? ' · ' + activeProjectLabel : '') + '」的全部记忆'}
         footer={(
           <>
             <Button variant="ghost" onClick={() => { setResetOpen(false) }}>取消</Button>
@@ -907,7 +1424,7 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
       <Modal
         className="mem-modal-wide"
         open={detail !== null}
-        onClose={() => { setDetail(null) }}
+        onClose={closeDetail}
         title={detail?.title ?? '记忆详情'}
         closeLabel="关闭"
         description={detail === null || detail.scope === 'global'
@@ -915,7 +1432,7 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
           : '项目记忆 · ' + detail.projectPath}
         footer={(
           <>
-            <Button variant="ghost" onClick={() => { setDetail(null) }}>关闭</Button>
+            <Button variant="ghost" onClick={closeDetail}>关闭</Button>
             <Button variant="ghost" disabled={busy || locked} onClick={() => { if (detail !== null) void copyRecord(detail) }}>复制全文</Button>
             <Button
               variant="ghost" disabled={busy || locked}
@@ -949,6 +1466,18 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
               <div className="mem-meta">
                 <span className="mem-meta-key">分类</span>
                 <span className="mem-meta-value">{MEMORY_KIND_LABELS[detail.kind]}</span>
+                {detail.summary !== '' && (
+                  <>
+                    <span className="mem-meta-key">摘要</span>
+                    <span className="mem-meta-value">{detail.summary}</span>
+                  </>
+                )}
+                {detail.aliases.length > 0 && (
+                  <>
+                    <span className="mem-meta-key">别名</span>
+                    <span className="mem-meta-value">{detail.aliases.join(' / ')}</span>
+                  </>
+                )}
                 <span className="mem-meta-key">重要性</span>
                 <span className="mem-meta-value">{importanceLabel(detail.importance) + '（' + detail.importance + '/5）'}</span>
                 <span className="mem-meta-key">来源</span>
@@ -975,6 +1504,86 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
                 )}
               </div>
               <pre className="mem-detail-body">{detail.content}</pre>
+
+              <div className="mem-edge-block">
+                <span className="mem-row-title">{'关联（' + (neighborhood?.edges.length ?? 0) + '）'}</span>
+                {neighborhood === null && <p className="mem-row-desc">正在读取关联…</p>}
+                {neighborhood !== null && neighborhood.edges.length === 0 && (
+                  <p className="mem-row-desc">
+                    还没有关联。写记忆时声明实体就会自动连上；也可以手动连一条边。
+                  </p>
+                )}
+                {neighborhood !== null && neighborhood.edges.length > 0 && (
+                  <EdgeList
+                    edges={neighborhood.edges}
+                    related={neighborhood.related}
+                    disabled={busy || locked}
+                    onJump={(id) => { void jumpToMemory(id) }}
+                    onUnlink={(edge) => { void removeEdge(edge) }}
+                  />
+                )}
+
+                {linkDraft === null ? (
+                  <div className="mem-item-actions">
+                    <Button
+                      variant="outline" size="sm" icon={<IconPlusOutline16 size={14} />}
+                      disabled={busy || locked}
+                      onClick={() => { setLinkDraft({ toKind: 'memory', toId: '', relation: 'related', note: '' }) }}
+                    >
+                      连一条边
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="mem-link-form">
+                    <Segmented
+                      label="目标类型"
+                      value={linkDraft.toKind}
+                      options={NODE_KIND_OPTIONS}
+                      disabled={busy || locked}
+                      onChange={(toKind) => { setLinkDraft({ ...linkDraft, toKind, toId: '' }) }}
+                    />
+                    <div className="mem-field-row">
+                      <Input
+                        list="mem-link-target-options"
+                        value={linkDraft.toId}
+                        placeholder={linkDraft.toKind === 'memory' ? '目标记忆 id（可从下拉里挑）' : '目标实体 id（可从下拉里挑）'}
+                        onChange={(event) => { setLinkDraft({ ...linkDraft, toId: event.currentTarget.value }) }}
+                      />
+                    </div>
+                    <datalist id="mem-link-target-options">
+                      {(linkDraft.toKind === 'memory'
+                        ? records.map((record) => ({ id: record.id as string, label: record.title }))
+                        : entities.map((entity) => ({ id: entity.id as string, label: entity.name }))
+                      ).map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                    </datalist>
+                    <div className="mem-field-row">
+                      <span>关系</span>
+                      <select
+                        className="mem-select"
+                        value={linkDraft.relation}
+                        disabled={busy || locked}
+                        onChange={(event) => {
+                          setLinkDraft({ ...linkDraft, relation: event.currentTarget.value as MemoryEdgeRelation })
+                        }}
+                      >
+                        {RELATION_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <Input
+                      value={linkDraft.note}
+                      placeholder="备注（可选，写清为什么连这条边）"
+                      onChange={(event) => { setLinkDraft({ ...linkDraft, note: event.currentTarget.value }) }}
+                    />
+                    <div className="mem-item-actions">
+                      <Button variant="primary" size="sm" disabled={busy || locked} onClick={() => { void submitLink() }}>连接</Button>
+                      <Button variant="ghost" size="sm" onClick={() => { setLinkDraft(null) }}>取消</Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <ModalFeedback error={error} notice={notice} />
             </>
           )}
@@ -1084,6 +1693,25 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
       >
         {draft !== null && (
           <MemoryDraftForm draft={draft} disabled={locked} onChange={(next) => { setDraft(next) }} />
+        )}
+      </Modal>
+
+      <Modal
+        className="mem-modal-wide"
+        open={entityDraft !== null}
+        onClose={() => { setEntityDraft(null) }}
+        title={entityDraft?.id === null ? '新建实体' : '编辑实体'}
+        closeLabel="关闭"
+        description="实体是 wiki 图层里的名词：名称或别名命中已有实体会自动并入，不会长出重复条目。"
+        footer={(
+          <>
+            <Button variant="ghost" onClick={() => { setEntityDraft(null) }}>取消</Button>
+            <Button variant="primary" disabled={busy || locked} onClick={() => { void saveEntityDraft() }}>保存</Button>
+          </>
+        )}
+      >
+        {entityDraft !== null && (
+          <EntityDraftForm draft={entityDraft} disabled={locked} onChange={(next) => { setEntityDraft(next) }} />
         )}
       </Modal>
     </div>

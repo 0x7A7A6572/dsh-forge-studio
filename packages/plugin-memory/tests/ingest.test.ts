@@ -28,7 +28,13 @@ function fakeTable() {
 }
 
 function makeService() {
-  const tables = { memories: fakeTable(), raw_documents: fakeTable(), audits: fakeTable() }
+  const tables = {
+    memories: fakeTable(),
+    raw_documents: fakeTable(),
+    audits: fakeTable(),
+    entities: fakeTable(),
+    edges: fakeTable(),
+  }
   const domain = { table: (name: keyof typeof tables) => tables[name] }
   const ctx = new Context()
   return new MemoryService(ctx, { domain } as never)
@@ -283,7 +289,13 @@ describe('纯函数：去重 / 标题 / 保留上限', () => {
 
 /** 提炼路径需要一个 ctx（取 llm / agentDefaultModel）与一个 service。 */
 function captureHarness() {
-  const tables = { memories: fakeTable(), raw_documents: fakeTable(), audits: fakeTable() }
+  const tables = {
+    memories: fakeTable(),
+    raw_documents: fakeTable(),
+    audits: fakeTable(),
+    entities: fakeTable(),
+    edges: fakeTable(),
+  }
   const domain = { table: (name: keyof typeof tables) => tables[name] }
   const ctx = new Context()
   return { ctx, service: new MemoryService(ctx, { domain } as never) }

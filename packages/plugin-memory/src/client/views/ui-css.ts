@@ -726,6 +726,184 @@ body[data-ds-dark-theme] .mem-select {
   color: var(--dsw-alias-state-error-primary);
   word-break: break-all;
 }
+
+/* ---- wiki 图层：摘要 / 别名 / 实体徽标 / 关联列表 ----
+   颜色一律取主题已定义的 token（见 theme-tokens.test.ts）：未定义的 var() 会让
+   整条声明在 computed-value 阶段失效，而且从代码上看不出问题。 */
+
+[data-dsh-memory-ui] .mem-item-summary {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--dsw-alias-label-tertiary);
+  word-break: break-word;
+}
+
+[data-dsh-memory-ui] .mem-item-alias {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-tertiary);
+  word-break: break-all;
+}
+
+[data-dsh-memory-ui] .mem-entity-badge {
+  flex: none;
+  padding: 1px 7px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* 类别着色：靠「描边 + 亮度 + 虚实」区分，不引新颜色。 */
+[data-dsh-memory-ui] .mem-entity-project {
+  color: var(--dsw-alias-state-business-primary);
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
+[data-dsh-memory-ui] .mem-entity-tool {
+  color: var(--dsw-alias-label-primary);
+  border-color: var(--dsw-alias-label-primary);
+}
+
+[data-dsh-memory-ui] .mem-entity-person {
+  color: var(--dsw-alias-state-error-primary);
+  border-color: var(--dsw-alias-state-error-primary);
+}
+
+[data-dsh-memory-ui] .mem-entity-org {
+  color: var(--dsw-alias-label-secondary);
+  border-color: var(--dsw-alias-label-secondary);
+}
+
+[data-dsh-memory-ui] .mem-entity-concept {
+  color: var(--dsw-alias-state-business-primary);
+  border-style: dashed;
+}
+
+[data-dsh-memory-ui] .mem-entity-other {
+  color: var(--dsw-alias-label-tertiary);
+  border-color: var(--dsw-alias-label-tertiary);
+  border-style: dashed;
+}
+
+/* 实体名是按钮（点开关联记忆），把浏览器默认外观抹平，尺寸对齐 .mem-item-title。 */
+[data-dsh-memory-ui] .mem-entity-name {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+[data-dsh-memory-ui] .mem-entity-name:hover {
+  color: var(--dsw-alias-state-business-primary);
+}
+
+[data-dsh-memory-ui] .mem-entity-links {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 0.5px dashed var(--dsw-alias-border-l4);
+  border-radius: 8px;
+}
+
+[data-dsh-memory-ui] .mem-entity-link {
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+}
+
+[data-dsh-memory-ui] .mem-entity-link:hover {
+  color: var(--dsw-alias-state-business-primary);
+}
+
+[data-dsh-memory-ui] .mem-edge-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 0.5px solid var(--dsw-alias-border-l4);
+}
+
+[data-dsh-memory-ui] .mem-edge-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+[data-dsh-memory-ui] .mem-edge-item {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 8px;
+}
+
+[data-dsh-memory-ui] .mem-edge-relation {
+  flex: none;
+  padding: 1px 7px;
+  border: 0.5px solid var(--dsw-alias-label-secondary);
+  border-radius: 999px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+[data-dsh-memory-ui] .mem-edge-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--dsw-alias-label-primary);
+  word-break: break-word;
+}
+
+/* 记忆节点可点击（跳到它的详情）。 */
+[data-dsh-memory-ui] .mem-edge-jump {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+[data-dsh-memory-ui] .mem-edge-jump:hover {
+  color: var(--dsw-alias-state-business-primary);
+  text-decoration: underline;
+}
+
+[data-dsh-memory-ui] .mem-edge-note {
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-tertiary);
+  word-break: break-word;
+}
+
+[data-dsh-memory-ui] .mem-link-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 10px;
+}
 `;
 
 /** 只注入一次样式。 */

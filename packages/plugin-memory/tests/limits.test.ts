@@ -26,7 +26,13 @@ function fakeTable() {
 }
 
 function makeService() {
-  const tables = { memories: fakeTable(), raw_documents: fakeTable(), audits: fakeTable() }
+  const tables = {
+    memories: fakeTable(),
+    raw_documents: fakeTable(),
+    audits: fakeTable(),
+    entities: fakeTable(),
+    edges: fakeTable(),
+  }
   const domain = { table: (name: keyof typeof tables) => tables[name] }
   const ctx = new Context()
   return new MemoryService(ctx, { domain } as never)

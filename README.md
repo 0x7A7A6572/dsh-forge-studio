@@ -8,7 +8,7 @@
 |---|---|---|
 | [`@zzerx/dsh-plugin-notes`](packages/plugin-notes) | 便签板：纸卡墙 / 列表 / 任务泳道三视图，Markdown、贴图、AI 联动执行 | ✅ |
 | [`@zzerx/dsh-plugin-daily-log`](packages/plugin-daily-log) | 工作日志：聚合 Git 提交 + 本地 agent 对话，模板化生成日报/周报/月报 | ✅ |
-| [`@zzerx/dsh-plugin-memory`](packages/plugin-memory) | 记忆与进化：跨会话记忆（全局 / 项目双作用域），自动提炼、自动注入、设置面板一级「记忆」分区 | ✅ |
+| [`@zzerx/dsh-plugin-memory`](packages/plugin-memory) | 记忆与进化：跨会话记忆（全局 / 项目双作用域），自动提炼、自动注入，实体与边关联（wiki 图层），设置面板一级「记忆」分区 | ✅ |
 | [`@zzerx/dsh-plugin-home-studio`](packages/plugin-home-studio) | 工作台：聚合日常功能入口的骨架包，待填充 | 🚧 |
 
 ## 安装

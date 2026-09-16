@@ -117,13 +117,15 @@ describe('client apply：记忆 = 设置面板一级分区', () => {
     expect(options.order).toBe(20)
     expect(typeof component).toBe('function')
 
-    // 注入面：视图取数用的 memory 远程命名空间，20 个端点齐全。
+    // 注入面：视图取数用的 memory 远程命名空间，28 个端点齐全（含 wiki 图层的实体与边）。
     const inject = options.inject as () => { memory: Record<string, unknown> }
     const memory = inject().memory
     const expected = [
       'list', 'getConfig', 'setConfig', 'getConflicts', 'stats', 'projects', 'exportText',
       'save', 'updateMemory', 'setArchived', 'removeMemory', 'reset', 'importText', 'tidy',
       'ingest', 'reingest', 'rawDocuments', 'getRawDocument', 'removeRawDocument', 'audits',
+      'listEntities', 'upsertEntity', 'removeEntity', 'listEdges', 'link', 'unlink',
+      'neighborhood', 'rebuildEdges',
     ]
     for (const method of expected) {
       expect(typeof memory[method], 'missing method ' + method).toBe('function')
