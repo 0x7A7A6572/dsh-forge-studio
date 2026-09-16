@@ -41,7 +41,13 @@ export interface AggregateStats {
   cached: boolean
 }
 
-/** TTL 缓存（模块级：同一 host 内共享，force 或超时才重算）。 */
+/**
+ * TTL 缓存（模块级：同一 host 内共享）。
+ *
+ * 选项语义（**别改成三态**）：`force` 为真只绕过这个 TTL 缓存，**水位始终生效** ——
+ * 手动刷新仍然便宜，因为没新事件的会话连 `readSession` 都不会调。
+ * 不重复计费由账本行 id `${sessionId}#${seq}` 的幂等 upsert 保证，不靠水位。
+ */
 let lastRun: { at: number; stats: AggregateStats } | undefined
 
 export function resetAggregateCache(): void { lastRun = undefined }
@@ -52,10 +58,7 @@ export async function aggregateOnce(
 ): Promise<AggregateStats> {
   const now = deps.now ?? (() => Date.now())
   const ttl = deps.ttlMs ?? 5_000
-  // TTL 缓存只在**调用方未表达意图**（既没传 force 也没传 force:false）时生效。
-  // 注意 `{ force: false }` 与「不传」语义不同：前者是「重新扫描，但允许水位跳过」，
-  // 必须真正走下面的水位判断；否则水位永远不生效，一次缓存便长久盖住新事件。
-  if (opts.force === undefined && lastRun !== undefined && now() - lastRun.at < ttl) {
+  if (!opts.force && lastRun !== undefined && now() - lastRun.at < ttl) {
     return { ...lastRun.stats, cached: true }
   }
 

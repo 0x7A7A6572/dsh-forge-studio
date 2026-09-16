@@ -62,16 +62,19 @@ describe('aggregateOnce', () => {
   it('maxSeq 未变时跳过 readSession（水位生效）', async () => {
     const { deps, reads } = makeDeps()
     await aggregateOnce(deps)
-    const stats = await aggregateOnce(deps, { force: false })
+    const stats = await aggregateOnce(deps, { force: true })
     expect(reads()).toBe(1)
     expect(stats.folded).toBe(0)
     expect(stats.skipped).toBe(1)
   })
 
   it('重折不重复计费（行 id 幂等）', async () => {
-    const { deps, ledger } = makeDeps()
+    const { deps, ledger, folds } = makeDeps()
     await aggregateOnce(deps)
-    await aggregateOnce(deps, { force: true })
+    // 清掉水位，否则第二次会被水位直接跳过、根本没重折（那样这个用例就什么也没证明）。
+    await folds.delete('s1')
+    const again = await aggregateOnce(deps, { force: true })
+    expect(again.folded).toBe(1)
     expect(ledger.size).toBe(1)
     expect(ledger.get('s1#2')!.costCny).toBe(1)
   })
