@@ -4,8 +4,11 @@ import type { RangeSpec } from './types.ts'
 
 export type RangeKind = '7d' | '30d' | 'month' | 'all'
 
-/** 图表与列表在 'all' 下的最大天数（视图不无限长）。 */
+/** 'all' 窗口（未显式给出 since）的最大天数（视图不无限长）。 */
 export const MAX_ALL_DAYS = 90
+
+/** 显式给出 since 的窗口的硬上限（防御性；'all' 窗口由 MAX_ALL_DAYS 约束）。 */
+export const MAX_RANGE_DAYS = 456
 
 /** 本机时区下的 'YYYY-MM-DD'。 */
 export function dayKey(time: number): string {
@@ -49,7 +52,8 @@ export function daysInRange(spec: RangeSpec, now: number): string[] {
     ? addDays(until, -(MAX_ALL_DAYS - 1))
     : startOfDayMs(spec.since)
   const out: string[] = []
-  for (let t = since; t <= until && out.length < MAX_ALL_DAYS + 366; t = addDays(t, 1)) {
+  // 循环在硬上限处停止，防止调用方传入过宽的 since 撑爆视图。
+  for (let t = since; t <= until && out.length < MAX_RANGE_DAYS; t = addDays(t, 1)) {
     out.push(dayKey(t))
   }
   return out
