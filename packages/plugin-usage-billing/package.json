@@ -1,0 +1,64 @@
+{
+  "name": "@zzerx/dsh-plugin-usage-billing",
+  "version": "0.1.0",
+  "description": "计费显示：从既有会话日志聚合真实 token 用量，按事件时刻价格写时锁定费用；侧栏入口卡 + 全屏仪表盘弹窗。",
+  "license": "MIT",
+  "author": "0x7A7A",
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/types/index.d.ts",
+  "exports": {
+    ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" },
+    "./client": { "types": "./lib/types/client/index.d.ts", "default": "./lib/client.js" },
+    "./package.json": "./package.json"
+  },
+  "files": ["lib/index.js", "lib/client.js", "lib/types", "cordis.patch.yml", "README.md", "LICENSE"],
+  "scripts": {
+    "prepublishOnly": "node scripts/build.mjs",
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json",
+    "test": "vitest run"
+  },
+  "publishConfig": { "access": "public" },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.2",
+    "@deepseek-ai/dsh-storage-domain": ">=0.1.5-rc.2 <0.1.6-0 || >=0.1.6-alpha <0.2.0-0",
+    "@deepseek-ai/dsh-session": ">=0.1.5-rc.2 <0.1.6-0 || >=0.1.6-alpha <0.2.0-0",
+    "@deepseek-ai/dsh-session-query": ">=0.1.5-rc.2 <0.1.6-0 || >=0.1.6-alpha <0.2.0-0",
+    "@deepseek-ai/dsh-typert-protocol": ">=0.1.5-rc.2 <0.1.6-0 || >=0.1.6-alpha <0.2.0-0",
+    "@deepseek-ai/dsh-web": ">=0.1.5-rc.2 <0.1.6-0 || >=0.1.6-alpha <0.2.0-0",
+    "@deepseek-ai/schemastery": "3.18.2"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.2",
+    "@deepseek-ai/dsh-api-gateway": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-store": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-ui-renderer": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-ui-settings": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-ui-slots": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-session": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-session-query": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-storage": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-storage-domain": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-typert-protocol": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-web": "0.1.5-rc.2",
+    "@deepseek-ai/schemastery": "3.18.2",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.1.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "18.3.5",
+    "@types/react-dom": "18.3.0",
+    "esbuild": "0.28.2",
+    "jsdom": "^26.1.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "tsup": "8.5.1",
+    "typescript": "5.7.2",
+    "vitest": "2.1.9",
+    "zod": "4.4.3"
+  },
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": { "platform": "web", "inject": ["@deepseek-ai/dsh-client-ui-renderer"] }
+  }
+}

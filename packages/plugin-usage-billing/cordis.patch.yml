@@ -1,0 +1,6 @@
+# The @zzerx/dsh-plugin-usage-billing bundle patch.
+# 启用：把 `@zzerx/dsh-plugin-usage-billing` 加进 web profile package.json 的
+# dsh.profile.bundles 列表（见 .dsh-home/profiles/web/package.json）。
+- insert:
+    - id: usage-billing-zzerx
+      name: '@zzerx/dsh-plugin-usage-billing'
