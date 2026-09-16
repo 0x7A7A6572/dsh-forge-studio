@@ -6,22 +6,24 @@
  * 本地再声明一个 `{ get, watch }` 影子契约在宿主里根本不存在。
  * 样式由 client `apply` 经 `ctx.effect` 注入（这里不再重复注入：没有 ctx 可用，
  * 且同一 fiber 注入两次只会多留一个节点）。
+ *
+ * 三个开关都**真的写**：预算与子代理口径写宿主设置，子代理开关同时写视图 store，
+ * 使当前弹窗立即按新口径重取数据（只写一半的话复选框与页面上显示的账会互相打脸）。
  */
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { UsageBillingRemote } from '../core/remote.ts'
+import type { BillingStore } from '../core/store.ts'
+import type { BillingConfigLike, BillingScope } from '../core/config.ts'
+import { NON_FINITE_PLACEHOLDER } from '../core/format.ts'
 import { BackfillLedgerNote } from './backfill-notice.tsx'
 
-/** 本分区真正读到的配置片（`SettingsScope<BillingConfigLike>` 结构上兼容它）。 */
-interface ConfigLike {
-  budget?: { enabled?: boolean; monthlyCny?: number }
-  display?: { includeSubagents?: boolean }
-  pricing?: { autoRefresh?: boolean }
-}
-
-export function SettingsSection(props: { billing: UsageBillingRemote; scope: SettingsScope<ConfigLike> }): JSX.Element {
-  const { billing, scope } = props
+export function SettingsSection(props: {
+  billing: UsageBillingRemote | undefined
+  scope: BillingScope
+  store: BillingStore
+}): JSX.Element {
+  const { billing, scope, store } = props
   const settings = useSyncExternalStore(
     useCallback((notify: () => void) => scope.subscribe(notify), [scope]),
     () => scope.getSnapshot(),
@@ -31,6 +33,8 @@ export function SettingsSection(props: { billing: UsageBillingRemote; scope: Set
   const [snapshotId, setSnapshotId] = useState('—')
 
   useEffect(() => {
+    // 远程面首帧可能未挂载：缺席即早退，等 billing 变化后 effect 重跑。
+    if (billing === undefined) return
     let alive = true
     void Promise.all([billing.status(), billing.pricing()]).then(([s, p]) => {
       if (!alive) return
@@ -46,20 +50,44 @@ export function SettingsSection(props: { billing: UsageBillingRemote; scope: Set
       .catch(() => { /* 写失败时不回弹：快照仍是 host 的真值 */ })
   }, [scope, cfg])
 
+  /** 预算开关：写宿主设置（`budget.enabled`），账本页的预算条下一帧跟随快照变化。 */
+  const writeBudgetEnabled = useCallback((next: boolean) => {
+    void scope.set('budget', { ...(cfg?.budget ?? {}), enabled: next })
+      .catch(() => { /* 同上 */ })
+  }, [scope, cfg])
+
+  /**
+   * 子代理口径：写宿主设置（持久）**并**同步视图 store（当前账立即按新口径重取）。
+   * 两处都要写：只写 store 刷新页面就丢，只写设置则本次弹窗仍按旧口径取数。
+   */
+  const writeIncludeSubagents = useCallback((next: boolean) => {
+    store.setIncludeSubagents(next)
+    void scope.set('display', { ...(cfg?.display ?? {}), includeSubagents: next })
+      .catch(() => { /* 同上 */ })
+  }, [scope, store, cfg])
+
   return (
     <section data-dsh-usage-billing>
       <h3>月度预算</h3>
       <label>
-        <input type="checkbox" checked={cfg?.budget?.enabled ?? false} readOnly /> 启用预算提醒（50% / 80% / 100% 各提醒一次）
+        <input type="checkbox" checked={cfg?.budget?.enabled ?? false} disabled={!settings.writable}
+          onChange={(e) => { writeBudgetEnabled(e.target.checked) }} /> 启用预算提醒（50% / 80% / 100% 各提醒一次）
       </label>
-      <div data-dsh-ub-sub>预算金额：{cfg?.budget?.monthlyCny ?? 0} 元（在「计费」页的费率分区随账本一起查看）</div>
+      {/* 未配置时显示占位而不是「0 元」：0 是一个真实的预算值，与「没设置」不是一回事。 */}
+      <div data-dsh-ub-sub>
+        预算金额：{cfg?.budget?.monthlyCny === undefined ? NON_FINITE_PLACEHOLDER : `${cfg.budget.monthlyCny} 元`}
+        （在「计费」页的费率分区随账本一起查看）
+      </div>
 
       <h3>显示</h3>
       <label>
         <input type="checkbox" checked={cfg?.pricing?.autoRefresh ?? true} disabled={!settings.writable}
           onChange={(e) => { writeAutoRefresh(e.target.checked) }} /> 自动联网刷新价表与汇率（6 小时一次）
       </label>
-      <label><input type="checkbox" checked={cfg?.display?.includeSubagents ?? true} readOnly /> 统计包含子代理会话</label>
+      <label>
+        <input type="checkbox" checked={cfg?.display?.includeSubagents ?? true} disabled={!settings.writable}
+          onChange={(e) => { writeIncludeSubagents(e.target.checked) }} /> 统计包含子代理会话
+      </label>
 
       <h3>状态</h3>
       <div data-dsh-ub-sub>

@@ -46,3 +46,31 @@ export function formatDateTime(ms: number): string {
 export function formatDay(day: string): string {
   return day.length >= 10 ? day.slice(5) : day
 }
+
+/**
+ * 整份账（同一个行集）**一行都没定价**：`totalCny === 0` 且存在未收录模型。
+ *
+ * 这是全应用**唯一**的「金额 0 是假的」判据（review fix round 2 之前，入口卡、
+ * 概览、趋势、热力图各自判一遍，于是同一个状态在同一个 app 里读出两种结果）。
+ * 契约（已与入口卡的既有行为对齐并两侧钉住）：
+ * - `'—'`：`totalCny === 0 && unpricedModels.length > 0` —— 有记录、但一条都没算钱；
+ * - `¥0.00`：**真实零** —— 账本完全没有用量（calls === 0），或用量已计价而合计确为 0。
+ *
+ * `unpricedModels` 允许 undefined：远程 codec 是宽松透传（形状校验在 host），
+ * 旧 host 的响应可能没有这个字段，此时按「没有未收录模型」处理（即真实零）。
+ */
+export function isUnpricedTotal(
+  totalCny: number,
+  unpricedModels: readonly unknown[] | undefined,
+): boolean {
+  return totalCny === 0 && (unpricedModels?.length ?? 0) > 0
+}
+
+/**
+ * 回填披露的取值规则（与金额**同源**，绝不靠二次取数推断）：
+ * 标记由承载金额的那份 payload 一起带回；标记缺席（旧 host、宽松 codec 透传，
+ * 或响应根本没能产出）时一律按 **present** 处理 —— 宁多披露，绝不少披露。
+ */
+export function backfilledDisclosure(flag: boolean | undefined): boolean {
+  return flag !== false
+}

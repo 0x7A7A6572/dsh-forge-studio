@@ -4,7 +4,7 @@ import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { aliasId } from '../src/model-key.ts'
 import { UsageBillingService } from '../src/service.ts'
 import { createUsageBillingSettingsAccess } from '../src/settings.ts'
-import { buildByWorkspace, buildDaily, buildOverview, filterRows, mergeByModel } from '../src/view.ts'
+import { buildByWorkspace, buildDaily, buildMarkers, buildOverview, filterRows, mergeByModel } from '../src/view.ts'
 import type { Diagnostic, FoldState, LedgerRow, ModelAlias, PriceSnapshot } from '../src/types.ts'
 
 const row = (over: Partial<LedgerRow> = {}): LedgerRow => ({
@@ -160,6 +160,25 @@ describe('buildOverview', () => {
   it('空行集不产生 NaN', () => {
     const o = buildOverview([], { todayKey: '2026-09-16', weekDays: [] })
     expect(o).toMatchObject({ totalCny: 0, todayCny: 0, weekCny: 0, avgDailyCny: 0, cacheHitRate: 0 })
+  })
+})
+
+describe('buildMarkers', () => {
+  it('回填与未收录两件事都从同一行集算出（daily / byModel / byWorkspace 与 overview 同源）', () => {
+    const rows = [
+      row({ id: 'a', priced: true, backfilled: false }),
+      row({ id: 'b', priced: false, model: 'mystery', backfilled: true }),
+      row({ id: 'c', priced: false, model: 'mystery' }),
+    ]
+    expect(buildMarkers(rows)).toEqual({ hasBackfilled: true, unpricedModels: ['deepseek/mystery'] })
+    // 与 overview 的口径逐字一致：两边不可能分叉。
+    const o = buildOverview(rows, { todayKey: '2026-09-16', weekDays: [] })
+    expect({ hasBackfilled: o.hasBackfilled, unpricedModels: o.unpricedModels }).toEqual(buildMarkers(rows))
+  })
+
+  it('没有回填行 / 没有未计价行时两个标记都为否', () => {
+    expect(buildMarkers([row({ priced: true, backfilled: false })])).toEqual({ hasBackfilled: false, unpricedModels: [] })
+    expect(buildMarkers([])).toEqual({ hasBackfilled: false, unpricedModels: [] })
   })
 })
 

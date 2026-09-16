@@ -4,16 +4,21 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { UsageBillingRemote } from '../core/remote.ts'
 import type { BillingStore } from '../core/store.ts'
 import { evaluateBudget } from '../../budget.ts'
-import { formatCny, formatInt, formatPct } from '../core/format.ts'
+import { NON_FINITE_PLACEHOLDER, formatCny, formatInt, formatPct, isUnpricedTotal } from '../core/format.ts'
 import type { Overview } from '../../view.ts'
 
-export function TabOverview(props: { billing: UsageBillingRemote; store: BillingStore }): JSX.Element {
+export function TabOverview(props: {
+  /** 远程面首帧可能未挂载（`$mount` 异步且失败只 warn）：类型如实写出，effect 早退。 */
+  billing: UsageBillingRemote | undefined
+  store: BillingStore
+}): JSX.Element {
   const { billing, store } = props
   // 必须订阅（不订阅的话切范围/切子代理口径不会重取数据）：与 Dashboard / 入口卡同一姿态。
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot)
   const [data, setData] = useState<{ overview: Overview; budget: { enabled: boolean; monthlyCny: number } } | null>(null)
 
   useEffect(() => {
+    if (billing === undefined) return
     let alive = true
     void billing.overview(state.range, state.includeSubagents).then((r) => {
       if (alive && r.ok) setData({ overview: r.value.overview, budget: r.value.budget })
@@ -23,6 +28,11 @@ export function TabOverview(props: { billing: UsageBillingRemote; store: Billing
 
   if (data === null) return <div data-dsh-ub-empty>正在读取用量…</div>
   const { overview, budget } = data
+  // 唯一判据（client/core/format.ts）：整份账一行都没定价时，本分区的金额级数字
+  // （Hero 与日均）都显示占位，绝不把「未知」读成「没花钱」。今日/本周是总账的**子集**，
+  // 未收录计数只覆盖整个范围，拿它去否定某个子集是不成立的，所以那两处保持 formatCny。
+  const unpriced = isUnpricedTotal(overview.totalCny, overview.unpricedModels)
+  const money = (n: number): string => unpriced ? NON_FINITE_PLACEHOLDER : formatCny(n)
   const spend = evaluateBudget({
     spentCny: overview.totalCny, monthlyCny: budget.monthlyCny,
     enabled: budget.enabled, notified: {}, monthKey: new Date().toISOString().slice(0, 7),
@@ -30,7 +40,7 @@ export function TabOverview(props: { billing: UsageBillingRemote; store: Billing
 
   return (
     <div data-dsh-usage-billing>
-      <div data-dsh-ub-hero>{formatCny(overview.totalCny)}</div>
+      <div data-dsh-ub-hero>{money(overview.totalCny)}</div>
       <div data-dsh-ub-sub>
         当前范围合计 · 今日 {formatCny(overview.todayCny)} · 本周 {formatCny(overview.weekCny)}
         {overview.hasBackfilled ? <span data-dsh-ub-estimate> · 含安装前估算</span> : null}
@@ -46,7 +56,7 @@ export function TabOverview(props: { billing: UsageBillingRemote; store: Billing
       ) : null}
 
       <section data-dsh-ub-kpis style={{ marginTop: 16 }}>
-        <div data-dsh-ub-kpi><div data-dsh-ub-sub>日均</div><div>{formatCny(overview.avgDailyCny)}</div></div>
+        <div data-dsh-ub-kpi><div data-dsh-ub-sub>日均</div><div>{money(overview.avgDailyCny)}</div></div>
         <div data-dsh-ub-kpi><div data-dsh-ub-sub>调用次数</div><div>{formatInt(overview.calls)}</div></div>
         <div data-dsh-ub-kpi><div data-dsh-ub-sub>缓存命中率</div><div>{formatPct(overview.cacheHitRate)}</div></div>
         <div data-dsh-ub-kpi>

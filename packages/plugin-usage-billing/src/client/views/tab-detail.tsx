@@ -3,34 +3,54 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { UsageBillingRemote } from '../core/remote.ts'
 import type { BillingStore } from '../core/store.ts'
-import { formatCny, formatDateTime, formatInt } from '../core/format.ts'
+import { backfilledDisclosure, formatCny, formatDateTime, formatInt } from '../core/format.ts'
 import type { ModelRow, WorkspaceRow } from '../../view.ts'
 
-export function TabDetail(props: { billing: UsageBillingRemote; store: BillingStore }): JSX.Element {
+/** 金额与披露标记同源：都来自同一次 byWorkspace / byModel 响应。 */
+interface DetailPayload {
+  workspaces: WorkspaceRow[]
+  models: ModelRow[]
+  hasBackfilled: boolean
+}
+
+export function TabDetail(props: {
+  billing: UsageBillingRemote | undefined
+  store: BillingStore
+}): JSX.Element {
   const { billing, store } = props
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot)
-  const [workspaces, setWorkspaces] = useState<WorkspaceRow[] | null>(null)
-  const [models, setModels] = useState<ModelRow[] | null>(null)
+  const [data, setData] = useState<DetailPayload | null>(null)
   const [expanded, setExpanded] = useState<string | null>(null)
-  // 常驻回填标记（不可关）：明细里的金额同样是按安装时点价表估算过的账。
-  const [hasBackfilled, setHasBackfilled] = useState(false)
 
   useEffect(() => {
+    if (billing === undefined) return
     let alive = true
+    // 两个响应各自自带披露标记；任何一个为 present 都按 present 披露（或起来 = 保守）。
     void Promise.all([
       billing.byWorkspace(state.range, state.includeSubagents),
       billing.byModel(state.range, state.includeSubagents),
-      billing.overview(state.range, state.includeSubagents),
-    ]).then(([w, m, o]) => {
+    ]).then(([w, m]) => {
       if (!alive) return
-      if (w.ok) setWorkspaces(w.value.workspaces)
-      if (m.ok) setModels(m.value.models)
-      if (o.ok) setHasBackfilled(o.value.overview.hasBackfilled)
+      // 两份数据都必须到达才渲染：任一缺席时页面停在「正在读取用量…」，
+      // 于是不存在「有金额、标记却未知」的中间态（披露只会多，不会少）。
+      if (w.ok && m.ok) {
+        setData({
+          workspaces: w.value.workspaces,
+          models: m.value.models,
+          hasBackfilled: w.value.hasBackfilled || m.value.hasBackfilled,
+        })
+      }
     })
     return () => { alive = false }
   }, [billing, state.range, state.includeSubagents])
 
-  if (workspaces === null || models === null) return <div data-dsh-ub-empty>正在读取用量…</div>
+  if (data === null) return <div data-dsh-ub-empty>正在读取用量…</div>
+  const { workspaces, models } = data
+  // 趋势 / 热力图都有的空态，明细同样要有（此前这里是两张空表）。
+  if (workspaces.length === 0 && models.length === 0) {
+    return <div data-dsh-ub-empty>这个范围里还没有用量记录。</div>
+  }
+  const hasBackfilled = backfilledDisclosure(data.hasBackfilled)
 
   return (
     <div data-dsh-usage-billing>

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { UsageBillingRemote } from '../core/remote.ts'
 import type { BillingStore } from '../core/store.ts'
-import { formatCny, formatDay } from '../core/format.ts'
+import { backfilledDisclosure, formatCny, formatDay, isUnpricedTotal } from '../core/format.ts'
 import { sparklinePoints } from '../core/chart-data.ts'
 import type { DailyPoint, Overview } from '../../view.ts'
 
@@ -48,7 +48,11 @@ export function EntryCard(props: EntryCardProps): JSX.Element {
       }
       if (d.ok) setDays(d.value.days)
       if (p.ok) setPricingDegraded(p.value.usdToCnySource === 'default')
-    })()
+    })().catch(() => {
+      // 远程调用 reject（wire 层异常）时必须吞掉：否则是一条 unhandled rejection，
+      // 而卡片本来就有「概览未到」的占位态 —— 保持占位即可。
+      // 刻意不写 console：宿主 UI 已有日志通道，且测试要求输出干净。
+    })
     return () => { alive = false }
   }, [billing, includeSubagents])
 
@@ -57,13 +61,15 @@ export function EntryCard(props: EntryCardProps): JSX.Element {
     [days],
   )
 
-  // 一行都没定价（totalCny 为 0 且存在未收录模型）时，金额同样是不可信的 0。
+  // 一行都没定价（totalCny 为 0 且存在未收录模型）时，金额同样是不可信的 0 ——
+  // 判据来自 client/core/format.ts 的唯一实现，与概览 / 趋势 / 热力图同一口径。
   const entirelyUnpriced = overview !== null
-    && overview.totalCny === 0
-    && overview.unpricedModels.length > 0
+    && isUnpricedTotal(overview.totalCny, overview.unpricedModels)
   const priced = overview !== null && !entirelyUnpriced
   const amountText = priced ? formatCny(overview.totalCny) : PENDING
   const todayText = priced ? formatCny(overview.todayCny) : PENDING
+  // 回填披露与金额同源（同一次 overview 响应），绝不二次取数；标记缺席按 present 处理。
+  const backfilled = overview !== null && backfilledDisclosure(overview.hasBackfilled)
 
   return (
     <button
@@ -78,7 +84,8 @@ export function EntryCard(props: EntryCardProps): JSX.Element {
       <span data-dsh-ub-entry-text>
         <span data-dsh-ub-amount>{amountText}</span>
         <span data-dsh-ub-sub>
-          {formatDay(todayKey)} 今日 {todayText}
+          {/* 概览未到时 todayKey 是空串：不能让日期槽位空着（会渲染成「· 今日 —」）。 */}
+          {todayKey === '' ? PENDING : formatDay(todayKey)} 今日 {todayText}
         </span>
       </span>
       {wide && spark !== '' ? (
@@ -90,6 +97,8 @@ export function EntryCard(props: EntryCardProps): JSX.Element {
       {overview !== null && overview.unpricedModels.length > 0 ? (
         <span data-dsh-ub-badge data-kind="error">{overview.unpricedModels.length} 未收录</span>
       ) : null}
+      {/* 常驻、不可关的估算披露：月合计可能包含回填用量，必须就地说明。 */}
+      {backfilled ? <span data-dsh-ub-estimate>含安装前估算</span> : null}
     </button>
   )
 }

@@ -13,8 +13,8 @@ export type HeatLevel = 0 | 1 | 2 | 3 | 4
 export function heatLevel(value: number, max: number): HeatLevel {
   if (!(max > 0) || !(value > 0)) return 0
   const r = value / max
-  // 档位必须随 r 单调不减，且与 HEAT_SCALE 的中间四个阈值同侧判定：
-  // (0, HEAT_SCALE[1]]→1、…、超过 HEAT_SCALE[len-2]→顶档。
+  // 档位必须随 r 单调不减，且与 HEAT_SCALE 的**中间三个**阈值同侧判定：
+  // (0, HEAT_SCALE[1]]→1、…、超过 HEAT_SCALE[len-2]→顶档（0 档与顶档没有内部阈值）。
   for (let level = 1; level < HEAT_SCALE.length - 1; level += 1) {
     if (r <= HEAT_SCALE[level]) return level as HeatLevel
   }

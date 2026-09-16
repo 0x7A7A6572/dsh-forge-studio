@@ -24,7 +24,7 @@ export function BackfillLedgerNote(props: { installAt: number; snapshotId: strin
     <p data-dsh-usage-billing data-dsh-ub-sub>
       计费口径：费用在事件写入账本时按「当时生效的价表快照」计算并锁定，此后调价不影响历史。
       安装时刻 {formatDateTime(props.installAt)}，回填所用快照 <code>{props.snapshotId}</code>；
-      回填区间在概览与趋势中标为「估算」。唯一的重算通道是「按当前价表重算未计价历史」，
+      回填区间在概览、趋势、热力图与明细中都标为「估算」。唯一的重算通道是「按当前价表重算未计价历史」，
       它只处理尚未计价的记录。
     </p>
   )

@@ -17,8 +17,12 @@ import { createBillingStore } from '../src/client/core/store.ts'
 import type { BillingStore } from '../src/client/core/store.ts'
 import type { UsageBillingRemote } from '../src/client/core/remote.ts'
 import type { Overview } from '../src/view.ts'
+import { baseConfig, fakeScope } from './fake-scope.ts'
 
 afterEach(() => { cleanup() })
+
+/** 浮层现在还需要设置面（回填提示条的一次性关闭状态存在宿主 notices 里）。 */
+const dashboardScope = () => fakeScope(baseConfig()).scope
 
 function overviewFixture(partial: Partial<Overview> = {}): Overview {
   return {
@@ -58,7 +62,7 @@ describe('入口卡与浮层的实时开合（订阅式）', () => {
       'div',
       null,
       createElement(EntryCard, { key: 'entry', wide: true, billing, store }),
-      createElement(Dashboard, { key: 'dash', billing, store }),
+      createElement(Dashboard, { key: 'dash', billing, store, scope: dashboardScope() }),
     ))
     // 初始关闭
     expect(container.querySelector('[data-dsh-ub-overlay]')).toBeNull()
@@ -88,7 +92,7 @@ describe('入口卡与浮层的实时开合（订阅式）', () => {
       },
     }
     const { container, unmount } = render(
-      createElement(Dashboard, { billing: billingStub(overviewFixture()), store }),
+      createElement(Dashboard, { billing: billingStub(overviewFixture()), store, scope: dashboardScope() }),
     )
     expect(live).toBe(1)
     act(() => { base.openPanel() })
@@ -118,6 +122,8 @@ describe('入口卡的取数与占位', () => {
     const billing = billingStub(overviewFixture({ totalCny: 12.34, todayCny: 1.5 }), '2026-09-16')
     const { container } = render(createElement(EntryCard, { wide: true, billing, store }))
     expect(amountOf(container)).toBe('—')
+    // 日期槽位不能空着：概览未到时应显示占位（否则渲染成「· 今日 —」）。
+    expect((container.querySelector('[data-dsh-ub-sub]')?.textContent ?? '').startsWith('—')).toBe(true)
     await waitFor(() => { expect(amountOf(container)).toBe('¥12.34') })
     const sub = container.querySelector('[data-dsh-ub-sub]')?.textContent ?? ''
     expect(sub).toContain('09-16')   // formatDay('2026-09-16')
@@ -140,5 +146,36 @@ describe('入口卡的取数与占位', () => {
     const billing = billingStub(overviewFixture({ totalCny: 0, todayCny: 0 }))
     const { container } = render(createElement(EntryCard, { wide: true, billing, store }))
     await waitFor(() => { expect(amountOf(container)).toBe('¥0.00') })
+  })
+
+  it('概览自带回填标记时入口卡常驻「含安装前估算」（与金额同源、不可关）', async () => {
+    const store = createBillingStore()
+    const billing = billingStub(overviewFixture({ hasBackfilled: true }))
+    const { container } = render(createElement(EntryCard, { wide: true, billing, store }))
+    await waitFor(() => { expect(amountOf(container)).toBe('¥12.34') })
+    const mark = container.querySelector('[data-dsh-ub-estimate]')
+    expect(mark?.textContent).toBe('含安装前估算')
+    // 常驻：标记不是可关状态，金额在同一次响应里就带着它。
+    expect(container.textContent).toContain('含安装前估算')
+  })
+
+  it('overview 自报无回填时不显示估算标记', async () => {
+    const store = createBillingStore()
+    const billing = billingStub(overviewFixture({ hasBackfilled: false }))
+    const { container } = render(createElement(EntryCard, { wide: true, billing, store }))
+    await waitFor(() => { expect(amountOf(container)).toBe('¥12.34') })
+    expect(container.querySelector('[data-dsh-ub-estimate]')).toBeNull()
+  })
+
+  it('远程调用 reject 时保留占位，不产生 unhandled rejection', async () => {
+    const store = createBillingStore()
+    const down = async (): Promise<never> => { throw new Error('wire down') }
+    const billing = {
+      overview: down, daily: down, pricing: down,
+    } as unknown as UsageBillingRemote
+    const { container } = render(createElement(EntryCard, { wide: true, billing, store }))
+    await act(async () => { await Promise.resolve() })
+    expect(amountOf(container)).toBe('—')
+    expect(container.textContent).not.toContain('¥0.00')
   })
 })

@@ -39,7 +39,35 @@ export interface SessionRow {
 
 export interface WorkspaceRow { cwd: string; calls: number; costCny: number; sessions: SessionRow[] }
 
-export interface Overview {
+/**
+ * 每个携带金额的响应都必须**自带**的口径标记。
+ *
+ * 存在的理由（review fix round 2）：UI 曾用「第二次 overview 取数」单独判断回填，
+ * 那次取数失败时金额照常渲染、披露却消失 —— 一个带估算的金额被无声地显示成精确值。
+ * 标记必须与它描述的金额同源（同一次响应、同一行集），所以这里由 host 随值一起算出来。
+ */
+export interface LedgerMarkers {
+  /** 该行集里是否有 `time < installAt` 的回填行（估算）。 */
+  hasBackfilled: boolean
+  /**
+   * 该行集里的未计价模型（**账本原始** `provider/model` id）。整份账一行都没定价时
+   * `totalCny === 0`，UI 必须据此显示 `'—'` 而不是 `¥0.00`（详见 client/core/format.ts）。
+   */
+  unpricedModels: string[]
+}
+
+/** 从同一个行集算出金额披露标记；`buildOverview` 也用这条路径，口径不可能分叉。 */
+export function buildMarkers(rows: readonly LedgerRow[]): LedgerMarkers {
+  let hasBackfilled = false
+  const unpriced = new Set<string>()
+  for (const r of rows) {
+    if (r.backfilled) hasBackfilled = true
+    if (!r.priced) unpriced.add(priceKey(r.provider, r.model))
+  }
+  return { hasBackfilled, unpricedModels: [...unpriced].sort() }
+}
+
+export interface Overview extends LedgerMarkers {
   totalCny: number; todayCny: number; weekCny: number; avgDailyCny: number
   /**
    * 缓存命中率 = cacheRead / (input + cacheRead)。
@@ -49,11 +77,10 @@ export interface Overview {
   cacheHitRate: number
   calls: number
   /**
-   * 未计价模型：刻意使用**账本原始** `provider/model` id —— `buildOverview` 拿不到别名表，
-   * 且原始 id 正是用户需要去补价格的那个名字。
+   * 未计价模型（继承 `LedgerMarkers`）：刻意使用**账本原始** `provider/model` id ——
+   * `buildOverview` 拿不到别名表，且原始 id 正是用户需要去补价格的那个名字。
    */
-  unpricedModels: string[]
-  unpricedRows: number; hasBackfilled: boolean
+  unpricedRows: number
 }
 
 export const UNKNOWN_WORKSPACE = '未知工作区'
@@ -170,8 +197,7 @@ export function buildOverview(
   opts: { todayKey: string; weekDays: readonly string[] },
 ): Overview {
   let totalCny = 0; let todayCny = 0; let weekCny = 0; let calls = 0
-  let hit = 0; let inputTotal = 0; let unpricedRows = 0; let hasBackfilled = false
-  const unpricedModels = new Set<string>()
+  let hit = 0; let inputTotal = 0; let unpricedRows = 0
   const days = new Set<string>()
 
   for (const r of rows) {
@@ -180,16 +206,16 @@ export function buildOverview(
     if (opts.weekDays.includes(r.day)) weekCny += r.costCny
     inputTotal += r.input + r.cacheRead
     hit += r.cacheRead
-    if (!r.priced) { unpricedRows += 1; unpricedModels.add(priceKey(r.provider, r.model)) }
-    if (r.backfilled) hasBackfilled = true
+    if (!r.priced) unpricedRows += 1
   }
 
+  // hasBackfilled / unpricedModels 由同一条路径算出：overview 与 daily / byModel /
+  // byWorkspace 的口径不可能分叉（review fix round 2）。
   return {
+    ...buildMarkers(rows),
     totalCny, todayCny, weekCny, calls,
     avgDailyCny: days.size === 0 ? 0 : totalCny / days.size,
     cacheHitRate: inputTotal === 0 ? 0 : hit / inputTotal,
-    unpricedModels: [...unpricedModels].sort(),
     unpricedRows,
-    hasBackfilled,
   }
 }

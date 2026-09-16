@@ -25,6 +25,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import { mountUsageBillingRemote, usageBillingOf } from './core/remote.ts'
 import { createBillingStore } from './core/store.ts'
+import type { BillingConfigLike } from './core/config.ts'
 import { ensureUsageBillingStyle } from './views/ui-css.ts'
 import { EntryCard } from './views/entry-card.tsx'
 import { Dashboard } from './views/dashboard.tsx'
@@ -46,15 +47,9 @@ export const ENTRY_LABEL = '计费'
  * 设置命名空间：**从 `../types.ts` 取值，不从 `../settings.ts` 引** —— 后者依赖
  * `@deepseek-ai/schemastery` 与 host 代码，client 引入会把 host 侧实现拖进浏览器产物。
  * `types.ts` 是零依赖模块，host 与 client 共用它（这是命名空间的唯一来源）。
- * client 只需要一小片只读形状，见 `BillingConfigLike`。
+ * client 的配置片类型面在 `./core/config.ts`（视图与这里共用，避免入口 ↔ 视图成环）。
  */
-export interface BillingConfigLike {
-  budget: { enabled: boolean; monthlyCny: number }
-  display: { showUnpricedWarning: boolean; includeSubagents: boolean }
-  pricing: { autoRefresh: boolean; refreshHours: number }
-  notices: { backfillDismissed: boolean; budgetNotified: Record<string, string> }
-  installAt: number
-}
+export type { BillingConfigLike } from './core/config.ts'
 
 export function apply(ctx: Context): void {
   ctx.inject(['slots', 'remote', 'settingsScope'], (c) => {
@@ -84,7 +79,7 @@ export function apply(ctx: Context): void {
       id: OVERLAY_SLOT_ID,
       order: 10,
       label: ENTRY_LABEL,
-      inject: () => ({ billing: usageBillingOf(c), store }),
+      inject: () => ({ billing: usageBillingOf(c), store, scope }),
     }, Dashboard))
 
     c.slots.inject('settings.section', () => c.slots.register({
@@ -92,7 +87,7 @@ export function apply(ctx: Context): void {
       id: SETTINGS_SECTION_ID,
       order: 40,
       label: ENTRY_LABEL,
-      inject: () => ({ billing: usageBillingOf(c), scope }),
+      inject: () => ({ billing: usageBillingOf(c), scope, store }),
     }, SettingsSection))
   })
 }

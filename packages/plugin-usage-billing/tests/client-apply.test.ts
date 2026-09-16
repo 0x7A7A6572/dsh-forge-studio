@@ -80,8 +80,10 @@ describe('client apply', () => {
     expect(h.registered).toHaveLength(3)
     // 真槽对同一 (slot, id, priority) 会抛 —— 这里同样，证明「重复 apply 不抛」不是靠假实现宽容。
     expect(() => apply(h.ctx as never)).toThrow(/duplicate slot registration/)
-    // fiber stop：收集到的注册 disposer 必须真的把注册收回。
-    expect(h.disposers).toHaveLength(3)
+    // fiber stop：收集到的 disposer 必须真的把注册收回。
+    // **不断言精确条数**：jsdom 环境下 ensureUsageBillingStyle 还会经 ctx.effect 挂一个样式
+    // disposer（本文件无 document 时为 0），条数随环境变化。这里钉的是行为本身。
+    expect(h.disposers.length).toBeGreaterThanOrEqual(3)
     for (const d of h.disposers) d()
     expect(h.registered).toHaveLength(0)
     // 卸干净后再次 apply 不再抛：上一轮确实被收回，而不是被假实现忽略。

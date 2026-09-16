@@ -14,7 +14,7 @@ import { REMOTE_NAMESPACE, USAGE_BILLING_REMOTE_METHODS } from '../../remote-met
 import type {
   AliasInput, CustomPriceInput,
 } from '../../types.ts'
-import type { DailyPoint, ModelRow, Overview, SessionRow, WorkspaceRow } from '../../view.ts'
+import type { DailyPoint, LedgerMarkers, ModelRow, Overview, SessionRow, WorkspaceRow } from '../../view.ts'
 import type { PriceEntry } from '../../types.ts'
 import type { RangeKind } from '../../time.ts'
 
@@ -77,11 +77,15 @@ export type UsageBillingAugmentedRemoteMap = {
 
 export interface UsageBillingRemote {
   overview(rangeKind: RangeKind, includeSubagents: boolean): Promise<RemoteResult<{ overview: Overview; todayKey: string; budget: { enabled: boolean; monthlyCny: number } }>>
-  daily(rangeKind: RangeKind, includeSubagents: boolean): Promise<RemoteResult<{ days: DailyPoint[] }>>
-  byModel(rangeKind: RangeKind, includeSubagents: boolean): Promise<RemoteResult<{ models: ModelRow[] }>>
+  /** 金额与披露标记**同源**：`hasBackfilled` / `unpricedModels` 随 days 一起返回，不再二次取数。 */
+  daily(rangeKind: RangeKind, includeSubagents: boolean): Promise<RemoteResult<{ days: DailyPoint[] } & LedgerMarkers>>
+  byModel(rangeKind: RangeKind, includeSubagents: boolean): Promise<RemoteResult<{ models: ModelRow[] } & LedgerMarkers>>
   bySession(rangeKind: RangeKind, includeSubagents: boolean): Promise<RemoteResult<{ sessions: SessionRow[] }>>
-  byWorkspace(rangeKind: RangeKind, includeSubagents: boolean): Promise<RemoteResult<{ workspaces: WorkspaceRow[] }>>
-  pricing(): Promise<RemoteResult<{ entries: Record<string, PriceEntry>; usdToCny: number; usdToCnySource: 'live' | 'default'; snapshotId: string }>>
+  byWorkspace(rangeKind: RangeKind, includeSubagents: boolean): Promise<RemoteResult<{ workspaces: WorkspaceRow[] } & LedgerMarkers>>
+  pricing(): Promise<RemoteResult<{
+    entries: Record<string, PriceEntry>; usdToCny: number; usdToCnySource: 'live' | 'default'
+    snapshotId: string; customKeys: string[]
+  }>>
   setCustomPrice(entry: CustomPriceInput): Promise<RemoteResult<{ ok: true }>>
   removeCustomPrice(key: string): Promise<RemoteResult<{ ok: boolean }>>
   refreshPricing(force: boolean): Promise<RemoteResult<{ ok: boolean; reason?: string; entries?: number; usdToCny?: number }>>
@@ -102,6 +106,10 @@ export async function mountUsageBillingRemote(ctx: Context): Promise<() => Promi
   return ctx.remote.$mount(usageBillingRemoteContribution)
 }
 
-export function usageBillingOf(ctx: Context): UsageBillingRemote {
-  return (ctx.remote as ClientRemote & { usageBilling: UsageBillingRemote }).usageBilling
+/**
+ * 取远程面。`$mount` 是异步的且失败只 warn，所以首帧上 `usageBilling` **真的可能是
+ * undefined** —— 返回类型如实写出来，调用方（视图 effect）必须自己早退。
+ */
+export function usageBillingOf(ctx: Context): UsageBillingRemote | undefined {
+  return (ctx.remote as ClientRemote & { usageBilling?: UsageBillingRemote }).usageBilling
 }

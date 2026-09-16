@@ -4,7 +4,9 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { UsageBillingRemote } from '../core/remote.ts'
 import type { BillingStore } from '../core/store.ts'
 import { calendarMatrix } from '../core/heatmap.ts'
-import { formatCny } from '../core/format.ts'
+import {
+  NON_FINITE_PLACEHOLDER, backfilledDisclosure, formatCny, isUnpricedTotal,
+} from '../core/format.ts'
 import type { DailyPoint } from '../../view.ts'
 
 function longestStreak(days: readonly DailyPoint[]): number {
@@ -16,47 +18,57 @@ function longestStreak(days: readonly DailyPoint[]): number {
   return best
 }
 
-export function TabHeatmap(props: { billing: UsageBillingRemote; store: BillingStore }): JSX.Element {
+/** 金额与披露标记同源：都来自这一次 `daily` 响应。 */
+interface HeatPayload {
+  days: DailyPoint[]
+  hasBackfilled: boolean
+  unpricedModels: string[]
+}
+
+export function TabHeatmap(props: {
+  billing: UsageBillingRemote | undefined
+  store: BillingStore
+}): JSX.Element {
   const { billing, store } = props
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot)
-  const [days, setDays] = useState<DailyPoint[] | null>(null)
-  // 常驻回填标记（不可关）：色阶里的金额同样含安装前估算的账。
-  const [hasBackfilled, setHasBackfilled] = useState(false)
+  const [data, setData] = useState<HeatPayload | null>(null)
 
   useEffect(() => {
+    if (billing === undefined) return
     let alive = true
-    void Promise.all([
-      billing.daily('all', state.includeSubagents),
-      billing.overview('all', state.includeSubagents),
-    ]).then(([d, o]) => {
-      if (!alive) return
-      if (d.ok) setDays(d.value.days)
-      if (o.ok) setHasBackfilled(o.value.overview.hasBackfilled)
+    // 一次取数：回填标记随 daily 一起回来，不再单独取 overview。
+    void billing.daily('all', state.includeSubagents).then((r) => {
+      if (alive && r.ok) {
+        setData({ days: r.value.days, hasBackfilled: r.value.hasBackfilled, unpricedModels: r.value.unpricedModels })
+      }
     })
     return () => { alive = false }
   }, [billing, state.includeSubagents])
 
-  const matrix = useMemo(() => days === null ? [] : calendarMatrix(
-    days.map((d) => d.day),
-    new Map(days.map((d) => [d.day, d.costCny])),
+  const matrix = useMemo(() => data === null ? [] : calendarMatrix(
+    data.days.map((d) => d.day),
+    new Map(data.days.map((d) => [d.day, d.costCny])),
     { firstDayOfWeek: 1 },
-  ), [days])
+  ), [data])
 
-  if (days === null) return <div data-dsh-ub-empty>正在读取用量…</div>
-  if (days.length === 0) return <div data-dsh-ub-empty>这个范围里还没有用量记录。</div>
+  if (data === null) return <div data-dsh-ub-empty>正在读取用量…</div>
+  if (data.days.length === 0) return <div data-dsh-ub-empty>这个范围里还没有用量记录。</div>
 
-  const active = days.filter((d) => d.calls > 0).length
+  const active = data.days.filter((d) => d.calls > 0).length
+  const hasBackfilled = backfilledDisclosure(data.hasBackfilled)
+  // 唯一判据：整份账未定价时色阶里的金额同样不可信（每一格都是 0），格子提示统一占位。
+  const unpriced = isUnpricedTotal(data.days.reduce((a, d) => a + d.costCny, 0), data.unpricedModels)
 
   return (
     <div data-dsh-usage-billing>
       <div data-dsh-ub-sub>
-        活跃 {active} 天 · 共 {days.length} 天 · 最长连续 {longestStreak(days)} 天
+        活跃 {active} 天 · 共 {data.days.length} 天 · 最长连续 {longestStreak(data.days)} 天
         {hasBackfilled ? <span data-dsh-ub-estimate> · 含安装前估算</span> : null}
       </div>
       <div data-dsh-ub-heat style={{ marginTop: 10 }}>
         {matrix.flat().map((cell, i) => (
           <span key={cell?.day ?? `pad-${i}`} data-level={cell?.level ?? 0}
-            title={cell === null ? '' : `${cell.day}：${formatCny(cell.value)}`} />
+            title={cell === null ? '' : `${cell.day}：${unpriced ? NON_FINITE_PLACEHOLDER : formatCny(cell.value)}`} />
         ))}
       </div>
     </div>

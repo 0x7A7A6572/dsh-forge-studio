@@ -16,13 +16,13 @@ import type { SessionSource } from './aggregate.ts'
 import { aliasId, priceKeyCandidates } from './model-key.ts'
 import { DEFAULT_USD_TO_CNY, priceKey } from './pricing/catalog.ts'
 import { priceUsage } from './pricing/cost.ts'
-import { CATALOG_REASONS, diffEntries, planSnapshot, resolveLayerAt, resolveSnapshotAt } from './pricing/snapshot.ts'
+import { CATALOG_REASONS, activeOverridesAt, diffEntries, planSnapshot, resolveLayerAt, resolveSnapshotAt } from './pricing/snapshot.ts'
 import { USAGE_BILLING_REMOTE_METHODS, USAGE_BILLING_METHOD_NAMES } from './remote-methods.ts'
 import type { UsageBillingSettingsAccess } from './settings.ts'
 import { dayKey, daysInRange, rangeToSpec } from './time.ts'
 import type { RangeKind } from './time.ts'
 import {
-  buildBySession, buildByWorkspace, buildDaily, buildOverview, filterRows, mergeByModel,
+  buildBySession, buildByWorkspace, buildDaily, buildMarkers, buildOverview, filterRows, mergeByModel,
 } from './view.ts'
 import type {
   AliasInput, CustomPriceInput, Diagnostic, FoldState, LedgerRow,
@@ -148,12 +148,12 @@ export class UsageBillingService extends TypertRemoteService {
   async daily(rangeKind: RangeKind, includeSubagents: boolean) {
     const rows = this.scoped(await this.rows(), rangeKind, includeSubagents)
     const days = daysInRange(rangeToSpec(rangeKind, this.now()), this.now())
-    return { days: buildDaily(rows, days) }
+    return { days: buildDaily(rows, days), ...buildMarkers(rows) }
   }
 
   async byModel(rangeKind: RangeKind, includeSubagents: boolean) {
     const rows = this.scoped(await this.rows(), rangeKind, includeSubagents)
-    return { models: mergeByModel(rows, this.listAliases()) }
+    return { models: mergeByModel(rows, this.listAliases()), ...buildMarkers(rows) }
   }
 
   async bySession(rangeKind: RangeKind, includeSubagents: boolean) {
@@ -163,12 +163,21 @@ export class UsageBillingService extends TypertRemoteService {
 
   async byWorkspace(rangeKind: RangeKind, includeSubagents: boolean) {
     const rows = this.scoped(await this.rows(), rangeKind, includeSubagents)
-    return { workspaces: buildByWorkspace(rows) }
+    return { workspaces: buildByWorkspace(rows), ...buildMarkers(rows) }
   }
 
-  async pricing(): Promise<{ entries: Record<string, PriceEntry>; usdToCny: number; usdToCnySource: 'live' | 'default'; snapshotId: string }> {
+  async pricing(): Promise<{
+    entries: Record<string, PriceEntry>; usdToCny: number; usdToCnySource: 'live' | 'default'
+    snapshotId: string
+    /** 当前**仍然生效**的自定义单价 key（费率页据此显示「自定义」与逐行删除）。 */
+    customKeys: string[]
+  }> {
     const all = [...this.snapshots.entries()].map(([, s]) => s)
-    return resolveSnapshotAt(this.now(), all)
+    const now = this.now()
+    return {
+      ...resolveSnapshotAt(now, all),
+      customKeys: Object.keys(activeOverridesAt(now, all)).sort(),
+    }
   }
 
   async setCustomPrice(entry: CustomPriceInput): Promise<{ ok: true }> {

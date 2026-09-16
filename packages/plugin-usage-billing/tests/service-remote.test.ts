@@ -104,6 +104,29 @@ describe('UsageBillingService', () => {
     const out = await svc.pricing()
     expect(out.usdToCny).toBe(7)
     expect(out.entries['deepseek/deepseek-v4-flash']).toBeDefined()
+    // 目录层不是自定义价：费率页据此决定哪一行显示「自定义」与删除按钮。
+    expect(out.customKeys).toEqual([])
+  })
+
+  it('daily / byModel / byWorkspace 各自携带本行集的回填与未收录标记', async () => {
+    const { svc, ledger } = makeService()
+    await ledger.put('a', { ...ROW, id: 'a', backfilled: true, priced: false, costCny: 0, model: 'ghost' })
+    const markers = { hasBackfilled: true, unpricedModels: ['deepseek/ghost'] }
+    expect(await svc.daily('all', true)).toMatchObject(markers)
+    expect(await svc.byModel('all', true)).toMatchObject(markers)
+    expect(await svc.byWorkspace('all', true)).toMatchObject(markers)
+  })
+
+  it('pricing().customKeys 只列出生效中的自定义价（取消后回到目录价即消失）', async () => {
+    const { svc } = makeService()
+    const key = 'acme/only-custom'
+    await svc.setCustomPrice({
+      provider: 'acme', model: 'only-custom', currency: 'USD',
+      input: 1, cacheRead: 0, cacheWrite: 0, output: 2,
+    })
+    expect((await svc.pricing()).customKeys).toEqual([key])
+    await svc.removeCustomPrice(key)
+    expect((await svc.pricing()).customKeys).toEqual([])
   })
 
   it('setCustomPrice 写入自定义价并追加 delta 快照', async () => {
