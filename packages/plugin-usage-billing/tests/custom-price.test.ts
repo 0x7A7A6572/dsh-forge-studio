@@ -39,24 +39,55 @@ const row = (over: Partial<LedgerRow>): LedgerRow => ({
 })
 
 describe('自定义单价', () => {
-  it('覆盖目录价且立即影响新折叠（不影响已锁定行）', async () => {
+  it('覆盖目录价且立即影响重算（不影响已锁定行）', async () => {
     const { svc, ledger } = make()
     await ledger.put('locked', row({ id: 'locked', costCny: 2, priced: true }))
+    // 未计价行的事件时刻晚于自定义价快照（now() = 5000），因此重算时必须读到新价表。
+    await ledger.put('open', row({ id: 'open', time: 6_000 }))
     await svc.setCustomPrice({ provider: 'deepseek', model: 'deepseek-v4-pro', currency: 'CNY', input: 10, cacheRead: 0, cacheWrite: 10, output: 10 })
     expect((await svc.pricing()).entries['deepseek/deepseek-v4-pro']!.input).toBe(10)
     expect(ledger.get('locked')!.costCny).toBe(2)
+    // 100 万 input token：目录价 input=2 → 2 元，自定义 input=10 → 10 元，两个数可见地不同。
+    // 重算路径若还在读写价之前的旧表（或只看目录层），这里会红。
+    expect((await svc.repricing()).changed).toBe(1)
+    expect(ledger.get('open')).toMatchObject({ priced: true, costCny: 10 })
+    expect(ledger.get('locked')!.costCny).toBe(2)
   })
 
-  it('provider 兜底 key（provider/*）可覆盖', async () => {
-    const { svc } = make()
+  it('provider 兜底 key（provider/*）参与实际查价', async () => {
+    const { svc, ledger } = make()
     await svc.setCustomPrice({ provider: 'relay', model: '*', currency: 'CNY', input: 1, cacheRead: 0, cacheWrite: 0, output: 1 })
-    expect((await svc.pricing()).entries['relay/*']).toBeDefined()
+    // 'relay/relay-x' 自身与 'relay/*' 之外的候选都不在表里：只断言条目存在时，把
+    // provider/* 从查价候选里摘掉也照样绿；这里要求它真的被解析成 1 元。
+    await ledger.put('relay-row', row({ id: 'relay-row', provider: 'relay', model: 'relay-x', time: 6_000 }))
+    expect((await svc.repricing()).changed).toBe(1)
+    expect(ledger.get('relay-row')).toMatchObject({ priced: true, costCny: 1 })
   })
 
-  it('全局兜底 key（*/*）可覆盖', async () => {
-    const { svc } = make()
-    await svc.setCustomPrice({ provider: '*', model: '*', currency: 'CNY', input: 1, cacheRead: 0, cacheWrite: 0, output: 1 })
-    expect((await svc.pricing()).entries['*/*']).toBeDefined()
+  it('全局兜底 key（*/*）参与实际查价', async () => {
+    const { svc, ledger } = make()
+    await svc.setCustomPrice({ provider: '*', model: '*', currency: 'CNY', input: 3, cacheRead: 0, cacheWrite: 0, output: 3 })
+    // 只有 '*/*' 能命中这个 provider/model：候选序列里少一档就查不到价。
+    await ledger.put('ghost-row', row({ id: 'ghost-row', provider: 'ghost', model: 'ghost-1', time: 6_000 }))
+    expect((await svc.repricing()).changed).toBe(1)
+    expect(ledger.get('ghost-row')).toMatchObject({ priced: true, costCny: 3 })
+  })
+
+  it('同一模型的优先级：精确自定义价 > provider/* > */* > 目录价', async () => {
+    const { svc, ledger, snapshots } = make()
+    // 目录层给 relay/relay-x 一个价（input=5）：at 与 snap-0 相同，但 id 排序在后，base 覆盖生效。
+    await snapshots.put('snap-cat', {
+      id: 'snap-cat', at: 0, kind: 'base', reason: 'install', usdToCny: 7, usdToCnySource: 'default',
+      entries: { 'relay/relay-x': { input: 5, cacheRead: 0, cacheWrite: 0, output: 0, currency: 'CNY' } },
+    })
+    await svc.setCustomPrice({ provider: '*', model: '*', currency: 'CNY', input: 30, cacheRead: 0, cacheWrite: 0, output: 30 })
+    await svc.setCustomPrice({ provider: 'relay', model: '*', currency: 'CNY', input: 20, cacheRead: 0, cacheWrite: 0, output: 20 })
+    await svc.setCustomPrice({ provider: 'relay', model: 'relay-x', currency: 'CNY', input: 10, cacheRead: 0, cacheWrite: 0, output: 10 })
+    // 100 万 input token 下四档各出一个不同的数：10 / 20 / 30 / 5。
+    // 任何一档抢占或被摘掉候选，这行价格都会变。
+    await ledger.put('ord', row({ id: 'ord', provider: 'relay', model: 'relay-x', time: 6_000 }))
+    expect((await svc.repricing()).changed).toBe(1)
+    expect(ledger.get('ord')).toMatchObject({ priced: true, costCny: 10 })
   })
 
   it('删除自定义价后回落到目录价', async () => {

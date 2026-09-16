@@ -225,6 +225,10 @@ describe('手工别名端到端', () => {
     expect(merged[0]).toMatchObject({ key: 'deepseek/deepseek-v4-flash', costCny: 3 })
     expect(ledger.size).toBe(before)
     expect(ledger.get('b')!.costCny).toBe(2)
+    // 别名只在展示层生效：账本行的 model 必须保持原始 id。展示聚合若把 canonical 写回
+    // 行对象（跨层回写），行数与金额断言都会照过，只有这里会红。
+    expect(ledger.get('a')!.model).toBe('deepseek-v4-flash')
+    expect(ledger.get('b')!.model).toBe('deepseek-v4-flash-20260518')
   })
 
   it('解绑后恢复两行', async () => {
@@ -234,6 +238,8 @@ describe('手工别名端到端', () => {
     await svc.setAlias({ provider: 'deepseek', rawModel: 'deepseek-v4-flash-20260518', canonicalModel: 'deepseek-v4-flash' })
     await svc.setAlias({ provider: 'deepseek', rawModel: 'deepseek-v4-flash-20260518', canonicalModel: null })
     expect((await svc.byModel('all', true)).models).toHaveLength(2)
+    expect(ledger.get('a')!.model).toBe('deepseek-v4-flash')
+    expect(ledger.get('b')!.model).toBe('deepseek-v4-flash-20260518')
   })
 
   it('别名不跨 provider 生效', async () => {
@@ -243,6 +249,9 @@ describe('手工别名端到端', () => {
     await svc.setAlias({ provider: 'deepseek', rawModel: 'relay-x', canonicalModel: 'deepseek-v4-flash' })
     const rows = (await svc.byModel('all', true)).models
     expect(rows).toHaveLength(2)
+    // 展示键必须逐字钉死：只断言 provider 集合时，一个「按 rawModel 全局解析别名、但仍按
+    // provider/canonical 分键」的实现会把 relay-x 改名成 relay/deepseek-v4-flash 却照样两行。
     expect(rows.map((r) => r.provider).sort()).toEqual(['deepseek', 'relay'])
+    expect(rows.map((r) => r.key).sort()).toEqual(['deepseek/deepseek-v4-flash', 'relay/relay-x'])
   })
 })
