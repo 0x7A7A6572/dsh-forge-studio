@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
+import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { aliasId } from '../src/model-key.ts'
+import { UsageBillingService } from '../src/service.ts'
+import { createUsageBillingSettingsAccess } from '../src/settings.ts'
 import { buildByWorkspace, buildDaily, buildOverview, filterRows, mergeByModel } from '../src/view.ts'
-import type { LedgerRow, ModelAlias } from '../src/types.ts'
+import type { Diagnostic, FoldState, LedgerRow, ModelAlias, PriceSnapshot } from '../src/types.ts'
 
 const row = (over: Partial<LedgerRow> = {}): LedgerRow => ({
   id: 's1#1', sessionId: 's1', seq: 1, time: 1_000, provider: 'deepseek',
@@ -178,5 +182,67 @@ describe('聚合不改写输入', () => {
 
     expect(rows).toHaveLength(before.length)
     expect(rows).toEqual(before)
+  })
+})
+
+function t<V>(): KvTable<string, V> {
+  const map = new Map<string, V>()
+  return {
+    get: (k) => map.get(k), entries: () => map.entries(), keys: () => map.keys(),
+    get size() { return map.size },
+    put: async (k, v) => { map.set(k, v) }, delete: async (k) => map.delete(k),
+    update: async (k, fn) => { const c = map.get(k); if (!c) throw new Error('missing-key'); const n = fn(c); map.set(k, n); return n },
+  }
+}
+
+describe('手工别名端到端', () => {
+  function make() {
+    const ledger = t<LedgerRow>(); const aliases = t<ModelAlias>()
+    const domain = {
+      table: (n: string) => ({
+        ledger, aliases, folds: t<FoldState>(), snapshots: t<PriceSnapshot>(), diag: t<Diagnostic>(),
+      } as Record<string, unknown>)[n],
+    } as never
+    const svc = new UsageBillingService(new Context(), {
+      domain, settings: createUsageBillingSettingsAccess(), installAt: 0,
+      source: { listSessions: async () => [], listEvents: async () => [], readSession: async () => { throw new Error('unused') } },
+      fetchPricing: async () => ({ ok: false, reason: 'test' }),
+      now: () => 5_000,
+    })
+    return { svc, ledger }
+  }
+
+  it('绑定后展示层合并为一行，账本行数与金额不变', async () => {
+    const { svc, ledger } = make()
+    await ledger.put('a', row({ id: 'a', model: 'deepseek-v4-flash', costCny: 1 }))
+    await ledger.put('b', row({ id: 'b', model: 'deepseek-v4-flash-20260518', costCny: 2 }))
+    const before = ledger.size
+    expect((await svc.byModel('all', true)).models).toHaveLength(2)
+
+    await svc.setAlias({ provider: 'deepseek', rawModel: 'deepseek-v4-flash-20260518', canonicalModel: 'deepseek-v4-flash' })
+    const merged = (await svc.byModel('all', true)).models
+    expect(merged).toHaveLength(1)
+    expect(merged[0]).toMatchObject({ key: 'deepseek/deepseek-v4-flash', costCny: 3 })
+    expect(ledger.size).toBe(before)
+    expect(ledger.get('b')!.costCny).toBe(2)
+  })
+
+  it('解绑后恢复两行', async () => {
+    const { svc, ledger } = make()
+    await ledger.put('a', row({ id: 'a', model: 'deepseek-v4-flash', costCny: 1 }))
+    await ledger.put('b', row({ id: 'b', model: 'deepseek-v4-flash-20260518', costCny: 2 }))
+    await svc.setAlias({ provider: 'deepseek', rawModel: 'deepseek-v4-flash-20260518', canonicalModel: 'deepseek-v4-flash' })
+    await svc.setAlias({ provider: 'deepseek', rawModel: 'deepseek-v4-flash-20260518', canonicalModel: null })
+    expect((await svc.byModel('all', true)).models).toHaveLength(2)
+  })
+
+  it('别名不跨 provider 生效', async () => {
+    const { svc, ledger } = make()
+    await ledger.put('a', row({ id: 'a', provider: 'deepseek', model: 'relay-x', costCny: 1 }))
+    await ledger.put('b', row({ id: 'b', provider: 'relay', model: 'relay-x', costCny: 2 }))
+    await svc.setAlias({ provider: 'deepseek', rawModel: 'relay-x', canonicalModel: 'deepseek-v4-flash' })
+    const rows = (await svc.byModel('all', true)).models
+    expect(rows).toHaveLength(2)
+    expect(rows.map((r) => r.provider).sort()).toEqual(['deepseek', 'relay'])
   })
 })
