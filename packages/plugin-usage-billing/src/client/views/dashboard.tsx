@@ -1,9 +1,14 @@
 /**
  * 仪表盘弹窗（slot: shell.overlay）。
- * shell.overlay 这一层是 click-through 的，所以遮罩自己带 pointer-events。
+ *
+ * 版式层换成 primitives 的 `Modal`（body portal + Escape + 点遮罩关闭 + role=dialog），
+ * 不再自绘遮罩与关闭按钮 —— 自绘那一版没有 Escape、没有 aria-modal，而且
+ * `shell.overlay` 是 click-through 层，指针事件得自己 opt-in，很容易漏。
+ * 弹窗内容根节点带 `data-dsh-usage-billing`（样式不依赖它，纯测试钩子 + 作用域语义）。
  */
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { Button, Modal, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { UsageBillingRemote } from '../core/remote.ts'
 import type { BillingStore, TabId } from '../core/store.ts'
 import type { BillingConfig, BillingConfigLike, BillingScope } from '../core/config.ts'
@@ -16,7 +21,7 @@ import { TabHeatmap } from './tab-heatmap.tsx'
 import { TabDetail } from './tab-detail.tsx'
 import { TabPricing } from './tab-pricing.tsx'
 
-const TABS: Array<{ id: TabId; label: string }> = [
+export const TABS: ReadonlyArray<{ id: TabId; label: string }> = [
   { id: 'overview', label: '概览' },
   { id: 'trend', label: '趋势' },
   { id: 'heatmap', label: '热力图' },
@@ -33,7 +38,7 @@ export function Dashboard(props: {
 }): JSX.Element | null {
   const { billing, store, scope } = props
   // 必须订阅：入口卡改的是 store 里的 open/tab，不订阅则开合与切页都不会重渲染。
-  // hook 必须早于下面的早退调用（否则 open 从 false 变 true 时 hook 数量会变）。
+  // hook 必须早于任何早退（否则 open 从 false 变 true 时 hook 数量会变）。
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot)
   // 设置快照同样订阅：关闭提示条写回宿主后，这里必须跟着消失。
   const settings = useSyncExternalStore(
@@ -95,7 +100,7 @@ export function Dashboard(props: {
   /**
    * 预算跨档提醒（spec §6.7）：跨 50/80/100% 各提醒一次，按「月份 + 档位」去重。
    * 数据用 `overview('month')`（预算本来就是月度口径，不能被概览页选中的范围窗口带偏），
-   * 「已提醒」写进设置 `notices.budgetNotified` —— 与下方回填提示条的关闭同一条写路径。
+   * 「已提醒」写进设置 `notices.budgetNotified` —— 与回填提示条的关闭同一条写路径。
    *
    * 只在面板**真的打开**时才判定并落盘：没被看到的提醒不该被记成「已提醒」（否则用户
    * 一次也没见到，却再也等不到第二次）。`overview` 取数失败就不提醒 —— 宁可不说，
@@ -119,19 +124,17 @@ export function Dashboard(props: {
     return () => { alive = false }
   }, [billing, state.open, state.includeSubagents, scope, cfg, writeNotices])
 
-  if (!state.open) return null
   return (
-    <div
-      data-dsh-usage-billing
-      data-dsh-ub-overlay
-      onClick={(e) => { if (e.target === e.currentTarget) store.closePanel() }}
+    <Modal
+      open={state.open}
+      onClose={() => store.closePanel()}
+      title="计费"
+      closeLabel="关闭"
+      description="真实用量 · 按事件时刻价表锁定"
+      className="ub-modal"
+      contentClassName="ub-modal-content"
     >
-      <section data-dsh-ub-panel role="dialog" aria-label="计费仪表盘">
-        <header style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
-          <h2 style={{ margin: 0, fontSize: 16 }}>计费</h2>
-          <span data-dsh-ub-sub>真实用量 · 按事件时刻价表锁定</span>
-          <button type="button" style={{ marginLeft: 'auto' }} onClick={() => store.closePanel()}>关闭</button>
-        </header>
+      <div className="ub-section" data-dsh-usage-billing data-dsh-ub-panel>
         {/* 安装时刻未知（status 未到 / 取数失败 / installAt 非正）时不渲染：宁可不说，
             也不能报一个假日期。 */}
         {installAt > 0 ? (
@@ -143,29 +146,42 @@ export function Dashboard(props: {
             onDismiss={dismissBackfill}
           />
         ) : null}
-        {/* 跨档提醒：复用既有提示条面（与回填提示条同一姿态），关闭只影响本次弹窗，
+        {/* 跨档提醒：与回填提示条同一姿态（左侧色条 + 右下角操作），关闭只影响本次弹窗，
             「每月每档一次」由已落盘的 notices.budgetNotified 保证。 */}
         {budgetNotice !== null ? (
-          <div data-dsh-usage-billing data-dsh-ub-budget-notice data-dsh-ub-estimate role="status">
+          <div
+            className="ub-notice"
+            data-dsh-usage-billing data-dsh-ub-budget-notice data-kind="warn" role="status"
+          >
             <span>
               月度预算已用 {formatPct(budgetNotice.pct, 0)}，跨过{' '}
               {formatPct(BUDGET_TIERS[budgetNotice.tier - 1], 0)} 档 —— 每个「月份 + 档位」只提醒一次。
             </span>
-            <button type="button" onClick={() => setBudgetNotice(null)}>知道了</button>
+            <div className="ub-notice-foot">
+              <Button variant="ghost" size="sm" onClick={() => setBudgetNotice(null)}>知道了</Button>
+            </div>
           </div>
         ) : null}
-        <nav data-dsh-ub-tabs>
+
+        <nav className="ub-tabs" data-dsh-ub-tabs aria-label="计费视图">
           {TABS.map((t) => (
-            <button key={t.id} type="button" data-active={state.tab === t.id || undefined}
-              onClick={() => store.setTab(t.id)}>{t.label}</button>
+            <Pill
+              key={t.id}
+              active={state.tab === t.id}
+              aria-current={state.tab === t.id ? 'page' : undefined}
+              onClick={() => store.setTab(t.id)}
+            >
+              {t.label}
+            </Pill>
           ))}
         </nav>
+
         {state.tab === 'overview' ? <TabOverview billing={billing} store={store} scope={scope} /> : null}
         {state.tab === 'trend' ? <TabTrend billing={billing} store={store} /> : null}
         {state.tab === 'heatmap' ? <TabHeatmap billing={billing} store={store} /> : null}
         {state.tab === 'detail' ? <TabDetail billing={billing} store={store} /> : null}
         {state.tab === 'pricing' ? <TabPricing billing={billing} store={store} /> : null}
-      </section>
-    </div>
+      </div>
+    </Modal>
   )
 }

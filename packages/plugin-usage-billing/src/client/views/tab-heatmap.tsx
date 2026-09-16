@@ -7,6 +7,7 @@ import { calendarMatrix } from '../core/heatmap.ts'
 import {
   NON_FINITE_PLACEHOLDER, backfilledDisclosure, formatCny, isUnpricedTotal,
 } from '../core/format.ts'
+import { Card, StatCard } from './components/kit.tsx'
 import type { DailyPoint } from '../../view.ts'
 
 function longestStreak(days: readonly DailyPoint[]): number {
@@ -58,8 +59,8 @@ export function TabHeatmap(props: {
     { firstDayOfWeek: 1 },
   ), [data])
 
-  if (data === null) return <div data-dsh-ub-empty>正在读取用量…</div>
-  if (data.days.length === 0) return <div data-dsh-ub-empty>这个范围里还没有用量记录。</div>
+  if (data === null) return <div className="ub-empty" data-dsh-ub-empty>正在读取用量…</div>
+  if (data.days.length === 0) return <div className="ub-empty" data-dsh-ub-empty>这个范围里还没有用量记录。</div>
 
   const active = data.days.filter((d) => d.calls > 0).length
   const hasBackfilled = backfilledDisclosure(data.hasBackfilled)
@@ -67,17 +68,27 @@ export function TabHeatmap(props: {
   const unpriced = isUnpricedTotal(data.days.reduce((a, d) => a + d.costCny, 0), data.unpricedModels)
 
   return (
-    <div data-dsh-usage-billing>
-      <div data-dsh-ub-sub>
-        活跃 {active} 天 · 共 {data.days.length} 天 · 最长连续 {longestStreak(data.days)} 天
-        {hasBackfilled ? <span data-dsh-ub-estimate> · 含安装前估算</span> : null}
+    <div className="ub-section" data-dsh-usage-billing>
+      <div className="ub-stats">
+        <StatCard label="活跃天数" value={active + ' 天'} hint={'共 ' + data.days.length + ' 天'} />
+        <StatCard label="最长连续天数" value={longestStreak(data.days) + ' 天'} />
+        <StatCard label="区间合计" value={unpriced ? NON_FINITE_PLACEHOLDER : formatCny(
+          data.days.reduce((a, d) => a + d.costCny, 0),
+        )} />
+        {hasBackfilled ? <StatCard label="口径" value="含安装前估算" hint="按安装时点价表估算" /> : null}
       </div>
-      <div data-dsh-ub-heat style={{ marginTop: 10 }}>
-        {matrix.flat().map((cell, i) => (
-          <span key={cell?.day ?? `pad-${i}`} data-level={cell?.level ?? 0}
-            title={cell === null ? '' : `${cell.day}：${unpriced ? NON_FINITE_PLACEHOLDER : formatCny(cell.value)}`} />
-        ))}
-      </div>
+
+      <Card title="每日费用" desc="色阶按当日费用分 5 档；悬停看当天金额。">
+        <div className="ub-heat" data-dsh-ub-heat>
+          {matrix.flat().map((cell, i) => (
+            <span
+              key={cell?.day ?? `pad-${i}`}
+              data-level={cell?.level ?? 0}
+              title={cell === null ? '' : `${cell.day}：${unpriced ? NON_FINITE_PLACEHOLDER : formatCny(cell.value)}`}
+            />
+          ))}
+        </div>
+      </Card>
     </div>
   )
 }

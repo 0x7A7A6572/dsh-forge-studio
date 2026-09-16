@@ -1,14 +1,21 @@
 /**
- * 费率：当前生效价表 + 来源徽标 + **自定义单价录入/删除** + 未计价历史重算。
+ * 费率：当前生效价表 + 来源徽标 + **自定义单价录入/删除** + 未计价历史重算 + 手工别名。
  *
  * 录入走既有的 `setCustomPrice` / `removeCustomPrice` 远程方法（宿主侧的价表写入链），
  * 保存/删除后重新拉一次 `pricing()`，表格与「自定义」标记都来自同一次响应里的
  * `customKeys`（那正是「此刻仍然生效的自定义价」，不是本地记忆）。
+ *
+ * 版式：三块（价表来源 / 自定义单价 / 手工别名）各一张卡片，表单走 Input 原语 + FieldRow，
+ * 价表与别名列表走 DataTable —— 不再手写 `<table>` 与内联 style 的裸 `<input>`。
  */
 
 import { useCallback, useEffect, useState } from 'react'
+import { Button, Input, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { UsageBillingRemote } from '../core/remote.ts'
 import type { BillingStore } from '../core/store.ts'
+import { Card, FieldRow } from './components/kit.tsx'
+import { DataTable } from './components/data-table.tsx'
+import type { DataTableColumn } from './components/data-table.tsx'
 import type { Currency, CustomPriceInput, PriceEntry } from '../../types.ts'
 
 interface Draft {
@@ -18,6 +25,20 @@ interface Draft {
   cacheWrite: string
   output: string
   currency: Currency
+}
+
+/** 表格行：目录价 + 「此刻是否仍有自定义价生效」（来自同一次 pricing 响应）。 */
+interface PriceRow {
+  key: string
+  entry: PriceEntry
+  custom: boolean
+}
+
+/** 别名行（展示层合并用）。 */
+interface AliasRow {
+  provider: string
+  rawModel: string
+  canonicalModel: string
 }
 
 const EMPTY_DRAFT: Draft = { key: '', input: '', cacheRead: '', cacheWrite: '', output: '', currency: 'CNY' }
@@ -61,7 +82,7 @@ export function TabPricing(props: {
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT)
   /** 手工别名草稿（`<provider>/<原始 model>` + canonical）。 */
   const [aliasDraft, setAliasDraft] = useState({ key: '', canonical: '' })
-  const [aliases, setAliases] = useState<Array<{ provider: string; rawModel: string; canonicalModel: string }>>([])
+  const [aliases, setAliases] = useState<AliasRow[]>([])
 
   const reload = useCallback(async () => {
     if (billing === undefined) return
@@ -187,151 +208,179 @@ export function TabPricing(props: {
     }
   }, [billing, reloadAliases])
 
-  if (entries === null) return <div data-dsh-ub-empty>正在读取价表…</div>
+  if (entries === null) return <div className="ub-empty" data-dsh-ub-empty>正在读取价表…</div>
 
   /** 「刷新失败」的两种来源：wire 层失败（error.message）与拉取层失败（value.ok=false + reason）。 */
   const failure = (reason: string): string => `刷新失败：${reason}（继续用内置价）`
-  const field = (label: string, value: string, set: (next: string) => void): JSX.Element => (
-    <label data-dsh-ub-sub>
-      {label}
-      <input
+  const rows: PriceRow[] = Object.entries(entries).map(([key, entry]) => ({
+    key, entry, custom: customKeys.includes(key),
+  }))
+  const priceField = (label: string, value: string, set: (next: string) => void): JSX.Element => (
+    <FieldRow label={label}>
+      <Input
+        className="ub-input-sm"
+        inputMode="decimal"
         value={value}
-        onChange={(e) => set(e.target.value)}
-        style={{ width: 72, marginLeft: 4 }}
+        onChange={(event) => set(event.currentTarget.value)}
       />
-    </label>
+    </FieldRow>
   )
 
-  return (
-    <div data-dsh-usage-billing>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <span data-dsh-ub-badge data-kind={source === 'live' ? undefined : 'warn'}>
-          {source === 'live' ? '实时价' : '内置价'}
-        </span>
-        <span data-dsh-ub-sub>USD→CNY {usdToCny.toFixed(4)}</span>
-        <button type="button" disabled={busy} onClick={async () => {
-          if (billing === undefined) return
-          setBusy(true)
-          const r = await billing.refreshPricing(true)
-          // brief 原文是 `r.ok ? ... : r.value.reason`：RemoteResult 的失败分支没有 value，
-          // 且「拉到一半失败」是 ok:true + value.ok=false，按 r.ok 判会把失败报成「已更新 0 条」。
-          setMsg(!r.ok
-            ? failure(r.error.message)
-            : r.value.ok
-              ? `已更新 ${r.value.entries ?? 0} 条价目`
-              : failure(r.value.reason ?? '未知原因'))
-          await reload(); setBusy(false)
-        }}>立即刷新</button>
-        <button type="button" disabled={busy} onClick={async () => {
-          if (billing === undefined) return
-          setBusy(true)
-          const r = await billing.repricing()
-          setMsg(r.ok ? `已重算 ${r.value.changed} 条未计价历史` : '重算失败')
-          setBusy(false)
-        }}>重算未计价历史</button>
-      </div>
-      {msg === '' ? null : <p data-dsh-ub-sub>{msg}</p>}
+  const columns: ReadonlyArray<DataTableColumn<PriceRow>> = [
+    {
+      key: 'model',
+      header: '模型',
+      main: true,
+      render: (row) => (
+        <>
+          {row.key}
+          {row.custom ? <Tag tone="warning" className="ub-tag-inline">自定义</Tag> : null}
+        </>
+      ),
+    },
+    { key: 'input', header: '输入', align: 'right', render: (row) => row.entry.input },
+    { key: 'cacheRead', header: '缓存读', align: 'right', render: (row) => row.entry.cacheRead },
+    { key: 'cacheWrite', header: '缓存写', align: 'right', render: (row) => row.entry.cacheWrite },
+    { key: 'output', header: '输出', align: 'right', render: (row) => row.entry.output },
+    { key: 'currency', header: '币种', render: (row) => row.entry.currency },
+    {
+      key: 'ops',
+      header: '操作',
+      render: (row) => (row.custom ? (
+        <Button
+          variant="ghost" size="sm" disabled={busy}
+          aria-label={`删除 ${row.key}`}
+          onClick={() => { void remove(row.key) }}
+        >
+          删除
+        </Button>
+      ) : null),
+    },
+  ]
 
-      <section style={{ marginTop: 12 }}>
-        <div data-dsh-ub-sub>自定义单价（每百万 token；保存后立即追加一条价表快照，只影响此后的新账）</div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 6 }}>
-          <label data-dsh-ub-sub>
-            模型 key
-            <input
-              placeholder="provider/model"
-              value={draft.key}
-              onChange={(e) => setDraft({ ...draft, key: e.target.value })}
-              style={{ width: 220, marginLeft: 4 }}
-            />
-          </label>
-          {field('输入', draft.input, (v) => setDraft({ ...draft, input: v }))}
-          {field('缓存读', draft.cacheRead, (v) => setDraft({ ...draft, cacheRead: v }))}
-          {field('缓存写', draft.cacheWrite, (v) => setDraft({ ...draft, cacheWrite: v }))}
-          {field('输出', draft.output, (v) => setDraft({ ...draft, output: v }))}
-          <label data-dsh-ub-sub>
-            币种
+  return (
+    <div className="ub-section" data-dsh-usage-billing>
+      <div className="ub-head">
+        <span className="ub-head-title">价表来源</span>
+        <Tag tone={source === 'live' ? 'success' : 'warning'}>{source === 'live' ? '实时价' : '内置价'}</Tag>
+        <span className="ub-sub">USD → CNY {usdToCny.toFixed(4)}</span>
+        <div className="ub-toolbar">
+          <Button
+            variant="outline" size="sm" disabled={busy}
+            onClick={async () => {
+              if (billing === undefined) return
+              setBusy(true)
+              const r = await billing.refreshPricing(true)
+              // brief 原文是 `r.ok ? ... : r.value.reason`：RemoteResult 的失败分支没有 value，
+              // 且「拉到一半失败」是 ok:true + value.ok=false，按 r.ok 判会把失败报成「已更新 0 条」。
+              setMsg(!r.ok
+                ? failure(r.error.message)
+                : r.value.ok
+                  ? `已更新 ${r.value.entries ?? 0} 条价目`
+                  : failure(r.value.reason ?? '未知原因'))
+              await reload(); setBusy(false)
+            }}
+          >
+            立即刷新
+          </Button>
+          <Button
+            variant="ghost" size="sm" disabled={busy}
+            onClick={async () => {
+              if (billing === undefined) return
+              setBusy(true)
+              const r = await billing.repricing()
+              setMsg(r.ok ? `已重算 ${r.value.changed} 条未计价历史` : '重算失败')
+              setBusy(false)
+            }}
+          >
+            重算未计价历史
+          </Button>
+        </div>
+      </div>
+      {msg === '' ? null : <div className="ub-notice" data-kind="info" role="status">{msg}</div>}
+
+      <Card
+        title="自定义单价"
+        desc="每百万 token。保存后立即追加一条价表快照，只影响此后的新账；不写 ¥0 就不能把「没配价」伪装成免费。"
+      >
+        <FieldRow label="模型 key">
+          <Input
+            className="ub-input-md"
+            placeholder="provider/model"
+            value={draft.key}
+            onChange={(event) => setDraft({ ...draft, key: event.currentTarget.value })}
+          />
+        </FieldRow>
+        {priceField('输入', draft.input, (v) => setDraft({ ...draft, input: v }))}
+        {priceField('缓存读', draft.cacheRead, (v) => setDraft({ ...draft, cacheRead: v }))}
+        {priceField('缓存写', draft.cacheWrite, (v) => setDraft({ ...draft, cacheWrite: v }))}
+        {priceField('输出', draft.output, (v) => setDraft({ ...draft, output: v }))}
+        <div className="ub-field">
+          <label className="ub-field">
+            <span className="ub-field-label">币种</span>
             <select
+              className="ub-select"
               value={draft.currency}
-              onChange={(e) => setDraft({ ...draft, currency: e.target.value as Currency })}
-              style={{ marginLeft: 4 }}
+              onChange={(event) => setDraft({ ...draft, currency: event.currentTarget.value as Currency })}
             >
               <option value="CNY">CNY</option>
               <option value="USD">USD</option>
             </select>
           </label>
-          <button type="button" disabled={busy} onClick={() => { void save() }}>保存自定义单价</button>
+          <Button variant="primary" size="sm" disabled={busy} onClick={() => { void save() }}>
+            保存自定义单价
+          </Button>
         </div>
-      </section>
+      </Card>
 
-      <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 12 }}>
-        <thead>
-          <tr data-dsh-ub-sub><th align="left">模型</th><th align="right">输入</th><th align="right">缓存读</th><th align="right">缓存写</th><th align="right">输出</th><th align="left">币种</th><th align="left">操作</th></tr>
-        </thead>
-        <tbody>
-          {Object.entries(entries).map(([key, e]) => (
-            <tr key={key}>
-              <td>
-                {key}
-                {customKeys.includes(key) ? <span data-dsh-ub-badge data-kind="warn">自定义</span> : null}
-              </td>
-              <td align="right">{e.input}</td><td align="right">{e.cacheRead}</td>
-              <td align="right">{e.cacheWrite}</td><td align="right">{e.output}</td>
-              <td>{e.currency}</td>
-              <td>
-                {customKeys.includes(key) ? (
-                  <button type="button" disabled={busy} aria-label={`删除 ${key}`}
-                    onClick={() => { void remove(key) }}>删除</button>
-                ) : null}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <p data-dsh-ub-sub>单位：每百万 token。「立即刷新」与「重算」都以那一刻的账本与价表为准。</p>
-      <p data-dsh-ub-sub>上次快照时间以费率来源与「立即刷新」结果为准；账本记录每行都带所用快照 id 可追溯。</p>
+      <Card title="生效中的价目" desc="「立即刷新」与「重算」都以那一刻的账本与价表为准。">
+        <DataTable columns={columns} rows={rows} rowKey={(row) => row.key} empty="价表是空的（还没拉到任何价目）。" />
+      </Card>
 
-      <section style={{ marginTop: 16 }}>
-        <div data-dsh-ub-sub>
-          手工别名（把未收录 / 疑似改名的原始 id 绑到 canonical 模型；只在同一 provider 内合并展示，账本不动）
+      <Card
+        title="手工别名"
+        desc="把未收录 / 疑似改名的原始 id 绑到 canonical 模型；只在同一 provider 内合并展示，账本不动。"
+      >
+        <FieldRow label="原始 id">
+          <Input
+            className="ub-input-md"
+            placeholder="provider/raw-model"
+            value={aliasDraft.key}
+            onChange={(event) => setAliasDraft({ ...aliasDraft, key: event.currentTarget.value })}
+          />
+        </FieldRow>
+        <FieldRow label="canonical 模型">
+          <Input
+            className="ub-input-md"
+            placeholder="canonical-model"
+            value={aliasDraft.canonical}
+            onChange={(event) => setAliasDraft({ ...aliasDraft, canonical: event.currentTarget.value })}
+          />
+        </FieldRow>
+        <div className="ub-toolbar">
+          <Button variant="primary" size="sm" disabled={busy} onClick={() => { void bindAlias() }}>
+            保存别名
+          </Button>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 6 }}>
-          <label data-dsh-ub-sub>
-            原始 id
-            <input
-              placeholder="provider/raw-model"
-              value={aliasDraft.key}
-              onChange={(e) => setAliasDraft({ ...aliasDraft, key: e.target.value })}
-              style={{ width: 220, marginLeft: 4 }}
-            />
-          </label>
-          <label data-dsh-ub-sub>
-            canonical 模型
-            <input
-              placeholder="canonical-model"
-              value={aliasDraft.canonical}
-              onChange={(e) => setAliasDraft({ ...aliasDraft, canonical: e.target.value })}
-              style={{ width: 200, marginLeft: 4 }}
-            />
-          </label>
-          <button type="button" disabled={busy} onClick={() => { void bindAlias() }}>保存别名</button>
-        </div>
-        {aliases.length === 0 ? <p data-dsh-ub-sub>还没有手工别名。</p> : (
-          <ul data-dsh-ub-sub style={{ listStyle: 'none', padding: 0 }}>
+        {aliases.length === 0 ? <p className="ub-sub">还没有手工别名。</p> : (
+          <div className="ub-list">
             {aliases.map((a) => (
-              <li key={`${a.provider}\u0000${a.rawModel}`}>
-                {a.provider} / {a.rawModel} → {a.canonicalModel}
-                <button
-                  type="button"
-                  disabled={busy}
+              <div className="ub-alias-row" key={`${a.provider}\u0000${a.rawModel}`}>
+                <span className="ub-alias-text">
+                  {a.provider} / {a.rawModel} → {a.canonicalModel}
+                </span>
+                <Button
+                  variant="ghost" size="sm" disabled={busy}
                   aria-label={`解绑 ${a.provider}/${a.rawModel}`}
-                  style={{ marginLeft: 8 }}
                   onClick={() => { void unbindAlias(a.provider, a.rawModel) }}
-                >解绑</button>
-              </li>
+                >
+                  解绑
+                </Button>
+              </div>
             ))}
-          </ul>
+          </div>
         )}
-      </section>
+      </Card>
     </div>
   )
 }

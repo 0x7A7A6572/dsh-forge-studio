@@ -1,4 +1,4 @@
-/** 概览：Hero 本月费用 + 环比 + 预计 + KPI + 预算条 + 未收录提示 + 回填角标。 */
+/** 概览：Hero 本月费用 + 环比 + 预计 + 统计卡 + 预算进度条 + 未收录提示。 */
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import type { UsageBillingRemote } from '../core/remote.ts'
@@ -8,6 +8,8 @@ import { evaluateBudget } from '../../budget.ts'
 import {
   NON_FINITE_PLACEHOLDER, backfilledDisclosure, formatCny, formatInt, formatPct, isUnpricedTotal,
 } from '../core/format.ts'
+import { Card, StatCard } from './components/kit.tsx'
+import { BUDGET_LEVEL_LABEL, ProgressBar } from './components/progress-bar.tsx'
 import type { Overview } from '../../view.ts'
 
 export function TabOverview(props: {
@@ -42,7 +44,7 @@ export function TabOverview(props: {
     return () => { alive = false }
   }, [billing, state.range, state.includeSubagents])
 
-  if (data === null) return <div data-dsh-ub-empty>正在读取用量…</div>
+  if (data === null) return <div className="ub-empty" data-dsh-ub-empty>正在读取用量…</div>
   const { overview, budget } = data
   // 唯一判据（client/core/format.ts）：整份账一行都没定价时，本分区的金额级数字
   // （Hero、今日/本周、日均）都显示占位，绝不把「未知」读成「没花钱」。判据只在
@@ -56,37 +58,48 @@ export function TabOverview(props: {
   })
 
   return (
-    <div data-dsh-usage-billing>
-      <div data-dsh-ub-hero>{money(overview.totalCny)}</div>
-      <div data-dsh-ub-sub>
-        当前范围合计 · 今日 {money(overview.todayCny)} · 本周 {money(overview.weekCny)}
-        {/* 标记与金额同源（同一次 overview 响应）；缺席按 present 处理，与另外三个分区同一保守口径。 */}
-        {backfilledDisclosure(overview.hasBackfilled) ? <span data-dsh-ub-estimate> · 含安装前估算</span> : null}
+    <div className="ub-section" data-dsh-usage-billing>
+      <div>
+        <div className="ub-hero" data-dsh-ub-hero>{money(overview.totalCny)}</div>
+        <div className="ub-sub" data-dsh-ub-sub>
+          当前范围合计 · 今日 {money(overview.todayCny)} · 本周 {money(overview.weekCny)}
+          {/* 标记与金额同源（同一次 overview 响应）；缺席按 present 处理，与另外三个分区同一保守口径。 */}
+          {backfilledDisclosure(overview.hasBackfilled) ? <span className="ub-estimate" data-dsh-ub-estimate> · 含安装前估算</span> : null}
+        </div>
       </div>
 
       {budget.enabled ? (
-        <section style={{ marginTop: 14 }}>
-          <div data-dsh-ub-sub>预算 {formatCny(budget.monthlyCny)} · 已用 {formatPct(spend.pct, 0)}</div>
-          <div data-dsh-ub-bar data-level={spend.level}>
-            <i style={{ width: `${Math.min(100, spend.pct * 100)}%` }} />
+        <Card title="月度预算">
+          <div className="ub-bar-meta">
+            <span>预算 {formatCny(budget.monthlyCny)}</span>
+            <span>·</span>
+            <span>已用 {formatPct(spend.pct, 0)}</span>
+            <span>·</span>
+            <span>{BUDGET_LEVEL_LABEL[spend.level]}</span>
+            {spend.pct >= 1 ? <span className="ub-danger">超支 {formatCny(overview.totalCny - budget.monthlyCny)}</span> : null}
           </div>
-        </section>
+          <ProgressBar
+            level={spend.level}
+            ratio={spend.pct}
+            label={`月度预算已用 ${formatPct(spend.pct, 0)}`}
+          />
+        </Card>
       ) : null}
 
-      <section data-dsh-ub-kpis style={{ marginTop: 16 }}>
-        <div data-dsh-ub-kpi><div data-dsh-ub-sub>日均</div><div>{money(overview.avgDailyCny)}</div></div>
-        <div data-dsh-ub-kpi><div data-dsh-ub-sub>调用次数</div><div>{formatInt(overview.calls)}</div></div>
-        <div data-dsh-ub-kpi><div data-dsh-ub-sub>缓存命中率</div><div>{formatPct(overview.cacheHitRate)}</div></div>
-        <div data-dsh-ub-kpi>
-          <div data-dsh-ub-sub>未收录模型</div>
-          <div>{overview.unpricedModels.length === 0 ? '0' : `${overview.unpricedModels.length} 未收录`}</div>
-        </div>
-      </section>
+      <div className="ub-stats">
+        <StatCard label="日均" value={money(overview.avgDailyCny)} />
+        <StatCard label="调用次数" value={formatInt(overview.calls)} />
+        <StatCard label="缓存命中率" value={formatPct(overview.cacheHitRate)} />
+        <StatCard
+          label="未收录模型"
+          value={overview.unpricedModels.length === 0 ? '0' : `${overview.unpricedModels.length} 未收录`}
+        />
+      </div>
 
-      {/* 未收录提示条是**可关的偏好**（display.showUnpricedWarning）；上面的 KPI 计数与徽标
+      {/* 未收录提示条是**可关的偏好**（display.showUnpricedWarning）；上面的统计与徽标
           是事实，不受该开关影响 —— 关掉的只是这条解释性文案。 */}
       {overview.unpricedModels.length > 0 && showUnpricedWarning ? (
-        <p data-dsh-ub-estimate>
+        <p className="ub-estimate" data-dsh-ub-estimate>
           {overview.unpricedRows} 条记录涉及 {overview.unpricedModels.length} 个未收录模型（
           {overview.unpricedModels.slice(0, 3).join('、')}），已按 ¥0 计但未静默忽略 —— 到「费率」页补单价即可。
         </p>

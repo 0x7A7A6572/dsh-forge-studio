@@ -1,4 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
+
+// 宿主 UI 原语是浏览器包（lib 里 import 了只在宿主 app 打包时才解析得到的依赖），
+// Node 里直接 import 会炸 —— 换成透传替身，与 plugin-memory / plugin-daily-log 同一姿态。
+vi.mock('@deepseek-ai/dsh-client-ui-primitives', async () => await import('./primitives-stub.tsx'))
 import { apply } from '../src/client/index.ts'
 import { ENTRY_SLOT_ID, OVERLAY_SLOT_ID, SETTINGS_SECTION_ID } from '../src/client/index.ts'
 import { baseConfig, fakeScope } from './fake-scope.ts'

@@ -1,14 +1,17 @@
 /**
- * 设置页（slot: settings.section）：预算、显示偏好、价表刷新、口径说明。
+ * 设置页（slot: settings.section）：预算、显示偏好、价表刷新、账本状态、口径说明。
+ *
+ * 版式对齐 plugin-memory 的设置分区：标题 + 版本号 + 引言 → 分组卡片（开关行 + 说明）
+ * → 常驻口径说明。开关一律用 primitives 的 Switch 原语（role=switch + 必填可访问名），
+ * 不再手写 `<input type="checkbox">`。
  *
  * 设置快照走宿主真实的 `ctx.settingsScope.bind<T>({ namespace })` 面
  * （`getSnapshot` / `subscribe`，与 plugin-daily-log 的设置分区同一姿态）——
  * 本地再声明一个 `{ get, watch }` 影子契约在宿主里根本不存在。
- * 样式由 client `apply` 经 `ctx.effect` 注入（这里不再重复注入：没有 ctx 可用，
- * 且同一 fiber 注入两次只会多留一个节点）。
+ * 样式由 client `apply` 经 `ctx.effect` 注入（这里不再重复注入）。
  *
- * 三个开关都**真的写**：预算与子代理口径写宿主设置，子代理开关同时写视图 store，
- * 使当前弹窗立即按新口径重取数据（只写一半的话复选框与页面上显示的账会互相打脸）。
+ * 四个开关都**真的写**：预算与显示口径写宿主设置，子代理开关同时写视图 store，
+ * 使当前弹窗立即按新口径重取数据（只写一半的话开关与页面上的账会互相打脸）。
  */
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
@@ -16,6 +19,8 @@ import type { UsageBillingRemote } from '../core/remote.ts'
 import type { BillingStore } from '../core/store.ts'
 import type { BillingScope } from '../core/config.ts'
 import { NON_FINITE_PLACEHOLDER } from '../core/format.ts'
+import { pluginVersion } from '../../version.ts'
+import { Card, StatCard, SwitchRow } from './components/kit.tsx'
 import { BackfillLedgerNote } from './backfill-notice.tsx'
 
 export function SettingsSection(props: {
@@ -29,8 +34,8 @@ export function SettingsSection(props: {
     () => scope.getSnapshot(),
   )
   const cfg = settings.value
-  const [status, setStatus] = useState<{ installAt: number; rows: number; sessions: number } | null>(null)
-  const [snapshotId, setSnapshotId] = useState('—')
+  const [status, setStatus] = useState<{ installAt: number; rows: number; sessions: number; snapshots: number } | null>(null)
+  const [snapshotId, setSnapshotId] = useState(NON_FINITE_PLACEHOLDER)
 
   useEffect(() => {
     // 远程面首帧可能未挂载：缺席即早退，等 billing 变化后 effect 重跑。
@@ -56,7 +61,7 @@ export function SettingsSection(props: {
       .catch(() => { /* 写失败时不回弹：快照仍是 host 的真值 */ })
   }, [scope, cfg])
 
-  /** 预算开关：写宿主设置（`budget.enabled`），账本页的预算条下一帧跟随快照变化。 */
+  /** 预算开关：写宿主设置（`budget.enabled`），弹窗里的预算条下一帧跟随快照变化。 */
   const writeBudgetEnabled = useCallback((next: boolean) => {
     void scope.set('budget', { ...(cfg?.budget ?? {}), enabled: next })
       .catch(() => { /* 同上 */ })
@@ -81,39 +86,68 @@ export function SettingsSection(props: {
       .catch(() => { /* 同上 */ })
   }, [scope, cfg])
 
+  const locked = !settings.writable
+
   return (
-    <section data-dsh-usage-billing>
-      <h3>月度预算</h3>
-      <label>
-        <input type="checkbox" checked={cfg?.budget?.enabled ?? false} disabled={!settings.writable}
-          onChange={(e) => { writeBudgetEnabled(e.target.checked) }} /> 启用预算提醒（50% / 80% / 100% 各提醒一次）
-      </label>
-      {/* 未配置时显示占位而不是「0 元」：0 是一个真实的预算值，与「没设置」不是一回事。 */}
-      <div data-dsh-ub-sub>
-        预算金额：{cfg?.budget?.monthlyCny === undefined ? NON_FINITE_PLACEHOLDER : `${cfg.budget.monthlyCny} 元`}
-        （在「计费」页的费率分区随账本一起查看）
+    <section className="ub-section" data-dsh-usage-billing>
+      <div className="ub-title-row">
+        <h2 className="ub-title">计费</h2>
+        <span className="ub-version" title="插件版本">v{pluginVersion()}</span>
       </div>
+      <p className="ub-intro">
+        从既有会话日志聚合真实 token 用量，按事件发生时刻的价表快照锁定费用。
+        这里只管口径与提醒；账目本身在侧栏的「计费」入口里看。
+      </p>
 
-      <h3>显示</h3>
-      <label>
-        <input type="checkbox" checked={cfg?.pricing?.autoRefresh ?? true} disabled={!settings.writable}
-          onChange={(e) => { writeAutoRefresh(e.target.checked) }} /> 自动联网刷新价表与汇率（6 小时一次）
-      </label>
-      <label>
-        <input type="checkbox" checked={cfg?.display?.includeSubagents ?? true} disabled={!settings.writable}
-          onChange={(e) => { writeIncludeSubagents(e.target.checked) }} /> 统计包含子代理会话
-      </label>
-      <label>
-        <input type="checkbox" checked={cfg?.display?.showUnpricedWarning ?? true} disabled={!settings.writable}
-          onChange={(e) => { writeShowUnpricedWarning(e.target.checked) }} /> 概览页显示「未收录模型」提示条
-      </label>
+      <Card title="预算">
+        <SwitchRow
+          title="启用预算提醒"
+          desc="跨 50% / 80% / 100% 各提醒一次，按「月份 + 档位」去重；只在你打开计费弹窗时判定，没看到的提醒不会被记成已提醒。"
+          checked={cfg?.budget?.enabled ?? false}
+          disabled={locked}
+          onChange={writeBudgetEnabled}
+        />
+        {/* 未配置时显示占位而不是「0 元」：0 是一个真实的预算值，与「没设置」不是一回事。 */}
+        <div className="ub-sub">
+          预算金额：{cfg?.budget?.monthlyCny === undefined ? NON_FINITE_PLACEHOLDER : cfg.budget.monthlyCny + ' 元'}
+          （进度条在「计费」弹窗的概览分区随账本一起看）
+        </div>
+      </Card>
 
-      <h3>状态</h3>
-      <div data-dsh-ub-sub>
-        账本 {status?.rows ?? 0} 行 · 已折叠 {status?.sessions ?? 0} 个会话
-      </div>
+      <Card title="显示与价表">
+        <SwitchRow
+          title="自动联网刷新价表"
+          desc="每 6 小时拉一次上游价表与汇率；关掉之后只用内置价与你手填的自定义价。"
+          checked={cfg?.pricing?.autoRefresh ?? true}
+          disabled={locked}
+          onChange={writeAutoRefresh}
+        />
+        <SwitchRow
+          title="统计包含子代理会话"
+          desc="关掉之后子代理会话的用量不计入总额、趋势与明细。"
+          checked={cfg?.display?.includeSubagents ?? true}
+          disabled={locked}
+          onChange={writeIncludeSubagents}
+        />
+        <SwitchRow
+          title="概览显示「未收录模型」提示条"
+          desc="只关掉概览页那条解释性文案；未收录的计数与徽标是事实，永远保留。"
+          checked={cfg?.display?.showUnpricedWarning ?? true}
+          disabled={locked}
+          onChange={writeShowUnpricedWarning}
+        />
+      </Card>
 
-      <h3>计费口径</h3>
+      <Card title="账本状态">
+        <div className="ub-stats">
+          <StatCard label="账本行数" value={status?.rows ?? 0} hint="已折叠的原始记录" />
+          <StatCard label="已折叠会话" value={status?.sessions ?? 0} />
+          <StatCard label="价表快照" value={status?.snapshots ?? 0} hint="每笔价目变更一份" />
+        </div>
+        {/* 状态区在 status 未到 / 取数失败时停在 0 行：这是占位，不是「账本是空的」。 */}
+        <div className="ub-sub">账本 {status?.rows ?? 0} 行 · 已折叠 {status?.sessions ?? 0} 个会话</div>
+      </Card>
+
       {/* status 未到（或取数失败）时传 null：说明段渲染占位，绝不把「不知道」印成 1970。
           status 到了但 installAt 不是正数（命名空间里从未落盘）同样按未知处理。 */}
       <BackfillLedgerNote installAt={status === null ? null : status.installAt} snapshotId={snapshotId} />

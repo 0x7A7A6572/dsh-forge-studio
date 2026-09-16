@@ -19,13 +19,17 @@ import { evaluateBudget } from '../src/budget.ts'
 import type { RangeKind } from '../src/time.ts'
 import { baseConfig, fakeScope } from './fake-scope.ts'
 
+// 宿主 UI 原语是浏览器包（lib 里 import 了只在宿主 app 打包时才解析得到的依赖），
+// Node 里直接 import 会炸 —— 换成透传替身，与 plugin-memory / plugin-daily-log 同一姿态。
+vi.mock('@deepseek-ai/dsh-client-ui-primitives', async () => await import('./primitives-stub.tsx'))
+
 // 本仓没有 vitest 配置、`globals` 关闭，RTL 的自动 cleanup 依赖全局 afterEach 因而失效；
 // 不显式清理的话上一用例的 DOM 会留下（表现就是 getByRole('button') 命中多个）。
 afterEach(() => { cleanup() })
 
 describe('BackfillNotice', () => {
   it('未关闭时显示提示，含估算起点时刻，并如实说明它来自本次宿主加载而非首次安装', () => {
-    const { container } = render(
+    const { baseElement: container } = render(
       <BackfillNotice installAt={Date.UTC(2026, 8, 16, 6, 0)} dismissed={false} writable onDismiss={() => {}} />,
     )
     expect(container.textContent).toContain('安装前的历史用量按')
@@ -36,7 +40,7 @@ describe('BackfillNotice', () => {
   })
 
   it('已关闭时完全不渲染', () => {
-    const { container } = render(<BackfillNotice installAt={1} dismissed writable onDismiss={() => {}} />)
+    const { baseElement: container } = render(<BackfillNotice installAt={1} dismissed writable onDismiss={() => {}} />)
     expect(container.textContent).toBe('')
   })
 
@@ -118,11 +122,11 @@ const Tab = (props: {
 
 describe('Sparkline / BarChart', () => {
   it('空数据不渲染 svg 内部元素也不抛', () => {
-    const { container } = render(<Sparkline values={[]} />)
+    const { baseElement: container } = render(<Sparkline values={[]} />)
     expect(container.querySelector('polyline')).toBeNull()
   })
   it('柱状图每根柱都是 rect，tooltip 由调用方格式化（不打印原始浮点）', () => {
-    const { container } = render(
+    const { baseElement: container } = render(
       <BarChart values={[1, 2, 3]} labels={['a', 'b', 'c']} width={90} height={30}
         formatValue={(n) => `¥${n.toFixed(2)}`} />,
     )
@@ -134,7 +138,7 @@ describe('Sparkline / BarChart', () => {
 describe('Dashboard', () => {
   it('弹窗关闭时不渲染面板', () => {
     const store = createBillingStore({ open: false })
-    const { container } = render(dash({ billing: noopRemote(), store }))
+    const { baseElement: container } = render(dash({ billing: noopRemote(), store }))
     expect(container.querySelector('[data-dsh-ub-panel]')).toBeNull()
   })
 
@@ -148,15 +152,21 @@ describe('Dashboard', () => {
     expect(screen.getByText('费率')).toBeTruthy()
   })
 
-  it('遮罩层自带 pointer-events（浮层本身是 click-through 的）', () => {
+  it('用宿主 Modal：role=dialog + aria-modal + 可访问的关闭按钮（不再自绘遮罩）', async () => {
     const store = createBillingStore({ open: true })
-    const { container } = render(dash({ billing: noopRemote(), store }))
-    expect(container.querySelector('[data-dsh-ub-overlay]')).toBeTruthy()
+    render(dash({ billing: noopRemote(), store }))
+    const dialog = screen.getByRole('dialog', { name: '计费' })
+    expect(dialog.getAttribute('aria-modal')).toBe('true')
+    expect(screen.getByRole('button', { name: '关闭' })).toBeTruthy()
+    // 弹窗是 portal 到 body 的：它不在 render 返回的 container 里（真环境同样如此）。
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '关闭' })) })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(store.getSnapshot().open).toBe(false)
   })
 
   it('远程面缺席（首帧 $mount 未完成）时每个 tab 都不抛', async () => {
     const store = createBillingStore({ open: true })
-    const { container } = render(dash({ billing: undefined, store }))
+    const { baseElement: container } = render(dash({ billing: undefined, store }))
     // 默认概览 tab：effect 早退，停在读取态而不是 TypeError。
     expect(await screen.findByText('正在读取用量…')).toBeTruthy()
     for (const tab of ['趋势', '热力图', '明细', '费率']) {
@@ -168,7 +178,7 @@ describe('Dashboard', () => {
   it('回填提示条：弹窗顶部渲染，点「知道了」写宿主 notices 后永久消失（重挂也不回来）', async () => {
     const store = createBillingStore({ open: true })
     const h = fakeScope(baseConfig())
-    const { container, unmount } = render(<Dashboard billing={noopRemote()} store={store} scope={h.scope} />)
+    const { baseElement: container, unmount } = render(<Dashboard billing={noopRemote()} store={store} scope={h.scope} />)
     // 安装时刻来自 status()（异步），提示条在 status 落地后才出现。
     await waitFor(() => { expect(container.querySelector('[data-dsh-ub-notice]')).toBeTruthy() })
 
@@ -183,13 +193,13 @@ describe('Dashboard', () => {
     unmount()
     const again = render(<Dashboard billing={noopRemote()} store={createBillingStore({ open: true })} scope={h.scope} />)
     await act(async () => { await Promise.resolve() })
-    expect(again.container.querySelector('[data-dsh-ub-notice]')).toBeNull()
+    expect(again.baseElement.querySelector('[data-dsh-ub-notice]')).toBeNull()
   })
 
   it('只读 scope：提示条的「知道了」被禁用，且点了不会写宿主（不是写了静默失败）', async () => {
     const store = createBillingStore({ open: true })
     const h = fakeScope(baseConfig(), { writable: false })
-    const { container } = render(<Dashboard billing={noopRemote()} store={store} scope={h.scope} />)
+    const { baseElement: container } = render(<Dashboard billing={noopRemote()} store={store} scope={h.scope} />)
     await waitFor(() => { expect(container.querySelector('[data-dsh-ub-notice] button')).toBeTruthy() })
     const dismiss = container.querySelector('[data-dsh-ub-notice] button') as HTMLButtonElement
     // 门控与设置页的三个开关同一姿态（那里是 disabled={!settings.writable}）。
@@ -210,15 +220,15 @@ describe('Dashboard', () => {
       status: async () => { throw new Error('wire down') },
     } as never)} store={store} scope={h.scope} />)
     await act(async () => { await Promise.resolve(); await Promise.resolve() })
-    expect(down.container.querySelector('[data-dsh-ub-notice]')).toBeNull()
-    expect(down.container.textContent).not.toContain('1970')
+    expect(down.baseElement.querySelector('[data-dsh-ub-notice]')).toBeNull()
+    expect(down.baseElement.textContent).not.toContain('1970')
 
     const zero = render(<Dashboard billing={noopRemote({
       status: async () => ({ ok: true, value: { installAt: 0, rows: 0, sessions: 0, snapshots: 0 } }),
     } as never)} store={store} scope={h.scope} />)
     await act(async () => { await Promise.resolve(); await Promise.resolve() })
-    expect(zero.container.querySelector('[data-dsh-ub-notice]')).toBeNull()
-    expect(zero.container.textContent).not.toContain('1970')
+    expect(zero.baseElement.querySelector('[data-dsh-ub-notice]')).toBeNull()
+    expect(zero.baseElement.textContent).not.toContain('1970')
   })
 
   /**
@@ -236,7 +246,7 @@ describe('Dashboard', () => {
 
   it('跨档时弹窗里一次性提醒，并把「已提醒」按「月份 + 档位」写回宿主 notices', async () => {
     const h = fakeScope(baseConfig({ budget: { enabled: true, monthlyCny: 100 } }))
-    const { container } = render(
+    const { baseElement: container } = render(
       <Dashboard billing={budgetRemote(82)} store={createBillingStore({ open: true })} scope={h.scope} />,
     )
     expect(await screen.findByText(/跨过 80% 档/)).toBeTruthy()
@@ -260,7 +270,7 @@ describe('Dashboard', () => {
    */
   it('两个写者交错：关闭回填提示条不会把已落盘的预算跨档标记覆盖掉', async () => {
     const h = fakeScope(baseConfig({ budget: { enabled: true, monthlyCny: 100 } }), { settle: true })
-    const { container } = render(
+    const { baseElement: container } = render(
       <Dashboard billing={budgetRemote(82)} store={createBillingStore({ open: true })} scope={h.scope} />,
     )
     // 跨档写已排队（尚未结算），提示条还在屏幕上。
@@ -284,7 +294,7 @@ describe('Dashboard', () => {
       budget: { enabled: true, monthlyCny: 100 },
       notices: { backfillDismissed: true, budgetNotified: { '2026-09': '2' } },
     }))
-    const { container } = render(
+    const { baseElement: container } = render(
       <Dashboard billing={budgetRemote(90)} store={createBillingStore({ open: true })} scope={h.scope} />,
     )
     await screen.findByText('¥90.00')
@@ -295,7 +305,7 @@ describe('Dashboard', () => {
 
   it('未跨档（低于 50%）不提醒', async () => {
     const h = fakeScope(baseConfig({ budget: { enabled: true, monthlyCny: 100 } }))
-    const { container } = render(
+    const { baseElement: container } = render(
       <Dashboard billing={budgetRemote(10)} store={createBillingStore({ open: true })} scope={h.scope} />,
     )
     await screen.findByText('¥10.00')
@@ -316,7 +326,7 @@ describe('Dashboard', () => {
         } }
       },
     } as never)
-    const { container } = render(
+    const { baseElement: container } = render(
       <Dashboard billing={billing} store={createBillingStore({ open: false })} scope={h.scope} />,
     )
     await act(async () => { await Promise.resolve() })
@@ -344,7 +354,7 @@ describe('TabOverview', () => {
   })
 
   it('预算超支时进度条 level=over', async () => {
-    const { container } = render(<Tab billing={overviewRemote({ totalCny: 150 })} store={createBillingStore({ open: true })} />)
+    const { baseElement: container } = render(<Tab billing={overviewRemote({ totalCny: 150 })} store={createBillingStore({ open: true })} />)
     await screen.findByText('¥150.00')
     expect(container.querySelector('[data-dsh-ub-bar]')!.getAttribute('data-level')).toBe('over')
   })
@@ -373,7 +383,7 @@ describe('TabOverview', () => {
   })
 
   it('整份账一行都没定价：Hero 与日均显示占位，绝不显示 ¥0.00', async () => {
-    const { container } = render(<Tab
+    const { baseElement: container } = render(<Tab
       billing={overviewRemote({ totalCny: 0, todayCny: 0, weekCny: 0, avgDailyCny: 0, calls: 3, unpricedModels: ['x/mystery'], unpricedRows: 3 })}
       store={createBillingStore({ open: true })} />)
     await waitFor(() => {
@@ -387,7 +397,7 @@ describe('TabOverview', () => {
   })
 
   it('真实零（无未收录模型）时 Hero 保留 ¥0.00 —— 占位不能吞掉合法结果', async () => {
-    const { container } = render(<Tab
+    const { baseElement: container } = render(<Tab
       billing={overviewRemote({ totalCny: 0, todayCny: 0, weekCny: 0, avgDailyCny: 0, unpricedModels: [], unpricedRows: 0 })}
       store={createBillingStore({ open: true })} />)
     await waitFor(() => {
@@ -459,9 +469,11 @@ describe('TabOverview', () => {
 describe('TabTrend', () => {
   it('费用/Token 指示可切换且渲染柱状图', async () => {
     const store = createBillingStore({ open: true })
-    const { container } = render(<TabTrend billing={overviewRemote({})} store={store} />)
-    await screen.findByRole('img', { name: '柱状图' })
-    expect(container.querySelectorAll('rect').length).toBeGreaterThan(0)
+    const { baseElement: container } = render(<TabTrend billing={overviewRemote({})} store={store} />)
+    // echarts 在 jsdom 里没有 canvas 可画，会按设计降级到手绘 SVG 柱状图
+    // （trend-chart.tsx），所以这条断言跑的是那条真实降级路径。
+    await screen.findByRole('img', { name: '柱状图' }, { timeout: 5000 })
+    await waitFor(() => { expect(container.querySelectorAll('rect').length).toBeGreaterThan(0) })
   })
 
   it('evaluateBudget 与 UI 档位一致（同一份纯函数，不重复实现）', () => {
@@ -476,8 +488,9 @@ describe('TabTrend', () => {
         hasBackfilled: false, unpricedModels: [],
       } }),
     } as never)
-    const { container } = render(<TabTrend billing={billing} store={store} />)
-    await screen.findByRole('img', { name: '柱状图' })
+    const { baseElement: container } = render(<TabTrend billing={billing} store={store} />)
+    await screen.findByRole('img', { name: '柱状图' }, { timeout: 5000 })
+    await waitFor(() => { expect(container.querySelector('title')).not.toBeNull() })
     const costTitle = container.querySelector('title')!.textContent ?? ''
     expect(costTitle).toContain('¥1,234.57')
     expect(costTitle).not.toContain('1234.5678901234')
@@ -511,7 +524,7 @@ describe('TabTrend', () => {
       } }),
     } as never)
     render(<TabTrend billing={billing} store={createBillingStore({ open: true })} />)
-    await screen.findByRole('img', { name: '柱状图' })
+    await screen.findByRole('img', { name: '柱状图' }, { timeout: 5000 })
     expect(screen.queryByText('含安装前估算')).toBeNull()
   })
 
@@ -524,7 +537,9 @@ describe('TabTrend', () => {
     const total = await screen.findByText(/合计/)
     expect(total.textContent).toContain('—')
     expect(total.textContent).not.toContain('¥0.00')
-    expect(screen.getByText(/2026-09-15/).textContent).toContain('—')
+    // 逐日表里的费用列与合计同一口径：整份账未定价时是占位。
+    const row = screen.getAllByRole('row').find((r) => (r.textContent ?? '').includes('2026-09-15'))
+    expect(row?.textContent).toContain('—')
   })
 
   it('真实零（无未收录模型）时合计保留 ¥0.00', async () => {
@@ -620,7 +635,7 @@ const detailUnpricedRemote = (unpricedModels: string[] = ['openai/ghost-model'])
 
 describe('TabHeatmap', () => {
   it('渲染 5 档热力格，活跃天与总天数是文字', async () => {
-    const { container } = render(<TabHeatmap billing={heatRemote()} store={createBillingStore({ open: true })} />)
+    const { baseElement: container } = render(<TabHeatmap billing={heatRemote()} store={createBillingStore({ open: true })} />)
     await screen.findByText(/活跃/)
     expect(container.querySelectorAll('[data-dsh-ub-heat] > span').length).toBeGreaterThanOrEqual(2)
   })
@@ -647,7 +662,7 @@ describe('TabHeatmap', () => {
         { day: '2026-09-02', costCny: 0, input: 0, cacheRead: 0, cacheWrite: 0, output: 0, calls: 1 },
       ], hasBackfilled: false, unpricedModels: ['x/mystery'] } }),
     } as never)
-    const { container } = render(<TabHeatmap billing={billing} store={createBillingStore({ open: true })} />)
+    const { baseElement: container } = render(<TabHeatmap billing={billing} store={createBillingStore({ open: true })} />)
     await screen.findByText(/活跃/)
     const titles = [...container.querySelectorAll('[data-dsh-ub-heat] > span')].map((s) => s.getAttribute('title') ?? '')
     expect(titles.join('|')).toContain('—')
@@ -703,8 +718,8 @@ describe('TabDetail', () => {
   })
 
   it('整份账一行都没定价：工作区 / 会话金额列写「未收录」而不是 ¥0.00', async () => {
-    const { container } = render(<TabDetail billing={detailUnpricedRemote()} store={createBillingStore({ open: true })} />)
-    const workspace = await screen.findByText(/D:\\codes\\demo/)
+    const { baseElement: container } = render(<TabDetail billing={detailUnpricedRemote()} store={createBillingStore({ open: true })} />)
+    const workspace = await screen.findByRole('button', { name: /D:\\codes\\demo/ })
     // 工作区行已经是「未收录」而不是 ¥0.00；展开到会话行同样。
     expect(workspace.textContent).toContain('未收录')
     workspace.click()
@@ -715,7 +730,7 @@ describe('TabDetail', () => {
 
   it('真实零（响应没带未收录清单）：工作区金额列保留 ¥0.00 —— 同一处占位不能吞掉合法结果', async () => {
     render(<TabDetail billing={detailUnpricedRemote([])} store={createBillingStore({ open: true })} />)
-    const workspace = await screen.findByText(/D:\\codes\\demo/)
+    const workspace = await screen.findByRole('button', { name: /D:\\codes\\demo/ })
     expect(workspace.textContent).toContain('¥0.00')
     expect(screen.queryByText('未收录')).toBeNull()
   })
@@ -967,43 +982,43 @@ describe('SettingsSection', () => {
     const store = createBillingStore({ open: true })
     render(<SettingsSection billing={pricingRemote()} scope={h.scope} store={store} />)
 
-    const box = screen.getByRole('checkbox', { name: /统计包含子代理会话/ }) as HTMLInputElement
-    expect(box.checked).toBe(true)
+    const box = screen.getByRole('switch', { name: /统计包含子代理会话/ })
+    expect(box.getAttribute('aria-checked')).toBe('true')
     await act(async () => { fireEvent.click(box) })
 
     expect(h.writes).toContainEqual({
       field: 'display', value: { showUnpricedWarning: true, includeSubagents: false },
     })
     expect(store.includeSubagents).toBe(false)
-    // 快照折回后复选框必须跟着变（不是只在本地 state 里翻）。
-    expect((screen.getByRole('checkbox', { name: /统计包含子代理会话/ }) as HTMLInputElement).checked).toBe(false)
+    // 快照折回后开关必须跟着变（不是只在本地 state 里翻）。
+    expect(screen.getByRole('switch', { name: /统计包含子代理会话/ }).getAttribute('aria-checked')).toBe('false')
   })
 
   it('未收录提示条开关往返：写 display.showUnpricedWarning 并随快照回弹', async () => {
     const h = fakeScope(baseConfig())
     render(<SettingsSection billing={pricingRemote()} scope={h.scope} store={createBillingStore({ open: true })} />)
 
-    const box = screen.getByRole('checkbox', { name: /未收录模型/ }) as HTMLInputElement
-    expect(box.checked).toBe(true)
+    const box = screen.getByRole('switch', { name: /未收录模型/ })
+    expect(box.getAttribute('aria-checked')).toBe('true')
     await act(async () => { fireEvent.click(box) })
 
     expect(h.writes).toContainEqual({
       field: 'display', value: { showUnpricedWarning: false, includeSubagents: true },
     })
-    // 快照折回后复选框必须跟着变（不是只在本地 state 里翻）。
-    expect((screen.getByRole('checkbox', { name: /未收录模型/ }) as HTMLInputElement).checked).toBe(false)
+    // 快照折回后开关必须跟着变（不是只在本地 state 里翻）。
+    expect(screen.getByRole('switch', { name: /未收录模型/ }).getAttribute('aria-checked')).toBe('false')
   })
 
   it('预算开关往返：写 budget.enabled 并随快照回弹', async () => {
     const h = fakeScope(baseConfig())
     render(<SettingsSection billing={pricingRemote()} scope={h.scope} store={createBillingStore({ open: true })} />)
 
-    const box = screen.getByRole('checkbox', { name: /启用预算提醒/ }) as HTMLInputElement
-    expect(box.checked).toBe(false)
+    const box = screen.getByRole('switch', { name: /启用预算提醒/ })
+    expect(box.getAttribute('aria-checked')).toBe('false')
     await act(async () => { fireEvent.click(box) })
 
     expect(h.writes).toContainEqual({ field: 'budget', value: { enabled: true, monthlyCny: 100 } })
-    expect((screen.getByRole('checkbox', { name: /启用预算提醒/ }) as HTMLInputElement).checked).toBe(true)
+    expect(screen.getByRole('switch', { name: /启用预算提醒/ }).getAttribute('aria-checked')).toBe('true')
   })
 
   it('预算金额未配置时显示占位而不是「0 元」', () => {
@@ -1021,7 +1036,7 @@ describe('SettingsSection', () => {
         status: async () => { throw new Error('wire down') },
         pricing: async () => { throw new Error('wire down') },
       } as never)
-      const { container } = render(<SettingsSection billing={billing} scope={h.scope} store={createBillingStore({ open: true })} />)
+      const { baseElement: container } = render(<SettingsSection billing={billing} scope={h.scope} store={createBillingStore({ open: true })} />)
       expect(await screen.findByText(/账本 0 行/)).toBeTruthy()
       // installAt 未知时口径说明必须渲染占位：把「不知道」交给 formatDateTime 会印出
       // 「1970-01-01 08:00」，那是一个看起来像事实的假日期（ledger 已有此 ruling）。
@@ -1038,7 +1053,7 @@ describe('SettingsSection', () => {
     const billing = noopRemote({
       status: async () => ({ ok: true, value: { installAt: 0, rows: 0, sessions: 0, snapshots: 0 } }),
     } as never)
-    const { container } = render(<SettingsSection billing={billing} scope={h.scope} store={createBillingStore({ open: true })} />)
+    const { baseElement: container } = render(<SettingsSection billing={billing} scope={h.scope} store={createBillingStore({ open: true })} />)
     expect(await screen.findByText(/账本 0 行/)).toBeTruthy()
     expect(container.textContent).not.toContain('1970')
     expect(screen.getByText(/本次加载时刻 —/)).toBeTruthy()

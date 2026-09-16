@@ -1,9 +1,24 @@
-/** 侧栏入口卡（slot: sidebar.footer.action）—— 本月费用 + 近 7 天 sparkline。 */
+/**
+ * 侧栏入口卡（slot: sidebar.footer.action）—— 本月费用 + 预算进度条 + 近 7 天 sparkline。
+ *
+ * 这一屏刻意**只留两个数字**（本月合计、今日）与一条预算进度条：
+ * - 日期（`09-16`）：侧栏里没人靠它定位，今日费用自带「今日」两个字就够了；
+ * - 「内置价」徽标：价表来源是费率页的解释，不该在侧栏占用注意力；
+ * - 「N 未收录」徽标：未收录的**事实**在概览 / 明细 / 费率三页都有明确落点，
+ *   侧栏这条只有 10px 的字既说不清、又容易被读成「这些钱没算进去」的相反意思；
+ * - 「含安装前估算」角标：金额同源的披露仍**全部保留**在弹窗与概览页（那里才有空间把
+ *   「估算起点是本次宿主加载时刻」讲清楚），侧栏只去掉标记本身，不弱化口径。
+ *
+ * 预算进度条的颜色只由 `evaluateBudget` 的档位（ok / warn / over）决定，
+ * 与概览页那条是同一个组件、同一份阈值。
+ */
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { UsageBillingRemote } from '../core/remote.ts'
 import type { BillingStore } from '../core/store.ts'
-import { backfilledDisclosure, formatCny, formatDay, isUnpricedTotal } from '../core/format.ts'
+import { formatCny, formatPct, isUnpricedTotal } from '../core/format.ts'
+import { evaluateBudget } from '../../budget.ts'
+import { ProgressBar } from './components/progress-bar.tsx'
 import { Sparkline } from './chart.tsx'
 import type { DailyPoint, Overview } from '../../view.ts'
 
@@ -38,9 +53,8 @@ export function EntryCard(props: EntryCardProps): JSX.Element {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot)
   const includeSubagents = state.includeSubagents
   const [overview, setOverview] = useState<Overview | null>(null)
-  const [todayKey, setTodayKey] = useState('')
+  const [budget, setBudget] = useState<{ enabled: boolean; monthlyCny: number } | null>(null)
   const [days, setDays] = useState<DailyPoint[]>([])
-  const [pricingDegraded, setPricingDegraded] = useState(false)
   const [load, setLoad] = useState<LoadState>('loading')
 
   useEffect(() => {
@@ -53,21 +67,20 @@ export function EntryCard(props: EntryCardProps): JSX.Element {
     // 挂起兜底：到点还没拿到任何一帧就转失败态（下面的正常返回会清掉它）。
     const timer = setTimeout(() => { if (alive) setLoad((s) => (s === 'loading' ? 'failed' : s)) }, FETCH_TIMEOUT_MS)
     void (async () => {
-      const [o, d, p] = await Promise.all([
+      // 只取两条：预算随 overview 一起回来，价表来源（曾经的「内置价」徽标）侧栏不再需要。
+      const [o, d] = await Promise.all([
         billing.overview('month', includeSubagents),
         billing.daily('7d', includeSubagents),
-        billing.pricing(),
       ])
       if (!alive) return
       clearTimeout(timer)
       if (o.ok) {
         setOverview(o.value.overview)
-        setTodayKey(o.value.todayKey)
+        setBudget(o.value.budget)
       }
       if (d.ok) setDays(d.value.days)
-      if (p.ok) setPricingDegraded(p.value.usdToCnySource === 'default')
-      // 三条里一条都没成功 = 这一屏没有可信数字，明说失败；否则算就绪。
-      setLoad(o.ok || d.ok || p.ok ? 'ready' : 'failed')
+      // 两条里一条都没成功 = 这一屏没有可信数字，明说失败；否则算就绪。
+      setLoad(o.ok || d.ok ? 'ready' : 'failed')
     })().catch(() => {
       // 远程调用 reject（wire 层异常）时必须吞掉：否则是一条 unhandled rejection。
       // 但也不能装作无事发生 —— 转失败态，卡片上给出可解释的「读取失败」。
@@ -91,8 +104,21 @@ export function EntryCard(props: EntryCardProps): JSX.Element {
   const failed = overview === null && load === 'failed'
   const amountText = priced ? formatCny(overview.totalCny) : failed ? FAILED : PENDING
   const todayText = priced ? formatCny(overview.todayCny) : PENDING
-  // 回填披露与金额同源（同一次 overview 响应），绝不二次取数；标记缺席按 present 处理。
-  const backfilled = overview !== null && backfilledDisclosure(overview.hasBackfilled)
+
+  // 预算档位：阈值判据只有 budget.ts 一处（notified 传空对象 —— 卡片不承担跨档提醒，
+  // 那只在弹窗里判并落盘，不能因为侧栏渲染就写坏「每月每档一次」的标记）。
+  const spend = overview !== null && budget !== null
+    ? evaluateBudget({
+      spentCny: overview.totalCny, monthlyCny: budget.monthlyCny,
+      enabled: budget.enabled, notified: {}, monthKey: '',
+    })
+    : null
+  const showBudget = spend !== null && budget !== null && budget.enabled && budget.monthlyCny > 0
+
+  /** 无障碍名：整个卡片是一个按钮，里面的进度条不出现在 a11y 树里，预算口径要在这里说。 */
+  const ariaLabel = showBudget
+    ? `计费：本月 ${amountText}，预算已用 ${formatPct(spend.pct, 0)}`
+    : `计费：本月 ${amountText}`
 
   return (
     <button
@@ -101,27 +127,34 @@ export function EntryCard(props: EntryCardProps): JSX.Element {
       data-dsh-ub-entry
       data-wide={String(wide)}
       data-dsh-ub-state={load}
+      className="ub-entry"
       title={failed ? '计费：数据读取失败（点击重试）' : '计费'}
-      aria-label="计费"
+      aria-label={ariaLabel}
       onClick={() => store.togglePanel()}
     >
-      <span data-dsh-ub-entry-text>
-        <span data-dsh-ub-amount>{amountText}</span>
-        <span data-dsh-ub-sub>
-          {/* 概览未到时 todayKey 是空串：不能让日期槽位空着（会渲染成「· 今日 —」）。 */}
-          {todayKey === '' ? PENDING : formatDay(todayKey)} 今日 {todayText}
+      <span className="ub-entry-text" data-dsh-ub-entry-text>
+        <span className="ub-entry-line">
+          <span className="ub-entry-amount" data-dsh-ub-amount>{amountText}</span>
+          <span className="ub-entry-today" data-dsh-ub-today>今日 {todayText}</span>
         </span>
+        {showBudget ? (
+          // 进度条在按钮里是纯装饰：它的口径已经在按钮的 aria-label 里说全了，
+          // 留着 role=progressbar 只会让屏幕阅读器在按钮内部再念一遍。
+          <span className="ub-entry-budget" aria-hidden="true">
+            <ProgressBar
+              level={spend.level} ratio={spend.pct} thin
+              label={`预算已用 ${formatPct(spend.pct, 0)}`}
+            />
+            <span className="ub-entry-pct">{formatPct(spend.pct, 0)}</span>
+          </span>
+        ) : null}
       </span>
       {wide && sparkValues.length > 0 ? (
-        <Sparkline values={sparkValues} width={56} height={16} />
+        <span className="ub-entry-spark" aria-hidden="true">
+          <Sparkline values={sparkValues} width={56} height={16} />
+        </span>
       ) : null}
-      {failed ? <span data-dsh-ub-badge data-kind="error">读取失败</span> : null}
-      {pricingDegraded ? <span data-dsh-ub-badge data-kind="warn">内置价</span> : null}
-      {overview !== null && overview.unpricedModels.length > 0 ? (
-        <span data-dsh-ub-badge data-kind="error">{overview.unpricedModels.length} 未收录</span>
-      ) : null}
-      {/* 常驻、不可关的估算披露：月合计可能包含回填用量，必须就地说明。 */}
-      {backfilled ? <span data-dsh-ub-estimate>含安装前估算</span> : null}
+      {failed ? <span className="ub-badge" data-dsh-ub-badge data-kind="error">读取失败</span> : null}
     </button>
   )
 }
