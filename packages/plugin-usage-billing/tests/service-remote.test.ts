@@ -7,7 +7,7 @@ import type { AggregateDeps, SessionSource } from '../src/aggregate.ts'
 import { USAGE_BILLING_METHOD_NAMES, USAGE_BILLING_REMOTE_METHODS } from '../src/remote-methods.ts'
 import { BUILTIN_CATALOG, DEFAULT_USD_TO_CNY } from '../src/pricing/catalog.ts'
 import { createUsageBillingSettingsAccess } from '../src/settings.ts'
-import type { Diagnostic, FoldState, LedgerRow, ModelAlias, PriceEntry, PriceSnapshot } from '../src/types.ts'
+import type { Diagnostic, FoldState, LedgerRow, ModelAlias, PriceSnapshot } from '../src/types.ts'
 
 function table<V>(): KvTable<string, V> {
   const map = new Map<string, V>()
@@ -55,12 +55,8 @@ function makeService() {
   return { svc, ledger, folds, snapshots, aliases, diag, source }
 }
 
-/** `ensureBaseSnapshot` 是私有方法（Task 14 才接线），用例按它声明的契约直接调用。 */
 async function writeBaseSnapshot(svc: UsageBillingService): Promise<void> {
-  const priv = svc as unknown as {
-    ensureBaseSnapshot(entries: Record<string, PriceEntry>, usdToCny: number, src: 'live' | 'default'): Promise<void>
-  }
-  await priv.ensureBaseSnapshot({
+  await svc.ensureBaseSnapshot({
     'deepseek/deepseek-v4-flash': { input: 1, cacheRead: 0, cacheWrite: 0, output: 1, currency: 'CNY' },
   }, 7, 'default')
 }
@@ -71,10 +67,7 @@ async function writeBaseSnapshot(svc: UsageBillingService): Promise<void> {
  * 所以「目录原本多少钱」必须由这样的快照承载。
  */
 async function writeCatalogSnapshot(svc: UsageBillingService): Promise<void> {
-  const priv = svc as unknown as {
-    ensureBaseSnapshot(entries: Record<string, PriceEntry>, usdToCny: number, src: 'live' | 'default'): Promise<void>
-  }
-  await priv.ensureBaseSnapshot({ ...BUILTIN_CATALOG }, DEFAULT_USD_TO_CNY, 'default')
+  await svc.ensureBaseSnapshot({ ...BUILTIN_CATALOG }, DEFAULT_USD_TO_CNY, 'default')
 }
 
 describe('UsageBillingService', () => {
