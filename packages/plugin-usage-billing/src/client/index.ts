@@ -10,6 +10,13 @@
  * 全部经 `slots.inject` 声明感知注册，与加载顺序无关；每个注册的 disposer 由
  * `slots.inject` / `slots.register` 通过调用 fiber 回收（这里**不**额外调
  * `ctx.effect`，多加一条 dispose 路径只会重复回收），样式注入才走 `ctx.effect`。
+ *
+ * **两层 inject**：`remote` 是**按 fiber 声明**的服务面 —— api-gateway 把每个命名空间
+ * 注册成独立服务名 `remote.<namespace>`，cordis 只在「读过声明」的 fiber store 里解析它
+ * （`vendor/cordis` reflect 的 `fiber.store` 查找，查不到即
+ * `cannot get property "remote.usageBilling" without inject`）。所以在只声明了 `remote`
+ * 的 ctx 上读面，三个槽位会「注册成功、渲染即崩」。第一层因此只负责挂载命名空间，
+ * 第二层声明 `remote.usageBilling` 之后才创建注册。
  */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -52,42 +59,50 @@ export const ENTRY_LABEL = '计费'
 export type { BillingConfigLike } from './core/config.ts'
 
 export function apply(ctx: Context): void {
+  // 第一层：只挂载远程命名空间。注册**不能**留在这一层 —— 本层只声明了 `remote`，
+  // 读 `c.remote.usageBilling` 会抛 `cannot get property "remote.usageBilling"
+  // without inject`（槽位注册成功、渲染即崩的那个 bug）。
   ctx.inject(['slots', 'remote', 'settingsScope'], (c) => {
-    // brief 这里是 `async (c) => { await mountUsageBillingRemote(c); ... }`：
-    // await 会把三个注册推迟到微任务，而 tests/client-apply.test.ts 断言 apply 返回时
-    // 它们已经注册完 —— 实测 2/3 用例红（registered/injected 都是空数组）。改为同步注册，
-    // 远程命名空间在 inject 工厂里惰性取（工厂本来就在渲染时调用，那时 mount 早已完成）。
+    // 这里刻意**不 await** `mountUsageBillingRemote`：本层要同步把第二层 inject 登记上，
+    // 由 cordis 在面出现（`$mount` 解析）时激活第二层并同步跑注册 —— 依赖顺序交给
+    // Cordis，而不是靠 await 排队。把 await 提到注册之前则会把三个注册推到微任务之后，
+    // 而 tests/client-apply.test.ts 断言「apply 返回时已注册完」，实测 2/3 用例红。
     void mountUsageBillingRemote(c).catch((error: unknown) => {
       c.logger.warn('[usage-billing] 远程命名空间挂载失败', error)
     })
-    ensureUsageBillingStyle(c)
-    // 视图状态按 fiber 创建：模块级单例会在 fiber stop 后把上一轮的
-    // open/tab/range 带进下一次 apply（重新挂载的插件不该继承旧弹窗状态）。
-    const store = createBillingStore()
-    const scope = c.settingsScope.bind<BillingConfigLike>({ namespace: USAGE_BILLING_NAMESPACE })
+    // 第二层：**先声明 `remote.usageBilling` 再读面**（cordis 的硬要求，与 plugin-notes /
+    // plugin-memory / plugin-daily-log 同一姿态）。面没出现前本层不会激活，所以三个注册
+    // 也不会落在读不到面的 ctx 上；`d` 就是那个声明过面的 ctx，下面一律用它。
+    c.inject(['remote.usageBilling', 'remote', 'slots', 'settingsScope'], (d) => {
+      ensureUsageBillingStyle(d)
+      // 视图状态按 fiber 创建：模块级单例会在 fiber stop 后把上一轮的
+      // open/tab/range 带进下一次 apply（重新挂载的插件不该继承旧弹窗状态）。
+      const store = createBillingStore()
+      const scope = d.settingsScope.bind<BillingConfigLike>({ namespace: USAGE_BILLING_NAMESPACE })
 
-    c.slots.inject('sidebar.footer.action', () => c.slots.register({
-      name: 'sidebar.footer.action',
-      id: ENTRY_SLOT_ID,
-      order: 10,
-      label: ENTRY_LABEL,
-      inject: () => ({ billing: usageBillingOf(c), store }),
-    }, EntryCard))
+      d.slots.inject('sidebar.footer.action', () => d.slots.register({
+        name: 'sidebar.footer.action',
+        id: ENTRY_SLOT_ID,
+        order: 10,
+        label: ENTRY_LABEL,
+        inject: () => ({ billing: usageBillingOf(d), store }),
+      }, EntryCard))
 
-    c.slots.inject('shell.overlay', () => c.slots.register({
-      name: 'shell.overlay',
-      id: OVERLAY_SLOT_ID,
-      order: 10,
-      label: ENTRY_LABEL,
-      inject: () => ({ billing: usageBillingOf(c), store, scope }),
-    }, Dashboard))
+      d.slots.inject('shell.overlay', () => d.slots.register({
+        name: 'shell.overlay',
+        id: OVERLAY_SLOT_ID,
+        order: 10,
+        label: ENTRY_LABEL,
+        inject: () => ({ billing: usageBillingOf(d), store, scope }),
+      }, Dashboard))
 
-    c.slots.inject('settings.section', () => c.slots.register({
-      name: 'settings.section',
-      id: SETTINGS_SECTION_ID,
-      order: 40,
-      label: ENTRY_LABEL,
-      inject: () => ({ billing: usageBillingOf(c), scope, store }),
-    }, SettingsSection))
+      d.slots.inject('settings.section', () => d.slots.register({
+        name: 'settings.section',
+        id: SETTINGS_SECTION_ID,
+        order: 40,
+        label: ENTRY_LABEL,
+        inject: () => ({ billing: usageBillingOf(d), scope, store }),
+      }, SettingsSection))
+    })
   })
 }
