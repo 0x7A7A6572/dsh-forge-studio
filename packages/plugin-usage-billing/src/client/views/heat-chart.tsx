@@ -50,6 +50,24 @@ function heatColors(): HeatColors {
   return [base, mixColors(base, top, 0.25), mixColors(base, top, 0.5), mixColors(base, top, 0.75), top]
 }
 
+/**
+ * 色阶图例（少 → 多）。
+ *
+ * 与降级矩阵、echarts 的 visualMap 共用同一条 5 档色阶：档位定义只有 heatmap.ts 的
+ * HEAT_SCALE 一处，颜色只有 ui-css.ts 一处，这里只摆 5 个方块。
+ */
+export function HeatLegend(): JSX.Element {
+  return (
+    <span className="ub-heatlegend" data-dsh-ub-heat-legend aria-hidden="true">
+      <span className="ub-heatlegend-label">少</span>
+      {[0, 1, 2, 3, 4].map((level) => (
+        <i key={level} className="ub-heatlegend-swatch" data-level={level} />
+      ))}
+      <span className="ub-heatlegend-label">多</span>
+    </span>
+  )
+}
+
 export interface HeatChartProps {
   days: readonly DailyPoint[]
   /** 整份账未定价：每格金额都不可信，提示统一走占位符。 */

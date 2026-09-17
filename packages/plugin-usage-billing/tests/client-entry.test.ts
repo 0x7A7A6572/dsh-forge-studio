@@ -51,7 +51,11 @@ function overviewFixture(partial: Partial<Overview> = {}): Overview {
   }
 }
 
-/** 只桩住入口卡会调的两条读接口（价表来源不再是侧栏要展示的东西）。 */
+/**
+ * 桩住入口卡与浮层会读的接口（价表来源不再是侧栏要展示的东西）。
+ *
+ * `byModel` 是浮层「概览」页的第三路取数（分模型消耗表）—— 只桩 overview/daily 的话，
+ * 浮层一挂载就会在 byModel 上抛 TypeError。 */
 function billingStub(
   overview: Overview,
   todayKey = '2026-09-16',
@@ -60,6 +64,7 @@ function billingStub(
   return {
     overview: async () => ({ ok: true, value: { overview, todayKey, budget } }),
     daily: async () => ({ ok: true, value: { days: [] } }),
+    byModel: async () => ({ ok: true, value: { models: [] } }),
     // 浮层（同一份 billingStub 复用）读安装时刻；入口卡自己不调它。
     status: async () => ({ ok: true, value: { installAt: 1_700_000_000_000, rows: 0, sessions: 0, snapshots: 0 } }),
     pricing: async () => ({

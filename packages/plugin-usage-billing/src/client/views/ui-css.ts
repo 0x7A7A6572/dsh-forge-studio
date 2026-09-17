@@ -238,6 +238,53 @@ const CSS = `
   color: ${TOKENS.labelTertiary}; font-size: 12.5px;
 }
 
+/* ---------- Hero 卡（累计 / 今日） ---------- */
+/* 版式对齐参考图：标题左上小字灰色 → 超大主数字 + 单位 → 指标格对齐成列。 */
+.ub-herocard {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 14px 16px;
+  border: 0.5px solid ${TOKENS.borderL4}; border-radius: 14px;
+  background: ${TOKENS.bgModule};
+}
+.ub-herocard-title { font-size: 12px; color: ${TOKENS.labelTertiary}; }
+.ub-herocard-main { display: flex; align-items: baseline; gap: 8px; }
+.ub-herocard-value {
+  font-size: 32px; font-weight: 600; line-height: 1.1; letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums; color: ${TOKENS.labelPrimary};
+}
+.ub-herocard-unit { font-size: 12px; color: ${TOKENS.labelTertiary}; }
+.ub-herocard-sub { font-size: 12px; color: ${TOKENS.labelSecondary}; }
+.ub-herocard-cells {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 10px;
+}
+.ub-herocard-cell {
+  display: grid; gap: 2px; padding: 8px 10px;
+  border-radius: 10px; background: ${TOKENS.bgLayer2};
+}
+.ub-herocard-cell-label { font-size: 11.5px; color: ${TOKENS.labelTertiary}; }
+.ub-herocard-cell-value { font-size: 14px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.ub-herocard-foot { display: flex; flex-direction: column; gap: 6px; }
+
+/* 活跃度脚注：图例在左（对齐参考图的左下角图例），区间统计在右。 */
+.ub-activity-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ub-activity-foot .ub-sub { margin-left: auto; }
+.ub-heatlegend { display: inline-flex; align-items: center; gap: 4px; }
+.ub-heatlegend-label { font-size: 11.5px; color: ${TOKENS.labelTertiary}; }
+.ub-heatlegend-swatch {
+  width: 10px; height: 10px; border-radius: 2px; background: ${TOKENS.bgLayer2};
+}
+/* 与 .ub-heat > span 同一条五档色阶（改这里要同步改那里）。 */
+.ub-heatlegend-swatch[data-level='1'] {
+  background: color-mix(in srgb, ${TOKENS.business} 25%, ${TOKENS.bgLayer2});
+}
+.ub-heatlegend-swatch[data-level='2'] {
+  background: color-mix(in srgb, ${TOKENS.business} 45%, ${TOKENS.bgLayer2});
+}
+.ub-heatlegend-swatch[data-level='3'] {
+  background: color-mix(in srgb, ${TOKENS.business} 70%, ${TOKENS.bgLayer2});
+}
+.ub-heatlegend-swatch[data-level='4'] { background: ${TOKENS.business}; }
+
 /* ---------- 热力图 ---------- */
 /*
  * 日历热力图：7 行 = 一周 7 天，1 列 = 一周。只写 grid-auto-flow: column 而没给

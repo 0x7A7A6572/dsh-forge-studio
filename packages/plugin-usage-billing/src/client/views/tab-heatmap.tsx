@@ -6,18 +6,10 @@ import type { BillingStore } from '../core/store.ts'
 import {
   NON_FINITE_PLACEHOLDER, backfilledDisclosure, formatCny, isUnpricedTotal,
 } from '../core/format.ts'
+import { activeDays, longestStreak } from '../core/token-stats.ts'
 import { Card, StatCard } from './components/kit.tsx'
-import { HeatChart } from './heat-chart.tsx'
+import { HeatChart, HeatLegend } from './heat-chart.tsx'
 import type { DailyPoint } from '../../view.ts'
-
-function longestStreak(days: readonly DailyPoint[]): number {
-  let best = 0; let cur = 0
-  for (const d of days) {
-    cur = d.calls > 0 ? cur + 1 : 0
-    if (cur > best) best = cur
-  }
-  return best
-}
 
 /** 金额与披露标记同源：都来自这一次 `daily` 响应。 */
 interface HeatPayload {
@@ -56,7 +48,7 @@ export function TabHeatmap(props: {
   if (data === null) return <div className="ub-empty" data-dsh-ub-empty>正在读取用量…</div>
   if (data.days.length === 0) return <div className="ub-empty" data-dsh-ub-empty>这个范围里还没有用量记录。</div>
 
-  const active = data.days.filter((d) => d.calls > 0).length
+  const active = activeDays(data.days)
   const hasBackfilled = backfilledDisclosure(data.hasBackfilled)
   // 唯一判据：整份账未定价时色阶里的金额同样不可信（每一格都是 0），格子提示统一占位。
   const unpriced = isUnpricedTotal(data.days.reduce((a, d) => a + d.costCny, 0), data.unpricedModels)
@@ -74,6 +66,9 @@ export function TabHeatmap(props: {
 
       <Card title="每日费用" desc="色阶按当日费用分 5 档；悬停看当天金额。">
         <HeatChart days={data.days} unpriced={unpriced} />
+        <div className="ub-activity-foot">
+          <HeatLegend />
+        </div>
       </Card>
     </div>
   )

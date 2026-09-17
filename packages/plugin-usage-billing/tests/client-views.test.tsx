@@ -376,9 +376,31 @@ describe('TabOverview', () => {
   })
 
   it('预算超支时进度条 level=over', async () => {
-    const { baseElement: container } = render(<Tab billing={overviewRemote({ totalCny: 150 })} store={createBillingStore({ open: true })} />)
-    await screen.findByText('¥150.00')
+    // 预算条吃的是**当月切片**（monthSpend），不是累计金额：fake 的 daily 必须给出当月金额。
+    const { baseElement: container } = render(<Tab
+      billing={overviewRemote({ totalCny: 150 }, {
+        days: [{ day: '2026-09-15', costCny: 150, input: 0, cacheRead: 0, cacheWrite: 0, output: 0, calls: 1 }],
+      })}
+      store={createBillingStore({ open: true })} />)
+    // 不能用 findByText('¥150.00')：它会同时命中「累计费用」与「区间合计」两处。
+    await screen.findByText(/本月预算/)
     expect(container.querySelector('[data-dsh-ub-bar]')!.getAttribute('data-level')).toBe('over')
+  })
+
+  it('预算条按当月切片：上个月的金额不参与月度预算（累计金额也不参与）', async () => {
+    const { baseElement: container } = render(<Tab
+      billing={overviewRemote({ totalCny: 150 }, {
+        days: [
+          // 上个月花了 150（累计金额因此非零），当月只花了 1 —— 月度预算必须只看当月。
+          { day: '2026-08-31', costCny: 150, input: 1, cacheRead: 0, cacheWrite: 0, output: 1, calls: 1 },
+          { day: '2026-09-15', costCny: 1, input: 1, cacheRead: 0, cacheWrite: 0, output: 1, calls: 1 },
+        ],
+      })}
+      store={createBillingStore({ open: true })} />)
+    await screen.findByText(/本月预算/)
+    // 当月 1 / 预算 100 → 1%（若误用累计 150 → 150% 就直接超支了）。
+    expect(container.textContent).toContain('已用 1%')
+    expect(container.querySelector('[data-dsh-ub-bar]')!.getAttribute('data-level')).toBe('ok')
   })
 
   it('未收录提示被关掉时不显示', async () => {
@@ -404,47 +426,61 @@ describe('TabOverview', () => {
     expect(await screen.findByText(/条记录涉及/)).toBeTruthy()
   })
 
-  it('整份账一行都没定价：Hero 与日均显示占位，绝不显示 ¥0.00', async () => {
+  it('整份账一行都没定价：所有金额槽位显示占位，绝不显示 ¥0.00', async () => {
     const { baseElement: container } = render(<Tab
       billing={overviewRemote({ totalCny: 0, todayCny: 0, weekCny: 0, avgDailyCny: 0, calls: 3, unpricedModels: ['x/mystery'], unpricedRows: 3 })}
       store={createBillingStore({ open: true })} />)
     await waitFor(() => {
-      expect(container.querySelector('[data-dsh-ub-hero]')?.textContent).toBe('—')
+      expect(container.querySelectorAll('[data-dsh-ub-money]').length).toBeGreaterThan(0)
     })
-    const avgKpi = screen.getByText('日均').parentElement!
-    expect(avgKpi.textContent).toContain('—')
-    expect(avgKpi.textContent).not.toContain('¥0.00')
+    const slots = [...container.querySelectorAll('[data-dsh-ub-money]')].map((el) => el.textContent)
+    expect(slots.every((text) => text === '—')).toBe(true)
+    expect(container.textContent).not.toContain('¥0.00')
     // 未收录徽标与计数不变：占位只换金额，不吞披露。
     expect(screen.getByText('1 未收录')).toBeTruthy()
   })
 
-  it('真实零（无未收录模型）时 Hero 保留 ¥0.00 —— 占位不能吞掉合法结果', async () => {
+  it('主数字是 Token：金额未知也不影响它（Token 是观测事实，不是未知）', async () => {
     const { baseElement: container } = render(<Tab
-      billing={overviewRemote({ totalCny: 0, todayCny: 0, weekCny: 0, avgDailyCny: 0, unpricedModels: [], unpricedRows: 0 })}
+      billing={overviewRemote({ totalCny: 0, todayCny: 0, unpricedModels: ['x/mystery'], unpricedRows: 3 })}
+      store={createBillingStore({ open: true })} />)
+    // fake 的 daily 是 10 input + 5 output → 累计 15 个 token。
+    await waitFor(() => {
+      expect(container.querySelector('[data-dsh-ub-hero]')?.textContent).toBe('15')
+    })
+  })
+
+  it('真实零（无未收录模型）时金额槽位保留 ¥0.00 —— 占位不能吞掉合法结果', async () => {
+    const { baseElement: container } = render(<Tab
+      billing={overviewRemote({ totalCny: 0, todayCny: 0, weekCny: 0, avgDailyCny: 0, unpricedModels: [], unpricedRows: 0 }, {
+        // 真实零：overview 与 daily 必须是同一个事实（否则区间合计会和累计金额打架）。
+        days: [{ day: '2026-09-15', costCny: 0, input: 10, cacheRead: 0, cacheWrite: 0, output: 5, calls: 1 }],
+      })}
       store={createBillingStore({ open: true })} />)
     await waitFor(() => {
-      expect(container.querySelector('[data-dsh-ub-hero]')?.textContent).toBe('¥0.00')
+      expect(container.querySelectorAll('[data-dsh-ub-money]').length).toBeGreaterThan(0)
     })
-    expect(screen.getByText('日均').parentElement!.textContent).toContain('¥0.00')
+    // 累计费用 / 今日费用 / 区间合计 三处都是真实零。
+    const slots = [...container.querySelectorAll('[data-dsh-ub-money]')].map((el) => el.textContent)
+    expect(slots).toEqual(['¥0.00', '¥0.00', '¥0.00'])
   })
 
-  it('整份账一行都没定价：今日/本周也是占位（子集里的 0 同样是未知，不是真实零）', async () => {
-    render(<Tab
-      billing={overviewRemote({ totalCny: 0, todayCny: 0, weekCny: 0, avgDailyCny: 0, calls: 3, unpricedModels: ['x/mystery'], unpricedRows: 3 })}
+  it('今日卡与累计卡同一占位口径：未知写「—」，真实零写 ¥0.00', async () => {
+    // 未知（整份账未定价）：今日也写占位 —— 子集里的 0 同样是未知，不是真实零。
+    const unknown = render(<Tab
+      billing={overviewRemote({ totalCny: 0, todayCny: 0, calls: 3, unpricedModels: ['x/mystery'], unpricedRows: 3 })}
       store={createBillingStore({ open: true })} />)
-    const sub = (await screen.findByText(/当前范围合计/)).textContent ?? ''
-    expect(sub).toContain('今日 —')
-    expect(sub).toContain('本周 —')
-    expect(sub).not.toContain('¥0.00')
-  })
+    const unknownSub = (await screen.findByText(/今日费用/)).textContent ?? ''
+    expect(unknownSub).toContain('—')
+    expect(unknownSub).not.toContain('¥0.00')
+    unknown.unmount()
 
-  it('真实零（无未收录模型）：今日/本周保留 ¥0.00 —— 同一处占位不能吞掉合法结果', async () => {
+    // 真实零（无未收录模型）：同一处占位不能吞掉合法结果。
     render(<Tab
-      billing={overviewRemote({ totalCny: 0, todayCny: 0, weekCny: 0, avgDailyCny: 0, calls: 0, unpricedModels: [], unpricedRows: 0 })}
+      billing={overviewRemote({ totalCny: 0, todayCny: 0, calls: 0, unpricedModels: [], unpricedRows: 0 })}
       store={createBillingStore({ open: true })} />)
-    const sub = (await screen.findByText(/当前范围合计/)).textContent ?? ''
-    expect(sub).toContain('今日 ¥0.00')
-    expect(sub).toContain('本周 ¥0.00')
+    expect(await screen.findByText(/今日费用/)).toBeTruthy()
+    expect(screen.getByText(/今日费用/).textContent).toContain('¥0.00')
   })
 
   it('回填标记缺席（旧 host / 宽松 codec 透传）按 present 处理：估算角标照常显示', async () => {
