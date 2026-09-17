@@ -243,7 +243,6 @@ const CSS = `
 .ub-herocard {
   display: flex; flex-direction: column; gap: 10px;
   padding: 14px 16px;
-  border: 0.5px solid ${TOKENS.borderL4}; border-radius: 14px;
   background: ${TOKENS.bgModule};
 }
 .ub-herocard-title { font-size: 12px; color: ${TOKENS.labelTertiary}; }
@@ -261,8 +260,12 @@ const CSS = `
   display: grid; gap: 2px; padding: 8px 10px;
   border-radius: 10px; background: ${TOKENS.bgLayer2};
 }
+/* 格里是「上大数字、下文案」：数值是主角（比正文大一号），标签退到辅助色。 */
+.ub-herocard-cell-value {
+  font-size: 18px; font-weight: 600; line-height: 1.15;
+  font-variant-numeric: tabular-nums; color: ${TOKENS.labelPrimary};
+}
 .ub-herocard-cell-label { font-size: 11.5px; color: ${TOKENS.labelTertiary}; }
-.ub-herocard-cell-value { font-size: 14px; font-weight: 500; font-variant-numeric: tabular-nums; }
 .ub-herocard-foot { display: flex; flex-direction: column; gap: 6px; }
 
 /* 活跃度脚注：图例在左（对齐参考图的左下角图例），区间统计在右。 */

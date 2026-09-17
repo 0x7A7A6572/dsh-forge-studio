@@ -34,9 +34,10 @@ export function HeroCard(props: {
       {props.subtitle === undefined ? null : <div className="ub-herocard-sub">{props.subtitle}</div>}
       <div className="ub-herocard-cells">
         {props.cells.map((cell) => (
+          // 上「大数字」下「文案」：DOM 顺序与视觉一致（读屏先念数值，再念它是什么）。
           <div className="ub-herocard-cell" key={cell.label}>
-            <span className="ub-herocard-cell-label">{cell.label}</span>
             <span className="ub-herocard-cell-value">{cell.value}</span>
+            <span className="ub-herocard-cell-label">{cell.label}</span>
           </div>
         ))}
       </div>

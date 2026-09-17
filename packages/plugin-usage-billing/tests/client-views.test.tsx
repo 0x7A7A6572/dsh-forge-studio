@@ -440,6 +440,19 @@ describe('TabOverview', () => {
     expect(screen.getByText('1 未收录')).toBeTruthy()
   })
 
+  it('指标格是「上大数字、下文案」：DOM 顺序与视觉一致（读屏先念数值）', async () => {
+    const { baseElement: container } = render(<Tab
+      billing={overviewRemote({})} store={createBillingStore({ open: true })} />)
+    // 累计卡与今日卡各有一格「调用次数」：用 findAll 取第一张卡（累计）。
+    await screen.findAllByText('调用次数')
+    const cell = container.querySelector('.ub-herocard-cell')!
+    // fake 的 daily 是 10 input + 5 output + 1 call → 第一格是「未命中输入 10」。
+    expect(cell.children[0]!.className).toContain('ub-herocard-cell-value')
+    expect(cell.children[0]!.textContent).toBe('10')
+    expect(cell.children[1]!.className).toContain('ub-herocard-cell-label')
+    expect(cell.children[1]!.textContent).toBe('未命中输入')
+  })
+
   it('主数字是 Token：金额未知也不影响它（Token 是观测事实，不是未知）', async () => {
     const { baseElement: container } = render(<Tab
       billing={overviewRemote({ totalCny: 0, todayCny: 0, unpricedModels: ['x/mystery'], unpricedRows: 3 })}
