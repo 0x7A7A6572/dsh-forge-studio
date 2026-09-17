@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { Button, Modal, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { UsageBillingRemote } from '../core/remote.ts'
 import type { BillingStore, TabId } from '../core/store.ts'
 import type { BillingConfig, BillingConfigLike, BillingScope } from '../core/config.ts'
@@ -163,17 +163,21 @@ export function Dashboard(props: {
           </div>
         ) : null}
 
-        <nav className="ub-tabs" data-dsh-ub-tabs aria-label="计费视图">
-          {TABS.map((t) => (
-            <Pill
-              key={t.id}
-              active={state.tab === t.id}
-              aria-current={state.tab === t.id ? 'page' : undefined}
-              onClick={() => store.setTab(t.id)}
-            >
-              {t.label}
-            </Pill>
-          ))}
+        <nav className="ub-tabnav" data-dsh-ub-tabs aria-label="计费视图">
+          {TABS.map((t) => {
+            const active = state.tab === t.id
+            return (
+              <button
+                key={t.id}
+                type="button"
+                className={active ? 'ub-tab ub-tab-active' : 'ub-tab'}
+                aria-current={active ? 'page' : undefined}
+                onClick={() => { store.setTab(t.id) }}
+              >
+                {t.label}
+              </button>
+            )
+          })}
         </nav>
 
         {state.tab === 'overview' ? <TabOverview billing={billing} store={store} scope={scope} /> : null}

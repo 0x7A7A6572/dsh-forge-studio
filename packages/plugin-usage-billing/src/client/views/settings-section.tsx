@@ -15,12 +15,14 @@
  */
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+import type { KeyboardEvent } from 'react'
+import { Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { UsageBillingRemote } from '../core/remote.ts'
 import type { BillingStore } from '../core/store.ts'
 import type { BillingScope } from '../core/config.ts'
 import { NON_FINITE_PLACEHOLDER } from '../core/format.ts'
 import { pluginVersion } from '../../version.ts'
-import { Card, StatCard, SwitchRow } from './components/kit.tsx'
+import { Card, FieldRow, StatCard, SwitchRow } from './components/kit.tsx'
 import { BackfillLedgerNote } from './backfill-notice.tsx'
 
 export function SettingsSection(props: {
@@ -36,6 +38,9 @@ export function SettingsSection(props: {
   const cfg = settings.value
   const [status, setStatus] = useState<{ installAt: number; rows: number; sessions: number; snapshots: number } | null>(null)
   const [snapshotId, setSnapshotId] = useState(NON_FINITE_PLACEHOLDER)
+  /** 预算金额草稿：`null` = 没在编辑，输入框直接显示快照真值。 */
+  const [budgetDraft, setBudgetDraft] = useState<string | null>(null)
+  const budgetText = cfg?.budget?.monthlyCny === undefined ? '' : String(cfg.budget.monthlyCny)
 
   useEffect(() => {
     // 远程面首帧可能未挂载：缺席即早退，等 billing 变化后 effect 重跑。
@@ -54,6 +59,9 @@ export function SettingsSection(props: {
     })
     return () => { alive = false }
   }, [billing])
+
+  // 快照一变就把输入交还给快照：写成功、写失败、或被别处改掉，显示的都是宿主真值。
+  useEffect(() => { setBudgetDraft(null) }, [budgetText])
 
   /** 写整段 pricing（与 plugin-notes 写 webdav 同姿态）：schema 会用 base 补上未写的字段。 */
   const writeAutoRefresh = useCallback((next: boolean) => {
@@ -86,6 +94,28 @@ export function SettingsSection(props: {
       .catch(() => { /* 同上 */ })
   }, [scope, cfg])
 
+  /**
+   * 提交预算金额（失焦或回车）。**不在 onChange 里写**：敲 `300` 会依次写 `3` / `30` / `300`，
+   * 每一笔都会拿中间值去判一次跨档提醒。只接受有限正数 —— 空值 / 0 / 负数 / 非数字一律
+   * 不落盘并回弹到快照真值（0 会被 `budget.ts` 当成「无预算」，写进去等于把预算悄悄关掉）。
+   */
+  const commitBudget = useCallback(() => {
+    if (budgetDraft === null) return
+    const raw = budgetDraft.trim()
+    const parsed = Number(raw)
+    if (raw === '' || !Number.isFinite(parsed) || parsed <= 0) { setBudgetDraft(null); return }
+    if (parsed === cfg?.budget?.monthlyCny) { setBudgetDraft(null); return }
+    // 先显示已提交值，等宿主快照回来再交还控制权：否则写往返期间会闪回旧金额。
+    setBudgetDraft(String(parsed))
+    void scope.set('budget', { ...(cfg?.budget ?? {}), monthlyCny: parsed })
+      .catch(() => { setBudgetDraft(null) })
+  }, [scope, cfg, budgetDraft])
+
+  /** 回车提交；**不顺手 blur** —— blur 会再触发一次提交，同一拍里读到的还是旧 prop，会写两遍。 */
+  const onBudgetKeyDown = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') commitBudget()
+  }, [commitBudget])
+
   const locked = !settings.writable
 
   return (
@@ -107,11 +137,19 @@ export function SettingsSection(props: {
           disabled={locked}
           onChange={writeBudgetEnabled}
         />
-        {/* 未配置时显示占位而不是「0 元」：0 是一个真实的预算值，与「没设置」不是一回事。 */}
-        <div className="ub-sub">
-          预算金额：{cfg?.budget?.monthlyCny === undefined ? NON_FINITE_PLACEHOLDER : cfg.budget.monthlyCny + ' 元'}
-          （进度条在「计费」弹窗的概览分区随账本一起看）
-        </div>
+        {/* 未配置时输入留空 + 占位而不是「0 元」：0 是一个真实的预算值，与「没设置」不是一回事。 */}
+        <FieldRow label="月度预算（元）">
+          <Input
+            className="ub-input-sm"
+            inputMode="decimal"
+            value={budgetDraft ?? budgetText}
+            placeholder={NON_FINITE_PLACEHOLDER}
+            disabled={locked}
+            onChange={(event) => { setBudgetDraft(event.currentTarget.value) }}
+            onBlur={commitBudget}
+            onKeyDown={onBudgetKeyDown}
+          />
+        </FieldRow>
       </Card>
 
       <Card title="显示与价表">

@@ -20,6 +20,7 @@ import type { BillingScope } from '../src/client/core/config.ts'
 import { evaluateBudget } from '../src/budget.ts'
 import type { RangeKind } from '../src/time.ts'
 import { baseConfig, fakeScope } from './fake-scope.ts'
+import { NON_FINITE_PLACEHOLDER } from '../src/client/core/format.ts'
 
 // 宿主 UI 原语是浏览器包（lib 里 import 了只在宿主 app 打包时才解析得到的依赖），
 // Node 里直接 import 会炸 —— 换成透传替身，与 plugin-memory / plugin-daily-log 同一姿态。
@@ -152,6 +153,25 @@ describe('Dashboard', () => {
     expect(screen.getByText('热力图')).toBeTruthy()
     expect(screen.getByText('明细')).toBeTruthy()
     expect(screen.getByText('费率')).toBeTruthy()
+  })
+
+  it('分区导航是下划线式页签（不是描边盒子），active 恰好一个', () => {
+    const store = createBillingStore({ open: true })
+    render(dash({ billing: noopRemote(), store }))
+    const nav = document.querySelector('[data-dsh-ub-tabs]')!
+    expect(nav.className).toContain('ub-tabnav')
+    const tabs = Array.from(nav.querySelectorAll('button'))
+    expect(tabs.map((t) => t.textContent)).toEqual(['概览', '趋势', '热力图', '明细', '费率'])
+    // 首帧停在概览：它是唯一带 ub-tab-active + aria-current 的那个。
+    expect(tabs[0]!.className).toBe('ub-tab ub-tab-active')
+    expect(tabs[0]!.getAttribute('aria-current')).toBe('page')
+    expect(tabs[1]!.className).toBe('ub-tab')
+    expect(tabs[1]!.getAttribute('aria-current')).toBeNull()
+
+    fireEvent.click(tabs[1]!)
+    const after = Array.from(document.querySelectorAll('[data-dsh-ub-tabs] button'))
+    expect(after.filter((t) => t.className.split(' ').includes('ub-tab-active'))).toHaveLength(1)
+    expect(after[1]!.className).toBe('ub-tab ub-tab-active')
   })
 
   it('用宿主 Modal：role=dialog + aria-modal + 可访问的关闭按钮（不再自绘遮罩）', async () => {
@@ -1023,11 +1043,57 @@ describe('SettingsSection', () => {
     expect(screen.getByRole('switch', { name: /启用预算提醒/ }).getAttribute('aria-checked')).toBe('true')
   })
 
-  it('预算金额未配置时显示占位而不是「0 元」', () => {
+  it('预算金额可编辑：失焦提交写 budget.monthlyCny（保留 enabled），显示随快照回弹', async () => {
+    const h = fakeScope(baseConfig({ budget: { enabled: true, monthlyCny: 100 } }))
+    render(<SettingsSection billing={pricingRemote()} scope={h.scope} store={createBillingStore({ open: true })} />)
+
+    const amount = (): HTMLInputElement => screen.getByLabelText(/月度预算/) as HTMLInputElement
+    expect(amount().value).toBe('100')
+
+    await act(async () => { fireEvent.change(amount(), { target: { value: '300' } }) })
+    await act(async () => { fireEvent.blur(amount()) })
+
+    expect(h.writes).toContainEqual({ field: 'budget', value: { enabled: true, monthlyCny: 300 } })
+    expect(amount().value).toBe('300')
+  })
+
+  it('预算金额回车即提交，不必先点走焦点', async () => {
+    const h = fakeScope(baseConfig())
+    render(<SettingsSection billing={pricingRemote()} scope={h.scope} store={createBillingStore({ open: true })} />)
+
+    const amount = screen.getByLabelText(/月度预算/) as HTMLInputElement
+    await act(async () => { fireEvent.change(amount, { target: { value: '250.5' } }) })
+    await act(async () => { fireEvent.keyDown(amount, { key: 'Enter' }) })
+
+    expect(h.writes).toContainEqual({ field: 'budget', value: { enabled: false, monthlyCny: 250.5 } })
+  })
+
+  it('预算金额非法输入（空 / 0 / 负数 / 非数字）一律不落盘，显示回弹到快照真值', async () => {
+    const h = fakeScope(baseConfig({ budget: { enabled: true, monthlyCny: 100 } }))
+    render(<SettingsSection billing={pricingRemote()} scope={h.scope} store={createBillingStore({ open: true })} />)
+
+    const amount = (): HTMLInputElement => screen.getByLabelText(/月度预算/) as HTMLInputElement
+    for (const bad of ['', '0', '-5', 'abc']) {
+      await act(async () => { fireEvent.change(amount(), { target: { value: bad } }) })
+      await act(async () => { fireEvent.blur(amount()) })
+      // 一次都不该写：0 会被 budget.ts 当成「无预算」，把 0 落盘等于悄悄关掉预算。
+      expect(h.writes.filter((w) => w.field === 'budget')).toHaveLength(0)
+      expect(amount().value).toBe('100')
+    }
+  })
+
+  it('设置面只读时预算金额输入禁用（不可写就不给能敲的入口）', () => {
+    const h = fakeScope(baseConfig(), { writable: false })
+    render(<SettingsSection billing={pricingRemote()} scope={h.scope} store={createBillingStore({ open: true })} />)
+    expect((screen.getByLabelText(/月度预算/) as HTMLInputElement).disabled).toBe(true)
+  })
+
+  it('预算金额未配置时输入留空并显示占位而不是「0 元」', () => {
     const h = fakeScope({ ...baseConfig(), budget: { monthlyCny: undefined } as never })
     render(<SettingsSection billing={pricingRemote()} scope={h.scope} store={createBillingStore({ open: true })} />)
-    expect(screen.getByText(/预算金额：—/)).toBeTruthy()
-    expect(screen.queryByText(/预算金额：0 元/)).toBeNull()
+    const amount = screen.getByLabelText(/月度预算/) as HTMLInputElement
+    expect(amount.value).toBe('')
+    expect(amount.placeholder).toBe(NON_FINITE_PLACEHOLDER)
   })
 
   it('状态 / 价表取数 reject 时停在占位并留日志（不伪造行数或快照 id）', async () => {

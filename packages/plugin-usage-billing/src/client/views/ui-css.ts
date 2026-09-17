@@ -94,7 +94,22 @@ const CSS = `
 .ub-input-md { width: 220px; }
 
 /* ---------- 页签 ---------- */
+/* 筛选用的小胶囊（时间范围 / 指标）。 */
 .ub-tabs { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+/* 分区导航：下划线式页签 —— 与 plugin-memory 的 .mem-tabs/.mem-tab 同一套语言：
+   容器只有一条 0.5px 底线，选中态是 2px 下划线，不是「盒子 + 描边」那种标签。 */
+.ub-tabnav {
+  display: flex; align-items: center; gap: 4px;
+  border-bottom: 0.5px solid ${TOKENS.borderL4};
+}
+.ub-tab {
+  display: inline-flex; align-items: center; gap: 6px; padding: 7px 10px;
+  border: 0; border-bottom: 2px solid transparent; background: transparent;
+  color: ${TOKENS.labelTertiary}; font-size: 13px; font-family: inherit; cursor: pointer;
+}
+.ub-tab:hover { color: ${TOKENS.labelSecondary}; }
+.ub-tab-active { color: ${TOKENS.labelPrimary}; border-bottom-color: ${TOKENS.labelPrimary}; }
 
 /* ---------- 统计卡 ---------- */
 .ub-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
