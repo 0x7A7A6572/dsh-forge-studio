@@ -76,7 +76,6 @@ dsh plugin --profile <你的 profile 名> add @zzerx/dsh-plugin-notes
 
 ```bash
 pnpm --filter @zzerx/dsh-plugin-notes typecheck   # tsc --noEmit
-pnpm --filter @zzerx/dsh-plugin-notes test        # vitest
 pnpm --filter @zzerx/dsh-plugin-notes build       # lib/index.js + lib/client.js + lib/types
 ```
 

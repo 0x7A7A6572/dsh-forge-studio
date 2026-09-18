@@ -23,7 +23,6 @@ pnpm dev
 
 ```bash
 pnpm --filter @zzerx/dsh-plugin-home-studio typecheck   # tsc --noEmit
-pnpm --filter @zzerx/dsh-plugin-home-studio test        # vitest
 pnpm --filter @zzerx/dsh-plugin-home-studio build       # lib/index.js + lib/client.js + lib/types
 ```
 

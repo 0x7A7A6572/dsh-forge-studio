@@ -52,8 +52,7 @@ agent 工具**默认不进模型上下文**：新会话只挂 1 个常驻派发�
 ## 开发
 
 ```bash
-pnpm --filter @zzerx/dsh-plugin-daily-log typecheck   # tsc --noEmit（host + tests）
-pnpm --filter @zzerx/dsh-plugin-daily-log test        # vitest
+pnpm --filter @zzerx/dsh-plugin-daily-log typecheck   # tsc --noEmit
 pnpm --filter @zzerx/dsh-plugin-daily-log build       # lib/index.js + lib/client.js + lib/types
 ```
 

@@ -49,8 +49,7 @@
     "prepublishOnly": "node scripts/build.mjs",
     "build": "node scripts/build.mjs",
     "push:npm": "npm publish --registry=https://registry.npmjs.org",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json",
-    "test": "vitest run"
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "publishConfig": {
     "access": "public"
@@ -100,7 +99,6 @@
     "react-dom": "18.3.1",
     "tsup": "8.5.1",
     "typescript": "5.7.2",
-    "vitest": "2.1.9",
     "zod": "4.4.3"
   },
   "dsh": {

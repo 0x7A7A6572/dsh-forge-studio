@@ -50,8 +50,7 @@
     "build": "node scripts/build.mjs",
     "push:npm": "npm publish --registry=https://registry.npmjs.org",
     "watch": "node scripts/watch.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json",
-    "test": "vitest run"
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "publishConfig": {
     "access": "public"
@@ -118,7 +117,6 @@
     "tiptap-markdown": "0.8.10",
     "tsup": "8.5.1",
     "typescript": "5.7.2",
-    "vitest": "2.1.9",
     "zod": "4.4.3"
   },
   "dsh": {

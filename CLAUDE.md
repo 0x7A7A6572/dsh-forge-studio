@@ -6,7 +6,6 @@ dsh 插件集合：聚合多个独立的日常 dsh 插件（便签 / 日志等�
 - `pnpm install` — 装 workspace（含本地 dsh CLI）
 - `pnpm dev` — 启动 dsh web（`$DSH_HOME=.dsh-home`，profile=web）
 - `pnpm dsh <args>` — 直接调 dsh CLI（如 `pnpm dsh plugin --profile web list`）
-- `pnpm test` — 全 workspace vitest
 
 ## 硬性规则
 - 每个功能一个 `packages/plugin-<name>`，命名 `@zzerx/dsh-plugin-<name>`。

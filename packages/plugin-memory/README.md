@@ -59,7 +59,6 @@ dsh plugin --profile <你的 profile 名> add @zzerx/dsh-plugin-memory
 ```bash
 pnpm --filter @zzerx/dsh-plugin-memory build      # lib/index.js + lib/client.js + lib/types
 pnpm --filter @zzerx/dsh-plugin-memory typecheck
-pnpm --filter @zzerx/dsh-plugin-memory test
 ```
 
 ## License

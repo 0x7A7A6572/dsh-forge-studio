@@ -2,7 +2,7 @@
  * 插件版本号：打包客户端时由 scripts/build.mjs 从 package.json 注入
  * （esbuild define 的 __PLUGIN_VERSION__），package.json 是唯一真源。
  *
- * 源码直跑 / vitest 环境没有这层注入，此时回落 dev 标识 —— 宁可显示「未知版本」，
+ * 源码直跑环境没有这层注入，此时回落 dev 标识 —— 宁可显示「未知版本」，
  * 也不在这里手写一个迟早会和 package.json 漂移的字面量。
  */
 

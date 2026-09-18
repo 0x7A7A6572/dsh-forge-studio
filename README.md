@@ -25,7 +25,6 @@ dsh plugin --profile <你的profile名> add @zzerx/dsh-plugin-home-studio
 ```bash
 pnpm install   # 装 workspace（含本地 dsh CLI）
 pnpm dev       # 启动 dsh web（DSH_HOME=.dsh-home，profile=web）
-pnpm test      # 全 workspace vitest
 ```
 
 ## 目录
