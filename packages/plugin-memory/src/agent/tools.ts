@@ -336,6 +336,8 @@ function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): voi
       'Persist one memory entry for future sessions (user preferences, identity, project state, decisions). '
       // 标题相同、或正文高度重叠时会并入已有条目，重复写入不会产生多条。
       + 'Merges into an existing entry when the title matches or the body substantially overlaps, so repeated saves never duplicate. '
+      // 附近已有像的条目时还会让模型判一次：并进某一条、或判为已覆盖而不写（结果里回报判定理由）。
+      + 'When a similar entry already exists nearby, a model judge decides once whether to add, merge into one of them, or skip; the outcome reports the reason. '
       // scope=global：换到任何项目都成立（语气、格式、风格、身份、广泛偏好）。
       + 'scope=global for anything true across projects (tone, format, style, identity, broad preferences); '
       // scope=project：只对某一个工作区成立（习惯、决策、环境细节）。
@@ -354,7 +356,7 @@ function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): voi
       + 'summary is a one-line abstract for catalog and relation views; the body still carries the full conclusion.',
     parameters: {
       title: { type: 'string', required: true, description: 'Short unique title; the dedup key within a scope.' },
-      content: { type: 'string', required: true, description: 'One plain paragraph, conclusion-only, <=320 chars, no line breaks or lists (hard cap).' },
+      content: { type: 'string', required: true, description: 'Conclusion-only text, <=320 chars (hard cap); markdown line breaks and lists are fine.' },
       scope: {
         type: 'string',
         required: true,
