@@ -359,13 +359,6 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
           disabled={busy || config === null || locked}
           onChange={(next) => { patchConfig({ autoInject: next })}}
         />
-        <SwitchRow
-          title="写入判定"
-          desc="写入前如果附近已经有很像的记忆，先让模型判一次「新建 / 并进哪一条 / 不用记」（一次一行 JSON，失败就退化成新建）。关掉只走字面阈值。"
-          checked={locked ? false : (config?.autoJudge ?? false)}
-          disabled={busy || config === null || locked}
-          onChange={(next) => { patchConfig({ autoJudge: next })}}
-        />
         <div className={styles.fieldRow}>
           <span>单次注入条数</span>
           <Input
