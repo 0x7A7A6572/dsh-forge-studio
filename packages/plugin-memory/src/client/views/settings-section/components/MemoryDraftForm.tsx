@@ -5,6 +5,7 @@ import { SCOPE_OPTIONS, KIND_OPTIONS, IMPORTANCE_STEPS, importanceLevelAt } from
 import type { Draft } from '../../../core/memory-section-types.ts'
 import { ScaleSlider } from '../../../components/ScaleSlider.tsx'
 import { Segmented } from '../../../components/Segmented.tsx'
+import styles from '../../../styles/settings-section.module.css'
 
 /** 草稿表单（新增 / 编辑共用，渲染在弹窗里）。模块级组件，便于单测直接渲染。 */
 export function MemoryDraftForm(props: {
@@ -16,8 +17,8 @@ export function MemoryDraftForm(props: {
   const setDraft = props.onChange
   
     return (
-      <div className="mem-modal-body" data-dsh-memory-ui="">
-        <div className="mem-draft-form">
+      <div className={styles.modalBody} data-dsh-memory-ui="">
+        <div className={styles.draftForm}>
           <Input
             value={current.title}
             placeholder="标题（同作用域下同名会自动合并）"
@@ -42,7 +43,7 @@ export function MemoryDraftForm(props: {
             }}
           />
           {current.scope === 'project' && (
-            <div className="mem-field-row">
+            <div className={styles.fieldRow}>
               <span>工作区目录</span>
               <Input
                 list="mem-project-options"
@@ -58,8 +59,8 @@ export function MemoryDraftForm(props: {
             options={KIND_OPTIONS}
             onChange={(kind) => { setDraft({ ...current, kind }) }}
           />
-          <div className="mem-seg-row">
-            <span className="mem-seg-label">重要性</span>
+          <div className={styles.segRow}>
+            <span className={styles.segLabel}>重要性</span>
             <ScaleSlider
               label="重要性"
               value={current.importance}

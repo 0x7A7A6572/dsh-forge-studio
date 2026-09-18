@@ -82,9 +82,11 @@ export function nodeKindLabel(node: MemoryGraphNode): string {
   return MEMORY_KIND_LABELS[node.kind as MemoryKind] ?? node.kind
 }
 
-/** 实体类别徽标的着色类名（类别未知时退回 other，不落空类）。 */
+/** 实体类别徽标对应的样式 key（类别未知时回退 entityOther）。
+ * 返回 key 而不是类名 —— 真类名由 CSS Modules 在编译期生成，调用方用 styles[key] 取。 */
 export function entityKindClass(kind: string): string {
-  return MEMORY_ENTITY_KINDS.includes(kind as MemoryEntityKind) ? 'mem-entity-' + kind : 'mem-entity-other'
+  const key = kind.charAt(0).toUpperCase() + kind.slice(1)
+  return MEMORY_ENTITY_KINDS.includes(kind as MemoryEntityKind) ? 'entity' + key : 'entityOther'
 }
 
 /** 每条记忆的关联数：端点 kind === 'memory' 的两侧都算一条（一次 listEdges 的结果在内存里聚合）。 */

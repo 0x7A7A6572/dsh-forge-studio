@@ -1,20 +1,14 @@
 /**
- * 样式文件的导入声明（plugin-memory）。
+ * 样式模块的导入声明（plugin-memory）。
  *
- * *.css?inline —— vite 返回**编译后的 CSS 文本**且不自动注入，语义等价于原先
- * esbuild 的 `loader: { '.css': 'text' }`。运行时由 styles/settings-section.ts 的 ensure*Style()
- * 插成 <style>，因此作用域与回收时机仍由插件自己掌控。
+ * '*.module.css' —— CSS Modules。类名由 vite 在编译期变成 [hash:base64:6]_[local]
+ * （规则在仓库根 scripts/vite.client.mjs），运行时拿到的是「源码类名 → 编译后类名」的对象。
  *
- * *.module.css —— vite 原生 CSS Modules：default 导出「局部类名 → 哈希类名」映射表，
- * 编译后的 CSS 由 vite-plugin-css-injected-by-js 在 factory 执行时插成 <style>。
- * 类名形态 [hash]_[local]，两个插件撞同名文件也不会撞类名。
+ * 注入由 vite-plugin-css-injected-by-js 在 bundle 执行时插成 <style>，
+ * 所以插件里不再需要 ensureXxxStyle() 这种手动 injector。
  */
-declare module '*.css?inline' {
-  const css: string
-  export default css
-}
 
 declare module '*.module.css' {
-  const classes: Record<string, string>
+  const classes: Readonly<Record<string, string>>
   export default classes
 }

@@ -1,3 +1,4 @@
+import styles from '../styles/settings-section.module.css'
 /** 通用零件：弹窗里的反馈条。与记忆业务无关，故放 client/components/。 */
 
 /**
@@ -8,8 +9,8 @@
 export function ModalFeedback(props: { error: string; notice: string }) {
   return (
     <>
-      {props.error !== '' && <span className="mem-error" role="alert">{props.error}</span>}
-      {props.notice !== '' && <span className="mem-notice">{props.notice}</span>}
+      {props.error !== '' && <span className={styles.error} role="alert">{props.error}</span>}
+      {props.notice !== '' && <span className={styles.notice}>{props.notice}</span>}
     </>
   )
 }

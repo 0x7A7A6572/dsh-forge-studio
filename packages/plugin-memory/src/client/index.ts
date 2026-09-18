@@ -14,7 +14,6 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { mountMemoryRemote, memoryOf } from './core/remote.ts'
 import { SettingsSection } from './views/settings-section/SettingsSection.tsx'
-import { ensureMemoryStyle } from './styles/settings-section.ts'
 import { installMemoryNavIcon } from './components/NavIcon.tsx'
 
 export const name = '@zzerx/dsh-plugin-memory/client'
@@ -24,7 +23,6 @@ export function apply(ctx: Context): void {
   // 第一层：先挂载 memory 远程命名空间（self-mount，不走会话）。
   ctx.inject(['slots', 'remote'], async (ctx) => {
     await mountMemoryRemote(ctx)
-    ensureMemoryStyle()
     // 侧边栏图标：外壳没有图标入口，只能打补丁（见 components/NavIcon.tsx）。失败即降级。
     ctx.effect(() => installMemoryNavIcon())
     // 第二层：命名空间就绪后再读 remote.memory。

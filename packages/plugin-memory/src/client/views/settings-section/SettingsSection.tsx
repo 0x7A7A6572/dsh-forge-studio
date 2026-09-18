@@ -27,6 +27,7 @@ import { Segmented } from '../../components/Segmented.tsx'
 import { MemoryDraftForm } from './components/MemoryDraftForm.tsx'
 import { EntityDraftForm } from './components/EntityDraftForm.tsx'
 import { EdgeList } from './components/EdgeList.tsx'
+import styles from '../../styles/settings-section.module.css'
 
 /** 记忆分区。 */
 export function SettingsSection(props: SettingsSectionProps): JSX.Element {
@@ -521,13 +522,13 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
   /** 单条记忆（正常态）。 */
   function renderRecord(record: MemoryRecord): JSX.Element {
     return (
-      <div className="mem-item" key={record.id}>
-        <div className="mem-item-head">
+      <div className={styles.item} key={record.id}>
+        <div className={styles.itemHead}>
           <Pill>{MEMORY_KIND_LABELS[record.kind]}</Pill>
-          <span className="mem-item-title" title={record.title}>{record.title}</span>
+          <span className={styles.itemTitle} title={record.title}>{record.title}</span>
           <Pill>{importanceLabel(record.importance)}</Pill>
           <Pill>{'关联 ' + (linkCounts.get(record.id) ?? 0)}</Pill>
-          <div className="mem-item-actions">
+          <div className={styles.itemActions}>
             <Button
               variant="ghost" size="sm" title="查看元数据、关联与全文"
               onClick={() => { void openDetail(record) }}
@@ -555,12 +556,12 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
             />
           </div>
         </div>
-        {record.summary !== '' && <p className="mem-item-summary">{record.summary}</p>}
+        {record.summary !== '' && <p className={styles.itemSummary}>{record.summary}</p>}
         {record.aliases.length > 0 && (
-          <span className="mem-item-alias">{'别名：' + record.aliases.join(' / ')}</span>
+          <span className={styles.itemAlias}>{'别名：' + record.aliases.join(' / ')}</span>
         )}
-        <p className="mem-item-body">{record.content}</p>
-        {record.archived && <span className="mem-notice">已归档（不参与注入，可随时恢复）</span>}
+        <p className={styles.itemBody}>{record.content}</p>
+        {record.archived && <span className={styles.notice}>已归档（不参与注入，可随时恢复）</span>}
       </div>
     )
   }
@@ -573,9 +574,9 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
       .filter((record): record is MemoryRecord => record !== undefined)
     return (
       <>
-        <div className="mem-head">
-          <span className="mem-head-title">实体目录</span>
-          <div className="mem-toolbar">
+        <div className={styles.head}>
+          <span className={styles.headTitle}>实体目录</span>
+          <div className={styles.toolbar}>
             <Button
               variant="ghost" size="sm" icon={<IconPlusOutline16 size={14} />}
               disabled={locked} onClick={startCreateEntity}
@@ -584,27 +585,27 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
             </Button>
           </div>
         </div>
-        <p className="mem-row-desc">
+        <p className={styles.rowDesc}>
           实体是 wiki 图层里的「名词」（项目 / 工具 / 人…）：记忆通过「关于 / 提及」挂到它上面，
           共享同一个实体的记忆会自动连成「相关」。写记忆时声明实体，或在这里手工维护。
         </p>
-        <div className="mem-list">
+        <div className={styles.list}>
           {entities.map((entity) => (
-            <div className="mem-item" key={entity.id}>
-              <div className="mem-item-head">
-                <span className={'mem-entity-badge ' + entityKindClass(entity.kind)}>
+            <div className={styles.item} key={entity.id}>
+              <div className={styles.itemHead}>
+                <span className={`${styles.entityBadge} ${styles[entityKindClass(entity.kind)]}`}>
                   {MEMORY_ENTITY_KIND_LABELS[entity.kind]}
                 </span>
                 <button
                   type="button"
-                  className="mem-item-title mem-entity-name"
+                  className={`${styles.itemTitle} ${styles.entityName}`}
                   title="查看关联的记忆"
                   onClick={() => { void toggleEntityMemories(entity.id) }}
                 >
                   {entity.name}
                 </button>
-                <span className="mem-raw-meta">{'被提及 ' + (mentionCounts.get(entity.id) ?? 0) + ' 条'}</span>
-                <div className="mem-item-actions">
+                <span className={styles.rawMeta}>{'被提及 ' + (mentionCounts.get(entity.id) ?? 0) + ' 条'}</span>
+                <div className={styles.itemActions}>
                   <Button
                     variant="ghost" size="sm" icon={<IconEditOutline16 size={14} />} title="编辑"
                     onClick={() => { startEditEntity(entity) }}
@@ -616,18 +617,18 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
                 </div>
               </div>
               {entity.aliases.length > 0 && (
-                <span className="mem-item-alias">{'别名：' + entity.aliases.join(' / ')}</span>
+                <span className={styles.itemAlias}>{'别名：' + entity.aliases.join(' / ')}</span>
               )}
-              {entity.summary !== '' && <p className="mem-item-summary">{entity.summary}</p>}
+              {entity.summary !== '' && <p className={styles.itemSummary}>{entity.summary}</p>}
               {openEntityId === entity.id && (
-                <div className="mem-entity-links">
+                <div className={styles.entityLinks}>
                   {linkedRecords.length === 0 ? (
-                    <span className="mem-row-desc">还没有记忆关联到这个实体。</span>
+                    <span className={styles.rowDesc}>还没有记忆关联到这个实体。</span>
                   ) : linkedRecords.map((record) => (
                     <button
                       key={record.id}
                       type="button"
-                      className="mem-entity-link"
+                      className={styles.entityLink}
                       title="查看这条记忆"
                       onClick={() => { void openDetail(record) }}
                     >
@@ -639,7 +640,7 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
             </div>
           ))}
           {entities.length === 0 && (
-            <div className="mem-empty">
+            <div className={styles.empty}>
               还没有实体。写记忆时声明「这条讲的是谁」，或点上面的「新建实体」手工加一个。
             </div>
           )}
@@ -705,17 +706,17 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
   }
 
   return (
-    <div className="mem-section" data-dsh-memory-ui="">
-      <div className="mem-title-row">
-        <h2 className="mem-title">记忆</h2>
-        <span className="mem-version" title="插件版本">v{pluginVersion()}</span>
+    <div data-dsh-memory-ui="">
+      <div className={styles.titleRow}>
+        <h2 className={styles.title}>记忆</h2>
+        <span className={styles.version} title="插件版本">v{pluginVersion()}</span>
       </div>
-      <p className="mem-intro">
+      <p className={styles.intro}>
         记住你的偏好和习惯，对话越多，它就越懂你。记忆内容本地保存，仅你本人可见。
       </p>
 
       {locked && (
-        <div className="mem-warn" role="alert">
+        <div className={styles.warn} role="alert">
           <strong>检测到另一个记忆插件 —— 本插件已锁定，无法开启</strong>
           <p>
             已有插件占用了 {conflicts.map((conflict) => conflict.name).join('、')}。
@@ -726,12 +727,12 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
             请在「设置 → 插件」里停用另一个记忆插件，然后重启 dsh，本插件会自动解锁。
           </p>
           {conflicts[0] !== undefined && conflicts[0].description !== '' && (
-            <p className="mem-warn-src">对方工具描述：{conflicts[0].description}</p>
+            <p className={styles.warnSrc}>对方工具描述：{conflicts[0].description}</p>
           )}
         </div>
       )}
 
-      <div className="mem-card">
+      <div className={styles.card}>
         <SwitchRow
           title="生成对话记忆"
           desc="允许从对话中提取并记住相关上下文，以便在未来对话中提供更连贯、个性化的回应。"
@@ -753,7 +754,7 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
           disabled={busy || config === null || locked}
           onChange={(next) => { void run(async () => { await memory.setConfig({ autoJudge: next }) }) }}
         />
-        <div className="mem-field-row">
+        <div className={styles.fieldRow}>
           <span>单次注入条数</span>
           <Input
             type="number" min={1} max={20}
@@ -767,8 +768,8 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
           />
           <span>（达到门槛或被置顶的记忆才会注入）</span>
         </div>
-        <div className="mem-seg-row">
-          <span className="mem-seg-label">注入门槛</span>
+        <div className={styles.segRow}>
+          <span className={styles.segLabel}>注入门槛</span>
           <ScaleSlider
             label="注入门槛"
             value={config?.importanceThreshold ?? MEMORY_CONFIG_BASE.importanceThreshold}
@@ -787,15 +788,15 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
             }}
           />
         </div>
-        <details className="mem-advanced">
+        <details className={styles.advanced}>
           <summary>
             <span>高级 · 自动提炼</span>
-            <ChevronDown className="mem-advanced-chevron" size={14} aria-hidden="true" />
+            <ChevronDown className={styles.advancedChevron} size={14} aria-hidden="true" />
           </summary>
           {captureOff && (
-            <p className="mem-advanced-hint">「生成对话记忆」已关闭，以下参数暂不生效。</p>
+            <p className={styles.advancedHint}>「生成对话记忆」已关闭，以下参数暂不生效。</p>
           )}
-          <div className={captureOff ? 'mem-advanced-body mem-advanced-off' : 'mem-advanced-body'}>
+          <div className={captureOff ? `${styles.advancedBody} ${styles.advancedOff}` : styles.advancedBody}>
             <ScaleSlider
               label="提炼间隔"
               value={config?.captureEveryTurns ?? MEMORY_CONFIG_BASE.captureEveryTurns}
@@ -834,9 +835,9 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
         </details>
       </div>
 
-      <div className="mem-head">
-        <span className="mem-head-title">管理记忆</span>
-        <div className="mem-toolbar">
+      <div className={styles.head}>
+        <span className={styles.headTitle}>管理记忆</span>
+        <div className={styles.toolbar}>
           <Button variant="ghost" size="sm" icon={<IconPlusOutline16 size={14} />} disabled={locked || tab === 'entity'} onClick={startCreate}>新增</Button>
           <Button variant="ghost" size="sm" icon={<IconListPenOutline16 size={14} />} disabled={locked} onClick={openLedger}>沉淀</Button>
           <Menu
@@ -861,17 +862,17 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
         </div>
       </div>
 
-      <div className="mem-tabs" aria-label="记忆视图">
+      <div className={styles.tabs} aria-label="记忆视图">
         {MEMORY_TABS.map((item) => (
           <button
             key={item}
             type="button"
             aria-current={tab === item ? 'true' : undefined}
-            className={tab === item ? 'mem-tab mem-tab-active' : 'mem-tab'}
+            className={tab === item ? `${styles.tab} ${styles.tabActive}` : styles.tab}
             onClick={() => { switchTab(item) }}
           >
             {TAB_LABELS[item]}
-            <span className="mem-tab-count">{counts[item]}</span>
+            <span className={styles.tabCount}>{counts[item]}</span>
           </button>
         ))}
       </div>
@@ -880,17 +881,17 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
         {projects.map((item) => <option key={item.path} value={item.path} />)}
       </datalist>
 
-      {error !== '' && <span className="mem-error">{error}</span>}
-      {notice !== '' && <span className="mem-notice">{notice}</span>}
+      {error !== '' && <span className={styles.error}>{error}</span>}
+      {notice !== '' && <span className={styles.notice}>{notice}</span>}
 
       {tab === 'entity' ? renderEntities() : (
         <>
-          <div className="mem-field-row">
+          <div className={styles.fieldRow}>
             {tab === 'project' && (
               <>
                 <span>项目</span>
                 <select
-                  className="mem-select"
+                  className={styles.select}
                   value={projectPath}
                   onChange={(event) => { setProjectPath(event.currentTarget.value); setDraft(null) }}
                 >
@@ -902,12 +903,12 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
               </>
             )}
             <Input
-              className="mem-search"
+              className={styles.search}
               value={keyword}
               placeholder="搜索标题 / 正文 / 摘要 / 别名 / 标签"
               onChange={(event) => { setKeyword(event.currentTarget.value) }}
             />
-            <label className="mem-field-row">
+            <label className={styles.fieldRow}>
               <input
                 type="checkbox"
                 checked={includeArchived}
@@ -921,10 +922,10 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
             )}
           </div>
 
-          <div className="mem-list">
+          <div className={styles.list}>
             {records.map((record) => renderRecord(record))}
             {records.length === 0 && (
-              <div className="mem-empty">
+              <div className={styles.empty}>
                 {tab === 'global'
                   ? '还没有全局记忆。和 AI 多聊几句，它会自动记住你的偏好；也可以点「新增」或「导入」手工添加。'
                   : '还没有这个项目的记忆。在对应工作区里对话后，与项目相关的习惯会自动记到这里。'}
@@ -935,8 +936,8 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
       )}
 
       <Modal
-        className="mem-modal-wide"
-        contentClassName="mem-modal-scroll"
+        className={styles.modalWide}
+        contentClassName={styles.modalScroll}
         open={importOpen}
         onClose={() => { setImportOpen(false) }}
         title="导入其他记忆"
@@ -949,10 +950,10 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
           </>
         )}
       >
-        <div className="mem-modal-body" data-dsh-memory-ui="">
-          <span className="mem-row-title">1. 复制以下提示词到其他 AI 对话中</span>
-          <div className="mem-prompt">{IMPORT_PROMPT_TEXT}</div>
-          <div className="mem-item-actions">
+        <div className={styles.modalBody} data-dsh-memory-ui="">
+          <span className={styles.rowTitle}>1. 复制以下提示词到其他 AI 对话中</span>
+          <div className={styles.prompt}>{IMPORT_PROMPT_TEXT}</div>
+          <div className={styles.itemActions}>
             <Button
               variant="outline" size="sm" icon={<IconCopyOutline16 size={14} />}
               onClick={() => {
@@ -969,9 +970,9 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
               复制提示词
             </Button>
           </div>
-          <span className="mem-row-title">2. 将结果粘贴到下方，添加到记忆</span>
+          <span className={styles.rowTitle}>2. 将结果粘贴到下方，添加到记忆</span>
           <textarea
-            className="mem-import-area"
+            className={styles.importArea}
             value={importText}
             placeholder="粘贴整理好的画像（分类标题 + [日期] - 内容 的格式会被自动识别）"
             onChange={(event) => { setImportText(event.currentTarget.value) }}
@@ -1000,19 +1001,19 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
           </>
         )}
       >
-        <div className="mem-modal-body" data-dsh-memory-ui="">
-          <p className="mem-row-desc">
+        <div className={styles.modalBody} data-dsh-memory-ui="">
+          <p className={styles.rowDesc}>
             这一步不可撤销。如果只是想暂时不让它参与注入，建议改用「归档」——
             归档的记忆仍保留在库里，随时可以恢复。
           </p>
-          <span className="mem-notice">当前作用域共 {records.length} 条（含筛选条件）。</span>
+          <span className={styles.notice}>当前作用域共 {records.length} 条（含筛选条件）。</span>
           <ModalFeedback error={error} notice={notice} />
         </div>
       </Modal>
 
       <Modal
-        className="mem-modal-wide"
-        contentClassName="mem-modal-scroll"
+        className={styles.modalWide}
+        contentClassName={styles.modalScroll}
         open={detail !== null}
         onClose={closeDetail}
         title={detail?.title ?? '记忆详情'}
@@ -1050,56 +1051,56 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
           </>
         )}
       >
-        <div className="mem-modal-body" data-dsh-memory-ui="">
+        <div className={styles.modalBody} data-dsh-memory-ui="">
           {detail !== null && (
             <>
-              <div className="mem-meta">
-                <span className="mem-meta-key">分类</span>
-                <span className="mem-meta-value">{MEMORY_KIND_LABELS[detail.kind]}</span>
+              <div className={styles.meta}>
+                <span className={styles.metaKey}>分类</span>
+                <span className={styles.metaValue}>{MEMORY_KIND_LABELS[detail.kind]}</span>
                 {detail.summary !== '' && (
                   <>
-                    <span className="mem-meta-key">摘要</span>
-                    <span className="mem-meta-value">{detail.summary}</span>
+                    <span className={styles.metaKey}>摘要</span>
+                    <span className={styles.metaValue}>{detail.summary}</span>
                   </>
                 )}
                 {detail.aliases.length > 0 && (
                   <>
-                    <span className="mem-meta-key">别名</span>
-                    <span className="mem-meta-value">{detail.aliases.join(' / ')}</span>
+                    <span className={styles.metaKey}>别名</span>
+                    <span className={styles.metaValue}>{detail.aliases.join(' / ')}</span>
                   </>
                 )}
-                <span className="mem-meta-key">重要性</span>
-                <span className="mem-meta-value">{importanceLabel(detail.importance) + '（' + detail.importance + '/5）'}</span>
-                <span className="mem-meta-key">来源</span>
-                <span className="mem-meta-value">{sourceLabel(detail.source)}</span>
-                <span className="mem-meta-key">创建</span>
-                <span className="mem-meta-value">{timeText(detail.createdAt)}</span>
-                <span className="mem-meta-key">更新</span>
-                <span className="mem-meta-value">{timeText(detail.updatedAt)}</span>
-                <span className="mem-meta-key">置顶 / 归档</span>
-                <span className="mem-meta-value">
+                <span className={styles.metaKey}>重要性</span>
+                <span className={styles.metaValue}>{importanceLabel(detail.importance) + '（' + detail.importance + '/5）'}</span>
+                <span className={styles.metaKey}>来源</span>
+                <span className={styles.metaValue}>{sourceLabel(detail.source)}</span>
+                <span className={styles.metaKey}>创建</span>
+                <span className={styles.metaValue}>{timeText(detail.createdAt)}</span>
+                <span className={styles.metaKey}>更新</span>
+                <span className={styles.metaValue}>{timeText(detail.updatedAt)}</span>
+                <span className={styles.metaKey}>置顶 / 归档</span>
+                <span className={styles.metaValue}>
                   {(detail.pinned ? '置顶' : '未置顶') + ' · ' + (detail.archived ? '已归档（不参与注入）' : '正常')}
                 </span>
                 {detail.tags.length > 0 && (
                   <>
-                    <span className="mem-meta-key">标签</span>
-                    <span className="mem-meta-value">{detail.tags.join('、')}</span>
+                    <span className={styles.metaKey}>标签</span>
+                    <span className={styles.metaValue}>{detail.tags.join('、')}</span>
                   </>
                 )}
                 {detail.sessionId !== undefined && detail.sessionId !== '' && (
                   <>
-                    <span className="mem-meta-key">会话</span>
-                    <span className="mem-meta-value">{detail.sessionId}</span>
+                    <span className={styles.metaKey}>会话</span>
+                    <span className={styles.metaValue}>{detail.sessionId}</span>
                   </>
                 )}
               </div>
-              <pre className="mem-detail-body">{detail.content}</pre>
+              <pre className={styles.detailBody}>{detail.content}</pre>
 
-              <div className="mem-edge-block">
-                <span className="mem-row-title">{'关联（' + (neighborhood?.edges.length ?? 0) + '）'}</span>
-                {neighborhood === null && <p className="mem-row-desc">正在读取关联…</p>}
+              <div className={styles.edgeBlock}>
+                <span className={styles.rowTitle}>{'关联（' + (neighborhood?.edges.length ?? 0) + '）'}</span>
+                {neighborhood === null && <p className={styles.rowDesc}>正在读取关联…</p>}
                 {neighborhood !== null && neighborhood.edges.length === 0 && (
-                  <p className="mem-row-desc">
+                  <p className={styles.rowDesc}>
                     还没有关联。写记忆时声明实体就会自动连上；也可以手动连一条边。
                   </p>
                 )}
@@ -1114,7 +1115,7 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
                 )}
 
                 {linkDraft === null ? (
-                  <div className="mem-item-actions">
+                  <div className={styles.itemActions}>
                     <Button
                       variant="outline" size="sm" icon={<IconPlusOutline16 size={14} />}
                       disabled={busy || locked}
@@ -1124,7 +1125,7 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
                     </Button>
                   </div>
                 ) : (
-                  <div className="mem-link-form">
+                  <div className={styles.linkForm}>
                     <Segmented
                       label="目标类型"
                       value={linkDraft.toKind}
@@ -1132,7 +1133,7 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
                       disabled={busy || locked}
                       onChange={(toKind) => { setLinkDraft({ ...linkDraft, toKind, toId: '' }) }}
                     />
-                    <div className="mem-field-row">
+                    <div className={styles.fieldRow}>
                       <Input
                         list="mem-link-target-options"
                         value={linkDraft.toId}
@@ -1146,10 +1147,10 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
                         : entities.map((entity) => ({ id: entity.id as string, label: entity.name }))
                       ).map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
                     </datalist>
-                    <div className="mem-field-row">
+                    <div className={styles.fieldRow}>
                       <span>关系</span>
                       <select
-                        className="mem-select"
+                        className={styles.select}
                         value={linkDraft.relation}
                         disabled={busy || locked}
                         onChange={(event) => {
@@ -1166,7 +1167,7 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
                       placeholder="备注（可选，写清为什么连这条边）"
                       onChange={(event) => { setLinkDraft({ ...linkDraft, note: event.currentTarget.value }) }}
                     />
-                    <div className="mem-item-actions">
+                    <div className={styles.itemActions}>
                       <Button variant="primary" size="sm" disabled={busy || locked} onClick={() => { void submitLink() }}>连接</Button>
                       <Button variant="ghost" size="sm" onClick={() => { setLinkDraft(null) }}>取消</Button>
                     </div>
@@ -1181,8 +1182,8 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
       </Modal>
 
       <Modal
-        className="mem-modal-wide"
-        contentClassName="mem-modal-scroll"
+        className={styles.modalWide}
+        contentClassName={styles.modalScroll}
         open={ledgerOpen}
         onClose={() => { setLedgerOpen(false) }}
         title="沉淀与后台调用"
@@ -1195,21 +1196,21 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
           </>
         )}
       >
-        <div className="mem-modal-body" data-dsh-memory-ui="">
-          <span className="mem-row-title">原文留档（{raws.length}）</span>
+        <div className={styles.modalBody} data-dsh-memory-ui="">
+          <span className={styles.rowTitle}>原文留档（{raws.length}）</span>
           {raws.length === 0 && (
-            <p className="mem-row-desc">还没有留档。导入一份画像、或在工作区里对话一轮，这里就会出现原文。</p>
+            <p className={styles.rowDesc}>还没有留档。导入一份画像、或在工作区里对话一轮，这里就会出现原文。</p>
           )}
-          <div className="mem-raw-list">
+          <div className={styles.rawList}>
             {raws.map((raw) => (
-              <div className="mem-raw-item" key={raw.id}>
-                <div className="mem-item-head">
+              <div className={styles.rawItem} key={raw.id}>
+                <div className={styles.itemHead}>
                   <Pill>{ORIGIN_LABELS[raw.origin] ?? raw.origin}</Pill>
-                  <span className="mem-item-title" title={raw.title}>{raw.title}</span>
-                  <span className="mem-raw-meta">
+                  <span className={styles.itemTitle} title={raw.title}>{raw.title}</span>
+                  <span className={styles.rawMeta}>
                     {timeText(raw.createdAt) + ' · ' + raw.textLength + ' 字 · 抽出 ' + raw.recordIds.length + ' 条'}
                   </span>
-                  <div className="mem-item-actions">
+                  <div className={styles.itemActions}>
                     <Button
                       variant="ghost" size="sm" disabled={busy}
                       onClick={() => {
@@ -1240,28 +1241,28 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
                     />
                   </div>
                 </div>
-                {rawText[raw.id] !== undefined && <pre className="mem-raw-text">{rawText[raw.id]}</pre>}
+                {rawText[raw.id] !== undefined && <pre className={styles.rawText}>{rawText[raw.id]}</pre>}
               </div>
             ))}
           </div>
 
-          <span className="mem-row-title">后台模型调用（{audits.length}）</span>
-          {audits.length === 0 && <p className="mem-row-desc">还没有后台调用记录。</p>}
-          <div className="mem-audit-list">
+          <span className={styles.rowTitle}>后台模型调用（{audits.length}）</span>
+          {audits.length === 0 && <p className={styles.rowDesc}>还没有后台调用记录。</p>}
+          <div className={styles.auditList}>
             {audits.map((entry) => (
-              <div className="mem-audit-item" key={entry.id}>
-                <span className={entry.ok ? 'mem-audit-ok' : 'mem-audit-bad'}>{entry.ok ? '成功' : '失败'}</span>
-                <span className="mem-raw-meta">{AUDIT_KIND_LABELS[entry.kind] ?? entry.kind}</span>
-                <span className="mem-raw-meta">{timeText(entry.at)}</span>
-                <span className="mem-audit-model">{entry.provider + ' / ' + entry.model}</span>
-                <span className="mem-raw-meta">
+              <div className={styles.auditItem} key={entry.id}>
+                <span className={entry.ok ? styles.auditOk : styles.auditBad}>{entry.ok ? '成功' : '失败'}</span>
+                <span className={styles.rawMeta}>{AUDIT_KIND_LABELS[entry.kind] ?? entry.kind}</span>
+                <span className={styles.rawMeta}>{timeText(entry.at)}</span>
+                <span className={styles.auditModel}>{entry.provider + ' / ' + entry.model}</span>
+                <span className={styles.rawMeta}>
                   {durationText(entry.durationMs) + ' · 入 ' + entry.inputChars + ' 字 / 出 ' + entry.outputChars
                     + ' 字 · ' + entry.recordIds.length + ' 条'}
                 </span>
                 {entry.tokensIn !== undefined && (
-                  <span className="mem-raw-meta">{'token ' + entry.tokensIn + ' → ' + (entry.tokensOut ?? '?')}</span>
+                  <span className={styles.rawMeta}>{'token ' + entry.tokensIn + ' → ' + (entry.tokensOut ?? '?')}</span>
                 )}
-                {entry.error !== undefined && <span className="mem-audit-error">{entry.error}</span>}
+                {entry.error !== undefined && <span className={styles.auditError}>{entry.error}</span>}
               </div>
             ))}
           </div>
@@ -1270,8 +1271,8 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
       </Modal>
 
       <Modal
-        className="mem-modal-wide"
-        contentClassName="mem-modal-scroll"
+        className={styles.modalWide}
+        contentClassName={styles.modalScroll}
         open={draft !== null}
         onClose={() => { setDraft(null) }}
         title={draft?.id === null ? '新增记忆' : '编辑记忆'}
@@ -1290,8 +1291,8 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
       </Modal>
 
       <Modal
-        className="mem-modal-wide"
-        contentClassName="mem-modal-scroll"
+        className={styles.modalWide}
+        contentClassName={styles.modalScroll}
         open={entityDraft !== null}
         onClose={() => { setEntityDraft(null) }}
         title={entityDraft?.id === null ? '新建实体' : '编辑实体'}

@@ -136,6 +136,8 @@ export function useSettingsSection(memory: MemoryRemote) {
 
 `.root` 编译后变成 `[hash]_root` —— 这就是 `<style scoped>`。由 **vite 原生编译**：类名规则配在 `scripts/vite.client.mjs` 的 `css.modules.generateScopedName`（`[hash:base64:6]_[local]`，哈希在前，两个插件撞同名文件也不撞类名），CSS 正文由 `vite-plugin-css-injected-by-js` 在 factory 执行时插成 `<style>`。已跑通三个包。
 
+这个插件的 `topExecutionPriority` **必须设 false**。默认 true 会把注入的 IIFE 顶到 banner 之前，bundle 就不再以 `window.__ModuleLoader__.load(` 开头 —— 语法上合法，但那是宿主注册契约，别赌。设 false 后注入代码留在 factory 内部，时机跟原先的手动 injector 一致。
+
 ### 页面大了怎么办
 
 按**功能**竖着切，不是按类型横着切：
@@ -210,7 +212,7 @@ src/client/
 ├── hooks/         # 带 React 的逻辑：useXxx.ts
 ├── components/    # 展示组件：零件（按钮、卡片、图标、图表）
 ├── views/         # 页面级：一屏 / 一个页签 / 一个设置分区
-├── styles/        # 插件级样式：*.css
+├── styles/        # 插件级样式：*.module.css
 ├── assets/        # 要打进 bundle 的图（vite 内联成 dataurl，见 assets.d.ts）
 └── *.d.ts         # 资源导入声明
 ```
@@ -231,10 +233,16 @@ src/client/
 
 ## 样式文件放哪
 
-1. **插件级样式**（整块 UI 共用一张表）→ `client/styles/<它作用的区域>.css`，注入函数放同目录同名 `.ts`。
-2. **组件级样式** → 与组件同名同目录（`NoteCard.tsx` + `NoteCard.module.css`）。CSS Modules 已随 vite 落地，这条可以用了。
+1. **插件级样式**（整块 UI 共用一张表）→ `client/styles/<它作用的区域>.module.css`。**不需要注入函数** —— CSS Modules 配 `vite-plugin-css-injected-by-js` 会在 bundle 执行时自动插 `<style>`。
+2. **组件级样式** → 与组件同名同目录（`NoteCard.tsx` + `NoteCard.module.css`）。CSS Modules 已随 vite 落地。
 
-`plugin-memory` 已完成迁移 → `client/styles/settings-section.{ts,css}`。落地 CSS Modules 时它会被拆成每个组件旁边一份 `Xxx.module.css`。`daily-log` / `usage-billing` 的 `views/ui-css.{ts,css}` 待同样处理。
+> 实测结论：**「一个组件一份」要看类名是否真的私有。** `plugin-memory` 的 89 个类名里有 13 个（`row*` / `seg*` / `error` / `notice` / `modalBody` …）被两个以上组件共用，那是**共享版式类**；硬拆就得靠 `composes` 或 `:global()` 兜，反而更绕。所以它保持一张 `settings-section.module.css` 靠哈希隔离，只有类名确实私有的组件（如 `ScaleSlider`）才另开一份。
+
+`plugin-memory` 已完成迁移 → `client/styles/settings-section.module.css`（同名 `.ts` 注入函数已删）。89 个类名去掉了 `mem-` 前缀，`className` 一律走 `styles.xxx` —— 「视图文件里不许出现 `className="mem-xxx"`」这条铁律在 memory 上已经成立。
+
+**有两样东西不受 CSS Modules 保护，必须保留手写命名空间**：CSS 自定义属性（`--mem-fill`）和 DOM `id`（`mem-project-options` 这类 `<datalist>`）。它们不参与类名哈希，去掉前缀就会跟别的插件撞。改前缀时尤其别用「全文件替换 `mem-`」这种粗规则 —— 它会连 `--mem-fill` 一起改掉，而报错为零，只是滑杆填充色默默失效。
+
+`daily-log` / `usage-billing` 的 `views/ui-css.{ts,css}` 待同样处理。
 
 ## 命名规则
 
@@ -258,7 +266,7 @@ src/client/
 - 单个组件 > **200 行**通常意味着它既在画界面又在管状态 —— 把状态和取数挪进 `hooks/`。
 - `core/` 单文件 > **300 行**通常意味着它干了不止一件事。
 
-当前越线：`plugin-memory/src/client/views/settings-section/SettingsSection.tsx`（1826 行，正在拆）、`plugin-memory/src/client/styles/settings-section.css`（932 行，待拆成 CSS Modules）。
+当前越线：`plugin-memory/src/client/views/settings-section/SettingsSection.tsx`（1314 行，下一步拆 hook）、`plugin-memory/src/client/styles/settings-section.module.css`（932 行；单文件，但已是 CSS Module，见上文为何不按组件拆）。
 
 ## 现状与约定的差距（照着改就行）
 
@@ -266,15 +274,15 @@ src/client/
 |---|---|
 | `usage-billing/src/client/views/components/` | `usage-billing/src/client/components/` |
 | `usage-billing/…/views/components/kit.tsx` | 拆开，按内容命名 |
-| `{daily-log,memory}/src/client/views/section.tsx` | `client/views/settings-section/SettingsSection.tsx`（逻辑拆进同目录 hook）—— **memory 已迁**（目录+改名），逻辑拆分进行中 |
+| `{daily-log,memory}/src/client/views/section.tsx` | `client/views/settings-section/SettingsSection.tsx`（逻辑拆进同目录 hook）—— **memory 已迁**（目录+改名+拆零件），剩状态与 handler |
 | `daily-log/src/client/views/parts.tsx` | `client/components/` + 按内容命名 |
 | `{daily-log,memory}/src/client/views/nav-icon.tsx` | `client/components/NavIcon.tsx` —— **memory 已迁**，daily-log 待做 |
-| `{daily-log,memory,usage-billing}/…/views/ui-css.{ts,css}` | `client/styles/settings-section.{ts,css}` —— **memory 已迁**；CSS Modules 落地后再拆成组件旁 `Xxx.module.css` |
+| `{daily-log,memory,usage-billing}/…/views/ui-css.{ts,css}` | `client/styles/settings-section.module.css` —— **memory 已迁**（含去前缀、CSS Modules、删注入函数） |
 | billing `views/` 里的零件（chart / heat-chart / trend-chart / entry-card / backfill-notice / echarts-runtime） | `client/components/` |
 | `notes/src/client/core/panel-mount.ts`、`core/quick-add.ts` | `client/hooks/` |
 | `home-studio/src/client/icons.ts` | 看内容：图标组件 → `components/`；图标数据 → `core/` |
 | `daily-log/.pubclean/`（遗留空目录） | 删掉 |
-| `memory` 的 `SettingsSection.tsx` 仍是 1826 行单文件 | 拆成「1 个视图 + 3 个 hook + 约 6 个零件」 |
+| `memory` 的 `SettingsSection.tsx` 仍是 1314 行单文件 | 零件与纯模型层已抽出；剩 27 个 state + 全部 handler 待抽进 hook |
 
 **图片放哪的规则**（现在三种混用）：
 

@@ -1,3 +1,4 @@
+import styles from '../styles/settings-section.module.css'
 /** 通用零件：一行开关（标题 + 说明 + 右侧 switch）。与记忆业务无关，故放 client/components/。 */
 
 /** 一个开关行：标题 + 说明 + 右侧滑动开关（role=switch，键盘可达）。 */
@@ -9,10 +10,10 @@ export function SwitchRow(props: {
   onChange: (next: boolean) => void
 }): JSX.Element {
   return (
-    <div className="mem-row">
-      <div className="mem-row-copy">
-        <span className="mem-row-title">{props.title}</span>
-        <p className="mem-row-desc">{props.desc}</p>
+    <div className={styles.row}>
+      <div className={styles.rowCopy}>
+        <span className={styles.rowTitle}>{props.title}</span>
+        <p className={styles.rowDesc}>{props.desc}</p>
       </div>
       <button
         type="button"
@@ -20,10 +21,10 @@ export function SwitchRow(props: {
         aria-checked={props.checked}
         aria-label={props.title}
         disabled={props.disabled === true}
-        className={props.checked ? 'mem-switch mem-switch-on' : 'mem-switch'}
+        className={props.checked ? `${styles.switch} ${styles.switchOn}` : styles.switch}
         onClick={() => { props.onChange(!props.checked) }}
       >
-        <span className="mem-switch-knob" />
+        <span className={styles.switchKnob} />
       </button>
     </div>
   )

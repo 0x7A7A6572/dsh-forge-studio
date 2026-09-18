@@ -83,6 +83,11 @@ export async function buildClient({ root, id, version, inject = [] }) {
         generateScopedName: '[hash:base64:6]_[local]',
       },
     },
-    plugins: [cssInjectedByJs()],
+    plugins: [cssInjectedByJs({
+      // 默认 true 会把注入 IIFE 顶到 banner **之前**，bundle 就不再以
+      // window.__ModuleLoader__.load( 开头。设 false 让它留在 factory 内部，
+      // 既保住「文件第一句就是注册」的契约，又跟原来手动 injector 的时机一致。
+      topExecutionPriority: false,
+    })],
   })
 }

@@ -1,14 +1,15 @@
 /*
  * plugin-memory 样式正文。
  *
- * 注入与作用域契约见同目录 settings-section.ts；下面是必须遵守的硬约束：
+ * 用法：import styles from './settings-section.module.css'，然后取 styles.xxx。
+ * 类名由 vite 编译成 [hash:base64:6]_[local]，所以不再需要手写 mem- 前缀防串台。
+ * 下面是必须遵守的硬约束：
  *   - 颜色只走 design-platform.css 里确实定义过的 --dsw-* alias token：
  *     未定义的 var() 不报错，只是让整条声明在 computed-value 阶段失效。
  *   - 选择器不得依赖插件之外的祖先作用域（Modal 是 portal 到 body 的）。
  * 这两条原先由 tests/ 的守卫测试盯着；测试已整体移除，改之前自己盯。
  *
- * 导入走 vite 的 `?inline` 查询（见 scripts/vite.client.mjs）：它返回编译后的 CSS 文本
- * 且不自动注入，语义等价于原先 esbuild 的 text loader；运行时由 ensureMemoryStyle() 注入 <style>。
+ * 注入由 vite-plugin-css-injected-by-js 在 bundle 执行时插成 <style>，插件不再有手动 injector。
  */
 
 [data-dsh-memory-ui] {
@@ -20,34 +21,34 @@
   font-family: inherit;
 }
 
-[data-dsh-memory-ui] .mem-title-row {
+[data-dsh-memory-ui] .titleRow {
   display: flex;
   align-items: baseline;
   gap: 8px;
 }
 
-[data-dsh-memory-ui] .mem-title {
+[data-dsh-memory-ui] .title {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
 }
 
 /* 版本号：贴着标题但不抢标题（基线对齐 + 弱化色 + 等宽数字）。 */
-[data-dsh-memory-ui] .mem-version {
+[data-dsh-memory-ui] .version {
   font-size: 12px;
   font-weight: 400;
   color: var(--dsw-alias-label-tertiary);
   font-variant-numeric: tabular-nums;
 }
 
-[data-dsh-memory-ui] .mem-intro {
+[data-dsh-memory-ui] .intro {
   margin: 0;
   font-size: 13px;
   line-height: 1.6;
   color: var(--dsw-alias-label-tertiary);
 }
 
-[data-dsh-memory-ui] .mem-warn {
+[data-dsh-memory-ui] .warn {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -64,23 +65,23 @@
   line-height: 1.6;
 }
 
-[data-dsh-memory-ui] .mem-warn strong {
+[data-dsh-memory-ui] .warn strong {
   font-weight: 600;
   font-size: 13.5px;
   color: var(--dsw-alias-state-error-primary, #d64545);
 }
 
-[data-dsh-memory-ui] .mem-warn p {
+[data-dsh-memory-ui] .warn p {
   margin: 0;
   color: var(--dsw-alias-label-primary);
 }
 
-[data-dsh-memory-ui] .mem-warn-src {
+[data-dsh-memory-ui] .warnSrc {
   font-size: 12px;
   color: var(--dsw-alias-label-tertiary);
 }
 
-[data-dsh-memory-ui] .mem-card {
+[data-dsh-memory-ui] .card {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -90,32 +91,32 @@
   background: var(--dsw-alias-bg-module-platform);
 }
 
-[data-dsh-memory-ui] .mem-row {
+[data-dsh-memory-ui] .row {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
 }
 
-[data-dsh-memory-ui] .mem-row-copy {
+[data-dsh-memory-ui] .rowCopy {
   display: grid;
   gap: 4px;
   min-width: 0;
 }
 
-[data-dsh-memory-ui] .mem-row-title {
+[data-dsh-memory-ui] .rowTitle {
   font-size: 14px;
   font-weight: 600;
 }
 
-[data-dsh-memory-ui] .mem-row-desc {
+[data-dsh-memory-ui] .rowDesc {
   margin: 0;
   font-size: 12.5px;
   line-height: 1.55;
   color: var(--dsw-alias-label-tertiary);
 }
 
-[data-dsh-memory-ui] .mem-switch {
+[data-dsh-memory-ui] .switch {
   position: relative;
   flex: none;
   width: 40px;
@@ -129,18 +130,18 @@
 }
 
 /* 禁用态：锁定时整块开关都不给操作，鼠标也要如实反馈。 */
-[data-dsh-memory-ui] .mem-switch:disabled {
+[data-dsh-memory-ui] .switch:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-[data-dsh-memory-ui] .mem-switch-on {
+[data-dsh-memory-ui] .switchOn {
   /* 同样不存在 --dsw-alias-bg-accent；品牌色是 state-business-primary。 */
   background: var(--dsw-alias-state-business-primary, var(--dsw-alias-label-primary));
   border-color: transparent;
 }
 
-[data-dsh-memory-ui] .mem-switch-knob {
+[data-dsh-memory-ui] .switchKnob {
   position: absolute;
   top: 2px;
   left: 2px;
@@ -151,24 +152,24 @@
   transition: transform 120ms ease, background 120ms ease;
 }
 
-[data-dsh-memory-ui] .mem-switch-on .mem-switch-knob {
+[data-dsh-memory-ui] .switchOn .switchKnob {
   transform: translateX(16px);
   background: var(--dsw-alias-bg-module-platform);
 }
 
-[data-dsh-memory-ui] .mem-seg-row {
+[data-dsh-memory-ui] .segRow {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-[data-dsh-memory-ui] .mem-seg-label {
+[data-dsh-memory-ui] .segLabel {
   min-width: 52px;
   font-size: 13px;
   color: var(--dsw-alias-label-secondary);
 }
 
-[data-dsh-memory-ui] .mem-seg {
+[data-dsh-memory-ui] .seg {
   display: inline-flex;
   gap: 2px;
   padding: 2px;
@@ -177,7 +178,7 @@
   background: var(--dsw-alias-bg-module-platform);
 }
 
-[data-dsh-memory-ui] .mem-seg-btn {
+[data-dsh-memory-ui] .segBtn {
   padding: 3px 10px;
   border: none;
   border-radius: 7px;
@@ -190,16 +191,16 @@
   transition: background 120ms ease, color 120ms ease;
 }
 
-[data-dsh-memory-ui] .mem-seg-btn:hover:not(:disabled) {
+[data-dsh-memory-ui] .segBtn:hover:not(:disabled) {
   color: var(--dsw-alias-label-primary);
 }
 
-[data-dsh-memory-ui] .mem-seg-btn:disabled {
+[data-dsh-memory-ui] .segBtn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-[data-dsh-memory-ui] .mem-seg-on {
+[data-dsh-memory-ui] .segOn {
   /* interactive-bg-active 才是官方的「选中/激活」填充（light 0.1 黑 / dark 0.14 白），
      比拿 border 之类的 token 当底色更贴语义、两个主题下都看得清。 */
   background: var(--dsw-alias-interactive-bg-active);
@@ -207,13 +208,13 @@
   font-weight: 500;
 }
 
-[data-dsh-memory-ui] .mem-draft-form {
+[data-dsh-memory-ui] .draftForm {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-[data-dsh-memory-ui] .mem-draft-form textarea {
+[data-dsh-memory-ui] .draftForm textarea {
   min-height: 96px;
   padding: 8px 10px;
   border: 0.5px solid var(--dsw-alias-border-l4);
@@ -226,7 +227,7 @@
   resize: vertical;
 }
 
-[data-dsh-memory-ui] .mem-field-row {
+[data-dsh-memory-ui] .fieldRow {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -237,27 +238,28 @@
 
 /* 只给数字输入定宽。写裸 input 会把搜索框和复选框一起压成 64px
    （Input 原语的 input 自带 (0,1,0)，压不过这里的 (0,2,1)）。 */
-[data-dsh-memory-ui] .mem-field-row input[type='number'] {
+[data-dsh-memory-ui] .fieldRow input[type='number'] {
   width: 64px;
 }
 
 /* 搜索框自己撑开剩余宽度。 */
-[data-dsh-memory-ui] .mem-search {
+[data-dsh-memory-ui] .search {
   flex: 1;
   min-width: 160px;
 }
 
-[data-dsh-memory-ui] .mem-search input {
+[data-dsh-memory-ui] .search input {
   width: 100%;
 }
 
 /* ---- 原生下拉统一外观（插件级） ----
    作用域锁在本插件自己的选择器上：内联 UI 走 [data-dsh-memory-ui] 前缀，
-   弹窗（portal 到 document.body，不在该作用域内）走 .mem-select 类名。
-   两者都带 mem- 命名空间，因此不会漏到别的插件。
+   弹窗（portal 到 document.body，不在该作用域内）走 .select 类名。
+   类名由 CSS Modules 哈希隔离；自定义属性（--mem-fill 这类）不受哈希保护，
+   所以仍手写 mem- 命名空间，别删。
    主题是 body[data-ds-dark-theme]，箭头分浅深两套配色。 */
 [data-dsh-memory-ui] select,
-.mem-select {
+.select {
   -webkit-appearance: none;
   appearance: none;
   flex: 0 1 auto;
@@ -278,35 +280,35 @@
 }
 
 body[data-ds-dark-theme] [data-dsh-memory-ui] select,
-body[data-ds-dark-theme] .mem-select {
+body[data-ds-dark-theme] .select {
   background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23a8adb8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 
 [data-dsh-memory-ui] select:hover:not(:disabled),
-.mem-select:hover:not(:disabled) {
+.select:hover:not(:disabled) {
   border-color: var(--dsw-alias-state-business-primary);
 }
 
 [data-dsh-memory-ui] select:focus-visible,
-.mem-select:focus-visible {
+.select:focus-visible {
   outline: 2px solid var(--dsw-alias-state-business-primary);
   outline-offset: 1px;
 }
 
 [data-dsh-memory-ui] select:disabled,
-.mem-select:disabled {
+.select:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
 /* 展开后的选项列表：Chromium 下 option 的底色可以生效，跟着主题走。 */
 [data-dsh-memory-ui] select option,
-.mem-select option {
+.select option {
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-primary);
 }
 
-[data-dsh-memory-ui] .mem-head {
+[data-dsh-memory-ui] .head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -314,25 +316,25 @@ body[data-ds-dark-theme] .mem-select {
   margin-top: 4px;
 }
 
-[data-dsh-memory-ui] .mem-head-title {
+[data-dsh-memory-ui] .headTitle {
   font-size: 15px;
   font-weight: 600;
 }
 
-[data-dsh-memory-ui] .mem-toolbar {
+[data-dsh-memory-ui] .toolbar {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-[data-dsh-memory-ui] .mem-tabs {
+[data-dsh-memory-ui] .tabs {
   display: flex;
   align-items: center;
   gap: 4px;
   border-bottom: 0.5px solid var(--dsw-alias-border-l4);
 }
 
-[data-dsh-memory-ui] .mem-tab {
+[data-dsh-memory-ui] .tab {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -346,23 +348,23 @@ body[data-ds-dark-theme] .mem-select {
   cursor: pointer;
 }
 
-[data-dsh-memory-ui] .mem-tab-active {
+[data-dsh-memory-ui] .tabActive {
   color: var(--dsw-alias-label-primary);
   border-bottom-color: var(--dsw-alias-label-primary);
 }
 
-[data-dsh-memory-ui] .mem-tab-count {
+[data-dsh-memory-ui] .tabCount {
   font-size: 11px;
   opacity: 0.7;
 }
 
-[data-dsh-memory-ui] .mem-list {
+[data-dsh-memory-ui] .list {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-[data-dsh-memory-ui] .mem-item {
+[data-dsh-memory-ui] .item {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -372,13 +374,13 @@ body[data-ds-dark-theme] .mem-select {
   background: var(--dsw-alias-bg-module-platform);
 }
 
-[data-dsh-memory-ui] .mem-item-head {
+[data-dsh-memory-ui] .itemHead {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-[data-dsh-memory-ui] .mem-item-title {
+[data-dsh-memory-ui] .itemTitle {
   flex: 1;
   min-width: 0;
   font-size: 13.5px;
@@ -388,7 +390,7 @@ body[data-ds-dark-theme] .mem-select {
   white-space: nowrap;
 }
 
-[data-dsh-memory-ui] .mem-item-body {
+[data-dsh-memory-ui] .itemBody {
   margin: 0;
   font-size: 12.5px;
   line-height: 1.6;
@@ -397,13 +399,13 @@ body[data-ds-dark-theme] .mem-select {
   word-break: break-word;
 }
 
-[data-dsh-memory-ui] .mem-item-actions {
+[data-dsh-memory-ui] .itemActions {
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
-[data-dsh-memory-ui] .mem-empty {
+[data-dsh-memory-ui] .empty {
   padding: 20px 12px;
   text-align: center;
   font-size: 12.5px;
@@ -412,17 +414,17 @@ body[data-ds-dark-theme] .mem-select {
   border-radius: 10px;
 }
 
-[data-dsh-memory-ui] .mem-error {
+[data-dsh-memory-ui] .error {
   font-size: 12.5px;
   color: var(--dsw-alias-state-error-primary, #d64545);
 }
 
-[data-dsh-memory-ui] .mem-notice {
+[data-dsh-memory-ui] .notice {
   font-size: 12.5px;
   color: var(--dsw-alias-label-tertiary);
 }
 
-[data-dsh-memory-ui] .mem-prompt {
+[data-dsh-memory-ui] .prompt {
   max-height: 200px;
   overflow: auto;
   padding: 10px 12px;
@@ -434,7 +436,7 @@ body[data-ds-dark-theme] .mem-select {
   white-space: pre-wrap;
 }
 
-[data-dsh-memory-ui] .mem-import-area {
+[data-dsh-memory-ui] .importArea {
   width: 100%;
   min-height: 140px;
   padding: 8px 10px;
@@ -449,9 +451,9 @@ body[data-ds-dark-theme] .mem-select {
 }
 
 /* 注意：Modal 是 createPortal 到 document.body 的，弹窗不在 [data-dsh-memory-ui]
-   作用域内 —— 属性挂在 .mem-modal-body 自己身上，所以这里必须是自身选择器（没有空格），
+   作用域内 —— 属性挂在 .modalBody 自己身上，所以这里必须是自身选择器（没有空格），
    写成后代选择器会永远匹配不到。 */
-[data-dsh-memory-ui].mem-modal-body {
+[data-dsh-memory-ui].modalBody {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -461,34 +463,34 @@ body[data-ds-dark-theme] .mem-select {
 /* 需要更宽的弹窗（导入、详情、沉淀、新增/编辑、实体）都挂这个类。
    Modal.module.css 的 .dialog 是单类 .dialog { width: min(380px, 100%) }，权重 (0,1,0)；
    插件自己的单类规则同样是 (0,1,0)，打平后按源码顺序 —— app 的 CSS Module 在插件的
-   <style> 之后注入，所以只写单类会被压住。用 [role='dialog'].mem-modal-wide 把权重
+   <style> 之后注入，所以只写单类会被压住。用 [role='dialog'].modalWide 把权重
    拉到 (0,2,0)，与加载顺序无关。Modal 会把 className 透传到 dialog 上。
 
    限高走宿主 RiskConfirmation 的同一口径：卡片不超过可视区（.root 上下各留 24px），
    多出来的高度交给内容区自己滚，footer 留在卡片里不动。原因是宿主 .dialog 已经
    overflow: hidden 且没有 max-height —— 只加宽不加高时，沉淀面板这种长列表会把卡片
    顶穿视口：头尾一起被推出屏幕，弹窗自身又没有滚动条，中间那段永远够不着。 */
-[role='dialog'].mem-modal-wide {
+[role='dialog'].modalWide {
   width: min(640px, 100%);
   max-height: calc(100vh - 48px);
 }
 
 @supports (height: 100dvh) {
-  [role='dialog'].mem-modal-wide {
+  [role='dialog'].modalWide {
     max-height: calc(100dvh - 48px);
   }
 }
 
 /* 内层不再限制 560px，让内容吃满宽出来的空间。 */
-[role='dialog'].mem-modal-wide [data-dsh-memory-ui].mem-modal-body {
+[role='dialog'].modalWide [data-dsh-memory-ui].modalBody {
   max-width: none;
 }
 
-/* 滚动区：挂在 Modal 的 contentClassName 上（SettingsSection.tsx 里每个 .mem-modal-wide 都得带，
+/* 滚动区：挂在 Modal 的 contentClassName 上（SettingsSection.tsx 里每个 .modalWide 都得带，
    漏一个就是「限高生效、内容却被宿主的 overflow: hidden 裁掉」，比不限高更难查）。
    header / description / body 都在这个 flex 子项里：min-height: 0 才让它真缩到限高
    以下（min-height: auto 会顶住不缩），overscroll-behavior 防止滚到底把宿主页面带走。 */
-[role='dialog'].mem-modal-wide .mem-modal-scroll {
+[role='dialog'].modalWide .modalScroll {
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -496,13 +498,13 @@ body[data-ds-dark-theme] .mem-select {
 
 /* ---- 节点滑杆（ScaleSlider）：重要性 / 注入门槛 / 高级配置共用 ---- */
 
-[data-dsh-memory-ui] .mem-advanced {
+[data-dsh-memory-ui] .advanced {
   margin-top: 10px;
   padding-top: 8px;
   border-top: 1px solid var(--dsw-alias-border-l4);
 }
 
-[data-dsh-memory-ui] .mem-advanced > summary {
+[data-dsh-memory-ui] .advanced > summary {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -515,50 +517,50 @@ body[data-ds-dark-theme] .mem-select {
 }
 
 /* 去掉浏览器默认的展开三角，改用右侧 chevron（展开时转 180°）。 */
-[data-dsh-memory-ui] .mem-advanced > summary::-webkit-details-marker {
+[data-dsh-memory-ui] .advanced > summary::-webkit-details-marker {
   display: none;
 }
 
-[data-dsh-memory-ui] .mem-advanced-chevron {
+[data-dsh-memory-ui] .advancedChevron {
   flex: none;
   transition: transform 0.15s ease;
 }
 
-[data-dsh-memory-ui] .mem-advanced[open] > summary {
+[data-dsh-memory-ui] .advanced[open] > summary {
   margin-bottom: 9px;
   opacity: 1;
 }
 
-[data-dsh-memory-ui] .mem-advanced[open] > summary .mem-advanced-chevron {
+[data-dsh-memory-ui] .advanced[open] > summary .advancedChevron {
   transform: rotate(180deg);
 }
 
 /* 高级项逐项拉开：卡片内的行间距是 10px，但滑杆块由「轨道+刻点+说明」三层组成，
    10px 会把上一项的说明和下一项的轨道挤在一起，所以这里单独给到 18px。 */
-[data-dsh-memory-ui] .mem-advanced-body {
+[data-dsh-memory-ui] .advancedBody {
   display: flex;
   flex-direction: column;
   gap: 30px;
 }
 
 /* 滑杆块在分区行里靠 flex:1 撑开，这里是纵向流式布局，不要让它参与伸缩。 */
-[data-dsh-memory-ui] .mem-advanced-body > * {
+[data-dsh-memory-ui] .advancedBody > * {
   flex: none;
 }
 
 /* 「生成对话记忆」关闭 → 整块联动参数置灰（宿主侧同样不生效，见 src/agent/capture.ts）。 */
-[data-dsh-memory-ui] .mem-advanced-off {
+[data-dsh-memory-ui] .advancedOff {
   opacity: 0.6;
 }
 
 /* 组内不再叠第二层 disabled 透明，避免灰上加灰、开关糊成一片。 */
-[data-dsh-memory-ui] .mem-advanced-off .mem-switch:disabled,
-[data-dsh-memory-ui] .mem-advanced-off .mem-slider:disabled {
+[data-dsh-memory-ui] .advancedOff .switch:disabled,
+[data-dsh-memory-ui] .advancedOff .slider:disabled {
   opacity: 1;
   cursor: not-allowed;
 }
 
-[data-dsh-memory-ui] .mem-advanced-hint {
+[data-dsh-memory-ui] .advancedHint {
   margin: 0 0 12px;
   font-size: 12px;
   line-height: 1.5;
@@ -567,7 +569,7 @@ body[data-ds-dark-theme] .mem-select {
 
 /* ---- 重要性：分级滑杆（原生 range + 自绘轨道/滑块，1-5 一档一停） ---- */
 
-[data-dsh-memory-ui] .mem-slider-wrap {
+[data-dsh-memory-ui] .sliderWrap {
   display: flex;
   flex: 1;
   min-width: 0;
@@ -575,7 +577,7 @@ body[data-ds-dark-theme] .mem-select {
   gap: 5px;
 }
 
-[data-dsh-memory-ui] .mem-slider {
+[data-dsh-memory-ui] .slider {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
@@ -590,12 +592,12 @@ body[data-ds-dark-theme] .mem-select {
   cursor: pointer;
 }
 
-[data-dsh-memory-ui] .mem-slider:disabled {
+[data-dsh-memory-ui] .slider:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-[data-dsh-memory-ui] .mem-slider::-webkit-slider-thumb {
+[data-dsh-memory-ui] .slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   width: 14px;
@@ -606,7 +608,7 @@ body[data-ds-dark-theme] .mem-select {
   cursor: pointer;
 }
 
-[data-dsh-memory-ui] .mem-slider::-moz-range-thumb {
+[data-dsh-memory-ui] .slider::-moz-range-thumb {
   width: 14px;
   height: 14px;
   border: 2px solid var(--dsw-alias-bg-layer-2);
@@ -616,36 +618,36 @@ body[data-ds-dark-theme] .mem-select {
 }
 
 /* 刻度条：左右各留半个滑块宽度，让刻点和滑块行程对齐。 */
-[data-dsh-memory-ui] .mem-slider-ticks {
+[data-dsh-memory-ui] .sliderTicks {
   display: flex;
   justify-content: space-between;
   padding: 0 7px;
 }
 
-[data-dsh-memory-ui] .mem-tick {
+[data-dsh-memory-ui] .tick {
   width: 3px;
   height: 3px;
   border-radius: 50%;
   background: var(--dsw-alias-border-l4);
 }
 
-[data-dsh-memory-ui] .mem-tick-on {
+[data-dsh-memory-ui] .tickOn {
   background: var(--dsw-alias-state-business-primary);
 }
 
-[data-dsh-memory-ui] .mem-slider-desc {
+[data-dsh-memory-ui] .sliderDesc {
   font-size: 12px;
   line-height: 1.5;
   color: var(--dsw-alias-label-secondary);
 }
 
-[data-dsh-memory-ui] .mem-slider-desc b {
+[data-dsh-memory-ui] .sliderDesc b {
   font-weight: 500;
   color: var(--dsw-alias-state-business-primary);
 }
 
 /* ---- 详情：元数据网格 + 全文 ---- */
-[data-dsh-memory-ui] .mem-meta {
+[data-dsh-memory-ui] .meta {
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 4px 12px;
@@ -653,16 +655,16 @@ body[data-ds-dark-theme] .mem-select {
   line-height: 1.6;
 }
 
-[data-dsh-memory-ui] .mem-meta-key {
+[data-dsh-memory-ui] .metaKey {
   color: var(--dsw-alias-label-tertiary);
 }
 
-[data-dsh-memory-ui] .mem-meta-value {
+[data-dsh-memory-ui] .metaValue {
   color: var(--dsw-alias-label-primary);
   word-break: break-all;
 }
 
-[data-dsh-memory-ui] .mem-detail-body {
+[data-dsh-memory-ui] .detailBody {
   margin: 0;
   padding: 10px 12px;
   max-height: 320px;
@@ -679,25 +681,25 @@ body[data-ds-dark-theme] .mem-select {
 }
 
 /* ---- 沉淀：原文留档 + 后台调用审计 ---- */
-[data-dsh-memory-ui] .mem-raw-list,
-[data-dsh-memory-ui] .mem-audit-list {
+[data-dsh-memory-ui] .rawList,
+[data-dsh-memory-ui] .auditList {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-[data-dsh-memory-ui] .mem-raw-item {
+[data-dsh-memory-ui] .rawItem {
   padding: 8px 10px;
   border: 0.5px solid var(--dsw-alias-border-l4);
   border-radius: 8px;
 }
 
-[data-dsh-memory-ui] .mem-raw-meta {
+[data-dsh-memory-ui] .rawMeta {
   font-size: 11px;
   color: var(--dsw-alias-label-tertiary);
 }
 
-[data-dsh-memory-ui] .mem-raw-text {
+[data-dsh-memory-ui] .rawText {
   margin: 8px 0 0;
   padding: 8px 10px;
   max-height: 200px;
@@ -712,7 +714,7 @@ body[data-ds-dark-theme] .mem-select {
   word-break: break-word;
 }
 
-[data-dsh-memory-ui] .mem-audit-item {
+[data-dsh-memory-ui] .auditItem {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -722,29 +724,29 @@ body[data-ds-dark-theme] .mem-select {
   font-size: 12px;
 }
 
-[data-dsh-memory-ui] .mem-audit-ok,
-[data-dsh-memory-ui] .mem-audit-bad {
+[data-dsh-memory-ui] .auditOk,
+[data-dsh-memory-ui] .auditBad {
   padding: 1px 6px;
   border-radius: 999px;
   font-size: 11px;
 }
 
-[data-dsh-memory-ui] .mem-audit-ok {
+[data-dsh-memory-ui] .auditOk {
   border: 0.5px solid var(--dsw-alias-state-business-primary);
   color: var(--dsw-alias-state-business-primary);
 }
 
-[data-dsh-memory-ui] .mem-audit-bad {
+[data-dsh-memory-ui] .auditBad {
   border: 0.5px solid var(--dsw-alias-state-error-primary);
   color: var(--dsw-alias-state-error-primary);
 }
 
-[data-dsh-memory-ui] .mem-audit-model {
+[data-dsh-memory-ui] .auditModel {
   font-size: 12px;
   color: var(--dsw-alias-label-secondary);
 }
 
-[data-dsh-memory-ui] .mem-audit-error {
+[data-dsh-memory-ui] .auditError {
   font-size: 11px;
   color: var(--dsw-alias-state-error-primary);
   word-break: break-all;
@@ -754,7 +756,7 @@ body[data-ds-dark-theme] .mem-select {
    颜色一律取主题已定义的 token（见 theme-tokens.test.ts）：未定义的 var() 会让
    整条声明在 computed-value 阶段失效，而且从代码上看不出问题。 */
 
-[data-dsh-memory-ui] .mem-item-summary {
+[data-dsh-memory-ui] .itemSummary {
   margin: 0;
   font-size: 12px;
   line-height: 1.55;
@@ -762,14 +764,14 @@ body[data-ds-dark-theme] .mem-select {
   word-break: break-word;
 }
 
-[data-dsh-memory-ui] .mem-item-alias {
+[data-dsh-memory-ui] .itemAlias {
   font-size: 11.5px;
   line-height: 1.5;
   color: var(--dsw-alias-label-tertiary);
   word-break: break-all;
 }
 
-[data-dsh-memory-ui] .mem-entity-badge {
+[data-dsh-memory-ui] .entityBadge {
   flex: none;
   padding: 1px 7px;
   border: 0.5px solid var(--dsw-alias-border-l4);
@@ -780,39 +782,39 @@ body[data-ds-dark-theme] .mem-select {
 }
 
 /* 类别着色：靠「描边 + 亮度 + 虚实」区分，不引新颜色。 */
-[data-dsh-memory-ui] .mem-entity-project {
+[data-dsh-memory-ui] .entityProject {
   color: var(--dsw-alias-state-business-primary);
   border-color: var(--dsw-alias-state-business-primary);
 }
 
-[data-dsh-memory-ui] .mem-entity-tool {
+[data-dsh-memory-ui] .entityTool {
   color: var(--dsw-alias-label-primary);
   border-color: var(--dsw-alias-label-primary);
 }
 
-[data-dsh-memory-ui] .mem-entity-person {
+[data-dsh-memory-ui] .entityPerson {
   color: var(--dsw-alias-state-error-primary);
   border-color: var(--dsw-alias-state-error-primary);
 }
 
-[data-dsh-memory-ui] .mem-entity-org {
+[data-dsh-memory-ui] .entityOrg {
   color: var(--dsw-alias-label-secondary);
   border-color: var(--dsw-alias-label-secondary);
 }
 
-[data-dsh-memory-ui] .mem-entity-concept {
+[data-dsh-memory-ui] .entityConcept {
   color: var(--dsw-alias-state-business-primary);
   border-style: dashed;
 }
 
-[data-dsh-memory-ui] .mem-entity-other {
+[data-dsh-memory-ui] .entityOther {
   color: var(--dsw-alias-label-tertiary);
   border-color: var(--dsw-alias-label-tertiary);
   border-style: dashed;
 }
 
-/* 实体名是按钮（点开关联记忆），把浏览器默认外观抹平，尺寸对齐 .mem-item-title。 */
-[data-dsh-memory-ui] .mem-entity-name {
+/* 实体名是按钮（点开关联记忆），把浏览器默认外观抹平，尺寸对齐 .itemTitle。 */
+[data-dsh-memory-ui] .entityName {
   padding: 0;
   border: 0;
   background: transparent;
@@ -824,11 +826,11 @@ body[data-ds-dark-theme] .mem-select {
   cursor: pointer;
 }
 
-[data-dsh-memory-ui] .mem-entity-name:hover {
+[data-dsh-memory-ui] .entityName:hover {
   color: var(--dsw-alias-state-business-primary);
 }
 
-[data-dsh-memory-ui] .mem-entity-links {
+[data-dsh-memory-ui] .entityLinks {
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -837,7 +839,7 @@ body[data-ds-dark-theme] .mem-select {
   border-radius: 8px;
 }
 
-[data-dsh-memory-ui] .mem-entity-link {
+[data-dsh-memory-ui] .entityLink {
   padding: 2px 0;
   border: 0;
   background: transparent;
@@ -849,11 +851,11 @@ body[data-ds-dark-theme] .mem-select {
   cursor: pointer;
 }
 
-[data-dsh-memory-ui] .mem-entity-link:hover {
+[data-dsh-memory-ui] .entityLink:hover {
   color: var(--dsw-alias-state-business-primary);
 }
 
-[data-dsh-memory-ui] .mem-edge-block {
+[data-dsh-memory-ui] .edgeBlock {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -861,7 +863,7 @@ body[data-ds-dark-theme] .mem-select {
   border-top: 0.5px solid var(--dsw-alias-border-l4);
 }
 
-[data-dsh-memory-ui] .mem-edge-list {
+[data-dsh-memory-ui] .edgeList {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -869,7 +871,7 @@ body[data-ds-dark-theme] .mem-select {
   overflow-y: auto;
 }
 
-[data-dsh-memory-ui] .mem-edge-item {
+[data-dsh-memory-ui] .edgeItem {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -879,7 +881,7 @@ body[data-ds-dark-theme] .mem-select {
   border-radius: 8px;
 }
 
-[data-dsh-memory-ui] .mem-edge-relation {
+[data-dsh-memory-ui] .edgeRelation {
   flex: none;
   padding: 1px 7px;
   border: 0.5px solid var(--dsw-alias-label-secondary);
@@ -889,7 +891,7 @@ body[data-ds-dark-theme] .mem-select {
   line-height: 1.6;
 }
 
-[data-dsh-memory-ui] .mem-edge-node {
+[data-dsh-memory-ui] .edgeNode {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -900,7 +902,7 @@ body[data-ds-dark-theme] .mem-select {
 }
 
 /* 记忆节点可点击（跳到它的详情）。 */
-[data-dsh-memory-ui] .mem-edge-jump {
+[data-dsh-memory-ui] .edgeJump {
   padding: 0;
   border: 0;
   background: transparent;
@@ -910,18 +912,18 @@ body[data-ds-dark-theme] .mem-select {
   cursor: pointer;
 }
 
-[data-dsh-memory-ui] .mem-edge-jump:hover {
+[data-dsh-memory-ui] .edgeJump:hover {
   color: var(--dsw-alias-state-business-primary);
   text-decoration: underline;
 }
 
-[data-dsh-memory-ui] .mem-edge-note {
+[data-dsh-memory-ui] .edgeNote {
   font-size: 11.5px;
   color: var(--dsw-alias-label-tertiary);
   word-break: break-word;
 }
 
-[data-dsh-memory-ui] .mem-link-form {
+[data-dsh-memory-ui] .linkForm {
   display: flex;
   flex-direction: column;
   gap: 8px;

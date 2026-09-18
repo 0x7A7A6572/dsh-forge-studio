@@ -7,6 +7,7 @@
  */
 
 import type { CSSProperties, ReactNode } from 'react'
+import styles from '../styles/settings-section.module.css'
 
 export interface ScaleSliderProps {
   /** 控件名，同时作为 aria-label。 */
@@ -31,10 +32,10 @@ export function ScaleSlider(props: ScaleSliderProps) {
   const fill = steps.length > 1 ? (index / (steps.length - 1)) * 100 : 100
   const desc = props.describe?.(current)
   return (
-    <div className="mem-slider-wrap">
+    <div className={styles.sliderWrap}>
       <input
         type="range"
-        className="mem-slider"
+        className={styles.slider}
         min={0}
         max={steps.length - 1}
         step={1}
@@ -48,12 +49,12 @@ export function ScaleSlider(props: ScaleSliderProps) {
           if (next !== undefined) props.onChange(next)
         }}
       />
-      <div className="mem-slider-ticks" aria-hidden="true">
+      <div className={styles.sliderTicks} aria-hidden="true">
         {steps.map((step, at) => (
-          <span key={step} className={at <= index ? 'mem-tick mem-tick-on' : 'mem-tick'} />
+          <span key={step} className={at <= index ? `${styles.tick} ${styles.tickOn}` : styles.tick} />
         ))}
       </div>
-      {desc !== undefined && <span className="mem-slider-desc">{desc}</span>}
+      {desc !== undefined && <span className={styles.sliderDesc}>{desc}</span>}
     </div>
   )
 }
