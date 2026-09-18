@@ -1,12 +1,20 @@
 /**
- * 样式正文（*.css）的导入声明。
+ * 样式文件的导入声明（plugin-daily-log）。
  *
- * build.mjs 用 esbuild `loader: { '.css': 'text' }` 把 .css 文件当纯文本打进
- * lib/client.js —— default 导出就是文件全文，运行时由 ui-css.ts 里的 ensure*Style()
- * 注入 <style>。dsh client bundle 没有独立静态资源通道，样式必须随闭包产物走，
- * 因此这里只声明「导入即拿到字符串」，不存在 CSS Modules 之类的对象形态。
+ * *.css?inline —— vite 返回**编译后的 CSS 文本**且不自动注入，语义等价于原先
+ * esbuild 的 `loader: { '.css': 'text' }`。运行时由 ui-css.ts 的 ensure*Style()
+ * 插成 <style>，因此作用域与回收时机仍由插件自己掌控。
+ *
+ * *.module.css —— vite 原生 CSS Modules：default 导出「局部类名 → 哈希类名」映射表，
+ * 编译后的 CSS 由 vite-plugin-css-injected-by-js 在 factory 执行时插成 <style>。
+ * 类名形态 [hash]_[local]，两个插件撞同名文件也不会撞类名。
  */
-declare module '*.css' {
+declare module '*.css?inline' {
   const css: string
   export default css
+}
+
+declare module '*.module.css' {
+  const classes: Record<string, string>
+  export default classes
 }

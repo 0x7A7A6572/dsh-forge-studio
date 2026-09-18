@@ -7,9 +7,9 @@
  * 选择器下会失配，故与分区共用同一个根标记。
  */
 
-// 样式正文在 ui-css.css（真 CSS 文件，编辑器有高亮/补全；build.mjs 的
-// `loader: { '.css': 'text' }` 把它当纯文本内联进 lib/client.js）。
-import CSS from './ui-css.css'
+// 样式正文在 ui-css.css（真 CSS 文件，编辑器有高亮/补全；vite 的 `?inline` 查询返回
+// 编译后的 CSS 文本且不自动注入，语义等价于原先 esbuild 的 text loader）。
+import CSS from './ui-css.css?inline'
 
 const STYLE_ATTR = 'data-dsh-memory-style'
 
