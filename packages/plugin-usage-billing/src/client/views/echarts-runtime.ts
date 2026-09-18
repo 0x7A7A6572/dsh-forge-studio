@@ -80,7 +80,8 @@ let loading: Promise<EChartsModule | null> | null = null
  * 加载并注册 echarts（只做一次）。
  *
  * 动态 import：echarts 只在真的要画图时才进**执行**路径。注意 client 包是单文件 CJS 闭包，
- * esbuild 不会为它切 chunk —— 体积该涨还是涨，这里省的只是「不执行」。
+ * 构建预设开了 inlineDynamicImports（见 scripts/vite.client.mjs），不会为它切 chunk
+ * —— 体积该涨还是涨，这里省的只是「不执行」。
  */
 export function loadEcharts(): Promise<EChartsModule | null> {
   loading ??= (async (): Promise<EChartsModule | null> => {

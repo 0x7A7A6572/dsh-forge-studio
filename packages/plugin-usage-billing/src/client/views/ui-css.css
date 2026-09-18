@@ -5,10 +5,10 @@
  *   - 颜色只走 design-platform.css 里确实定义过的 --dsw-* alias token：
  *     未定义的 var() 不报错，只是让整条声明在 computed-value 阶段失效。
  *   - 选择器不得依赖插件之外的祖先作用域（Modal 是 portal 到 body 的）。
- * 这两条由 tests/ 里的守卫测试盯着，改之前先看它们。
+ * 这两条原先由 tests/ 的守卫测试盯着；测试已整体移除，改之前自己盯。
  *
- * build.mjs 用 esbuild `loader: { '.css': 'text' }` 把这个文件当纯文本
- * 内联进 lib/client.js（default 导出即全文），运行时由 ensureUsageBillingStyle() 注入 <style>。
+ * 导入走 vite 的 `?inline` 查询（见 scripts/vite.client.mjs）：它返回编译后的 CSS 文本
+ * 且不自动注入，语义等价于原先 esbuild 的 text loader；运行时由 ensureUsageBillingStyle() 注入 <style>。
  */
 
 /* ---------- 基础 ---------- */
