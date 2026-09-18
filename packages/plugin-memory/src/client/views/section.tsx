@@ -1448,6 +1448,7 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
 
       <Modal
         className="mem-modal-wide"
+        contentClassName="mem-modal-scroll"
         open={importOpen}
         onClose={() => { setImportOpen(false) }}
         title="导入其他记忆"
@@ -1523,6 +1524,7 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
 
       <Modal
         className="mem-modal-wide"
+        contentClassName="mem-modal-scroll"
         open={detail !== null}
         onClose={closeDetail}
         title={detail?.title ?? '记忆详情'}
@@ -1692,6 +1694,7 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
 
       <Modal
         className="mem-modal-wide"
+        contentClassName="mem-modal-scroll"
         open={ledgerOpen}
         onClose={() => { setLedgerOpen(false) }}
         title="沉淀与后台调用"
@@ -1780,6 +1783,7 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
 
       <Modal
         className="mem-modal-wide"
+        contentClassName="mem-modal-scroll"
         open={draft !== null}
         onClose={() => { setDraft(null) }}
         title={draft?.id === null ? '新增记忆' : '编辑记忆'}
@@ -1799,6 +1803,7 @@ export function MemorySection(props: MemorySectionProps): JSX.Element {
 
       <Modal
         className="mem-modal-wide"
+        contentClassName="mem-modal-scroll"
         open={entityDraft !== null}
         onClose={() => { setEntityDraft(null) }}
         title={entityDraft?.id === null ? '新建实体' : '编辑实体'}
