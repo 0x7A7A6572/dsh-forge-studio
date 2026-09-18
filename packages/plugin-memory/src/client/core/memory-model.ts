@@ -149,7 +149,6 @@ export const MORE_ACTIONS = [
 ] as const
 
 /** 「更多」里的一项动作 id。 */
-export type MemoryMoreAction = (typeof MORE_ACTIONS)[number]['id']
 
 /** 分段组按钮的选项：短枚举一律用组按钮，不用下拉（少一次点击、也不用展开面板）。 */
 export const SCOPE_OPTIONS = MEMORY_SCOPES.map((scope) => ({ value: scope, label: SCOPE_LABELS[scope] }))
