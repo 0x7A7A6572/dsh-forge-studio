@@ -19,7 +19,6 @@ export type { SettingsProvider }
 export const MemoryConfigSchema = Schema.object({
   autoCapture: Schema.boolean().default(MEMORY_CONFIG_BASE.autoCapture),
   autoInject: Schema.boolean().default(MEMORY_CONFIG_BASE.autoInject),
-  autoJudge: Schema.boolean().default(MEMORY_CONFIG_BASE.autoJudge),
   maxInjected: Schema.natural().min(1).max(20).default(MEMORY_CONFIG_BASE.maxInjected),
   importanceThreshold: Schema.natural().min(1).max(5).default(MEMORY_CONFIG_BASE.importanceThreshold),
   captureEveryTurns: Schema.natural().min(1).max(20).default(MEMORY_CONFIG_BASE.captureEveryTurns),
