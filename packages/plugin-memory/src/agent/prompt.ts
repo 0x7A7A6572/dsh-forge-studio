@@ -19,51 +19,46 @@ import type { MemorySettingsAccess } from '../settings.ts'
 export const MEMORY_USAGE_SECTION = 'forge-memory:usage'
 export const MEMORY_RECALL_CONTEXT = 'forge-memory:recall'
 
-/** 使用引导（可测试的文本常量）。 */
-export const MEMORY_USAGE_TEXT = [
-  '## 记忆与进化 (plugin-memory)',
-  '',
-  '你有一份跨会话的本地记忆库，通过 memory_* 工具读写。它让你在后续对话里继续懂这个用户。',
-  '',
-  '### 什么时候记（memory_save）',
-  '- 用户明确表达的偏好、纠正、语气/格式/风格要求（"以后都…"、"别再…"）。',
-  '- 用户主动分享的身份与职业信息（姓名、所在地、背景、职位、技能）。',
-  '- 项目层面的关键决策与状态（为什么这么选、当前进展、踩过的坑）。',
-  '- 可复用的经验教训。',
-  '- 一条一事；标题写短而唯一，同主题沿用同一标题。',
-  '- 同一条的别的说法写进 aliases（而不是另记一条）：以后用别名当标题写入会自动并进这一条。',
-  '',
-  '### 写多长',
-  '- 一条正文不超过 320 字、**必须是单段纯文本**（不允许换行、列表、编号、markdown 标题）；超限或带换行会被拒写。',
-  '- 只写结论本身：是什么、为什么这么定、边界在哪。不写排查过程、失败尝试、文件行号、命令输出。',
-  '- 同一主题沿用同一标题续写；合并后总长同样受 320 字限制，顶破就先用 memory_update 把它改短。',
-  '- 不记：任务进度、进行中的快照、可重跑得到的验证结果（测试全过 / tsc 干净 / build 成功）——要看就重新跑，或另存便签。',
-  '',
-  '### 记到全局还是项目',
-  '- scope=global：换到任何项目都成立的东西 —— 语气、格式、身份、职业、广泛偏好。',
-  '- scope=project：只对当前这一个工作区成立的习惯、约定、决策、环境细节。',
-  '- 判不准时问：这条换个项目还成立吗？成立就 global，不成立就 project。',
-  '- 单项目习惯写进全局会污染其他项目；反之会丢失上下文。判错了可用 memory_move 改。',
-  '',
-  '### 地图：实体与关联（memory_entity / memory_link）',
-  '- 记忆不是孤岛：写记忆时用 entities 说清"它讲的是谁"（项目 / 工具 / 人 / 概念名），命中的实体自动连 about 边，没命中的按名字新建。',
-  '- 已有的实体名出现在标题或标签里算"关于"，只出现在正文里算"提及"；共享同一实体的两条记忆会自动连成"相关"。',
-  '- 关系本身有信息量时（细化 / 取代 / 冲突 / 属于 / 使用）用 memory_link 显式连；拿不准就不连，别硬凑。',
-  '- 回忆某个主题下都记过什么：memory_entity action=list 找实体，再 memory_link action=list memory_id=<id> 看它连到哪些记忆。',
-  '',
-  '### 什么时候查（memory_search / memory_list）',
-  '- 用户提到"上次""之前说过的""按我的习惯"这类历史指代时。',
-  '- 要动手前先查一眼有没有相关约定或决策。',
-  '',
-  '### 不该记的',
-  '- 临时任务的中间细节、可从代码/仓库直接读出的东西。',
-  '- 密钥、令牌、证件号、联系方式等敏感数据。',
-  '- 用户没说过、由你推测出来的偏好。',
-  '',
-  '### 修正与遗忘',
-  '- 内容过时或写错：memory_update 改；判断记错了作用域：memory_move 移动。',
-  '- 不再需要但可能还有价值：memory_archive 归档（可恢复）；确认无用才 memory_delete。',
-].join('\n')
+/** 使用引导 */
+export const MEMORY_USAGE_TEXT = `## 记忆与进化 (plugin-memory)
+
+你有一份跨会话的本地记忆库，通过 memory_* 工具读写。
+
+### 什么时候记（memory_save）
+- 用户明确表达的偏好、纠正、语气/格式/风格要求（"以后都…"、"别再…"）。
+- 用户主动分享的身份与职业信息（姓名、所在地、背景、职位、技能）。
+- 项目层面的关键约定、决策、习惯。
+
+### 记到全局还是项目
+- scope=global：换到任何项目都成立的东西 —— 语气、格式、身份、职业、广泛偏好。
+- scope=project：只对当前这一个工作区成立的习惯、约定、决策、环境细节。
+- 判不准时问：这条换个项目还成立吗？成立就 global，不成立就 project。
+- 单项目习惯写进全局会污染其他项目；反之会丢失上下文。判错了可用 memory_move 改。
+
+### 记忆的内容格式
+- 一条一事；标题写短而唯一，同主题沿用同一标题，同一语义的其他说法写进 aliases。
+- 正文上限 320 字（含markdown格式），但它是上限不是配额：写完先问一句"这条下次能不能从代码或文档里重新拿得到"——能就删，不能才留。
+- 只写结论本身：是什么、为什么这么定、边界在哪。
+- 同一主题沿用同一标题续写/重写；合并后总长同样受 320 字限制。
+
+### 不该记的
+- 任务进度、进行中的快照、可重跑得到的验证结果（测试全过 / tsc 干净 / build 成功）。
+- 临时任务的中间细节、可从代码/仓库直接读出的东西。
+- 密钥、令牌、证件号、联系方式等敏感数据。
+- 用户没说过、由你推测出来的偏好。
+
+### 地图：实体与关联（memory_entity / memory_link）
+- 写记忆时用 entities 说清"它讲的是谁"（项目 / 工具 / 人 / 概念名），命中的实体自动连 about 边，没命中的按名字新建。
+- 关系本身有信息量时（细化 / 取代 / 冲突 / 属于 / 使用）用 memory_link 显式连。
+- 回忆某个主题下都记过什么：memory_entity action=list 找实体，再 memory_link action=list memory_id=<id> 看它连到哪些记忆。
+
+### 什么时候查（memory_search / memory_list）
+- 用户提到"上次""之前说过的""按我的习惯"这类历史指代时。
+- 要动手前先查一眼有没有相关约定或决策。
+
+### 修正与遗忘
+- 内容过时或写错：memory_update 改；判断记错了作用域：memory_move 移动。
+- 不再需要但可能还有价值：memory_archive 归档（可恢复）；确认无用才 memory_delete。`
 
 /**
  * 注入边界的花括号转义（幂等）：\`{{a}}\` → \`{\\{a\\}}\`，不留下 \`{{\` 子串。
@@ -81,7 +76,7 @@ export function renderMemoryBlock(records: readonly MemoryRecord[], sessionCwd: 
     const where = record.scope === 'global' ? '全局' : '项目:' + projectLabelOf(record.projectPath)
     const label = MEMORY_KIND_LABELS[record.kind]
     lines.push('- [' + label + ' | ' + where + ' | ' + importanceLabel(record.importance) + '] ' + record.title + '：'
-      + record.content.replace(/\n/g, ' '))
+      + record.content.replace(/\n/g, '\n  '))
   }
   if (sessionCwd !== undefined && sessionCwd.trim() !== '') {
     lines.push('当前工作区：' + sessionCwd.trim() + '（scope=project 的记忆默认记到这里）')

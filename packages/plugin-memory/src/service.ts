@@ -56,8 +56,6 @@ export const MEMORY_NEAR_FLOOR = 0.4
 export const MEMORY_JUDGE_FLOOR = 0.2
 /** 单次判定最多带几条候选（越靠前越像）。 */
 export const MEMORY_JUDGE_MAX_CANDIDATES = 3
-/** 行首的列表 / 编号 / markdown 标题标记（service 的单段校验与 capture 过滤共用）。 */
-export const MEMORY_LINE_MARKER_PATTERN = /^\s*(?:[-*+•]\s|\d+[.)]\s|#{1,6}\s)/
 
 function amountOf(value: number | undefined): number {
   return value === undefined || !Number.isFinite(value) ? 0 : Math.max(0, Math.round(value))
@@ -99,47 +97,28 @@ function assertContentWithinLimit(text: string): void {
   )
 }
 
-/**
- * 单段纯文本校验：正文含换行、或以列表 / 编号 / markdown 标题标记开头，一律拒写。
- * 记忆正文是「结论一句话」，允许换行就等于允许把排查过程整段贴进来。
- * 只对非 import 来源生效（导入解析出来的是行式文本，不受这条约束）。
- */
-function assertSingleParagraph(text: string): void {
-  const breaks = text.match(/\r\n|\r|\n/g)?.length ?? 0
-  if (breaks > 0) {
-    throw new Error(
-      '记忆正文必须是单段纯文本：当前含 ' + breaks + ' 处换行（上限 ' + MEMORY_CONTENT_LIMIT
-      + ' 字，请勿用换行/列表排版）',
-    )
-  }
-  const marker = MEMORY_LINE_MARKER_PATTERN.exec(text)
-  if (marker !== null) {
-    throw new Error(
-      '记忆正文必须是单段纯文本：检测到列表/编号/markdown 标题标记「' + marker[0].trim()
-      + '」（上限 ' + MEMORY_CONTENT_LIMIT + ' 字，请勿用换行/列表排版）',
-    )
-  }
-}
 
-/** 折叠成单段：去首尾空白，行内换行折算成空格。 */
+/** 压平成一行：去首尾空白、换行折算成空格。只用于比较文本是否重复，不写回库。 */
 function flattenToParagraph(text: string): string {
   return text.replace(/\s*[\r\n]+\s*/g, ' ').trim()
 }
 
 /**
- * 同一条目的重复写入：新内容已包含在旧内容里就保留旧的，否则接在同一段里。
+ * 同一条目的重复写入：新内容已包含在旧内容里就保留旧的，否则另起一段接上。
  *
- * 正文只允许单段纯文本，所以两边都先把换行折算成空格再合并 —— 合并结果仍是一段，
- * 能过 assertSingleParagraph（历史库里可能存着多段的旧条目，一经合并即归一成单段）。
+ * 比较用压平后的文本（同一句话写成一行还是多行都算重复），但返回的是原文，
+ * 所以 markdown 排版在合并后保留。
  */
 export function mergeContent(previous: string, incoming: string): string {
-  const oldText = flattenToParagraph(previous)
-  const newText = flattenToParagraph(incoming)
-  if (newText === '') return oldText
-  if (oldText === '') return newText
-  if (oldText.includes(newText)) return oldText
-  if (newText.includes(oldText)) return newText
-  return oldText + ' ' + newText
+  const oldText = previous.trim()
+  const newText = incoming.trim()
+  const oldFlat = flattenToParagraph(oldText)
+  const newFlat = flattenToParagraph(newText)
+  if (newFlat === '') return oldText
+  if (oldFlat === '') return newText
+  if (oldFlat.includes(newFlat)) return oldText
+  if (newFlat.includes(oldFlat)) return newText
+  return oldText + '\n\n' + newText
 }
 
 /** 记忆文本归一化：小写、只留字母数字与汉字（语义重叠比较的输入）。 */
@@ -620,7 +599,6 @@ export class MemoryService extends TypertRemoteService {
     return {
       autoCapture: true,
       autoInject: true,
-      autoJudge: true,
       maxInjected: 6,
       importanceThreshold: 4,
       captureEveryTurns: 3,
@@ -652,10 +630,9 @@ export class MemoryService extends TypertRemoteService {
     this.judge = judge
   }
 
-  /** 判定是否生效：钩子装了 + 面板开关没关（settings 未就绪时按 base 默认值 true）。 */
-  private judgeEnabled(): boolean {
-    if (this.judge === undefined) return false
-    return this.config.settings?.get().autoJudge !== false
+  /** 判定是否生效：钩子装了就跑 —— 写入判定不是开关，是默认行为。 */
+  private judgeReady(): boolean {
+    return this.judge !== undefined
   }
 
   /** 跑一次判定：判定自己抛错也只当「没有判定」，绝不能影响写入。 */
@@ -771,7 +748,7 @@ export class MemoryService extends TypertRemoteService {
       lines.push('## ' + MEMORY_KIND_LABELS[kind], '')
       for (const record of group) {
         const date = new Date(record.updatedAt).toISOString().slice(0, 10)
-        lines.push('- [' + date + '] ' + record.content.replace(/\n/g, ' '))
+        lines.push('- [' + date + '] ' + record.content.replace(/\n/g, '\n  '))
       }
       lines.push('')
     }
@@ -1443,12 +1420,10 @@ export class MemoryService extends TypertRemoteService {
       importance?: number
       tags?: readonly string[]
       pinned?: boolean
-      exemptParagraph: boolean
     },
   ): Promise<MemoryRecord> {
     const mergedContent = mergeContent(existing.content, incoming.content)
     assertContentWithinLimit(mergedContent)
-    if (!incoming.exemptParagraph) assertSingleParagraph(mergedContent)
     const merged: MemoryRecord = {
       ...existing,
       content: mergedContent,
@@ -1485,10 +1460,7 @@ export class MemoryService extends TypertRemoteService {
       throw new Error('project-scoped memory requires a project path (workspace directory)')
     }
     const kind: MemoryKind = input.kind ?? 'fact'
-    // import 是行式文本解析出来的，不受「单段纯文本」约束；长度上限对所有来源生效。
-    const exemptParagraph = (input.source ?? 'agent') === 'import'
     assertContentWithinLimit(content)
-    if (!exemptParagraph) assertSingleParagraph(content)
     const summary = input.summary?.trim() ?? ''
     const mergeInput = {
       title,
@@ -1498,7 +1470,6 @@ export class MemoryService extends TypertRemoteService {
       ...(input.importance !== undefined ? { importance: input.importance } : {}),
       ...(input.tags !== undefined ? { tags: input.tags } : {}),
       ...(input.pinned !== undefined ? { pinned: input.pinned } : {}),
-      exemptParagraph,
     }
     const existing = this.findByTitle(title, scope, projectPath, kind)
     if (existing !== undefined) {
@@ -1518,9 +1489,9 @@ export class MemoryService extends TypertRemoteService {
     const near = this.findNearest({ title, content }, scope, projectPath, MEMORY_JUDGE_FLOOR)
     let judged: MemorySaveOutcome['judged']
     // 批量导入（source=import）不判定：一次导入几十条就是几十次调用，而导入本身
-    // 已经有「同标题 / 语义重叠」两道代码闸门兜着。显式打开面板开关也仍然不判定。
+    // 已经有「同标题 / 语义重叠」两道代码闸门兜着。
     const judgeAllowed = (input.source ?? 'agent') !== 'import'
-    if (judgeAllowed && near !== undefined && this.judgeEnabled()) {
+    if (judgeAllowed && near !== undefined && this.judgeReady()) {
       const verdict = await this.runJudge({
         title, content, summary, scope, projectPath, candidates: near.candidates,
       })
@@ -1541,7 +1512,7 @@ export class MemoryService extends TypertRemoteService {
             await this.syncAutoEdges()
             return { record, created: false, mergedBy: 'judge', judged }
           } catch {
-            // 合并会撞 320 字 / 单段闸门：判定说并，但并进去反而写不下 —— 退化成新建，
+            // 合并会撞 320 字上限：判定说并，但并进去反而写不下 —— 退化成新建，
             // 宁可多一条，也不要因为一次判定把这次写入丢掉。
           }
         }
@@ -1610,11 +1581,10 @@ export class MemoryService extends TypertRemoteService {
     if (title === '') throw new Error('memory title must not be empty')
     const content = patch.content === undefined ? current.content : patch.content.trim()
     if (content === '') throw new Error('memory content must not be empty')
-    // 只在真的改正文时过闸门：历史库里可能存着超限 / 多段的旧条目，
+    // 只在真的改正文时过闸门：历史库里可能存着超限的旧条目，
     // 它们仍可归档、改标题，不该因为旧数据过不了新闸门而卡死。
     if (patch.content !== undefined) {
       assertContentWithinLimit(content)
-      assertSingleParagraph(content)
     }
     const next: MemoryRecord = {
       ...current,

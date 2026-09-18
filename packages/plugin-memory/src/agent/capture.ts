@@ -11,7 +11,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { MEMORY_KINDS, type MemoryKind, type MemoryRawId, type MemoryScope } from '../types.ts'
-import { MEMORY_LINE_MARKER_PATTERN, MEMORY_RAW_LIMIT, type MemoryService } from '../service.ts'
+import { MEMORY_RAW_LIMIT, type MemoryService } from '../service.ts'
 import type { MemorySettingsAccess } from '../settings.ts'
 
 /** 提炼提示词。 */
@@ -23,7 +23,7 @@ export const CAPTURE_PROMPT = [
   '- 不要记：临时任务的中间步骤、可从代码直接读出的东西、你的推测、密钥令牌证件号等敏感数据。',
   '- 不要记任务进度与进行中的快照、排查过程的复述、提问与探索细节；可重跑得到的验证结果（测试全过 / tsc 干净 / build 成功）也不要记。',
   '',
-  '条数与长度上限（硬性）：最多输出 3 条，每条不超过 200 字、必须是单段纯文本，不要换行、不要列表。宁可少记，不要写长；超出上限的条目会被代码直接丢弃。',
+  '条数与长度上限（硬性）：最多输出 3 条，每条不超过 200 字。可以用换行和 markdown 排版（列表、加粗都行），但只写结论。宁可少记，不要写长；超出上限的条目会被代码直接丢弃。',
   'content 只写结论本身（是什么、为什么这么定、边界在哪），不要写"我排查了…""待验证…"这类叙事；同一主题只输出一条。',
   '只输出「以后还成立」的内容：偏好、纠正、身份、长期决策。以下一律不要输出（会污染记忆库）：发布/提交/安装/收录/部署的进度与状态（如"已发 npm""已合并""正在等 CI"）、本次任务做了什么、临时结论、可从代码或仓库直接读出的东西。',
   '如果这段对话里没有上述「值得记」的内容，直接输出 []。空数组是正常且期望的结果，不要为了凑数而记。',
@@ -174,8 +174,8 @@ export interface CaptureDroppedItem {
   readonly reason: string
 }
 
-/** 丢弃原因：条数超限 / 标题过长 / 正文过长 / 多行排版 / 进度状态快照。 */
-export type CaptureDropReason = 'too-many' | 'title-too-long' | 'too-long' | 'multi-line' | 'status-snapshot'
+/** 丢弃原因：条数超限 / 标题过长 / 正文过长 / 进度状态快照。 */
+export type CaptureDropReason = 'too-many' | 'title-too-long' | 'too-long' | 'status-snapshot'
 
 /** 解析结果：采纳的条目 + 被丢弃的条目（丢弃不截断，直接不要）。 */
 export interface CaptureParseResult {
@@ -183,11 +183,6 @@ export interface CaptureParseResult {
   readonly dropped: CaptureDroppedItem[]
 }
 
-/** 正文是不是多行 / 列表排版：含换行，或任一行以列表、编号、markdown 标题标记开头。 */
-export function isMultiLineContent(text: string): boolean {
-  if (/\r\n|\r|\n/.test(text)) return true
-  return text.split('\n').some((line) => MEMORY_LINE_MARKER_PATTERN.test(line))
-}
 
 /** 正文是不是进度 / 状态快照（以「已 / 当前 / …」开头，或含「已发布 / 进行中 / …」）。 */
 export function isStatusSnapshot(text: string): boolean {
@@ -199,7 +194,7 @@ export function isStatusSnapshot(text: string): boolean {
  * 解析模型输出为候选记忆；容忍代码块围栏与前后噪声。
  *
  * 这里是**代码级硬闸门**：提示词只是请求，闸门才是保证 —— 条数只留前 3 条，
- * 标题 >40 字、正文 >200 字、多行/列表排版、进度状态快照，全部直接丢弃（不截断），
+ * 标题 >40 字、正文 >200 字、进度状态快照，全部直接丢弃（不截断），
  * 并连标题与原因一起回报，让审计与日志能解释「这次为什么没记」。
  */
 export function parseCapturedItems(text: string): CaptureParseResult {
@@ -235,10 +230,6 @@ export function parseCapturedItems(text: string): CaptureParseResult {
     }
     if (content.length > CAPTURE_MAX_CONTENT_CHARS) {
       dropped.push({ title, reason: 'too-long' })
-      continue
-    }
-    if (isMultiLineContent(content)) {
-      dropped.push({ title, reason: 'multi-line' })
       continue
     }
     if (isStatusSnapshot(content)) {

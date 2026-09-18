@@ -133,7 +133,7 @@ function render(records: readonly MemoryToolRecord[], emptyHint: string): string
     const flag = record.archived ? ' [已归档]' : ''
     const alias = record.aliases.length > 0 ? '（别名：' + record.aliases.join(' / ') + '）' : ''
     return '- [' + MEMORY_KIND_LABELS[record.kind] + ' | ' + where + ' | ' + importanceLabel(record.importance) + flag + '] '
-      + record.title + alias + '：' + record.content.replace(/\n/g, ' ')
+      + record.title + alias + '：' + record.content.replace(/\n/g, '\n  ')
   }).join('\n')
 }
 
@@ -340,10 +340,10 @@ function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): voi
       + 'scope=global for anything true across projects (tone, format, style, identity, broad preferences); '
       // scope=project：只对某一个工作区成立（习惯、决策、环境细节）。
       + 'scope=project for habits/decisions that only hold for one workspace directory. '
-      // 正文必须是单段纯文本、只写结论、≤320 字（合并后的总长也算）。
-      + 'The body must be ONE plain paragraph of conclusion-only text, at most 320 characters (merged length counts too); '
-      // 含换行、列表或超长会被拒写，不会静默截断。
-      + 'line breaks, lists and over-limit bodies are rejected, not truncated. '
+      // 正文只写结论、≤320 字（合并后的总长也算）；可以用换行与 markdown 排版。
+      + 'The body is conclusion-only text, at most 320 characters (merged length counts too); line breaks and markdown lists are fine. '
+      // 超长会被拒写，不会静默截断。
+      + 'Over-limit bodies are rejected, not truncated. '
       // 不要记任务进度、进行中的快照、可重跑的验证结果（测试全过 / tsc 干净 / build 成功）。
       + 'Skip task progress, in-flight snapshots and re-runnable verification results (tests pass / tsc clean / build ok). '
       // 用 entities 声明这条记忆讲的实体（项目/工具/人/概念）：命中已有实体则复用，未命中按名称新建，并落一条 about 边。
