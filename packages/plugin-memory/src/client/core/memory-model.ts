@@ -138,8 +138,8 @@ export const SCOPE_LABELS: Record<MemoryScope, string> = { global: '全局记忆
 /** 分段组按钮的选项：短枚举一律用组按钮，不用下拉（少一次点击、也不用展开面板）。 */
 /** 从备份文件导入的写入方式（合并 / 覆盖）。 */
 export const BUNDLE_MODE_OPTIONS = [
-  { value: 'merge', label: '合并（同 id 保留较新的）' },
-  { value: 'replace', label: '覆盖（先清空全库）' },
+  { value: 'merge', label: '合并' },
+  { value: 'replace', label: '覆盖' },
 ] as const
 
 export const SCOPE_OPTIONS = MEMORY_SCOPES.map((scope) => ({ value: scope, label: SCOPE_LABELS[scope] }))
@@ -172,6 +172,12 @@ export const IMPORTANCE_LEVELS = [
 
 /** 重要性 1-5 的档位（节点滑杆用）。 */
 export const IMPORTANCE_STEPS = [1, 2, 3, 4, 5] as const
+
+/** 重要性落到 1-5 的档位序号（越界、小数、非法值都夹回来）；色块这类按档取样式的地方用。 */
+export function importanceStep(importance: number): 1 | 2 | 3 | 4 | 5 {
+  const step = Math.min(IMPORTANCE_STEPS.length, Math.max(1, Math.round(importance)))
+  return step as 1 | 2 | 3 | 4 | 5
+}
 
 /** 提炼间隔档位：覆盖 1-20，但只给有意义的停点。 */
 export const CAPTURE_EVERY_STEPS = [1, 2, 3, 5, 8, 10, 15, 20] as const

@@ -10,7 +10,7 @@
  * 读写全部走 Typert remote（ctx.remote.memory.*）；开关写的是设置命名空间的用户层，
  * 与插件设置卡片同源，改完即时生效。
  */
-import { SCOPE_LABELS, MEMORY_TABS, TAB_LABELS, timeText, durationText, ORIGIN_LABELS, AUDIT_KIND_LABELS, sourceLabel, entityKindClass, linkedMemoryIds, NODE_KIND_OPTIONS, RELATION_OPTIONS, IMPORTANCE_STEPS, CAPTURE_EVERY_STEPS, CAPTURE_TURNS_STEPS, CAPTURE_CHARS_STEPS, importanceLevelAt, IMPORT_MODE_OPTIONS, BUNDLE_MODE_OPTIONS } from '../../core/memory-model.ts'
+import { SCOPE_LABELS, MEMORY_TABS, TAB_LABELS, timeText, durationText, ORIGIN_LABELS, AUDIT_KIND_LABELS, sourceLabel, entityKindClass, linkedMemoryIds, NODE_KIND_OPTIONS, RELATION_OPTIONS, IMPORTANCE_STEPS, CAPTURE_EVERY_STEPS, CAPTURE_TURNS_STEPS, CAPTURE_CHARS_STEPS, importanceLevelAt, importanceStep, IMPORT_MODE_OPTIONS, BUNDLE_MODE_OPTIONS } from '../../core/memory-model.ts'
 import type { MemoryRecord, MemoryEdgeRelation } from '../../../types.ts'
 import { Button, IconArchiveOutline20, IconChecklistOutline14, IconCopyOutline16, IconDownloadOutline16, IconEditOutline16, IconEllipsisOutline16, IconFolderOpenOutline16, IconListPenOutline16, IconPlusOutline16, IconRefreshOutline16, IconTrashOutline16, Input, Menu, Modal, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -128,6 +128,19 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
     pickBundleFile, runBundleImport,
   } = useSettingsSection(props.memory)
 
+  /** 重要性色块：圆角正方形、不写字，颜色就是档位（列表底部与详情共用）。 */
+  function renderImportanceDot(importance: number): JSX.Element {
+    const text = '重要性：' + importanceLabel(importance) + '（' + importance + '/5）'
+    return (
+      <span
+        className={`${styles.importanceDot} ${styles['importanceLv' + importanceStep(importance)]}`}
+        role="img"
+        aria-label={text}
+        title={text}
+      />
+    )
+  }
+
   /** 单条记忆（正常态）。 */
   function renderRecord(record: MemoryRecord): JSX.Element {
     return (
@@ -135,8 +148,6 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
         <div className={styles.itemHead}>
           <Pill>{MEMORY_KIND_LABELS[record.kind]}</Pill>
           <span className={styles.itemTitle} title={record.title}>{record.title}</span>
-          <Pill>{importanceLabel(record.importance)}</Pill>
-          <Pill>{'关联 ' + (linkCounts.get(record.id) ?? 0)}</Pill>
           <div className={styles.itemActions}>
             <Button
               variant="ghost" size="sm" title="查看元数据、关联与全文"
@@ -167,10 +178,17 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
         </div>
         {record.summary !== '' && <p className={styles.itemSummary}>{record.summary}</p>}
         {record.aliases.length > 0 && (
-          <span className={styles.itemAlias}>{'别名：' + record.aliases.join(' / ')}</span>
+          <div className={styles.itemAliasRow}>
+            <span className={styles.itemAliasKey} />
+            <span className={styles.itemAlias}>{record.aliases.join(' / ')}</span>
+          </div>
         )}
         <p className={styles.itemBody}>{record.content}</p>
         {record.archived && <span className={styles.notice}>已归档（不参与注入，可随时恢复）</span>}
+        <div className={styles.itemFooter}>
+          {renderImportanceDot(record.importance)}
+          <span>{'关联 ' + (linkCounts.get(record.id) ?? 0)}</span>
+        </div>
       </div>
     )
   }
@@ -226,7 +244,7 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
                 </div>
               </div>
               {entity.aliases.length > 0 && (
-                <span className={styles.itemAlias}>{'别名：' + entity.aliases.join(' / ')}</span>
+                <span className={styles.itemAlias}>{'Alias' + entity.aliases.join(' / ')}</span>
               )}
               {entity.summary !== '' && <p className={styles.itemSummary}>{entity.summary}</p>}
               {openEntityId === entity.id && (
@@ -720,7 +738,12 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
                   </>
                 )}
                 <span className={styles.metaKey}>重要性</span>
-                <span className={styles.metaValue}>{importanceLabel(detail.importance) + '（' + detail.importance + '/5）'}</span>
+                <span className={styles.metaValue}>
+                  <span className={styles.importanceInline}>
+                    {renderImportanceDot(detail.importance)}
+                    {importanceLabel(detail.importance) + '（' + detail.importance + '/5）'}
+                  </span>
+                </span>
                 <span className={styles.metaKey}>来源</span>
                 <span className={styles.metaValue}>{sourceLabel(detail.source)}</span>
                 <span className={styles.metaKey}>创建</span>

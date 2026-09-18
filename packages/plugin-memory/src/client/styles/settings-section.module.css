@@ -57,7 +57,11 @@
   background: var(--dsw-alias-bg-module-platform);
   /* 注意：DSH 主题里没有 --dsw-alias-label-error，红色的是 state-error-primary。
      未定义的 var() 会让整条声明在 computed-value 阶段失效（连上一行的兜底也回不来）。 */
-  background: color-mix(in srgb, var(--dsw-alias-state-error-primary, #d64545) 10%, var(--dsw-alias-bg-module-platform));
+  background: color-mix(
+    in srgb,
+    var(--dsw-alias-state-error-primary, #d64545) 10%,
+    var(--dsw-alias-bg-module-platform)
+  );
   border: 1px solid var(--dsw-alias-state-error-primary, #d64545);
   border-left-width: 3px;
   border-radius: 12px;
@@ -126,7 +130,9 @@
   border-radius: 999px;
   background: var(--dsw-alias-bg-module-platform);
   cursor: pointer;
-  transition: background 120ms ease, border-color 120ms ease;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
 }
 
 /* 禁用态：锁定时整块开关都不给操作，鼠标也要如实反馈。 */
@@ -137,7 +143,10 @@
 
 [data-dsh-memory-ui] .switchOn {
   /* 同样不存在 --dsw-alias-bg-accent；品牌色是 state-business-primary。 */
-  background: var(--dsw-alias-state-business-primary, var(--dsw-alias-label-primary));
+  background: var(
+    --dsw-alias-state-business-primary,
+    var(--dsw-alias-label-primary)
+  );
   border-color: transparent;
 }
 
@@ -149,7 +158,9 @@
   height: 18px;
   border-radius: 50%;
   background: var(--dsw-alias-label-primary);
-  transition: transform 120ms ease, background 120ms ease;
+  transition:
+    transform 120ms ease,
+    background 120ms ease;
 }
 
 [data-dsh-memory-ui] .switchOn .switchKnob {
@@ -188,7 +199,9 @@
   font-size: 12.5px;
   line-height: 1.5;
   cursor: pointer;
-  transition: background 120ms ease, color 120ms ease;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
 }
 
 [data-dsh-memory-ui] .segBtn:hover:not(:disabled) {
@@ -238,7 +251,7 @@
 
 /* 只给数字输入定宽。写裸 input 会把搜索框和复选框一起压成 64px
    （Input 原语的 input 自带 (0,1,0)，压不过这里的 (0,2,1)）。 */
-[data-dsh-memory-ui] .fieldRow input[type='number'] {
+[data-dsh-memory-ui] .fieldRow input[type="number"] {
   width: 64px;
 }
 
@@ -399,6 +412,47 @@ body[data-ds-dark-theme] .select {
   word-break: break-word;
 }
 
+[data-dsh-memory-ui] .itemFooter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  line-height: 1;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* 重要性：圆角正方形色块，不写字，1-5 档各用一种颜色（灰 → 青 → 蓝 → 橙 → 红）。 */
+[data-dsh-memory-ui] .importanceDot {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--dsw-alias-label-tertiary);
+}
+
+[data-dsh-memory-ui] .importanceLv1 {
+  background: var(--dsw-alias-label-tertiary);
+}
+[data-dsh-memory-ui] .importanceLv2 {
+  background: #3f9bb8;
+}
+[data-dsh-memory-ui] .importanceLv3 {
+  background: var(--dsw-alias-state-business-primary);
+}
+[data-dsh-memory-ui] .importanceLv4 {
+  background: #e08a2e;
+}
+[data-dsh-memory-ui] .importanceLv5 {
+  background: var(--dsw-alias-state-error-primary);
+}
+
+/* 详情里色块和文字并排（网格单元格内）。 */
+[data-dsh-memory-ui] .importanceInline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 [data-dsh-memory-ui] .itemActions {
   display: flex;
   align-items: center;
@@ -470,19 +524,19 @@ body[data-ds-dark-theme] .select {
    多出来的高度交给内容区自己滚，footer 留在卡片里不动。原因是宿主 .dialog 已经
    overflow: hidden 且没有 max-height —— 只加宽不加高时，沉淀面板这种长列表会把卡片
    顶穿视口：头尾一起被推出屏幕，弹窗自身又没有滚动条，中间那段永远够不着。 */
-[role='dialog'].modalWide {
+[role="dialog"].modalWide {
   width: min(640px, 100%);
   max-height: calc(100vh - 48px);
 }
 
 @supports (height: 100dvh) {
-  [role='dialog'].modalWide {
+  [role="dialog"].modalWide {
     max-height: calc(100dvh - 48px);
   }
 }
 
 /* 内层不再限制 560px，让内容吃满宽出来的空间。 */
-[role='dialog'].modalWide [data-dsh-memory-ui].modalBody {
+[role="dialog"].modalWide [data-dsh-memory-ui].modalBody {
   max-width: none;
 }
 
@@ -490,7 +544,7 @@ body[data-ds-dark-theme] .select {
    漏一个就是「限高生效、内容却被宿主的 overflow: hidden 裁掉」，比不限高更难查）。
    header / description / body 都在这个 flex 子项里：min-height: 0 才让它真缩到限高
    以下（min-height: auto 会顶住不缩），overscroll-behavior 防止滚到底把宿主页面带走。 */
-[role='dialog'].modalWide .modalScroll {
+[role="dialog"].modalWide .modalScroll {
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -764,9 +818,36 @@ body[data-ds-dark-theme] .select {
   word-break: break-word;
 }
 
+[data-dsh-memory-ui] .itemAliasRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: fixed var(--dsw-alias-bg-layer-2);
+  width: fit-content;
+  border-radius: 3px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  position: relative;
+  overflow: hidden;
+  padding-left: 15px;
+}
+
+[data-dsh-memory-ui] .itemAliasRow .itemAliasKey {
+  padding: 2px 6px;
+  font-size: 12px;
+  color: black;
+  position: absolute;
+  left: 0;
+  height: 100%;
+  background: linear-gradient(90deg, #c9e9fc, transparent);
+  width: 16px;
+  z-index: 0;
+}
+
 [data-dsh-memory-ui] .itemAlias {
   font-size: 11.5px;
   line-height: 1.5;
+  padding: 2px 6px;
   color: var(--dsw-alias-label-tertiary);
   word-break: break-all;
 }
