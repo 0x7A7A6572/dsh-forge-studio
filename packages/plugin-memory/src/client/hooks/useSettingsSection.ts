@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { errText, memoryLinkCounts, entityMentionCounts, SCOPE_LABELS } from '../core/memory-model.ts'
 import { IMPORT_PROMPT_TEXT } from '../../types.ts'
 import type { MemoryTab } from '../core/memory-section-types.ts'
 import type { MemoryAuditEntry, MemoryConfig, MemoryConflict, MemoryEdge, MemoryEntity, MemoryProjectSummary, MemoryRawDocument, MemoryRawId, MemoryRecord, MemoryStats } from '../../types.ts'
 import type { MemoryRemote } from '../core/remote.ts'
+import { bundleFileName, downloadText, peekBundle, readTextFile } from '../core/bundle-file.ts'
+import type { BundlePeek } from '../core/bundle-file.ts'
 import { useMemoryDetail } from './useMemoryDetail.ts'
 
 export function useSettingsSection(memory: MemoryRemote) {
@@ -35,6 +37,13 @@ export function useSettingsSection(memory: MemoryRemote) {
   /** 详情弹窗的关联视图与「连一条边」表单。 */
   const [busy, setBusy] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
+  /** 隐藏的文件选择框：按钮点它，选完同一个文件也要能再次触发，所以读后清空 value。 */
+  const bundleInputRef = useRef<HTMLInputElement | null>(null)
+  const [bundleImportOpen, setBundleImportOpen] = useState(false)
+  const [bundleName, setBundleName] = useState('')
+  const [bundleText, setBundleText] = useState('')
+  const [bundlePeek, setBundlePeek] = useState<BundlePeek | null>(null)
+  const [bundleMode, setBundleMode] = useState<'merge' | 'replace'>('merge')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
@@ -291,11 +300,78 @@ export function useSettingsSection(memory: MemoryRemote) {
   const mentionCounts = entityMentionCounts(edges)
 
 
+  /* ---------- 全库备份：导出成文件 / 从文件导入 ---------- */
+
+  /** 导出全库备份文件（记忆 + 实体 + 边）。 */
+  async function exportBundleFile(): Promise<void> {
+    await run(async () => {
+      const result = await memory.exportBundle()
+      if (!result.ok) throw new Error(errText(result.error))
+      const name = bundleFileName()
+      downloadText(name, JSON.stringify(result.value, null, 2))
+      setNotice('已导出 ' + name + '（记忆 ' + result.value.records.length + ' 条）。')
+    })
+  }
+
+  /** 选好文件先读出来peek一眼，条数亮出来，用户点「导入」前就知道选对没有。 */
+  async function pickBundleFile(file: File | undefined): Promise<void> {
+    if (file === undefined) return
+    try {
+      const text = await readTextFile(file)
+      const peek = peekBundle(text)
+      setBundleText(text)
+      setBundlePeek(peek)
+      setBundleName(file.name)
+      setError('')
+    } catch (e) {
+      setBundleText('')
+      setBundlePeek(null)
+      setBundleName(file.name)
+      setError(errText(e))
+    }
+  }
+
+  /** 打开导入弹窗：先把上一轮选的文件清掉，免得手滑点了导入用的还是旧文件。 */
+  function openBundleImport(): void {
+    setBundleName('')
+    setBundleText('')
+    setBundlePeek(null)
+    setBundleMode('merge')
+    openModal(setBundleImportOpen)
+  }
+
+  /** 确认导入。解析放在这里而不是 pick 时，是为了保证文本和最终提交的是同一份。 */
+  async function runBundleImport(): Promise<void> {
+    if (bundleText === '') {
+      setError('请先选择一个备份文件')
+      return
+    }
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(bundleText) as unknown
+    } catch {
+      setError('备份文件不是合法 JSON')
+      return
+    }
+    await run(async () => {
+      const result = await memory.importBundle({ bundle: parsed, mode: bundleMode })
+      if (!result.ok) throw new Error(errText(result.error))
+      setBundleImportOpen(false)
+      setBundleText('')
+      setBundleName('')
+      setBundlePeek(null)
+      setNotice('导入完成：新增 ' + result.value.added + ' 条，更新 ' + result.value.merged + ' 条'
+        + (result.value.removed > 0 ? '，清空 ' + result.value.removed + ' 条' : '') + '。')
+    })
+  }
+
   /** 下拉选中 → 关菜单再执行原动作（顺序：先关，免得动作打开弹窗后菜单还浮在上层）。 */
   function onMoreSelect(id: string): void {
     setMoreOpen(false)
     if (id === 'tidy') void runTidy()
     else if (id === 'rebuild') void runRebuildEdges()
+    else if (id === 'export-file') void exportBundleFile()
+    else if (id === 'import-file') openBundleImport()
     else if (id === 'copy') void copyExport()
     else if (id === 'import') openModal(setImportOpen)
     else if (id === 'reset') openModal(setResetOpen)
@@ -345,6 +421,17 @@ export function useSettingsSection(memory: MemoryRemote) {
     setBusy,
     moreOpen,
     setMoreOpen,
+    bundleImportOpen,
+    setBundleImportOpen,
+    bundleName,
+    bundleInputRef,
+    setBundleName,
+    bundleText,
+    setBundleText,
+    bundlePeek,
+    setBundlePeek,
+    bundleMode,
+    setBundleMode,
     error,
     setError,
     notice,
@@ -374,6 +461,10 @@ export function useSettingsSection(memory: MemoryRemote) {
     activeProjectLabel,
     linkCounts,
     mentionCounts,
+    exportBundleFile,
+    pickBundleFile,
+    openBundleImport,
+    runBundleImport,
     onMoreSelect,
     ...detailApi,
   }

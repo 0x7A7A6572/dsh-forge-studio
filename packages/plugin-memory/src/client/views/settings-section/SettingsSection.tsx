@@ -10,9 +10,9 @@
  * 读写全部走 Typert remote（ctx.remote.memory.*）；开关写的是设置命名空间的用户层，
  * 与插件设置卡片同源，改完即时生效。
  */
-import { SCOPE_LABELS, MEMORY_TABS, TAB_LABELS, timeText, durationText, ORIGIN_LABELS, AUDIT_KIND_LABELS, sourceLabel, entityKindClass, linkedMemoryIds, NODE_KIND_OPTIONS, RELATION_OPTIONS, IMPORTANCE_STEPS, CAPTURE_EVERY_STEPS, CAPTURE_TURNS_STEPS, CAPTURE_CHARS_STEPS, importanceLevelAt, IMPORT_MODE_OPTIONS } from '../../core/memory-model.ts'
+import { SCOPE_LABELS, MEMORY_TABS, TAB_LABELS, timeText, durationText, ORIGIN_LABELS, AUDIT_KIND_LABELS, sourceLabel, entityKindClass, linkedMemoryIds, NODE_KIND_OPTIONS, RELATION_OPTIONS, IMPORTANCE_STEPS, CAPTURE_EVERY_STEPS, CAPTURE_TURNS_STEPS, CAPTURE_CHARS_STEPS, importanceLevelAt, IMPORT_MODE_OPTIONS, BUNDLE_MODE_OPTIONS } from '../../core/memory-model.ts'
 import type { MemoryRecord, MemoryEdgeRelation } from '../../../types.ts'
-import { Button, IconArchiveOutline20, IconChecklistOutline14, IconCopyOutline16, IconDownloadOutline16, IconEditOutline16, IconEllipsisOutline16, IconListPenOutline16, IconPlusOutline16, IconRefreshOutline16, IconTrashOutline16, Input, Menu, Modal, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconArchiveOutline20, IconChecklistOutline14, IconCopyOutline16, IconDownloadOutline16, IconEditOutline16, IconEllipsisOutline16, IconFolderOpenOutline16, IconListPenOutline16, IconPlusOutline16, IconRefreshOutline16, IconTrashOutline16, Input, Menu, Modal, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ChevronDown } from 'lucide-react'
 import type { SettingsSectionProps } from '../../core/memory-section-types.ts'
@@ -123,6 +123,9 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
     counts,
     patchConfig,
     copyImportPrompt,
+    bundleImportOpen, setBundleImportOpen,
+    bundleName, bundleText, bundlePeek, bundleMode, setBundleMode, bundleInputRef,
+    pickBundleFile, runBundleImport,
   } = useSettingsSection(props.memory)
 
   /** 单条记忆（正常态）。 */
@@ -265,8 +268,21 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
   /**
    * 「更多」下拉的条目。禁用条件与它们还是独立按钮时逐条对齐：
    * 实体页签没有记忆条目可整理 / 复制 / 重置 / 导入，重建关联对两个页签都成立。
+    * 全库备份（导出为文件 / 从文件导入）不分页签，两个页签都可用。
    */
   const moreEntries: MenuEntry[] = [
+    {
+      id: 'export-file',
+      label: '导出为文件（全库备份）',
+      icon: <IconDownloadOutline16 size={14} />,
+      disabled: locked,
+    },
+    {
+      id: 'import-file',
+      label: '从文件导入…',
+      icon: <IconFolderOpenOutline16 size={14} />,
+      disabled: locked,
+    },
     {
       id: 'tidy',
       label: '整理（合并重复）',
@@ -287,8 +303,8 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
     },
     {
       id: 'import',
-      label: '导入',
-      icon: <IconDownloadOutline16 size={14} />,
+      label: '导入（粘贴文本）',
+      icon: <IconListPenOutline16 size={14} />,
       disabled: locked || tab === 'entity',
     },
     { type: 'separator', id: 'mem-more-separator' },
@@ -572,6 +588,60 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
             onChange={setImportMode}
           />
           <ModalFeedback error={error} notice={notice} />
+        </div>
+      </Modal>
+
+      <Modal
+        open={bundleImportOpen}
+        onClose={() => { setBundleImportOpen(false) }}
+        title="从文件导入"
+        closeLabel="关闭"
+        description="读一份之前导出的备份文件，把记忆、实体和关联边一次性写回来。"
+        footer={(
+          <>
+            <Button variant="ghost" onClick={() => { setBundleImportOpen(false) }}>取消</Button>
+            <Button variant="primary" disabled={busy || bundleText === ''} onClick={() => { void runBundleImport() }}>导入</Button>
+          </>
+        )}
+      >
+        <div className={styles.modalBody} data-dsh-memory-ui="">
+          <input
+            ref={bundleInputRef}
+            type="file"
+            accept=".json,application/json"
+            style={{ display: 'none' }}
+            onChange={(event) => {
+              const input = event.currentTarget
+              const file = input.files?.[0]
+              // 选完清空：不清的话再选同一个文件不会触发 change。
+              input.value = ''
+              void pickBundleFile(file)
+            }}
+          />
+          <div className={styles.fieldRow}>
+            <Button variant="outline" size="sm" icon={<IconDownloadOutline16 size={14} />} onClick={() => { bundleInputRef.current?.click() }}>
+              选择备份文件
+            </Button>
+            <span className={styles.rowDesc}>{bundleName === '' ? '尚未选择文件' : bundleName}</span>
+          </div>
+          {bundlePeek !== null && (
+            <div className={styles.rawMeta}>
+              {'里面有：记忆 ' + bundlePeek.records + ' 条 · 实体 ' + bundlePeek.entities + ' 个 · 关联边 ' + bundlePeek.edges + ' 条'}
+            </div>
+          )}
+          <Segmented
+            label="写入方式"
+            value={bundleMode}
+            options={BUNDLE_MODE_OPTIONS}
+            disabled={busy}
+            onChange={setBundleMode}
+          />
+          {bundleMode === 'replace' && (
+            <p className={styles.warn}>
+              覆盖会先清空现有的记忆、实体和关联边。原文留档不在备份里，所以不动它 ——
+              代价是可能留下指向已删条目的孤儿原文，那比丢数据轻。
+            </p>
+          )}
         </div>
       </Modal>
 

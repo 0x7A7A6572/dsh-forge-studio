@@ -30,6 +30,9 @@ import type {
   MemoryProjectSummary, MemoryQuery, MemoryRawDocument, MemoryRawId, MemoryRawInput, MemoryRawQuery,
   MemoryRecord, MemorySaveInput, MemoryScope, MemoryStats,
 } from './types.ts'
+import { validateMemoryBundle } from './bundle.ts'
+import { MEMORY_BUNDLE_SCHEMA, MEMORY_BUNDLE_VERSION } from './types.ts'
+import type { MemoryBundle, MemoryBundleImportInput, MemoryBundleImportResult } from './types.ts'
 
 /** 原文留档保留上限（超出按最旧清理）：转录很长，不能无限堆在 KV 里。 */
 export const MEMORY_RAW_LIMIT = 200
@@ -1691,6 +1694,59 @@ export class MemoryService extends TypertRemoteService {
   }
 
   /**
+   * 导出全库快照：所有作用域的记忆（含归档）+ 实体 + 边。
+   * 不分页、不筛选 —— 备份要的是完整，任何筛选都会让「恢复后少了东西」变得难以发现。
+   */
+  async exportBundle(): Promise<MemoryBundle> {
+    return {
+      schema: MEMORY_BUNDLE_SCHEMA,
+      version: MEMORY_BUNDLE_VERSION,
+      exportedAt: Date.now(),
+      records: this.collect(),
+      entities: Array.from(this.entities.entries(), ([, entity]) => entity),
+      edges: Array.from(this.edges.entries(), ([, edge]) => edge),
+    }
+  }
+
+  /**
+   * 从备份文件导入。
+   *
+   * - merge：按 id 合并，同 id 只在备份那条更新时覆盖（不会用旧数据盖掉新数据）；
+   * - replace：先清空记忆/实体/边再写入。
+   *
+   * replace **不动原文留档**（raw_documents）：备份载荷里根本没有它，删了就是纯丢数据。
+   * 代价是可能留下指向已删条目的孤儿原文 —— 那比丢数据轻。
+   */
+  async importBundle(input: MemoryBundleImportInput): Promise<MemoryBundleImportResult> {
+    const payload = validateMemoryBundle(input.bundle)
+    let removed = 0
+    if (input.mode === 'replace') {
+      for (const record of this.collect()) {
+        await this.memories.delete(record.id)
+        removed += 1
+      }
+      for (const [id] of this.entities.entries()) await this.entities.delete(id)
+      for (const [id] of this.edges.entries()) await this.edges.delete(id)
+    }
+    let added = 0
+    let merged = 0
+    for (const incoming of payload.records) {
+      const existing = this.memories.get(incoming.id)
+      if (existing === undefined) {
+        await this.memories.put(incoming.id, incoming)
+        added += 1
+      } else {
+        if (incoming.updatedAt > existing.updatedAt) await this.memories.put(incoming.id, incoming)
+        merged += 1
+      }
+    }
+    for (const entity of payload.entities) await this.entities.put(entity.id, entity)
+    for (const edge of payload.edges) await this.edges.put(edge.id, edge)
+    await this.syncAutoEdges()
+    return { added, merged, removed }
+  }
+
+  /**
    * 整理（进化）：同作用域 + 同分类 + 同标题的重复条目合并成一条，
    * 保留信息最完整者，正文与标签求并集。返回合并/回收条数。
    */
@@ -1775,12 +1831,14 @@ markRemoteMethods(MemoryService.prototype, [
   'stats',
   'projects',
   'exportText',
+  'exportBundle',
   'save',
   'updateMemory',
   'setArchived',
   'removeMemory',
   'reset',
   'importText',
+  'importBundle',
   'tidy',
   'ingest',
   'reingest',

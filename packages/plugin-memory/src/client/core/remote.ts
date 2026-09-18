@@ -24,6 +24,7 @@ import type {
   MemoryEntity, MemoryEntityInput, MemoryEntityQuery, MemoryId, MemoryImportInput,
   MemoryImportResult, MemoryIngestInput, MemoryIngestResult, MemoryLinkInput, MemoryNeighborhood,
   MemoryPatch, MemoryProjectSummary, MemoryQuery, MemoryRawDocument, MemoryRawId, MemoryRawQuery,
+  MemoryBundle, MemoryBundleImportInput, MemoryBundleImportResult,
   MemoryRecord, MemorySaveInput, MemoryScope, MemoryStats,
 } from '../../types.ts'
 
@@ -124,6 +125,7 @@ export const memoryRemoteContribution: TypertRemoteContribution = {
     descriptor('stats', []),
     descriptor('projects', []),
     descriptor('exportText', scopeTargetParams),
+    descriptor('exportBundle', []),
     descriptor('save', [{ name: 'input', wire: 'input', source: 'json', codec: loose<MemorySaveInput>('MemorySaveInput') }]),
     descriptor('updateMemory', [
       ...idParam,
@@ -136,6 +138,7 @@ export const memoryRemoteContribution: TypertRemoteContribution = {
     descriptor('removeMemory', idParam),
     descriptor('reset', scopeTargetParams),
     descriptor('importText', [{ name: 'input', wire: 'input', source: 'json', codec: loose<MemoryImportInput>('MemoryImportInput') }]),
+    descriptor('importBundle', [{ name: 'input', wire: 'input', source: 'json', codec: loose<MemoryBundleImportInput>('MemoryBundleImportInput') }]),
     descriptor('tidy', []),
     descriptor('ingest', [{ name: 'input', wire: 'input', source: 'json', codec: loose<MemoryIngestInput>('MemoryIngestInput') }]),
     descriptor('reingest', rawIdParam),
@@ -167,12 +170,14 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'memory/stats': () => Promise<RemoteResult<MemoryStats>>
     'memory/projects': () => Promise<RemoteResult<readonly MemoryProjectSummary[]>>
     'memory/exportText': (scope: MemoryScope, projectPath?: string) => Promise<RemoteResult<string>>
+    'memory/exportBundle': () => Promise<RemoteResult<MemoryBundle>>
     'memory/save': (input: MemorySaveInput) => Promise<RemoteResult<MemoryRecord>>
     'memory/updateMemory': (id: MemoryId, patch: MemoryPatch) => Promise<RemoteResult<MemoryRecord | undefined>>
     'memory/setArchived': (id: MemoryId, archived: boolean) => Promise<RemoteResult<MemoryRecord | undefined>>
     'memory/removeMemory': (id: MemoryId) => Promise<RemoteResult<boolean>>
     'memory/reset': (scope: MemoryScope, projectPath?: string) => Promise<RemoteResult<number>>
     'memory/importText': (input: MemoryImportInput) => Promise<RemoteResult<MemoryImportResult>>
+    'memory/importBundle': (input: MemoryBundleImportInput) => Promise<RemoteResult<MemoryBundleImportResult>>
     'memory/tidy': () => Promise<RemoteResult<{ merged: number; removed: number }>>
     'memory/ingest': (input: MemoryIngestInput) => Promise<RemoteResult<MemoryIngestResult>>
     'memory/reingest': (rawId: MemoryRawId) => Promise<RemoteResult<MemoryIngestResult>>
@@ -204,12 +209,16 @@ export interface MemoryRemote {
   stats(): Promise<RemoteResult<MemoryStats>>
   projects(): Promise<RemoteResult<readonly MemoryProjectSummary[]>>
   exportText(scope: MemoryScope, projectPath?: string): Promise<RemoteResult<string>>
+  /** 全库备份：所有作用域的记忆 + 实体 + 边，一次性取回给导出文件用。 */
+  exportBundle(): Promise<RemoteResult<MemoryBundle>>
   save(input: MemorySaveInput): Promise<RemoteResult<MemoryRecord>>
   updateMemory(id: MemoryId, patch: MemoryPatch): Promise<RemoteResult<MemoryRecord | undefined>>
   setArchived(id: MemoryId, archived: boolean): Promise<RemoteResult<MemoryRecord | undefined>>
   removeMemory(id: MemoryId): Promise<RemoteResult<boolean>>
   reset(scope: MemoryScope, projectPath?: string): Promise<RemoteResult<number>>
   importText(input: MemoryImportInput): Promise<RemoteResult<MemoryImportResult>>
+  /** 从备份文件导入（merge 按 id 合并 / replace 先清空）。 */
+  importBundle(input: MemoryBundleImportInput): Promise<RemoteResult<MemoryBundleImportResult>>
   tidy(): Promise<RemoteResult<{ merged: number; removed: number }>>
   /** 摄取管线：原文留档 + 解析成条目（面板导入走 importText，此处给原文/审计面板用）。 */
   ingest(input: MemoryIngestInput): Promise<RemoteResult<MemoryIngestResult>>

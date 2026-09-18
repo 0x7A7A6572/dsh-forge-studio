@@ -134,23 +134,14 @@ export function linkedMemoryIds(edges: readonly MemoryEdge[], entityId: string):
 
 export const SCOPE_LABELS: Record<MemoryScope, string> = { global: '全局记忆', project: '项目记忆' }
 
-/**
- * 「更多」下拉里的次要操作。
- * 工具条只留三个位置：新增（唯一的新建入口）、沉淀（看原文与后台调用）、更多。
- * 整理 / 重建关联 / 复制导出 / 导入 / 重置都是维护类操作，低频且各占一个按钮宽度，
- * 收进下拉后工具条从 7 个按钮缩到 3 个。
- */
-export const MORE_ACTIONS = [
-  { id: 'tidy', label: '整理（合并重复）' },
-  { id: 'rebuild', label: '重建关联' },
-  { id: 'copy', label: '复制导出' },
-  { id: 'import', label: '导入' },
-  { id: 'reset', label: '重置当前页签' },
-] as const
-
-/** 「更多」里的一项动作 id。 */
 
 /** 分段组按钮的选项：短枚举一律用组按钮，不用下拉（少一次点击、也不用展开面板）。 */
+/** 从备份文件导入的写入方式（合并 / 覆盖）。 */
+export const BUNDLE_MODE_OPTIONS = [
+  { value: 'merge', label: '合并（同 id 保留较新的）' },
+  { value: 'replace', label: '覆盖（先清空全库）' },
+] as const
+
 export const SCOPE_OPTIONS = MEMORY_SCOPES.map((scope) => ({ value: scope, label: SCOPE_LABELS[scope] }))
 
 export const KIND_OPTIONS = MEMORY_KINDS.map((kind) => ({ value: kind, label: MEMORY_KIND_LABELS[kind] }))

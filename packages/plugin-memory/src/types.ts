@@ -136,6 +136,37 @@ export interface MemoryQuery {
 }
 
 /** 导入入参。 */
+/**
+ * 全库备份：导出成文件、再从文件读回来。故意不做 WebDAV 那种自托管同步 ——
+ * 没有服务器要配，一份 JSON 走遍天下，代价是得手动搬。
+ */
+export const MEMORY_BUNDLE_SCHEMA = 'memory-bundle'
+/** 载荷格式版本。改动形状必须升版；导入侧会拒绝不认识的版本。 */
+export const MEMORY_BUNDLE_VERSION = 1
+
+/** 备份载荷：记忆 + 实体 + 关联边一次带走（少了实体和边，恢复后关联图就是空的）。 */
+export interface MemoryBundle {
+  readonly schema: typeof MEMORY_BUNDLE_SCHEMA
+  readonly version: typeof MEMORY_BUNDLE_VERSION
+  readonly exportedAt: number
+  readonly records: readonly MemoryRecord[]
+  readonly entities: readonly MemoryEntity[]
+  readonly edges: readonly MemoryEdge[]
+}
+
+/** 从文件导入。bundle 是 JSON.parse 后的原始值 —— 形状由 host 校验，客户端不做信任假设。 */
+export interface MemoryBundleImportInput {
+  readonly bundle: unknown
+  /** merge = 按 id 合并（同 id 保留 updatedAt 较新的）；replace = 先清空全库再写入。 */
+  readonly mode: 'merge' | 'replace'
+}
+
+export interface MemoryBundleImportResult {
+  readonly added: number
+  readonly merged: number
+  readonly removed: number
+}
+
 export interface MemoryImportInput {
   /** 粘贴的画像文本（导入提示词的输出，或任意纯文本）。 */
   readonly text: string
