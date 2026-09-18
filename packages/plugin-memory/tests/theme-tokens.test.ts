@@ -8,7 +8,7 @@
  * background 那条 color-mix 直接作废，连上一行的兜底也被吃掉。
  * 结果就是「改了跟没改一样」，而且从代码上看不出任何问题。
  *
- * 所以：ui-css.ts 里出现的每个 --dsw-* 变量都必须在这个白名单里，
+ * 所以：ui-css.css 里出现的每个 --dsw-* 变量都必须在这个白名单里，
  * 新增 token 前先去 design-platform.css 核对它确实存在。
  */
 
@@ -29,7 +29,7 @@ const KNOWN_TOKENS = new Set([
   '--dsw-alias-bg-layer-2',
 ])
 
-const CSS_PATH = fileURLToPath(new URL('../src/client/views/ui-css.ts', import.meta.url))
+const CSS_PATH = fileURLToPath(new URL('../src/client/views/ui-css.css', import.meta.url))
 const source = readFileSync(CSS_PATH, 'utf8')
 const used = [...new Set([...source.matchAll(/var\((--dsw-[a-z0-9-]+)/g)].map((match) => match[1]!))].sort()
 
