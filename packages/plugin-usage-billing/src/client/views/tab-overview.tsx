@@ -166,6 +166,8 @@ export function TabOverview(props: {
 
   return (
     <div className="ub-section" data-dsh-usage-billing>
+
+      <div style={{display: 'flex', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap'}}>
       <HeroCard
         title="累计 Token 消耗"
         value={formatInt(totalTokens(all))}
@@ -223,6 +225,8 @@ export function TabOverview(props: {
           </>
         }
       />
+
+      </div>
 
       <Card
         title="最近活跃度"

@@ -130,7 +130,7 @@ export function Dashboard(props: {
       onClose={() => store.closePanel()}
       title="计费"
       closeLabel="关闭"
-      description="真实用量 · 按事件时刻价表锁定"
+      description={''/* 真实用量 · 按事件时刻价表锁定 */}
       className="ub-modal"
       contentClassName="ub-modal-content"
     >
