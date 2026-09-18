@@ -3,12 +3,16 @@
  *
  * 把 ctx.notes（NotesService，同 ctx 直调，不走 Typert wire）暴露成 agent 工具：
  * - 读工具（notes_list / notes_get）：放行；
- * - 写工具（notes_create / notes_update / notes_set_pinned / notes_delete）：
- *   宿主装有 approval seam（ctx.get('approval')）时在 tools/pre-execute 返回
- *   { kind: 'ask' }，由 user-approval 弹确认后执行（未批准即 deny，fail-closed）；
- *   宿主无 approval seam 时放行（与 tool-fs「无 policy 即 unconditional」同款）；
- * - guard（单调拒绝，任何宿主都生效）：agent 永远不能删除 origin='user' 的便签
- *   —— 即便 pre-execute 已 ask/放行，guard 层仍拒绝，保护用户手写内容。
+ * - 写工具按「碰的是谁的便签」分流：
+ *   · notes_create —— 不确认（agent 建出来的恒为 origin='agent'，碰不到用户的东西）；
+ *   · notes_set_pinned —— 不确认（置顶不是内容改动）；
+ *   · notes_update / notes_delete 且目标是 origin='user' —— **由工具自己在执行体里
+ *     发起一次「同意 / 拒绝」**（requestNoteConsent → approval seam），同意才落笔，
+ *     拒绝 / 取消 / 无人应答一律不执行（fail-closed）。这一问**与会话审批策略无关**：
+ *     它不走 core/tools 的 serviceAsk，所以 /permission 的任何档位都拦不住它，
+ *     也不依赖任何自定义预设。
+ * - guard（单调拒绝）：宿主没装 user-questions seam 时兜底禁删 user 便签（没有交互
+ *   渠道就没有「同意」可给）。
  *
  * 工具以 tools 服务判存后条件挂载：plugin-notes 独立 UI 形态在无 agent 装配的
  * 宿主照常工作（不注册工具），有 tools 的宿主自动获得 agent 联动。
@@ -36,7 +40,7 @@ const TOOL_DELETE = `${NOTES_TOOL_PREFIX}delete`
 const TOOL_TASK_SET_STATUS = `${NOTES_TOOL_PREFIX}task_set_status`
 const TOOL_TASK_REPORT = `${NOTES_TOOL_PREFIX}task_report`
 
-/** 写工具集合（决定 ask 范围）。 */
+/** 写工具集合（工具分类用；需确认的两个工具见 requestNoteConsent 的调用点）。 */
 const WRITE_TOOLS = new Set<string>([TOOL_CREATE, TOOL_UPDATE, TOOL_SET_PINNED, TOOL_DELETE])
 
 /** 本插件工具名判定。 */
@@ -47,6 +51,70 @@ export function isNotesTool(name: string): boolean {
 /** 写工具判定。 */
 export function isNotesWriteTool(name: string): boolean {
   return WRITE_TOOLS.has(name)
+}
+
+/** 需要按「谁的便签」判定是否 ask 的写工具（删 + 改；置顶与新建不在此列）。 */
+/**
+ * 按 tip 的 note_id 取便签（同步读内存态）。id 缺失 / 非字符串 / 查无此便签 →
+ * undefined（此时不弹确认，交执行阶段自己报 not found，省掉一次注定白问的弹窗）。
+ */
+/** 面向用户展示便签身份：优先标题，无标题时退回 id。 */
+function noteLabel(note: NoteRecord): string {
+  return note.title === '' ? note.id : note.title
+}
+
+function noteById(ctx: Context, id: unknown): NoteRecord | undefined {
+  if (typeof id !== 'string') return undefined
+  return ctx.notes.list().find((n) => n.id === id)
+}
+
+/**
+ * 引用 user-questions 的 Service Definition 类型：只为完成 Context 声明合并，
+ * 让 `ctx.get('userQuestions')` 的键与返回类型成立（type-only，无运行时依赖）。
+ */
+import type {} from '@deepseek-ai/dsh-user-questions'
+
+/** 同意按钮的标签（同时也是判定依据：选中它才算同意）。 */
+const CONSENT_ALLOW = '允许一次'
+/** 拒绝按钮的标签。 */
+const CONSENT_DENY = '不要'
+
+/**
+ * 向用户要一次「同意 / 拒绝」——**由工具自己发起，与会话审批策略无关**。
+ *
+ * 走的是 `ctx.userQuestions`（user-questions seam，官方 ask_user_question 工具用的
+ * 同一条路），它有自己的 waterfall 事件 `user-questions/request`，**不是 approval
+ * seam**：approval 的 request() 会在派发前先按会话策略把 'never' 判成 rejected
+ * （user-approval/src/index.ts:260-268），面板根本到不了用户面前；而这一问不受
+ * 任何权限档位影响。宿主没有该 seam（纯 UI 形态）时 fail-closed 拒绝。
+ *
+ * fail-closed：只有选中「允许一次」才算同意；拒绝、关掉不答、异常一律抛错，
+ * 调用方一个字都不写。
+ * @param action - 面向用户的动作描述（已含便签标题）。
+ * @returns 同意时正常返回，否则抛错。
+ */
+export async function requestNoteConsent(ctx: Context, exec: ToolExecution, action: string): Promise<void> {
+  const questions = ctx.get('userQuestions')
+  if (questions === undefined) {
+    throw new Error(`cannot ${action}: this host has no way to ask you for consent`)
+  }
+  let answer: Awaited<ReturnType<typeof questions.ask>>
+  try {
+    answer = await questions.ask({
+      questions: [{
+        id: 'notes-consent',
+        question: `The agent wants to ${action}. Allow?`,
+        options: [{ label: CONSENT_ALLOW }, { label: CONSENT_DENY }],
+      }],
+      ...exec.agent !== undefined ? { agent: exec.agent } : {},
+      ...exec.signal !== undefined ? { signal: exec.signal } : {},
+    })
+  } catch (error) {
+    throw new Error(`cannot ${action}: the confirmation could not be shown`, { cause: error })
+  }
+  const selected = answer.answers.find(a => a.id === 'notes-consent')?.selected ?? []
+  if (selected.includes(CONSENT_ALLOW)) return
+  throw new Error(`cannot ${action}: not allowed`)
 }
 
 /** 任务工具判定（notes_task_*）。 */
@@ -162,20 +230,21 @@ const NOTE_OUTPUT_SCHEMA = {
 /* ---------- guard（单调拒绝，同步） ---------- */
 
 /**
- * notes_delete 的 guard 判定：目标是 origin='user' 的便签 → 拒绝（agent 永远
- * 不能删除用户手写便签）。同步执行，从 ctx.notes 同步读内存态。
+ * notes_delete 的 guard 判定：目标 origin='user' 且宿主**根本没装审批服务**时拒绝。
+ * 同步执行，从 ctx.notes 同步读内存态。
+ *
+ * 常规授权路径是工具自己发起的 {@link requestNoteConsent}（执行体内向用户提问，
+ * 与会话审批策略无关）；本 guard 只兜底「连 user-questions seam 都没有」的宿主：
+ * 没有交互渠道就没有「同意」可给，fail-closed。
  * @returns 拒绝原因；不拒绝返回 undefined。
  */
 export function notesDeleteGuard(ctx: Context, exec: ToolExecution): string | undefined {
   if (exec.name !== TOOL_DELETE) return undefined
-  const args = exec.arguments as { note_id?: unknown } | undefined
-  const id = args?.note_id
+  if (ctx.get('userQuestions') !== undefined) return undefined
+  const id = (exec.arguments as { note_id?: unknown } | undefined)?.note_id
   if (typeof id !== 'string') return undefined
-  const note = ctx.notes.list().find(n => n.id === id)
-  if (note?.origin === 'user') {
-    return `cannot delete note ${id}: it was written by the user (origin=user). Agents may only delete notes they created themselves (origin=agent).`
-  }
-  return undefined
+  if (ctx.notes.list().find(n => n.id === id)?.origin !== 'user') return undefined
+  return `cannot delete note ${id}: it was written by the user (origin=user). Agents may only delete notes they created themselves (origin=agent).`
 }
 
 /**
@@ -293,7 +362,7 @@ export function installNotesTools(ctx: Context): void {
 
   ctx.tools.register(defineTool({
     name: TOOL_UPDATE,
-    description: 'Update an existing sticky note (title / text / color / pinned / archived). Only fields provided are changed; origin can never be changed.',
+    description: 'Update an existing sticky note (title / text / color / pinned / archived). Only fields provided are changed; origin can never be changed. Updating a note the user wrote themselves asks them for confirmation first.',
     parameters: {
       note_id: { type: 'string', required: true, description: 'The note id from notes_list.' },
       title: { type: 'string', description: 'New title.' },
@@ -306,8 +375,11 @@ export function installNotesTools(ctx: Context): void {
       schema: NOTE_OUTPUT_SCHEMA,
       render: (_args, value) => [{ type: 'text', text: noteText(value as NoteRecord) }],
     },
-    async execute(args, _exec) {
+    async execute(args, exec) {
       const id = args.note_id as NoteId
+      const target = noteById(ctx, id)
+      // 改用户手写便签：先由本工具发起「同意 / 拒绝」，与审批策略无关。
+      if (target?.origin === 'user') await requestNoteConsent(ctx, exec, `update your note "${noteLabel(target)}"`)
       const note = await notes.update(id, {
         ...args.title !== undefined ? { title: args.title } : {},
         ...args.text !== undefined ? { text: args.text } : {},
@@ -341,7 +413,7 @@ export function installNotesTools(ctx: Context): void {
 
   ctx.tools.register(defineTool({
     name: TOOL_DELETE,
-    description: 'Delete one sticky note. Only notes the agent created itself (origin=agent) can be deleted; deleting a user-written note (origin=user) is rejected by policy.',
+    description: 'Delete one sticky note. Deleting a note the user wrote themselves asks them for confirmation first; without an approval channel only the agent\'s own notes can be deleted.',
     parameters: {
       note_id: { type: 'string', required: true, description: 'The note id from notes_list.' },
     },
@@ -359,8 +431,11 @@ export function installNotesTools(ctx: Context): void {
         text: value.deleted ? `note ${value.id} deleted` : `note ${value.id} not found`,
       }],
     },
-    async execute(args, _exec) {
+    async execute(args, exec) {
       const id = args.note_id as NoteId
+      const target = noteById(ctx, id)
+      // 删用户手写便签：先由本工具发起「同意 / 拒绝」；不存在则直接走过 not found。
+      if (target?.origin === 'user') await requestNoteConsent(ctx, exec, `delete your note "${noteLabel(target)}"`)
       const deleted = await notes.delete(id)
       return { deleted, id }
     },
@@ -429,30 +504,11 @@ export function installNotesTools(ctx: Context): void {
     },
   }))
 
-  // 单调 guard：任何调用（含被 pre-execute 放行的）都不能删 user 便签。
+  // 单调 guard：宿主无法向用户提问时兜底禁删 user 便签（能问则由工具内的确认授权）。
   ctx.tools.guard((exec) => notesDeleteGuard(ctx, exec))
 
   // 单调 guard：notes_task_* 必须持有匹配 lease（无 lane / 无 lease / 会话不符 → 拒绝）。
   ctx.tools.guard((exec) => notesTaskGuard(ctx, exec))
 
-  // pre-execute ask：宿主有 approval seam 时，写工具先弹确认；没有则放行
-  // （无 policy 即 unconditional，guard 仍兜底 user 便签）。任务工具不放 ask。
-  ctx.on('tools/pre-execute', async (exec, next) => {
-    if (!isNotesTool(exec.name)) return next()
-    if (isNotesTaskTool(exec.name)) return next()
-    if (!WRITE_TOOLS.has(exec.name)) return next()
-    if (ctx.get('approval') === undefined) return next()
-    return { kind: 'ask', reason: `The agent wants to ${describeAction(exec.name)} a sticky note.` }
-  })
 }
 
-/** ask reason 用的人话动作描述。 */
-function describeAction(tool: string): string {
-  switch (tool) {
-    case TOOL_CREATE: return 'create'
-    case TOOL_UPDATE: return 'update'
-    case TOOL_SET_PINNED: return 'pin/unpin'
-    case TOOL_DELETE: return 'delete'
-    default: return 'write'
-  }
-}

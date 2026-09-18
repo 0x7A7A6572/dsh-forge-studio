@@ -1,6 +1,6 @@
 {
   "name": "@zzerx/dsh-plugin-notes",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "dsh 便签插件：独立便签板 UI（侧栏入口 + 中间列面板，Markdown 编辑器，Typert 直连 host 持久化）",
   "keywords": [
     "dsh",
@@ -66,6 +66,7 @@
     "@deepseek-ai/dsh-tools": ">=0.1.5-rc.2 <0.1.6-0 || >=0.1.6-alpha <0.2.0-0",
     "@deepseek-ai/dsh-typert-protocol": ">=0.1.5-rc.2 <0.1.6-0 || >=0.1.6-alpha <0.2.0-0",
     "@deepseek-ai/dsh-user-approval": ">=0.1.5-rc.2 <0.1.6-0 || >=0.1.6-alpha <0.2.0-0",
+    "@deepseek-ai/dsh-user-questions": ">=0.1.5-rc.2 <0.1.6-0 || >=0.1.6-alpha <0.2.0-0",
     "@deepseek-ai/schemastery": "3.18.2"
   },
   "devDependencies": {
@@ -90,6 +91,7 @@
     "@deepseek-ai/dsh-typert-protocol": "0.1.5-rc.2",
     "@deepseek-ai/dsh-typert-registry": "0.1.5-rc.2",
     "@deepseek-ai/dsh-user-approval": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-user-questions": "0.1.5-rc.2",
     "@deepseek-ai/schemastery": "3.18.2",
     "@tiptap/core": "2.27.2",
     "@tiptap/extension-code-block-lowlight": "2.27.2",

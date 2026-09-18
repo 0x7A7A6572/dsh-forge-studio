@@ -2,9 +2,10 @@
  * agent/tools —— 便签 agent 工具层单测。
  * 用 stub ctx（真 NotesService + 假 tools/on/get）验证：
  * - 8 个工具定义注册（list/get/create/update/set_pinned/delete + notes_task_set_status/report）；
- * - guard 拒绝删除 origin='user' 的便签，放行 origin='agent' 与其它工具；
- * - pre-execute ask：写工具 + 宿主有 approval → ask；无 approval → next() 放行；
- *   读工具永远放行；
+ * - guard：宿主没装 approval seam、目标是 origin='user' 时拒绝删除，放行其余；
+ * - 确认：改 / 删 origin='user' 便签由**工具自己在执行体里**发起「同意 / 拒绝」
+ *   （与会话审批策略无关）；拒绝 / 取消 / 无人应答一律不执行（fail-closed）；
+ *   新建、置顶、改自己建的便签一概不问；
  * - create 经工具层创建落 origin='agent'。
  */
 
@@ -22,6 +23,7 @@ import {
   isNotesWriteTool,
   notesDeleteGuard,
   notesTaskGuard,
+  requestNoteConsent,
   NOTES_TOOL_PREFIX,
 } from '../src/agent/tools.ts'
 
@@ -65,7 +67,13 @@ interface Harness {
   guards: Array<(exec: unknown) => string | undefined>
   preExecutes: Array<(exec: unknown, next: () => unknown) => Promise<unknown>>
   /** 宿主 approval seam 开关（控制 get('approval') 返回值）。 */
-  approval: boolean
+  userQuestions: boolean
+  /** 假 userQuestions 服务给出的选择：[] = 关了不答。 */
+  consentSelected: string[]
+  /** 让 ask() 抛错（模拟提问通道坏掉）。 */
+  consentThrows: boolean
+  /** 记录每次 ask() 的问题（断言「问了几次、问了什么」）。 */
+  consentCalls: Array<{ question: string; options: string[] }>
 }
 
 function makeHarness(): Harness {
@@ -79,7 +87,8 @@ function makeHarness(): Harness {
   const registered: FakeDefinition[] = []
   const guards: Harness['guards'] = []
   const preExecutes: Harness['preExecutes'] = []
-  const state = { approval: false }
+  const state: { seam: boolean; selected: string[]; throws: boolean } = { seam: false, selected: ['允许一次'], throws: false }
+  const consentCalls: Harness['consentCalls'] = []
   const fakeTools: FakeTools = {
     register: (def) => { registered.push(def as FakeDefinition) },
     guard: (fn) => { guards.push(fn as Harness['guards'][number]) },
@@ -91,7 +100,18 @@ function makeHarness(): Harness {
       preExecutes.push(fn)
       return () => {}
     },
-    get: (key: string) => (key === 'approval' ? (state.approval ? {} : undefined) : undefined),
+    get: (key: string) => {
+      if (key !== 'userQuestions' || !state.seam) return undefined
+      return {
+        // 与 approval.request() 不同：这一问没有任何策略门（策略 never 也照常问）。
+        ask: async (req: { questions: Array<{ id: string; question: string; options?: Array<{ label: string }> }> }) => {
+          if (state.throws) throw new Error('provider exploded')
+          const q = req.questions[0]!
+          consentCalls.push({ question: q.question, options: (q.options ?? []).map(o => o.label) })
+          return { answers: [{ id: q.id, selected: [...state.selected] }] }
+        },
+      }
+    },
   } as unknown as Context
 
   installNotesTools(fakeCtx)
@@ -102,12 +122,24 @@ function makeHarness(): Harness {
     registered,
     guards,
     preExecutes,
-    get approval() { return state.approval },
-    set approval(v: boolean) { state.approval = v },
+    get userQuestions() { return state.seam },
+    set userQuestions(v: boolean) { state.seam = v },
+    get consentSelected() { return state.selected },
+    set consentSelected(v: string[]) { state.selected = v },
+    get consentThrows() { return state.throws },
+    set consentThrows(v: boolean) { state.throws = v },
+    consentCalls,
   }
 }
 
-const execOf = (name: string, args: unknown) => ({ name, arguments: args })
+/** 最小 exec 替身：guard 读 name / arguments / agent；确认流程还要 callId。 */
+const execOf = (name: string, args: unknown, sessionId = 's1') =>
+  ({
+    name,
+    arguments: args,
+    callId: 'call-1',
+    agent: { session: { id: sessionId } },
+  }) as unknown as ToolExecution
 
 describe('notes agent 工具注册', () => {
   it('注册 8 个 notes_* 工具（读 2 + 写 4 + 任务 2）', () => {
@@ -143,11 +175,18 @@ describe('notes agent 工具注册', () => {
 })
 
 describe('notes_delete guard', () => {
-  it('拒绝 agent 删除 user 手写便签', async () => {
+  it('无 approval 渠道：拒绝删除 user 手写便签', async () => {
     const h = makeHarness()
     const note = await h.notes.create({ title: 't', text: 'b' }) // origin 默认 user
     const reason = h.guards[0]?.(execOf('notes_delete', { note_id: note.id }))
     expect(reason).toMatch(/written by the user/)
+  })
+
+  it('有 approval seam：guard 不拦（授权交给工具内的确认）', async () => {
+    const h = makeHarness()
+    h.userQuestions = true
+    const note = await h.notes.create({ title: 't', text: 'b' })
+    expect(h.guards[0]?.(execOf('notes_delete', { note_id: note.id }))).toBeUndefined()
   })
 
   it('放行删除 agent 自己创建的便签', async () => {
@@ -166,46 +205,112 @@ describe('notes_delete guard', () => {
   })
 })
 
-describe('notes pre-execute ask 策略', () => {
-  async function decide(h: Harness, name: string, args: unknown): Promise<string> {
-    const listener = h.preExecutes[0]
-    if (!listener) throw new Error('no pre-execute listener')
-    let forwarded = false
-    const decision = await listener(execOf(name, args), async () => {
-      forwarded = true
-      return { kind: 'allow' }
-    })
-    if (forwarded) return 'next'
-    return JSON.stringify(decision)
+describe('改 / 删用户便签：由工具自己在执行体内弹确认', () => {
+  /** 找到已注册工具的 execute。 */
+  function tool(h: Harness, name: string): FakeDefinition {
+    const def = h.registered.find(d => d.name === name)
+    if (!def) throw new Error(`tool ${name} not registered`)
+    return def
   }
 
-  it('宿主有 approval：写工具返回 ask，读工具放行', async () => {
+  it('同意：改用户便签成功，问题里带便签标题与两个选项', async () => {
     const h = makeHarness()
-    h.approval = true
-    for (const name of ['notes_create', 'notes_update', 'notes_set_pinned', 'notes_delete']) {
-      const decision = await decide(h, name, {})
-      expect(decision).toMatch(/^\{.*"kind":"ask"/)
-    }
-    expect(await decide(h, 'notes_list', {})).toBe('next')
-    expect(await decide(h, 'notes_get', {})).toBe('next')
-    // 任务工具不放 ask（点击执行即一次性授权，guard 兜底）
-    expect(await decide(h, 'notes_task_set_status', {})).toBe('next')
-    expect(await decide(h, 'notes_task_report', {})).toBe('next')
+    h.userQuestions = true
+    const note = await h.notes.create({ title: '今天 18:00 下班', text: 'b' })
+    const updated = await tool(h, 'notes_update').execute({ note_id: note.id, text: '改过了' }, execOf('notes_update', {}))
+    expect((updated as NoteRecord).text).toBe('改过了')
+    expect(h.consentCalls).toHaveLength(1)
+    expect(h.consentCalls[0]!.question).toContain('今天 18:00 下班')
+    expect(h.consentCalls[0]!.question).toContain('update your note')
+    expect(h.consentCalls[0]!.options).toEqual(['允许一次', '不要'])
   })
 
-  it('宿主无 approval seam：写工具放行（unconditional，guard 兜底）', async () => {
+  it('拒绝：改用户便签抛错，且一个字都没写进去', async () => {
     const h = makeHarness()
-    expect(await decide(h, 'notes_create', {})).toBe('next')
-    expect(await decide(h, 'notes_delete', {})).toBe('next')
+    h.userQuestions = true
+    h.consentSelected = ['不要']
+    const note = await h.notes.create({ title: 't', text: '原文' })
+    await expect(tool(h, 'notes_update').execute({ note_id: note.id, text: '改过了' }, execOf('notes_update', {})))
+      .rejects.toThrow(/not allowed/)
+    expect(h.notes.list().find(n => n.id === note.id)?.text).toBe('原文')
   })
 
-  it('非 notes 工具不受影响', async () => {
+  it('关掉不答（没选任何选项）：同样不执行', async () => {
     const h = makeHarness()
-    h.approval = true
-    expect(await decide(h, 'bash', {})).toBe('next')
+    h.userQuestions = true
+    h.consentSelected = []
+    const note = await h.notes.create({ title: 't', text: '原文' })
+    await expect(tool(h, 'notes_update').execute({ note_id: note.id, text: 'x' }, execOf('notes_update', {})))
+      .rejects.toThrow(/not allowed/)
+    expect(h.notes.list().find(n => n.id === note.id)?.text).toBe('原文')
+  })
+
+  it('提问通道抛错：不执行（fail-closed）', async () => {
+    const h = makeHarness()
+    h.userQuestions = true
+    h.consentThrows = true
+    const note = await h.notes.create({ title: 't', text: '原文' })
+    await expect(tool(h, 'notes_update').execute({ note_id: note.id, text: 'x' }, execOf('notes_update', {})))
+      .rejects.toThrow(/could not be shown/)
+    expect(h.notes.list().find(n => n.id === note.id)?.text).toBe('原文')
+  })
+
+  it('删用户便签：同意才删掉', async () => {
+    const h = makeHarness()
+    h.userQuestions = true
+    const note = await h.notes.create({ title: 't', text: 'b' })
+    const res = await tool(h, 'notes_delete').execute({ note_id: note.id }, execOf('notes_delete', {}))
+    expect(res).toEqual({ deleted: true, id: note.id })
+    expect(h.consentCalls[0]!.question).toContain('delete your note')
+  })
+
+  it('删用户便签：拒绝则仍在', async () => {
+    const h = makeHarness()
+    h.userQuestions = true
+    h.consentSelected = ['不要']
+    const note = await h.notes.create({ title: 't', text: 'b' })
+    await expect(tool(h, 'notes_delete').execute({ note_id: note.id }, execOf('notes_delete', {})))
+      .rejects.toThrow(/not allowed/)
+    expect(h.notes.list().find(n => n.id === note.id)).toBeDefined()
+  })
+
+  it('agent 自己的便签、置顶、新建：一概不问', async () => {
+    const h = makeHarness()
+    h.userQuestions = true
+    const mine = await h.notes.create({ title: 'mine', text: 'b', origin: 'agent' })
+    const theirs = await h.notes.create({ title: 'theirs', text: 'b' })
+    await tool(h, 'notes_update').execute({ note_id: mine.id, text: 'x' }, execOf('notes_update', {}))
+    await tool(h, 'notes_set_pinned').execute({ note_id: theirs.id, pinned: true }, execOf('notes_set_pinned', {}))
+    await tool(h, 'notes_create').execute({ title: 'n', text: 'b' }, execOf('notes_create', {}))
+    expect(h.consentCalls).toHaveLength(0)
+  })
+
+  it('便签不存在：不问，直接走 not found', async () => {
+    const h = makeHarness()
+    h.userQuestions = true
+    const res = await tool(h, 'notes_delete').execute({ note_id: 'nope' }, execOf('notes_delete', {}))
+    expect(res).toEqual({ deleted: false, id: 'nope' })
+    expect(h.consentCalls).toHaveLength(0)
+  })
+
+  it('宿主没有提问通道：改 / 删都抛错且不执行（fail-closed）', async () => {
+    const h = makeHarness()
+    const note = await h.notes.create({ title: 't', text: 'b' })
+    await expect(tool(h, 'notes_update').execute({ note_id: note.id, text: 'x' }, execOf('notes_update', {})))
+      .rejects.toThrow(/no way to ask you for consent/)
+    await expect(tool(h, 'notes_delete').execute({ note_id: note.id }, execOf('notes_delete', {})))
+      .rejects.toThrow(/no way to ask you for consent/)
+    expect(h.notes.list().find(n => n.id === note.id)?.text).toBe('b')
+  })
+
+  it('requestNoteConsent：无 agent 也照问（与官方 ask 工具同形状，agent 可选）', async () => {
+    const h = makeHarness()
+    h.userQuestions = true
+    const noAgent = { name: 'notes_delete', arguments: {}, callId: 'c' } as unknown as ToolExecution
+    await expect(requestNoteConsent(h.ctx, noAgent, 'delete your note "x"')).resolves.toBeUndefined()
+    expect(h.consentCalls).toHaveLength(1)
   })
 })
-
 describe('notes_task 工具：guard 与 execute', () => {
   /** 组装带会话身份的 exec（agent.id 即 SessionId，guard 据此匹配 lease.sessionId）。 */
   const taskExec = (name: string, args: unknown, sessionId?: string) =>
