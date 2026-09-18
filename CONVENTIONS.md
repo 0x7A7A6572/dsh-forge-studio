@@ -244,6 +244,21 @@ src/client/
 
 `daily-log` / `usage-billing` 的 `views/ui-css.{ts,css}` 待同样处理。
 
+## 抽 hook 的实操经验（plugin-memory 踩出来的）
+
+**1. 先整体搬，再分块。** 第一步把所有状态和 handler 搬进一个 hook，视图那个文件立刻变干净；
+然后再按内聚性分块。一次到位很容易在「谁引用了谁」上翻车 —— 分块时靠 `tsc` 报的 `Cannot find name`
+来找跨块依赖，比人肉读代码可靠。
+
+**2. hook 返回平铺对象，视图同名解构。** 这样 JSX 一个字都不用改，拆分前后可以逐行 diff 验证。
+
+**3. 分块的红线是「有没有环」，不是「像不像一类」。** `plugin-memory` 原本想拆成「表单」+「wiki」
+两个 hook，结果它们互相写对方的状态（打开详情要取邻域、连边动作又要改详情）—— 这是真的耦合，
+硬拆只能拿 ref 或 context 绕过去，把耦合藏进间接层。最后如实合并成一块 `useMemoryDetail`，
+并在文件头写明为什么不拆。**分不出来就说分不出来，比造两个假边界好。**
+
+**4. 跨块的写口子（`setError` / `setNotice` / `run`）当参数传下去**，子块不自己造一套。
+
 ## 命名规则
 
 | 东西 | 规则 | 例子 |
@@ -266,7 +281,9 @@ src/client/
 - 单个组件 > **200 行**通常意味着它既在画界面又在管状态 —— 把状态和取数挪进 `hooks/`。
 - `core/` 单文件 > **300 行**通常意味着它干了不止一件事。
 
-当前越线：`plugin-memory/src/client/views/settings-section/SettingsSection.tsx`（1314 行，下一步拆 hook）、`plugin-memory/src/client/styles/settings-section.module.css`（932 行；单文件，但已是 CSS Module，见上文为何不按组件拆）。
+当前越线：`plugin-memory/src/client/views/settings-section/SettingsSection.tsx`（903 行，纯 JSX，无状态无逻辑）。再降就得把 JSX 本身拆成展示组件，属于下一轮的事。
+
+`plugin-memory/src/client/styles/settings-section.module.css`（932 行；单文件，但已是 CSS Module，见上文为何不按组件拆）。
 
 ## 现状与约定的差距（照着改就行）
 
@@ -274,7 +291,7 @@ src/client/
 |---|---|
 | `usage-billing/src/client/views/components/` | `usage-billing/src/client/components/` |
 | `usage-billing/…/views/components/kit.tsx` | 拆开，按内容命名 |
-| `{daily-log,memory}/src/client/views/section.tsx` | `client/views/settings-section/SettingsSection.tsx`（逻辑拆进同目录 hook）—— **memory 已迁**（目录+改名+拆零件），剩状态与 handler |
+| `{daily-log,memory}/src/client/views/section.tsx` | `client/views/settings-section/SettingsSection.tsx`（逻辑拆进同目录 hook）—— **memory 已迁完**（目录+改名+拆零件+抽 hook）|
 | `daily-log/src/client/views/parts.tsx` | `client/components/` + 按内容命名 |
 | `{daily-log,memory}/src/client/views/nav-icon.tsx` | `client/components/NavIcon.tsx` —— **memory 已迁**，daily-log 待做 |
 | `{daily-log,memory,usage-billing}/…/views/ui-css.{ts,css}` | `client/styles/settings-section.module.css` —— **memory 已迁**（含去前缀、CSS Modules、删注入函数） |
@@ -282,7 +299,7 @@ src/client/
 | `notes/src/client/core/panel-mount.ts`、`core/quick-add.ts` | `client/hooks/` |
 | `home-studio/src/client/icons.ts` | 看内容：图标组件 → `components/`；图标数据 → `core/` |
 | `daily-log/.pubclean/`（遗留空目录） | 删掉 |
-| `memory` 的 `SettingsSection.tsx` 仍是 1314 行单文件 | 零件与纯模型层已抽出；剩 27 个 state + 全部 handler 待抽进 hook |
+| ~~`memory` 的 `SettingsSection.tsx` 1314 行单文件~~ | **已完成**：`hooks/useSettingsSection.ts`（381）+ `hooks/useMemoryDetail.ts`（290），视图只剩解构 + 渲染函数 + JSX |
 
 **图片放哪的规则**（现在三种混用）：
 
