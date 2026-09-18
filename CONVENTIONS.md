@@ -1,6 +1,8 @@
 # dsh-forge-studio 目录与命名约定
 
-> 草案，待评审。本文只管「东西该放哪、文件该叫什么」，不管代码风格（那是 prettier/eslint 的活，尚未接入）。
+> 已采纳。本文只管「东西该放哪、文件该叫什么」，不管代码风格（那是 prettier/eslint 的活，尚未接入）。
+>
+> 两处已变：构建从 esbuild 换成了 **vite**（共享预设 `scripts/vite.client.mjs`）；仓库原有的 1147 个测试已全部移除，本文里的测试约定**暂时不适用**，等测试回归再启用。
 >
 > `CLAUDE.md` 里那几条硬性规则（一个功能一个包、依赖只指 Service Definition、持久化只走 `ctx.storage`）是上位规则，本文是它们的展开；冲突时以 `CLAUDE.md` 为准。
 
@@ -132,7 +134,7 @@ export function useSettingsSection(memory: MemoryRemote) {
 .list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
 ```
 
-`.root` 编译后变成 `.SettingsSection_root` —— 这就是 `<style scoped>`。已在真实构建里验证 esbuild 原生支持（`loader: { '.module.css': 'local-css' }`，无需装插件），代价是 `build.mjs` 要改十来行把吐出的 CSS 注入 `<style>`。
+`.root` 编译后变成 `[hash]_root` —— 这就是 `<style scoped>`。由 **vite 原生编译**：类名规则配在 `scripts/vite.client.mjs` 的 `css.modules.generateScopedName`（`[hash:base64:6]_[local]`，哈希在前，两个插件撞同名文件也不撞类名），CSS 正文由 `vite-plugin-css-injected-by-js` 在 factory 执行时插成 `<style>`。已跑通三个包。
 
 ### 页面大了怎么办
 
@@ -189,7 +191,7 @@ packages/plugin-<名字>/
 │   ├── <领域>/          # host 侧按领域切：sources/ pricing/ webdav/ …
 │   ├── agent/           # 给模型的工具；tools.ts 是注册表，其余按功能拆
 │   └── client/          # 浏览器侧，见下一节
-├── tests/               # 与 src/ 同构：x.test.ts 测 x.ts
+├── tests/               # 与 src/ 同构：x.test.ts 测 x.ts（当前已整体移除，见文首说明）
 ├── scripts/             # build.mjs / watch.mjs
 ├── assets/              # 只放不进 bundle 的图（README 配图）
 └── cordis.patch.yml
@@ -209,7 +211,7 @@ src/client/
 ├── components/    # 展示组件：零件（按钮、卡片、图标、图表）
 ├── views/         # 页面级：一屏 / 一个页签 / 一个设置分区
 ├── styles/        # 插件级样式：*.css
-├── assets/        # 要打进 bundle 的图（esbuild 内联，见 assets.d.ts）
+├── assets/        # 要打进 bundle 的图（vite 内联成 dataurl，见 assets.d.ts）
 └── *.d.ts         # 资源导入声明
 ```
 
@@ -230,9 +232,9 @@ src/client/
 ## 样式文件放哪
 
 1. **插件级样式**（整块 UI 共用一张表）→ `client/styles/<它作用的区域>.css`，注入函数放同目录同名 `.ts`。
-2. **组件级样式** → 与组件同名同目录（`NoteCard.tsx` + `NoteCard.module.css`）。这条要等 CSS Modules 落地才启用，现在先不做。
+2. **组件级样式** → 与组件同名同目录（`NoteCard.tsx` + `NoteCard.module.css`）。CSS Modules 已随 vite 落地，这条可以用了。
 
-现有的 `client/views/ui-css.{ts,css}` 属于第 1 类，位置不对 —— 样式不是 view。应挪到 `client/styles/`，并**按作用对象改名**。落地 CSS Modules 后它会被拆成每个组件旁边一份 `Xxx.module.css`；过渡期先叫 `settings-section.css`。
+`plugin-memory` 已完成迁移 → `client/styles/settings-section.{ts,css}`。落地 CSS Modules 时它会被拆成每个组件旁边一份 `Xxx.module.css`。`daily-log` / `usage-billing` 的 `views/ui-css.{ts,css}` 待同样处理。
 
 ## 命名规则
 
@@ -256,7 +258,7 @@ src/client/
 - 单个组件 > **200 行**通常意味着它既在画界面又在管状态 —— 把状态和取数挪进 `hooks/`。
 - `core/` 单文件 > **300 行**通常意味着它干了不止一件事。
 
-当前越线：`plugin-memory/src/client/views/section.tsx`（1825 行）、`plugin-memory/src/client/views/ui-css.css`（923 行）。
+当前越线：`plugin-memory/src/client/views/settings-section/SettingsSection.tsx`（1826 行，正在拆）、`plugin-memory/src/client/styles/settings-section.css`（932 行，待拆成 CSS Modules）。
 
 ## 现状与约定的差距（照着改就行）
 
@@ -264,19 +266,19 @@ src/client/
 |---|---|
 | `usage-billing/src/client/views/components/` | `usage-billing/src/client/components/` |
 | `usage-billing/…/views/components/kit.tsx` | 拆开，按内容命名 |
-| `{daily-log,memory}/src/client/views/section.tsx` | `client/views/settings-section/SettingsSection.tsx`（逻辑拆进同目录 hook） |
+| `{daily-log,memory}/src/client/views/section.tsx` | `client/views/settings-section/SettingsSection.tsx`（逻辑拆进同目录 hook）—— **memory 已迁**（目录+改名），逻辑拆分进行中 |
 | `daily-log/src/client/views/parts.tsx` | `client/components/` + 按内容命名 |
-| `{daily-log,memory}/src/client/views/nav-icon.tsx` | `client/components/NavIcon.tsx` |
-| `{daily-log,memory,usage-billing}/…/views/ui-css.{ts,css}` | `client/styles/SettingsSection.module.css`（或过渡期 `client/styles/settings-section.css`） |
+| `{daily-log,memory}/src/client/views/nav-icon.tsx` | `client/components/NavIcon.tsx` —— **memory 已迁**，daily-log 待做 |
+| `{daily-log,memory,usage-billing}/…/views/ui-css.{ts,css}` | `client/styles/settings-section.{ts,css}` —— **memory 已迁**；CSS Modules 落地后再拆成组件旁 `Xxx.module.css` |
 | billing `views/` 里的零件（chart / heat-chart / trend-chart / entry-card / backfill-notice / echarts-runtime） | `client/components/` |
 | `notes/src/client/core/panel-mount.ts`、`core/quick-add.ts` | `client/hooks/` |
 | `home-studio/src/client/icons.ts` | 看内容：图标组件 → `components/`；图标数据 → `core/` |
 | `daily-log/.pubclean/`（遗留空目录） | 删掉 |
-| `memory/src/client/views/section.tsx` 只有 1 个组件在 `components/` | 拆分后 `components/` 才有意义 |
+| `memory` 的 `SettingsSection.tsx` 仍是 1826 行单文件 | 拆成「1 个视图 + 3 个 hook + 约 6 个零件」 |
 
 **图片放哪的规则**（现在三种混用）：
 
-- 要进 bundle 的图 → `src/client/assets/`（esbuild 内联成 dataurl，见 `assets.d.ts`）。例：`notes/src/client/assets/note-flow-banner.webp`
+- 要进 bundle 的图 → `src/client/assets/`（vite 内联成 dataurl，见 `assets.d.ts`）。例：`notes/src/client/assets/note-flow-banner.webp`
 - README 配图 / 文档截图 → 包根 `assets/`。例：`daily-log/assets/report-result.png`
 
 ## 以后能变成 lint 规则的
