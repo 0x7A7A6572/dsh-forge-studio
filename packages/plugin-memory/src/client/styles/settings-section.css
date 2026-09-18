@@ -1,7 +1,7 @@
 /*
  * plugin-memory 样式正文。
  *
- * 注入与作用域契约见同目录 ui-css.ts；下面是必须遵守的硬约束：
+ * 注入与作用域契约见同目录 settings-section.ts；下面是必须遵守的硬约束：
  *   - 颜色只走 design-platform.css 里确实定义过的 --dsw-* alias token：
  *     未定义的 var() 不报错，只是让整条声明在 computed-value 阶段失效。
  *   - 选择器不得依赖插件之外的祖先作用域（Modal 是 portal 到 body 的）。
@@ -484,7 +484,7 @@ body[data-ds-dark-theme] .mem-select {
   max-width: none;
 }
 
-/* 滚动区：挂在 Modal 的 contentClassName 上（section.tsx 里每个 .mem-modal-wide 都得带，
+/* 滚动区：挂在 Modal 的 contentClassName 上（SettingsSection.tsx 里每个 .mem-modal-wide 都得带，
    漏一个就是「限高生效、内容却被宿主的 overflow: hidden 裁掉」，比不限高更难查）。
    header / description / body 都在这个 flex 子项里：min-height: 0 才让它真缩到限高
    以下（min-height: auto 会顶住不缩），overscroll-behavior 防止滚到底把宿主页面带走。 */

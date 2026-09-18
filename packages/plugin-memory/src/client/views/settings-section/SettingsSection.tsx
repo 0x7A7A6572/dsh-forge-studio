@@ -33,9 +33,9 @@ import {
 import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ChevronDown } from 'lucide-react'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { MemoryRemote } from '../core/remote.ts'
-import { ScaleSlider } from '../components/scale-slider.tsx'
-import { pluginVersion } from '../../version.ts'
+import type { MemoryRemote } from '../../core/remote.ts'
+import { ScaleSlider } from '../../components/ScaleSlider.tsx'
+import { pluginVersion } from '../../../version.ts'
 import {
   IMPORT_PROMPT_TEXT,
   MEMORY_CONFIG_BASE,
@@ -49,7 +49,7 @@ import {
   MEMORY_KIND_LABELS,
   MEMORY_SCOPES,
   importanceLabel,
-} from '../../types.ts'
+} from '../../../types.ts'
 import type {
   MemoryAuditEntry,
   MemoryConfig,
@@ -69,16 +69,16 @@ import type {
   MemoryRecord,
   MemoryScope,
   MemoryStats,
-} from '../../types.ts'
+} from '../../../types.ts'
 
 /** 注册侧注入的业务面（见 src/client/index.ts）。 */
-export interface MemorySectionInjected {
+export interface SettingsSectionInjected {
   memory: MemoryRemote
 }
 
 /** 分区组件完整 props：设置外壳 owner props + 插件注入面。 */
-export type MemorySectionProps =
-  PropsRuntime<'settings.section'> & InjectFace<MemorySectionInjected>
+export type SettingsSectionProps =
+  PropsRuntime<'settings.section'> & InjectFace<SettingsSectionInjected>
 
 /** 页签：两个记忆作用域 + wiki 图层的实体目录。 */
 export type MemoryTab = MemoryScope | 'entity'
@@ -540,7 +540,7 @@ export function EdgeList(props: {
 }
 
 /** 记忆分区。 */
-export function MemorySection(props: MemorySectionProps): JSX.Element {
+export function SettingsSection(props: SettingsSectionProps): JSX.Element {
   const memory = props.memory
   const [config, setConfig] = useState<MemoryConfig | null>(null)
   const [stats, setStats] = useState<MemoryStats | null>(null)
