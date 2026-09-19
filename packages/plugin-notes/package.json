@@ -1,6 +1,6 @@
 {
   "name": "@zzerx/dsh-plugin-notes",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "dsh 便签插件：独立便签板 UI（侧栏入口 + 中间列面板，Markdown 编辑器，Typert 直连 host 持久化）",
   "keywords": [
     "dsh",

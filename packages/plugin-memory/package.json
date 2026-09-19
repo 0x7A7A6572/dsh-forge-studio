@@ -1,6 +1,6 @@
 {
   "name": "@zzerx/dsh-plugin-memory",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "dsh 记忆与进化插件：跨会话记住你的偏好与项目习惯（全局 / 项目双作用域），自动注入、自动整理，设置面板一级「记忆」分区可视化管理。",
   "keywords": [
     "dsh",
