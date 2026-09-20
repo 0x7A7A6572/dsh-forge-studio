@@ -45,7 +45,6 @@ import styles from '../../styles/settings-section.module.css'
 export function SettingsSection(props: SettingsSectionProps): JSX.Element {
   const {
     config,
-    setConfig,
     stats,
     projects,
     records,
@@ -76,7 +75,6 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
     setRawText,
     conflicts,
     entities,
-    edges,
     entityDraft,
     setEntityDraft,
     openEntityId,
@@ -88,9 +86,7 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
     moreOpen,
     setMoreOpen,
     error,
-    setError,
     notice,
-    setNotice,
     run,
     startEdit,
     startCreate,
