@@ -38,7 +38,7 @@ import {
 } from "../core/note-colors.ts";
 import { TASK_LANES, isRunOpen, laneLabel } from "../core/task-lanes.ts";
 import { createAutoSaver, type AutoSaver } from "../core/auto-save.ts";
-import { fmtDateTime } from "../core/time-text.ts";
+import { fmtCountdown, fmtDateTime, fmtElapsed, fmtShortDateTime } from "../core/time-text.ts";
 import { fileToDataUrl, pickImageFiles } from "../core/paste-image.ts";
 import { t } from "../core/theme-tokens.ts";
 import { folderNameOf, workspaceSelectOptions } from "../core/workspace-path.ts";
@@ -94,6 +94,51 @@ function RunSummaryMarkdown(props: { readonly markdown: string }): JSX.Element {
     <div className="fs-note-editor fs-note-preview fs-note-run-summary">
       <style>{RUN_SUMMARY_PREVIEW_CSS}</style>
       <EditorContent editor={editor} />
+    </div>
+  );
+}
+
+/**
+ * 执行记录块：一行「运行 起 → 止 · 耗时 · 结果」+ 可折叠的 agent 摘要。
+ * 定时卡片把它收进「详情」（默认不占版面），非定时卡片原地展示——同一份实现由调用处
+ * 决定挂在哪儿，避免两套渲染走样。
+ */
+function LaneRunBlock(props: {
+  readonly run: NonNullable<NoteLane["run"]>;
+  readonly expanded: boolean;
+  readonly onToggle: () => void;
+}): JSX.Element {
+  const run = props.run;
+  return (
+    <div style={taskRunArea}>
+      <div style={laneMetaRow}>
+        <span>
+          运行 {fmtShortDateTime(run.startedAt)}
+          {run.finishedAt !== undefined && " → " + fmtShortDateTime(run.finishedAt)}
+          {run.finishedAt !== undefined && " · " + fmtElapsed(run.finishedAt - run.startedAt)}
+        </span>
+        {run.ok !== undefined && (
+          <>
+            <span style={metaDot}>·</span>
+            <span style={run.ok ? runOkText : runFailText}>{run.ok ? "成功" : "失败"}</span>
+          </>
+        )}
+      </div>
+      {run.summary !== undefined && (
+        <>
+          <button
+            type="button"
+            className="fs-note-run-toggle"
+            onClick={props.onToggle}
+            aria-expanded={props.expanded}
+            title={props.expanded ? "收起执行结果" : "展开执行结果"}
+          >
+            {props.expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            执行结果
+          </button>
+          {props.expanded && <RunSummaryMarkdown markdown={run.summary} />}
+        </>
+      )}
     </div>
   );
 }
@@ -512,6 +557,24 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
   /** 定时行里的「下次触发」预览（已停用 → undefined）。 */
   const scheduleNextPreview = schedule !== undefined ? previewNextAt(schedule) : undefined;
   /**
+   * 定时摘要行只回答「下次什么时候」：停用 / 闸门 / 连续失败各自用徽章或红字露在这一行上
+   * （异常必须可见），完整时刻（含年份）进 title。
+   */
+  const scheduleNextText =
+    schedule === undefined
+      ? ""
+      : !schedule.enabled
+        ? "定时已停用"
+        : scheduleNextPreview !== undefined
+          ? fmtShortDateTime(scheduleNextPreview) + " · " + fmtCountdown(scheduleNextPreview)
+          : "保存后生效";
+  const scheduleSummaryTitle =
+    schedule === undefined
+      ? ""
+      : schedule.enabled && scheduleNextPreview !== undefined
+        ? "下次：" + fmtDateTime(scheduleNextPreview)
+        : scheduleNextText;
+  /**
    * 工作区只从「最近会话用过的目录」里挑（不提供手填新路径）。但便签上已存的
    * 工作区可能不在候选里（旧的显式值、或设置默认目录本就不在会话列表里），
    * 这种值也要列出来，否则一进编辑器就会被静默改掉。
@@ -543,6 +606,8 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
   const [saving, setSaving] = useState(false);
   /** 任务执行结果是否展开（默认收起，避免长摘要把编辑器撑高）。 */
   const [runExpanded, setRunExpanded] = useState(false);
+  /** 定时「详情」是否展开（默认收起：上次结果、共跑次数、运行记录、说明都收在里面）。 */
+  const [scheduleDetailOpen, setScheduleDetailOpen] = useState(false);
 
   /** 当前打开的工具栏弹层：link（链接）/ table（表格）。 */
   const [popup, setPopup] = useState<"link" | "table" | null>(null);
@@ -1530,87 +1595,77 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                     }}
                   />
                 )}
-                <span style={scheduleMeta}>
-                  {schedule.enabled
-                    ? scheduleNextPreview !== undefined
-                      ? "下次：" + fmtDateTime(scheduleNextPreview)
-                      : "下次：保存后生效"
-                    : "定时已停用"}
-                  {schedule.lastResult !== undefined ? " · 上次：" + schedule.lastResult : ""}
-                  {(schedule.runCount ?? 0) > 0 ? " · 已跑 " + schedule.runCount + " 次" : ""}
+                {/* 定时摘要行：只回答「下次什么时候」。闸门徽章与失败红字仍露在这一行上
+                    （异常必须可见），上次结果 / 共跑次数 / 运行记录 / 说明收进「详情」。 */}
+                <span style={scheduleMeta} title={scheduleSummaryTitle}>
+                  <Clock size={11} aria-hidden="true" />
+                  {scheduleNextText}
                 </span>
-                {/* 状态闸门可见：当前列不会被自动执行（拖回「待办」即恢复）。 */}
                 {schedule.enabled && scheduleBlockTextFor(taskStatus) !== undefined && (
-                  <span style={scheduleWarn}>
-                    {scheduleBlockTextFor(taskStatus)}——拖回「待办」即恢复
+                  <span
+                    style={scheduleStatusChip}
+                    title={(scheduleBlockTextFor(taskStatus) ?? "") + "——拖回「待办」即恢复"}
+                  >
+                    {laneLabel(taskStatus)} · 不执行
                   </span>
                 )}
                 {(schedule.failureStreak ?? 0) > 0 && (
-                  <span style={scheduleWarn}>
+                  <span
+                    style={scheduleWarn}
+                    title={
+                      "连续失败 " + (schedule.failureStreak ?? 0) + " 次" +
+                      ((schedule.failureStreak ?? 0) >= SCHEDULE_MAX_FAILURES
+                        ? "（已达上限，日程已停用）"
+                        : `（满 ${SCHEDULE_MAX_FAILURES} 次自动停用）`)
+                    }
+                  >
                     连续失败 {schedule.failureStreak ?? 0} 次
-                    {(schedule.failureStreak ?? 0) >= SCHEDULE_MAX_FAILURES
-                      ? "（已达上限，日程已停用）"
-                      : `（满 ${SCHEDULE_MAX_FAILURES} 次自动停用）`}
                   </span>
                 )}
+                <button
+                  type="button"
+                  className="fs-note-run-toggle"
+                  onClick={() => setScheduleDetailOpen((v) => !v)}
+                  aria-expanded={scheduleDetailOpen}
+                  title={scheduleDetailOpen ? "收起详情" : "展开详情"}
+                >
+                  {scheduleDetailOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                  详情
+                </button>
               </>
             )}
-            {/* 后果提示：说清「定时」= 无人值守自动执行，不靠用户翻帮助页。 */}
-            {schedule !== undefined && (
-              <span style={scheduleHint}>
-                到点由宿主自动新建会话替你执行（等价于点「执行」），便签板关着也会跑；
-                待规划 / 已完成 / 已失败 的卡片不会被自动执行。
-              </span>
+            {/* 详情（默认收起）：上次结果 / 共跑次数 / 运行记录 / 一句后果说明。 */}
+            {schedule !== undefined && scheduleDetailOpen && (
+              <div style={scheduleDetail}>
+                <span style={scheduleDetailRow}>
+                  上次：{schedule.lastResult ?? "还没跑过"}
+                  {(schedule.runCount ?? 0) > 0 ? " · 共跑 " + schedule.runCount + " 次" : ""}
+                </span>
+                {props.initialLane?.run !== undefined && (
+                  <LaneRunBlock
+                    run={props.initialLane.run}
+                    expanded={runExpanded}
+                    onToggle={() => setRunExpanded((v) => !v)}
+                  />
+                )}
+                <span style={scheduleDetailNote}>
+                  到点自动帮你跑一次，跟你手动点「执行」一样；便签板关着也照跑。
+                  卡片停在『待规划 / 已完成 / 已失败』时不会跑，拖回『待办』就恢复。
+                </span>
+              </div>
             )}
           </div>
         )}
+        {/* 非定时卡片：执行记录原地展示（定时卡片已收进上面的「详情」）。 */}
         {taskOn &&
+          schedule === undefined &&
           props.initialLane !== undefined &&
           props.initialLane.run !== undefined && (
-            <div style={taskRunArea}>
-              <div style={laneMetaRow}>
-                <span>
-                  开始：{fmtDateTime(props.initialLane.run.startedAt)}
-                </span>
-                {props.initialLane.run.finishedAt !== undefined && (
-                  <>
-                    <span style={metaDot}>·</span>
-                    <span>
-                      结束：{fmtDateTime(props.initialLane.run.finishedAt)}
-                    </span>
-                  </>
-                )}
-                {props.initialLane.run.ok !== undefined && (
-                  <>
-                    <span style={metaDot}>·</span>
-                    <span>
-                      结果：{props.initialLane.run.ok ? "成功" : "失败"}
-                    </span>
-                  </>
-                )}
-              </div>
-              {props.initialLane.run.summary !== undefined && (
-                <>
-                  <button
-                    type="button"
-                    className="fs-note-run-toggle"
-                    onClick={() => setRunExpanded((v) => !v)}
-                    aria-expanded={runExpanded}
-                    title={runExpanded ? "收起执行结果" : "展开执行结果"}
-                  >
-                    {runExpanded ? (
-                      <ChevronUp size={14} />
-                    ) : (
-                      <ChevronDown size={14} />
-                    )}
-                    执行结果
-                  </button>
-                  {runExpanded && (
-                    <RunSummaryMarkdown markdown={props.initialLane.run.summary} />
-                  )}
-                </>
-              )}
-            </div>
+            <LaneRunBlock
+              run={props.initialLane.run}
+              expanded={runExpanded}
+              onToggle={() => setRunExpanded((v) => !v)}
+            />
           )}
         {taskOn &&
           props.initialLane !== undefined &&
@@ -1704,7 +1759,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
       {scheduleConfirm !== undefined && (
         <ConfirmDialog
           title="开启定时执行？"
-          description="到点由宿主自动新建会话替你执行（等价于点「执行」），便签板关着也会跑。"
+          description="到点自动帮你跑一次，跟你手动点「执行」一样；便签板关着也照跑。"
           accent={colorMeta.ring}
           bullets={[
             `周期：${scheduleLabel(scheduleConfirm)}${
@@ -1714,7 +1769,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
               })()
             }`,
             `工作区：${workspace.trim() !== "" ? workspace : defaultWorkspaceOptionLabel}`,
-            "待规划 / 已完成 / 已失败 的卡片不会被自动执行（拖回「待办」即恢复）",
+            "卡片停在『待规划 / 已完成 / 已失败』时不会跑，拖回『待办』就恢复",
             `连续失败 ${SCHEDULE_MAX_FAILURES} 次自动停用；单次执行超过 ${
               SCHEDULE_RUN_TIMEOUT_MS / 60_000
             } 分钟未收尾按失败收尾`,
@@ -1975,9 +2030,34 @@ const scheduleRow: React.CSSProperties = {
   flexWrap: "wrap",
   gap: 6,
 };
-/** 定时行里的后果说明 / 失败警示（整行，弱化字号）。 */
-const scheduleHint: React.CSSProperties = {
+/** 状态闸门徽章（当前列不自动执行）：浅底胶囊，比红字弱、比摘要小字显眼。 */
+const scheduleStatusChip: React.CSSProperties = {
+  padding: "1px 6px",
+  fontSize: 11,
+  lineHeight: 1.6,
+  color: "rgba(46, 42, 34, 0.72)",
+  background: PAPER_SOFT_FILL,
+  borderRadius: 6,
+  whiteSpace: "nowrap",
+};
+/** 「详情」面板：整行独占（flex 1 1 100%），收起时完全不占版面。 */
+const scheduleDetail: React.CSSProperties = {
   flex: "1 1 100%",
+  display: "flex",
+  flexDirection: "column",
+  gap: 5,
+  padding: "6px 8px",
+  background: PAPER_SOFT_FILL,
+  borderRadius: 8,
+};
+/** 详情里的「上次 / 共跑」一行。 */
+const scheduleDetailRow: React.CSSProperties = {
+  fontSize: 11.5,
+  lineHeight: 1.5,
+  color: NOTE_INK_MUTED,
+};
+/** 详情里的一句后果说明（原是常驻的整行提示，收进详情后不再占版面）。 */
+const scheduleDetailNote: React.CSSProperties = {
   fontSize: 11.5,
   lineHeight: 1.5,
   color: NOTE_INK_MUTED,
@@ -2027,8 +2107,11 @@ const scheduleChipActive: React.CSSProperties = {
   color: "#ffffff",
   fontWeight: 600,
 };
-/** 定时行尾的「下次/上次」小字（弱化，别抢正文视线）。 */
+/** 定时摘要行尾的「下次时刻 · 倒计时」小字（弱化，别抢正文视线）。 */
 const scheduleMeta: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 4,
   fontSize: 11.5,
   color: NOTE_INK_MUTED,
   flex: "1 1 160px",
@@ -2061,3 +2144,6 @@ const laneRunMuted: React.CSSProperties = {
   fontSize: 12.5,
   color: "rgba(46, 42, 34, 0.45)",
 };
+/** 执行结果文字：成功绿 / 失败红（语义色令牌，明暗主题自适应）。 */
+const runOkText: React.CSSProperties = { color: t.success };
+const runFailText: React.CSSProperties = { color: t.danger };

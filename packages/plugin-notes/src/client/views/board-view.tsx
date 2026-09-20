@@ -1,17 +1,20 @@
 /**
- * 便签板页面（中间列面板挂载点，与 dsh-task-board 同构）：占满中间列的
- * 面板框架，数据直连 host。本组件只当**数据控制器 + 渲染出口**：
+ * 便签板页面 —— ui-layout `main` keyed slot 的一个主面板（key 见 core/notes-panel）：
+ * 侧栏顶部入口选中它时才挂载，**挂载即可见**，不需要自己管可见性。
+ * 本组件只当**数据控制器 + 渲染出口**：
  * - 数据流：开关订阅、拉取（事件驱动，无定时轮询）、错误条、busy 与保存流（saveDraft → run → refresh）；
- * - 弹窗层：编辑器/设置/使用说明是互斥浮层弹窗，开关一律读 notes-nav store，
- *   不再持有 draft/settingsOpen 本地 state（加弹窗只扩 notes-nav + 下方渲染处）；
+ * - 弹窗层：编辑器/使用说明是互斥浮层弹窗，开关一律读 notes-nav store，
+ *   不再持有 draft/弹窗开关本地 state（加弹窗只扩 notes-nav + 下方渲染处）；
  * - 内容：列表页 BoardMain 常驻，编辑器弹窗 = EditorPageDialog（独立文件），
- *   设置弹窗（默认标题）由 header 齿轮打开，直接读写注入的命名空间 scope；
  *   使用说明弹窗（只读 markdown）由 header 说明按钮打开。
+ *   设置**不在板内**：它已搬到 dsh 设置面板的「便签」分区（views/settings-section），
+ *   所以这里既没有齿轮也没有设置弹窗 —— 设置入口不再受便签入口开关影响。
  *
  * 视觉契约：纸卡是「便签纸」语义（固定 pastel 底 + 深色文字，见 note-colors）；
- * 其余 UI 走宿主 --dsw-* 令牌（见 theme-tokens）。面板开关由 panel-mount 经
- * `<html>` 上的 data 属性控制，本组件始终挂载（关闭时被 CSS 隐藏，会话子树
- * 保持状态），所以不再返回 null。
+ * 其余 UI 走宿主 --dsw-* 令牌（见 theme-tokens）。
+ *
+ * 与 sibling 面板（task-board / ssh / daily-log）的互斥见 core/notes-panel：它们
+ * 还在抢中间列的 DOM，所以本面板挂载时广播、收到它们的广播时把中间列交还会话。
  */
 
 import { useEffect, useState, useSyncExternalStore } from "react";
@@ -28,32 +31,41 @@ import { scheduleSignature } from "../../schedule.ts";
 import type { TaskStatus } from "../core/task-lanes.ts";
 import { lanePatchForSave } from "../core/task-lanes.ts";
 import { boardStore } from "../core/board-store.ts";
+import { announceNotesPanel, watchSiblingPanels } from "../core/notes-panel.ts";
 import { notesChangeBus, notesStatsStore } from "../core/notes-stats.ts";
 import { notesNav } from "../core/notes-nav.ts";
 import type { NotesRemote } from "../core/notes-remote.ts";
 import { t } from "../core/theme-tokens.ts";
 import type { NoteSaveOptions, NoteTaskDraft } from "../components/note-editor.tsx";
-import { NotesSettingsDialog } from "../components/settings-dialog.tsx";
 import { NotesHelpDialog } from "../components/notes-help-dialog.tsx";
 import { BoardMain } from "./board-main.tsx";
 import { EditorPageDialog } from "./editor-page-dialog.tsx";
 import {
   BadgeInfo,
   RefreshCw,
-  Settings,
   X,
   ChevronLeft,
 } from "lucide-react";
 
-/** 面板注入面：由 client 入口在挂载时提供。 */
+/** 面板注入面：由 client 入口在注册 main 槽位时提供。 */
 export interface NotesBoardFace {
   readonly notes: NotesRemote;
-  /** forge-studio-notes 命名空间 scope（默认标题/默认工作区读写，见 settings-dialog）。 */
+  /** forge-studio-notes 命名空间 scope（默认标题/默认工作区；入口开关在 dsh 设置 → 便签）。 */
   readonly scope: SettingsScope<NotesConfig>;
+  /** 关闭便签板：把主面板切回会话（ctx.layout.selectPanel(null)）。 */
+  readonly closeBoard: () => void;
 }
 
 export interface NotesBoardProps {
   readonly face: NotesBoardFace;
+  /**
+   * 本品挂在哪块地里：
+   * - 'main'（缺省）：中间列主面板，挂载时广播、并监听 sibling 面板的反向广播
+   *   （task-board / ssh / daily-log 仍在抢中间列，见 core/notes-panel 的互斥协议）；
+   * - 'sidebar'：右侧栏 tab（见 board-sidebar-body）。它不占中间列，所以两边都不
+   *   参与 —— 广播白赶走兄弟面板，监听则会被兄弟面板关掉自己的 tab。
+   */
+  readonly surface?: 'main' | 'sidebar';
 }
 
 function errText(error: unknown): string {
@@ -103,18 +115,30 @@ const FRAME_CSS = `
 `;
 
 export function NotesBoard(props: NotesBoardProps): JSX.Element {
-  const open = useSyncExternalStore(
-    boardStore.subscribe,
-    () => boardStore.open,
-  );
+  // 挂载即可见（见文件头），所以不再订阅「开着吗」；改为回报挂载态 + 与 sibling 协调。
+  const closeBoard = props.face.closeBoard;
+  const surface = props.surface ?? 'main';
+  useEffect(() => {
+    // 挂载态照记：notes-stats 靠它判断「板子在，变更由板子自己刷」，与挂在哪块地无关。
+    boardStore.setMounted(true);
+    if (surface !== 'main') {
+      return () => {
+        boardStore.setMounted(false);
+      };
+    }
+    announceNotesPanel();
+    const stop = watchSiblingPanels(() => {
+      closeBoard();
+    });
+    return () => {
+      stop();
+      boardStore.setMounted(false);
+    };
+  }, [closeBoard, surface]);
   // 弹窗层：编辑器（目标）与设置/说明开关都由导航 store 决定（跨开关浮层保留）。
   const editing = useSyncExternalStore(
     notesNav.subscribe,
     () => notesNav.editing,
-  );
-  const settingsOpen = useSyncExternalStore(
-    notesNav.subscribe,
-    () => notesNav.settingsOpen,
   );
   const helpOpen = useSyncExternalStore(
     notesNav.subscribe,
@@ -165,13 +189,12 @@ export function NotesBoard(props: NotesBoardProps): JSX.Element {
     // 事件驱动（替代原 5s/1.5s 轮询）：开板首刷；之后任何写（本板操作、
   // agent 工具、WebDAV 恢复等）由宿主 notes/watch 推送 → 静默刷新。无定时器。
   useEffect(() => {
-    if (!open) return;
     void refresh();
     return notesChangeBus.subscribe(() => {
       void refresh(true);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, []);
 
   // 工作区候选：**挂载即拉**（不等开板）。编辑器里的「用默认（目录）」文案依赖它，
   // 等开板才拉的话，用户开板后马上点开编辑器就会先看到「未配置」再被真目录替换。
@@ -193,20 +216,18 @@ export function NotesBoard(props: NotesBoardProps): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Esc：按弹窗层级收 —— 使用说明 → 设置弹窗 → 编辑器弹窗 → 整个面板
+  // Esc：按弹窗层级收 —— 使用说明 → 编辑器弹窗 → 整个面板
   // （编辑器内的 Esc 由 NoteEditor 处理并 stopPropagation，不会走到这里）。
   useEffect(() => {
-    if (!open) return;
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== "Escape") return;
       if (helpOpen) notesNav.setHelpOpen(false);
-      else if (settingsOpen) notesNav.setSettingsOpen(false);
       else if (editing) notesNav.closeEditor();
-      else boardStore.hide();
+      else closeBoard();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, settingsOpen, editing, helpOpen]);
+  }, [editing, helpOpen, closeBoard]);
 
   async function run(action: () => Promise<unknown>): Promise<boolean> {
     setBusy(true);
@@ -393,7 +414,7 @@ export function NotesBoard(props: NotesBoardProps): JSX.Element {
             data-dsh-center-view-back=""
             title="返回会话"
             aria-label="返回会话"
-            onClick={() => boardStore.hide()}
+            onClick={closeBoard}
             style={backBtn}
           >
             <ChevronLeft size={16} />
@@ -434,18 +455,6 @@ export function NotesBoard(props: NotesBoardProps): JSX.Element {
           </button>
           <button
             type="button"
-            title="便签板设置"
-            aria-label="便签板设置"
-            aria-pressed={settingsOpen}
-            className="fs-note-header-btn"
-            onClick={() => notesNav.setSettingsOpen(!settingsOpen)}
-            disabled={busy}
-            style={{ ...iconBtn, ...(busy ? iconBtnDisabled : {}) }}
-          >
-            <Settings size={15} />
-          </button>
-          <button
-            type="button"
             title="刷新"
             className="fs-note-header-btn"
             onClick={() => void refresh()}
@@ -458,7 +467,7 @@ export function NotesBoard(props: NotesBoardProps): JSX.Element {
             type="button"
             title="关闭便签板"
             className="fs-note-header-btn"
-            onClick={() => boardStore.hide()}
+            onClick={closeBoard}
             style={iconBtn}
           >
             <X size={15} />
@@ -515,19 +524,6 @@ export function NotesBoard(props: NotesBoardProps): JSX.Element {
           workspaceReady={workspacesReady}
           onCancel={() => notesNav.closeEditor()}
           onSave={saveDraft}
-        />
-      )}
-
-      {settingsOpen && (
-        <NotesSettingsDialog
-          scope={scope}
-          snapshot={snapshot}
-          notes={props.face.notes}
-          workspaceOptions={workspaces}
-          onError={(message) => setError(message)}
-          // 设置保存（默认标题等）后即时刷新板数据（WIP 事件化：等推送会滞后）。
-          onDataChanged={() => void refresh(true)}
-          onClose={() => notesNav.setSettingsOpen(false)}
         />
       )}
 

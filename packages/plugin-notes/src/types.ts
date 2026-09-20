@@ -221,6 +221,79 @@ export interface NotesConfig {
   readonly defaultWorkspace: string
   /** WebDAV 备份配置（缺省 = 关闭，见 DEFAULT_WEBDAV_CONFIG）。 */
   readonly webdav?: NotesWebdavConfig
+  /**
+   * UI 入口开关（缺省见 DEFAULT_NOTES_ENTRY_CONFIG）。
+   * 关闭只让该入口不渲染，不注销它的槽位注册（理由见 NotesEntryConfig）。
+   */
+  readonly entry?: NotesEntryConfig
+}
+
+/**
+ * UI 入口开关：每个可插入位点一个布尔，用户在便签板设置里逐项开关。
+ *
+ * 关闭 = 该入口的组件返回 null，注册本身保持不动。之所以不「关闭即注销注册」：
+ * 一是 slots.inject 的回调生命周期归 owner 管，自己找注销点容易漏；二是这些位置
+ * 都带 `:empty { display: none }`，必须真返回 null —— 渲染空 div 会留下空白条。
+ *
+ * **至少留一个**：全部关掉之后便签板自己就一个打开的地方都没有了（设置页在
+ * dsh 设置里，不受入口开关影响，所以进得去设置、改得回来，但板子开不出来）。
+ * 设置页据此禁掉最后一个开关，判据见 enabledEntryCount。
+ */
+export interface NotesEntryConfig {
+  /**
+   * **侧栏顶部**那一行（sidebar.panellist）—— 便签板本体的入口。渲染成
+   * [图标 便签 ......... 待办数 (＋)] 的**整行**：标题与两个控件都在插件字形里，
+   * 靠 CSS 接管宿主那一行（判定与回退见 styles/notes-entry-css.ts）。
+   */
+  readonly sidebarPanelIcon: boolean
+  /**
+   * 输入栏左侧的入口工具条（conversation.input.left）：记一笔 | 打开便签板 | 待办数。
+   * 工具条是**一个**槽位注册（含三项），所以开关也只有这一个 —— 合并入口就是为了
+   * 别再让同一件事在输入框左右各站一个按钮。
+   */
+  readonly inputToolbar: boolean
+  /**
+   * 助手消息下方「存成便签」动作（conversation.chat.assistant-actions）：把这条回答
+   * 带进新建便签编辑器（预填标题与正文），由用户确认后保存。
+   */
+  readonly saveMessageAction: boolean
+  /** 全局快捷新建浮层（shell.overlay）。 */
+  readonly quickAddOverlay: boolean
+  /**
+   * 右侧栏导引卡片 + 便签 tab：在 dsh 的 tab 类型注册表里注册一个 notes 类型，
+   * 它带一张导引卡（导引页点一下就在右侧栏以 tab 形式打开便签板），本体复用
+   * 便签板组件。关掉即把该类型整个注销 —— 导引卡是注册表的投影，没有别的关法。
+   */
+  readonly rightSidebarGuide: boolean
+}
+
+/** 入口开关缺省值：核心入口开、扩展入口关（与 settings.ts 的 schema base 一致）。 */
+export const DEFAULT_NOTES_ENTRY_CONFIG: NotesEntryConfig = {
+  sidebarPanelIcon: true,
+  inputToolbar: true,
+  quickAddOverlay: true,
+  saveMessageAction: true,
+  rightSidebarGuide: true,
+}
+
+/** 全部入口开关的键（顺序 = 设置页里的展示顺序）。 */
+export const NOTES_ENTRY_KEYS: readonly (keyof NotesEntryConfig)[] = [
+  'sidebarPanelIcon',
+  'inputToolbar',
+  'quickAddOverlay',
+  'saveMessageAction',
+  'rightSidebarGuide',
+]
+
+/**
+ * 数一数开了几个入口。设置页用它守住「至少留一个」—— 全关掉之后便签就没有任何
+ * 入口了，连设置页本身都打不开。
+ * @param config - 入口开关配置（快照可能为空，按缺省表算）。
+ * @returns 已开启的入口数量。
+ */
+export function enabledEntryCount(config: NotesEntryConfig | undefined): number {
+  const effective = config ?? DEFAULT_NOTES_ENTRY_CONFIG
+  return NOTES_ENTRY_KEYS.filter((key) => effective[key]).length
 }
 
 /** WebDAV 备份配置（与应用密码一起存本地 settings；不做云上云）。 */

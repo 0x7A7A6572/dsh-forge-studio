@@ -514,7 +514,7 @@ const toolbarStyle: React.CSSProperties = {
   gap: 10,
   padding: "10px 16px 4px",
 };
-const hintStyle: React.CSSProperties = {
+const _hintStyle: React.CSSProperties = {
   color: t.labelCaption,
   fontSize: 12,
   whiteSpace: "nowrap",

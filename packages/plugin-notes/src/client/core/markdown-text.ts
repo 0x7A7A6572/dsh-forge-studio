@@ -7,7 +7,7 @@
 
 /** 剥掉常见 Markdown 语法标记，返回可读纯文本（单行、无语法符号）。 */
 export function mdToPlainText(md: string): string {
-  let text = md
+  const text = md
   // 代码块：去掉围栏，内容按纯文本保留
     .replace(/```[^\n]*\n?([\s\S]*?)```/g, '$1')
   // 行内代码

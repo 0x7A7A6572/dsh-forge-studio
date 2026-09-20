@@ -5,7 +5,7 @@
  * （类似宿主 --dsw-static-* 的刻意例外）；文字对比度在浅底上恒成立。
  */
 
-import { DEFAULT_NOTE_COLOR, NOTE_COLORS } from '../../types.ts'
+import { DEFAULT_NOTE_COLOR,  } from '../../types.ts'
 import type { NoteColor } from '../../types.ts'
 
 export interface NoteColorMeta {

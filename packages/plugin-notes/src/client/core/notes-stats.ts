@@ -9,7 +9,7 @@
  * - 快捷新建浮层保存成功后：显式调 refreshNotesStats() 立即补一次（等推送会滞后）。
  *
  * 计数口径见 task-lanes.countOpenTasks（未归档且泳道 ∈ {待办,进行中}）。
- * store 与 sidebar-entry 同为纯 DOM 侧模块级单例（boardStore 同范式）。
+ * store 与 boardStore 同为模块级单例（同范式）。
  */
 
 import type { NoteRecord } from '../../types.ts'
@@ -125,8 +125,8 @@ export function mountNotesStats(list: NotesStatsList): () => void {
   requestBadgeRefresh()
 
   const unsubscribe = notesChangeBus.subscribe(() => {
-    // 便签板打开时 board-view 的刷新已在同步，跳过避免双份拉取。
-    if (boardStore.open) return
+    // 便签板挂载中时 board-view 的刷新已在同步，跳过避免双份拉取。
+    if (boardStore.mounted) return
     requestBadgeRefresh()
   })
 

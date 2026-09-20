@@ -18,8 +18,9 @@ import { NOTE_INK, NOTE_INK_MUTED, noteColorMeta } from '../core/note-colors.ts'
 import { isRunOpen } from '../core/task-lanes.ts'
 import { mdSnippet, mdToPlainText } from '../core/markdown-text.ts'
 import { folderNameOf } from '../core/workspace-path.ts'
+import { t } from '../core/theme-tokens.ts'
 import { isScheduleBlockedStatus, scheduleBlockTextFor, scheduleLabel } from '../../schedule.ts'
-import { fmtDateTime, fmtElapsed, fmtRelative } from '../core/time-text.ts'
+import { fmtCountdown, fmtDateTime, fmtElapsed, fmtRelative, fmtShortDateTime } from '../core/time-text.ts'
 import { PinnedCornerMark } from './pin-corner.tsx'
 import {
   Archive,
@@ -176,16 +177,19 @@ export function TaskLaneCard(props: TaskLaneCardProps): JSX.Element {
             <span style={cardWorkspaceText}>{folderNameOf(note.workspace)}</span>
           </span>
         )}
-        {/* 定时日程：只挂一行「周期 · 下次」（悬停看下次完整时刻与上次结果），
-            窄列里长文案由 CSS 截断。停用的日程也显示（提醒用户它还在卡片上）。 */}
+        {/* 定时日程：只挂一行「下次时刻 · 倒计时」（悬停看周期、上次结果、共跑次数、
+            连续失败与闸门原因）。窄列里长文案由 CSS 截断；停用的日程也显示，
+            提醒用户它还在卡片上；失败另用红字追加，异常不靠悬停才看得见。 */}
         {note.schedule !== undefined && (
           <span
             style={cardSchedule}
             title={
               '定时：' + scheduleLabel(note.schedule) +
-              (note.schedule.enabled ? ' · 下次 ' + fmtDateTime(note.schedule.nextAt) : ' · 已停用') +
+              (note.schedule.enabled && note.schedule.nextAt > 0
+                ? ' · 下次 ' + fmtDateTime(note.schedule.nextAt)
+                : ' · 已停用') +
               (note.schedule.lastResult !== undefined ? ' · 上次 ' + note.schedule.lastResult : '') +
-              ((note.schedule.runCount ?? 0) > 0 ? ' · 已跑 ' + note.schedule.runCount + ' 次' : '') +
+              ((note.schedule.runCount ?? 0) > 0 ? ' · 共跑 ' + note.schedule.runCount + ' 次' : '') +
               ((note.schedule.failureStreak ?? 0) > 0 ? ' · 连续失败 ' + note.schedule.failureStreak + ' 次' : '') +
               // 状态闸门：当前列不会自动派发（拖回「待办」即恢复），悬停说清楚。
               (note.schedule.enabled && isScheduleBlockedStatus(note.lane?.status)
@@ -197,13 +201,15 @@ export function TaskLaneCard(props: TaskLaneCardProps): JSX.Element {
             <span style={cardScheduleText}>
               {note.schedule.enabled
                 ? isScheduleBlockedStatus(note.lane?.status)
-                  ? '定时待命（当前状态不执行）'
-                  : (note.schedule.nextAt > 0
-                      ? scheduleLabel(note.schedule) + ' · ' + fmtDateTime(note.schedule.nextAt)
-                      : scheduleLabel(note.schedule)) +
-                    ((note.schedule.failureStreak ?? 0) > 0 ? ' · 失败 ' + note.schedule.failureStreak : '')
+                  ? '定时待命'
+                  : note.schedule.nextAt > 0
+                    ? fmtShortDateTime(note.schedule.nextAt) + ' · ' + fmtCountdown(note.schedule.nextAt)
+                    : scheduleLabel(note.schedule)
                 : '定时已停用'}
             </span>
+            {(note.schedule.failureStreak ?? 0) > 0 && (
+              <span style={cardScheduleFail}>失败 {note.schedule.failureStreak ?? 0}</span>
+            )}
           </span>
         )}
         {running ? (
@@ -343,6 +349,11 @@ const cardScheduleText: React.CSSProperties = {
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
+}
+/** 定时失败的红色小标：窄列只留次数，原因看悬停（与卡片其它语义色同源）。 */
+const cardScheduleFail: React.CSSProperties = {
+  flex: 'none',
+  color: t.danger,
 }
 const laneStatus: React.CSSProperties = {
   display: 'flex',

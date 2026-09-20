@@ -42,6 +42,8 @@ export interface EditorPageDialogProps {
 
 export function EditorPageDialog(props: EditorPageDialogProps): JSX.Element {
   const editing = props.target.mode === 'edit' ? props.target.note : undefined
+  // 新建态的预填内容（助手消息「存成便签」带的回答）；不带就是空的编辑器。
+  const draft = props.target.mode === 'create' ? props.target.draft : undefined
   // 编辑态带出便签既有 lane（驱动开关预选 + 只读结果区）；新建态不合成 lane（M4：
   // 结果区仅编辑模式），列头「＋新建任务」改用 initialLaneStatus 只预填开关 + 状态。
   const initialLane: NoteLane | undefined =
@@ -67,9 +69,10 @@ export function EditorPageDialog(props: EditorPageDialogProps): JSX.Element {
         aria-label={editing ? '编辑便签' : '新建便签'}
       >
         <NoteEditor
-          key={editing ? editing.id : 'create'}
-          initialTitle={editing ? editing.title : ''}
-          initialBody={editing ? editing.text : ''}
+          // 新建态用 nonce 当 key：预填内容变了要换一个编辑器实例，否则初值不生效（见 notes-nav）。
+          key={editing ? editing.id : `create:${props.target.mode === 'create' ? (props.target.nonce ?? 0) : 0}`}
+          initialTitle={editing ? editing.title : (draft?.title ?? '')}
+          initialBody={editing ? editing.text : (draft?.text ?? '')}
           initialColor={editing ? editing.color : undefined}
           initialLane={initialLane}
           initialLaneStatus={initialLaneStatus}

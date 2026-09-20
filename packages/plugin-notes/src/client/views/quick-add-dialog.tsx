@@ -1,7 +1,9 @@
 /**
- * 快捷新建浮层的 React 宿主：订阅 quickAddStore.open，打开时在 body 固定层里
- * 渲染「新建便签」编辑器（复用 EditorPageDialog，观感与板内新建一致），不开
- * 便签板（不碰 board-store / notes-nav）。
+ * 快捷新建浮层的 React 宿主：订阅 boardStore.quickAdd，打开时铺满视口渲染
+ * 「新建便签」编辑器（复用 EditorPageDialog，观感与板内新建一致），**不开**便签板。
+ *
+ * 本组件由 components/NotesQuickAddOverlay 注册进 shell.overlay；生命周期归槽位管
+ * （插件卸载自动收干净），不再自己往 body 挂 React 根。
  *
  * 交互契约：
  * - Esc / 取消 / 点遮罩 → 只关浮层；
@@ -14,7 +16,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { NoteColor, NotesConfig, TaskStatus } from '../../types.ts'
-import { quickAddStore } from '../core/quick-add.ts'
+import { boardStore } from '../core/board-store.ts'
 import { t } from '../core/theme-tokens.ts'
 import { EditorPageDialog } from './editor-page-dialog.tsx'
 import type { NoteSaveOptions } from '../components/note-editor.tsx'
@@ -44,8 +46,17 @@ export interface QuickAddDialogProps {
 
 export function QuickAddDialog(props: QuickAddDialogProps): JSX.Element {
   const open = useSyncExternalStore(
-    quickAddStore.subscribe,
-    () => quickAddStore.open,
+    boardStore.subscribe,
+    () => boardStore.quickAdd,
+  )
+  /** 预填草稿 + 打开序号（助手消息「存成便签」带进来；见 board-store）。 */
+  const draft = useSyncExternalStore(
+    boardStore.subscribe,
+    () => boardStore.quickAddDraft,
+  )
+  const seq = useSyncExternalStore(
+    boardStore.subscribe,
+    () => boardStore.quickAddSeq,
   )
   const [error, setError] = useState<string | undefined>(undefined)
   /** 工作区候选（最近会话用过的 cwd）：挂载即拉一次，失败静默降级空数组。 */
@@ -59,15 +70,18 @@ export function QuickAddDialog(props: QuickAddDialogProps): JSX.Element {
     const onKey = (event: KeyboardEvent): void => {
       if (event.key !== 'Escape') return
       event.stopPropagation()
-      quickAddStore.hide()
+      boardStore.hideQuickAdd()
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
   }, [open])
 
-  // 打开时清掉上一次的残留错误提示。
+  // 打开时清掉上一次的残留错误提示；关上时丢掉草稿（下次由调用方重新给）。
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      boardStore.clearQuickAddDraft()
+      return
+    }
     setError(undefined)
   }, [open])
 
@@ -115,7 +129,7 @@ export function QuickAddDialog(props: QuickAddDialogProps): JSX.Element {
     })
     if (result.ok) {
       props.onCreated()
-      quickAddStore.hide()
+      boardStore.hideQuickAdd()
     } else {
       setError(result.error?.message ?? '保存失败，请重试')
     }
@@ -124,14 +138,14 @@ export function QuickAddDialog(props: QuickAddDialogProps): JSX.Element {
   return (
     <div style={hostStyle}>
       <EditorPageDialog
-        target={{ mode: 'create' }}
+        target={{ mode: 'create', ...(draft === undefined ? {} : { draft }), nonce: seq }}
         defaultTitle={props.scope.getSnapshot().value?.defaultTitle ?? '新便签'}
         defaultWorkspace={
           props.scope.getSnapshot().value?.defaultWorkspace || workspaces[0] || ''
         }
         workspaceOptions={workspaces}
         workspaceReady={workspacesReady}
-        onCancel={() => quickAddStore.hide()}
+        onCancel={() => boardStore.hideQuickAdd()}
         onSave={onSave}
       />
       {error !== undefined && (
@@ -145,13 +159,16 @@ export function QuickAddDialog(props: QuickAddDialogProps): JSX.Element {
 
 /* ---------- 样式 ---------- */
 
-/** 宿主只占位（可见性由 quick-add 容器的 CSS 控制），子级 EditorPageDialog 的
- *  absolute 遮罩以本层为包含块铺满视口。 */
+/** shell.overlay 是 click-through 层（条目要自己 opt-in 指针事件），所以这里自己
+ *  铺满视口并打开 pointer-events，作为 EditorPageDialog absolute 遮罩的包含块。 */
 const hostStyle: React.CSSProperties = {
-  position: 'relative',
+  position: 'fixed',
+  inset: 0,
   width: '100%',
   height: '100%',
   boxSizing: 'border-box',
+  pointerEvents: 'auto',
+  zIndex: 300,
 }
 
 /** 顶部错误条：fixed 到视口顶部居中，z 高于编辑器遮罩（z10），保证可见。 */

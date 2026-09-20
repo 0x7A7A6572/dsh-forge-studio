@@ -9,7 +9,7 @@ export const t = {
   mask: 'var(--dsw-alias-bg-mask-1)',
   maskBlur: 'var(--dsw-mask-blur, blur(2px))',
   /** 面板表面（宿主 Modal dialog 同款 layer-2）。 */
-  surface: 'var(--dsw-alias-bg-layer-2)',
+  surface: '', /*var(--dsw-alias-bg-layer-2) */
   surfaceRaised: 'var(--dsw-alias-bg-layer-3, var(--dsw-alias-bg-layer-2))',
   /** 边框层级。 */
   borderL1: 'var(--dsw-alias-border-l1)',

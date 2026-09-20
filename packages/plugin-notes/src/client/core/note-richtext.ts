@@ -60,7 +60,7 @@ function escapeHtmlAttr(value: string): string {
 
 /** Markdown 行内特殊字符转义（复刻 prosemirror-markdown 的 esc，非行首场景）。 */
 function escapeMarkdownInline(value: string): string {
-  return value.replace(/[`*\\~\[\]_]/g, (m, i) =>
+  return value.replace(/[`*\\~[\]_]/g, (m, i) =>
     m === '_' && i > 0 && i + 1 < value.length && /\w/.test(value[i - 1]) && /\w/.test(value[i + 1])
       ? m
       : `\\${m}`,
