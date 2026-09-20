@@ -11,8 +11,8 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { NotesRemote } from '../../core/notes-remote.ts'
-import type { NotesConfig, NotesEntryConfig, WebdavStatus } from '../../../types.ts'
-import { DEFAULT_NOTES_ENTRY_CONFIG, DEFAULT_WEBDAV_CONFIG, enabledEntryCount } from '../../../types.ts'
+import type { NoteOpenMode, NotesConfig, NotesEntryConfig, WebdavStatus } from '../../../types.ts'
+import { DEFAULT_NOTES_ENTRY_CONFIG, DEFAULT_WEBDAV_CONFIG, enabledEntryCount, notesOpenMode } from '../../../types.ts'
 import type { NotesWebdavConfig } from '../../../types.ts'
 import { workspaceLabels } from '../../core/workspace-path.ts'
 import { refreshNotesStats } from '../../core/notes-stats.ts'
@@ -90,6 +90,12 @@ export function useSettingsSection(notes: NotesRemote, scope: SettingsScope<Note
     () => snapshot.value?.entry ?? DEFAULT_NOTES_ENTRY_CONFIG,
   )
 
+  /**
+   * 打开方式：同样留本地副本，改完立刻落配置 —— 与入口开关一样没有「保存」按钮，
+   * 写失败回滚。快照里可能是旧值 / 手改坏的字符串，统一走 notesOpenMode 归一。
+   */
+  const [openMode, setOpenModeDraft] = useState<NoteOpenMode>(() => notesOpenMode(snapshot.value))
+
   /** 已开启的入口数量：靠它守住「至少留一个」。 */
   const enabledCount = enabledEntryCount(entryDraft)
 
@@ -122,6 +128,19 @@ export function useSettingsSection(notes: NotesRemote, scope: SettingsScope<Note
       await scope.set('entry', next)
     } catch (cause) {
       setEntryDraft(previous)
+      setNotice({ kind: 'error', text: cause instanceof Error ? cause.message : String(cause) })
+    }
+  }
+
+  /** 改打开方式：本地先生效，再落配置；失败回滚并报到 notice。 */
+  async function setOpenMode(next: NoteOpenMode): Promise<void> {
+    if (!writable) return
+    const previous = openMode
+    setOpenModeDraft(next)
+    try {
+      await scope.set('openMode', next)
+    } catch (cause) {
+      setOpenModeDraft(previous)
       setNotice({ kind: 'error', text: cause instanceof Error ? cause.message : String(cause) })
     }
   }
@@ -296,6 +315,8 @@ export function useSettingsSection(notes: NotesRemote, scope: SettingsScope<Note
     entryDraft,
     enabledCount,
     setEntry,
+    openMode,
+    setOpenMode,
     wd,
     busy,
     patchWd,

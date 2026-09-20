@@ -17,7 +17,7 @@
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { NotesRemote } from '../../core/notes-remote.ts'
-import type { NotesConfig, NotesEntryConfig } from '../../../types.ts'
+import type { NoteOpenMode, NotesConfig, NotesEntryConfig } from '../../../types.ts'
 import { Input, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import { t } from '../../core/theme-tokens.ts'
 import { folderNameOf } from '../../core/workspace-path.ts'
@@ -61,6 +61,12 @@ const ENTRY_ITEMS: readonly {
   { key: 'rightSidebarGuide', label: '右侧栏导引卡片', hint: '右侧栏导引页里的便签卡片；点一下就在右侧栏以标签页打开便签板。' },
 ]
 
+/** 打开方式下拉的选项（顺序 = 展示顺序；值必须落在 types.ts 的 NOTE_OPEN_MODES 里）。 */
+const OPEN_MODE_ITEMS: readonly { readonly value: NoteOpenMode; readonly label: string }[] = [
+  { value: 'main', label: '中间列（默认）' },
+  { value: 'right', label: '右侧栏' },
+]
+
 function fmtTime(ts: number | null): string {
   if (ts === null) return '—'
   return new Date(ts).toLocaleString()
@@ -86,6 +92,8 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
     wsOptions,
     wsLabels,
     notice,
+    openMode,
+    setOpenMode,
     entryDraft,
     enabledCount,
     setEntry,
@@ -208,9 +216,28 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
 
         {group === 'entries' && (
           <SettingsCard
-            title="入口开关"
-            desc="便签板的入口开关。"
+            title="入口"
+            desc="便签板开在哪儿，以及各入口开关。关掉一个入口就没那处入口，但至少要留一个。"
           >
+            <SettingsRow
+              label="打开方式"
+              hint={openMode === 'right'
+                ? '左栏那一行与输入栏的「打开便签板」会把板子开进右侧栏；宿主没装右侧栏时自动回退中间列。'
+                : '默认：板子开在中间列，也是插件一直以来的行为。'}
+            >
+              <select
+                value={openMode}
+                disabled={!writable}
+                aria-label="便签板打开方式"
+                onChange={(e) => { void setOpenMode(e.target.value as NoteOpenMode) }}
+                style={inputStyle}
+              >
+                {OPEN_MODE_ITEMS.map((item) => (
+                  <option key={item.value} value={item.value}>{item.label}</option>
+                ))}
+              </select>
+            </SettingsRow>
+
             {ENTRY_ITEMS.map((item) => {
               // 最后一个开着的：禁掉，否则用户会把自己锁在门外（见 types.ts）。
               const lastOne = entryDraft[item.key] && enabledCount <= 1
@@ -226,6 +253,13 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
                 />
               )
             })}
+
+            {notice !== null && (
+              <div style={noticeStyle(notice.kind)} role="status">
+                {notice.kind === 'error' ? '⚠ ' : '✓ '}
+                {notice.text}
+              </div>
+            )}
           </SettingsCard>
         )}
 

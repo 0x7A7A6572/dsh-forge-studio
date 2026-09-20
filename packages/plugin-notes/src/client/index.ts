@@ -45,8 +45,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 // type-only：settings.section 槽位声明（便签的设置分区）。
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
-import type { NotesConfig } from '../types.ts'
-import { DEFAULT_NOTES_ENTRY_CONFIG, NOTES_NAMESPACE } from '../types.ts'
+import type { NoteOpenMode, NotesConfig, NotesEntryConfig } from '../types.ts'
+import { DEFAULT_NOTES_ENTRY_CONFIG, NOTES_NAMESPACE, notesOpenMode } from '../types.ts'
 import { mountNotesRemote, notesOf } from './core/notes-remote.ts'
 import { boardStore } from './core/board-store.ts'
 import { mountNotesStats, mountNotesChangeWatch, refreshNotesStats } from './core/notes-stats.ts'
@@ -87,8 +87,28 @@ export function apply(ctx: Context): void {
       // 命名空间 scope：设置弹窗读写 defaultTitle / defaultWorkspace / entry 开关。
       const scope = ctx.settingsScope.bind<NotesConfig>({ namespace: NOTES_NAMESPACE })
 
-      /** 打开便签板：选中 main 面板。未注册时 selectPanel 会抛，降级为只记日志。 */
+      /** 读一个入口开关（快照可能还没有值，按缺省表兜底）。 */
+      const readEntry = (key: keyof NotesEntryConfig): boolean =>
+        scope.getSnapshot().value?.entry?.[key] ?? DEFAULT_NOTES_ENTRY_CONFIG[key]
+
+      /** 读当前打开方式（快照 + 缺省值；非法值在 notesOpenMode 里就回退成中间列）。 */
+      const readOpenMode = (): NoteOpenMode => notesOpenMode(scope.getSnapshot().value)
+
+      /**
+       * 在右侧栏打开便签板。宿主没装右侧栏时恒为 undefined（这个能力是可选包）。
+       * @returns 真打开了返回 true；kind 没注册或调用抛错返回 false，由调用方回退中间列。
+       */
+      let openBoardInRightSidebar: (() => boolean) | undefined
+
+      /**
+       * 打开便签板：按设置里的「打开方式」决定落点。
+       *
+       * 'right' 走右侧栏（打开时右侧栏自己会展开）；宿主没装右侧栏、或这一步抛错，
+       * 一律**回退中间列**并把原因记进日志 —— 用户选的落点失效了，但板子必须打得开。
+       * 'main' 与历史行为完全一致：选中 main 面板，未注册时 selectPanel 抛，降级为只记日志。
+       */
       const openBoard = (): void => {
+        if (readOpenMode() === 'right' && openBoardInRightSidebar?.() === true) return
         try {
           ctx.layout.selectPanel(NOTES_PANEL_ID)
         } catch (error) {
@@ -152,8 +172,7 @@ export function apply(ctx: Context): void {
 
         /** 读开关并把整行注册 / 注销到与之一致的状态（幂等）。 */
         const syncPanelEntry = (): void => {
-          const enabled = scope.getSnapshot().value?.entry?.sidebarPanelIcon
-            ?? DEFAULT_NOTES_ENTRY_CONFIG.sidebarPanelIcon
+          const enabled = readEntry('sidebarPanelIcon')
           if (enabled === (disposePanel !== undefined)) return
           if (enabled) {
             // 字形里额外长出待办数与快捷新建 (＋)，所以 capture 也要传进去。
@@ -225,37 +244,56 @@ export function apply(ctx: Context): void {
 
       // ---- 右侧栏：notes tab 类型 + 导引卡片 ----
       //
-      // sidebarRightTabs 是**宿主可选**能力（没装右侧栏的部署里这个服务不出现），所以
-      // 用嵌套 inject 等它：等不到就整块不注册，绝不因此让插件 apply 挂住。
-      // 导引卡片是 tab 类型注册表的投影（registry.guide()），所以「关掉这个入口」=
-      // 注销该类型；body 座位留着不动 —— 没有类型就没有 tab 会路由到它。
-      ctx.inject(['sidebarRightTabs'], (ctx) => {
+      // sidebarRightTabs / sidebarRight 都是**宿主可选**能力（没装右侧栏的部署里这两个服务
+      // 不出现），所以用嵌套 inject 一起等：等不到就整块不注册，绝不因此让插件 apply 挂住。
+      //
+      // 这块有两个开关位点，各管各的：
+      // - tab 类型本身**常驻注册** —— 打开方式选「右侧栏」时 openTab(kind) 要求 kind 已注册；
+      // - 导引页那张卡片才是 rightSidebarGuide 开关管的东西。卡片是注册的一部分
+      //   （registry.guide() 是注册表的投影，没有别的关法），所以开关一变就重注册一次，
+      //   且只在开关真的变化时才重来 —— 别的设置改动碰不到它。
+      ctx.inject(['sidebarRight', 'sidebarRightTabs'], (ctx) => {
         let disposeTabType: (() => void) | undefined
+        let registeredWithGuide: boolean | undefined
 
-        /** 读开关并把 tab 类型注册/注销到与之一致的状态（幂等）。 */
+        /** 按开关把 tab 类型注册 / 重注册到一致状态（幂等：开关没变就直接返回）。 */
         const syncTabType = (): void => {
-          const enabled = scope.getSnapshot().value?.entry?.rightSidebarGuide
-            ?? DEFAULT_NOTES_ENTRY_CONFIG.rightSidebarGuide
-          if (enabled === (disposeTabType !== undefined)) return
-          if (enabled) {
-            disposeTabType = ctx.sidebarRightTabs.register({
-              id: NOTES_TAB_ID,
-              kind: NOTES_TAB_KIND,
-              priority: 'extension',
-              title: () => NOTES_PANEL_LABEL,
-              guide: [{
+          const withGuide = readEntry('rightSidebarGuide')
+          if (disposeTabType !== undefined && registeredWithGuide === withGuide) return
+          const dispose = disposeTabType
+          disposeTabType = undefined
+          dispose?.()
+          const guide = withGuide
+            ? [{
                 id: 'open-board',
                 order: ORDER,
                 title: () => NOTES_PANEL_LABEL,
                 description: () => '在右侧栏打开便签板',
                 icon: NotesGuideIcon,
-              }],
-            })
-            return
+              }]
+            : undefined
+          disposeTabType = ctx.sidebarRightTabs.register({
+            id: NOTES_TAB_ID,
+            kind: NOTES_TAB_KIND,
+            priority: 'extension',
+            title: () => NOTES_PANEL_LABEL,
+            ...(guide === undefined ? {} : { guide }),
+          })
+          registeredWithGuide = withGuide
+        }
+
+        /**
+         * 打开方式选「右侧栏」时走这里。openTab 在 kind 没注册时会抛，所以必须兜住 ——
+         * 抛出去就成了「点一下什么都没发生」，比落点不对更糟。
+         */
+        openBoardInRightSidebar = (): boolean => {
+          try {
+            ctx.sidebarRight.openTab(NOTES_TAB_KIND)
+            return true
+          } catch (error) {
+            console.error('[plugin-notes] open in right sidebar failed, falling back to main:', error)
+            return false
           }
-          const dispose = disposeTabType
-          disposeTabType = undefined
-          dispose?.()
         }
 
         const offScope = scope.subscribe(syncTabType)
@@ -269,6 +307,7 @@ export function apply(ctx: Context): void {
 
         ctx.effect(() => () => {
           offScope()
+          openBoardInRightSidebar = undefined
           const dispose = disposeTabType
           disposeTabType = undefined
           dispose?.()

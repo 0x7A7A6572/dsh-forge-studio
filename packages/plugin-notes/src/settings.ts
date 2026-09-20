@@ -7,6 +7,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import Schema from '@deepseek-ai/schemastery'
 import {
+  DEFAULT_NOTE_OPEN_MODE,
   DEFAULT_NOTES_ENTRY_CONFIG,
   DEFAULT_WEBDAV_CONFIG,
   DEFAULT_WORKSPACE,
@@ -39,10 +40,17 @@ const entrySchema = Schema.object({
   rightSidebarGuide: Schema.boolean().default(DEFAULT_NOTES_ENTRY_CONFIG.rightSidebarGuide),
 }).default(DEFAULT_NOTES_ENTRY_CONFIG as NotesEntryConfig)
 
+/** 便签板的打开方式：只能取 types.ts NOTE_OPEN_MODES 里那两个值。 */
+const openModeSchema = Schema.union([
+  Schema.const('main').description('中间列（默认）'),
+  Schema.const('right').description('右侧栏'),
+]).default(DEFAULT_NOTE_OPEN_MODE)
+
 export const NotesConfigSchema = Schema.object({
   defaultTitle: Schema.string().default('新便签'),
   // 任务执行默认工作区（绝对目录路径）：空串 = 未配置。
   defaultWorkspace: Schema.string().default(DEFAULT_WORKSPACE),
+  openMode: openModeSchema,
   entry: entrySchema,
   webdav: webdavSchema,
 })
@@ -50,6 +58,7 @@ export const NotesConfigSchema = Schema.object({
 export const NOTES_CONFIG_BASE: NotesConfig = {
   defaultTitle: '新便签',
   defaultWorkspace: DEFAULT_WORKSPACE,
+  openMode: DEFAULT_NOTE_OPEN_MODE,
   entry: DEFAULT_NOTES_ENTRY_CONFIG,
   webdav: DEFAULT_WEBDAV_CONFIG,
 }

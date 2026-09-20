@@ -222,6 +222,11 @@ export interface NotesConfig {
   /** WebDAV 备份配置（缺省 = 关闭，见 DEFAULT_WEBDAV_CONFIG）。 */
   readonly webdav?: NotesWebdavConfig
   /**
+   * 便签板的打开方式（缺省 = 中间列，见 NOTE_OPEN_MODES）。
+   * 只管「打开便签板」这个动作，不管右侧栏导引页那张卡片。
+   */
+  readonly openMode?: NoteOpenMode
+  /**
    * UI 入口开关（缺省见 DEFAULT_NOTES_ENTRY_CONFIG）。
    * 关掉即整个入口消失（list 槽返回 null / panellist 注销注册，见 NotesEntryConfig）。
    */
@@ -295,6 +300,33 @@ export const NOTES_ENTRY_KEYS: readonly (keyof NotesEntryConfig)[] = [
 export function enabledEntryCount(config: NotesEntryConfig | undefined): number {
   const effective = config ?? DEFAULT_NOTES_ENTRY_CONFIG
   return NOTES_ENTRY_KEYS.filter((key) => effective[key]).length
+}
+
+/**
+ * 便签板的打开方式：
+ * - 'main'：中间列的面板（默认，也就是插件一直以来的行为）；
+ * - 'right'：右侧栏里的便签 tab —— 与导引卡片点进去的是同一个 tab，打开时右侧栏自动展开。
+ *
+ * 只有「打开便签板」这个动作看它：左栏顶部那一行、输入栏工具条的「打开便签板」。
+ * 右侧栏导引页那张卡片照旧 —— 它本身就是右侧栏的入口，不受这里影响。
+ * 宿主没装右侧栏（可选能力）时一律回退 'main'，见 client/index.ts 的 openBoard。
+ */
+export const NOTE_OPEN_MODES = ['main', 'right'] as const
+export type NoteOpenMode = (typeof NOTE_OPEN_MODES)[number]
+
+/** 打开方式缺省值：中间列（与历史行为一致）。 */
+export const DEFAULT_NOTE_OPEN_MODE: NoteOpenMode = 'main'
+
+/**
+ * 把配置里的打开方式归一成合法值：旧配置没这个字段、或者被手改坏了，都回退缺省。
+ * @param config - 便签配置快照（可能还没有值）。
+ * @returns 合法的打开方式。
+ */
+export function notesOpenMode(config: NotesConfig | undefined): NoteOpenMode {
+  const value = config?.openMode
+  return (NOTE_OPEN_MODES as readonly string[]).includes(value as string)
+    ? (value as NoteOpenMode)
+    : DEFAULT_NOTE_OPEN_MODE
 }
 
 /** WebDAV 备份配置（与应用密码一起存本地 settings；不做云上云）。 */
