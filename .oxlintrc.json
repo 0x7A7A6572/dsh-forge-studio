@@ -1,0 +1,82 @@
+{
+  // oxlint 配置：不继承类别默认，规则逐条点名 —— 跟官方 deepseek-harness 一个路数。
+  // 官方用 oxlint 1.76 + oxlint-tsgolint，版本对齐。
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "options": {
+    "reportUnusedDisableDirectives": "warn",
+    "typeAware": false
+  },
+  "env": {
+    "builtin": true
+  },
+  "ignorePatterns": [
+    "**/lib/**",
+    "**/node_modules/**",
+    "**/.dsh-home/**",
+    "**/.research/**",
+    "**/*.js",
+    "**/*.mjs",
+    "**/*.config.ts"
+  ],
+  "rules": {
+    // 下划线前缀是本仓库的既有约定（__PLUGIN_VERSION__ 注入常量、_change 这类
+    // 内部字段、_e 这类刻意不用的参数），不是拼写事故。
+    "no-underscore-dangle": "off",
+    // oxlint 的 react 插件把 React Compiler 那套语义规则也捆进来了（purity /
+    // immutability / refs / set-state-in-effect …）。仓库里 CodeMirror、xterm、
+    // echarts 这类命令式集成天然依赖 render 期读 ref、effect 内同步 setState，
+    // 这些规则在存量代码上是纯噪音（别人接 eslint-plugin-react-hooks 时也整体
+    // 关掉了这档）。只留经典双规则：rules-of-hooks + exhaustive-deps。
+    "react/error-boundaries": "off",
+    "react/globals": "off",
+    "react/immutability": "off",
+    "react/incompatible-library": "off",
+    "react/preserve-manual-memoization": "off",
+    "react/purity": "off",
+    "react/refs": "off",
+    "react/set-state-in-effect": "off",
+    "react/set-state-in-render": "off",
+    "react/static-components": "off",
+    "react/unsupported-syntax": "off",
+    "react/use-memo": "off",
+    "react/exhaustive-effect-dependencies": "off",
+    "react/memo-dependencies": "off",
+    "react/no-deriving-state-in-effects": "off",
+    "react/capitalized-calls": "off",
+    // 新 JSX 转换（tsconfig 的 jsx: react-jsx）：JSX 不再需要 React 在作用域里。
+    "react/react-in-jsx-scope": "off"
+  },
+  "overrides": [
+    {
+      // 插件源码：host 与 client 都是 TS/TSX。
+      "files": ["packages/*/src/**/*.{ts,tsx}"],
+      "rules": {
+        "no-var": "error",
+        // ignoreReadBeforeAssign：本仓库有「闭包先读、稍后再赋值」的装配写法
+        // （notes 的 notesService 就是：先被 webdav 回调引用，65 行才 new 出来）。
+        // 默认档会把这类 let 一律判成 const，属于规则语义而非代码问题。
+        "prefer-const": ["error", { "ignoreReadBeforeAssign": true }],
+        "prefer-rest-params": "error",
+        "prefer-spread": "error",
+        "no-array-constructor": "error",
+        "no-unused-expressions": "error",
+        "no-unused-vars": ["error", {
+          "argsIgnorePattern": "^_",
+          "varsIgnorePattern": "^_",
+          "caughtErrorsIgnorePattern": "^_"
+        }],
+        "no-useless-constructor": "error",
+        "no-console": "off",
+        // hook 拆分（views/hooks/components 三件套）敢做的前提：hook 不许写在
+        // 条件里、依赖数组不许漏。这两条就是把 CONVENTIONS.md 的拆分约定钉死的护栏。
+        "react/rules-of-hooks": "error",
+        "react/exhaustive-deps": "warn"
+      }
+    }
+  ]
+}

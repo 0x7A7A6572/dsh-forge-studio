@@ -1,8 +1,8 @@
 # dsh-forge-studio 目录与命名约定
 
-> 已采纳。本文只管「东西该放哪、文件该叫什么」，不管代码风格（那是 prettier/eslint 的活，尚未接入）。
+> 已采纳。本文只管「东西该放哪、文件该叫什么」；代码风格与静态检查在根目录：`.editorconfig`（格式基线）+ `.oxlintrc.json`（oxlint，规则逐条点名）。
 >
-> 两处已变：构建从 esbuild 换成了 **vite**（共享预设 `scripts/vite.client.mjs`）；仓库原有的 1147 个测试已全部移除，本文里的测试约定**暂时不适用**，等测试回归再启用。
+> 构建已从 esbuild 换成 **tsdown**（共享预设 `scripts/tsdown.client.mjs`，移植自官方 `packages/client/tsdown.client.ts`，CSS 走 lightningcss）。仓库原有的 1147 个测试已全部移除，本文里的测试约定**暂时不适用**，等测试回归再启用。
 >
 > `CLAUDE.md` 里那几条硬性规则（一个功能一个包、依赖只指 Service Definition、持久化只走 `ctx.storage`）是上位规则，本文是它们的展开；冲突时以 `CLAUDE.md` 为准。
 
@@ -134,7 +134,7 @@ export function useSettingsSection(memory: MemoryRemote) {
 .list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
 ```
 
-`.root` 编译后变成 `[hash]_root` —— 这就是 `<style scoped>`。由 **vite 原生编译**：类名规则配在 `scripts/vite.client.mjs` 的 `css.modules.generateScopedName`（`[hash:base64:6]_[local]`，哈希在前，两个插件撞同名文件也不撞类名），CSS 正文由 `vite-plugin-css-injected-by-js` 在 factory 执行时插成 `<style>`。已跑通三个包。
+`.root` 编译后变成 `[hash]_root` —— 这就是 `<style scoped>`。由 **lightningcss 编译**（在 `scripts/tsdown.client.mjs` 的 CSS 插件里）：类名规则是 `cssModules: { pattern: '[hash]_[local]' }`（哈希在前，两个插件撞同名文件也不撞类名），CSS 正文在 factory 执行时插成 `<style data-plugin>`。已跑通三个包（memory / daily-log / usage-billing）。
 
 这个插件的 `topExecutionPriority` **必须设 false**。默认 true 会把注入的 IIFE 顶到 banner 之前，bundle 就不再以 `window.__ModuleLoader__.load(` 开头 —— 语法上合法，但那是宿主注册契约，别赌。设 false 后注入代码留在 factory 内部，时机跟原先的手动 injector 一致。
 
@@ -154,22 +154,23 @@ settings-section/
 
 `plugin-memory` 那个 1825 行的 `section.tsx` 正是长成了「一个组件里 27 个 state + 全部 handler + 全部 JSX」。按上面的切法会变成 **1 个视图文件 + 3 个 hook + 约 6 个零件组件**，每个都能单独读。
 
-## 工具链（现在一个都没有）
+## 工具链
 
 ```
-prettier + .editorconfig              格式，零配置争议
-eslint（flat config）
-├── @eslint/js
-├── typescript-eslint                 类型感知规则
-├── eslint-plugin-react-hooks         ← 关键，见下
-├── eslint-plugin-import-x            import 顺序
-├── eslint-plugin-unicorn             文件名 / 一致性
-└── eslint-config-prettier            关掉跟 prettier 打架的规则
+.editorconfig                          格式基线（已接）
+prettier                               尚未接入
+oxlint（根 .oxlintrc.json）
+├── categories.correctness             正确性规则，错就是错
+├── react/rules-of-hooks               ← 关键，见下
+├── react/exhaustive-deps              ← 关键，见下
+└── no-unused-vars / prefer-const …    点名的规则集
 ```
 
-**`eslint-plugin-react-hooks` 是上面那套拆分敢做的前提。** 它守两条：`rules-of-hooks`（hook 不能在条件里调）和 `exhaustive-deps`（依赖数组漏了立刻报）。没有它，把 state 和取数挪进 hook 就是裸奔 —— 这正是很多 React 项目"越拆越乱"的原因，不是拆分本身错，是没有护栏。
+**`react/rules-of-hooks` 与 `react/exhaustive-deps` 是上面那套拆分敢做的前提。** 它守两条：`rules-of-hooks`（hook 不能在条件里调）和 `exhaustive-deps`（依赖数组漏了立刻报）。没有它，把 state 和取数挪进 hook 就是裸奔 —— 这正是很多 React 项目"越拆越乱"的原因，不是拆分本身错，是没有护栏。
 
-约定落到 lint 的映射：
+选 oxlint 不选 eslint，是因为官方 deepseek-harness 用的就是 oxlint（`.oxlintrc.json` + `scripts/run-oxlint.ts`，配 `oxlint-tsgolint` 做类型感知），跟上游对齐省一套配置。**注意 oxlint 的 react 插件把 React Compiler 那套语义规则（purity / immutability / refs / set-state-in-effect …）也捆了进来**，本仓库在 `.oxlintrc.json` 里整体关掉：CodeMirror / xterm / echarts 这类命令式集成天然依赖 render 期读 ref、effect 内同步 setState，那些规则在存量代码上是纯噪音。
+
+约定落到 lint 的映射（**目前只有 hook 双规则与几条例行规则生效，下表其余部分仍是待办**）：
 
 | 约定 | 规则 |
 |---|---|
@@ -194,7 +195,8 @@ packages/plugin-<名字>/
 │   ├── agent/           # 给模型的工具；tools.ts 是注册表，其余按功能拆
 │   └── client/          # 浏览器侧，见下一节
 ├── tests/               # 与 src/ 同构：x.test.ts 测 x.ts（当前已整体移除，见文首说明）
-├── scripts/             # build.mjs / watch.mjs
+├── scripts/             # build.mjs（先 tsc 出类型，再 tsdown）
+├── tsdown.config.ts     # 构建配置：hostBundle() + clientBundle('包名')
 ├── assets/              # 只放不进 bundle 的图（README 配图）
 └── cordis.patch.yml
 ```
@@ -213,7 +215,7 @@ src/client/
 ├── components/    # 展示组件：零件（按钮、卡片、图标、图表）
 ├── views/         # 页面级：一屏 / 一个页签 / 一个设置分区
 ├── styles/        # 插件级样式：*.module.css
-├── assets/        # 要打进 bundle 的图（vite 内联成 dataurl，见 assets.d.ts）
+├── assets/        # 要打进 bundle 的图（见 assets.d.ts；tsdown 预设暂未处理图片导入）
 └── *.d.ts         # 资源导入声明
 ```
 
@@ -233,8 +235,8 @@ src/client/
 
 ## 样式文件放哪
 
-1. **插件级样式**（整块 UI 共用一张表）→ `client/styles/<它作用的区域>.module.css`。**不需要注入函数** —— CSS Modules 配 `vite-plugin-css-injected-by-js` 会在 bundle 执行时自动插 `<style>`。
-2. **组件级样式** → 与组件同名同目录（`NoteCard.tsx` + `NoteCard.module.css`）。CSS Modules 已随 vite 落地。
+1. **插件级样式**（整块 UI 共用一张表）→ `client/styles/<它作用的区域>.module.css`。**不需要注入函数** —— tsdown 预设的 CSS 插件会在 factory 执行时自动插 `<style data-plugin>`。
+2. **组件级样式** → 与组件同名同目录（`NoteCard.tsx` + `NoteCard.module.css`）。CSS Modules 已随 tsdown 预设落地（限已迁移的三个包）。
 
 > 实测结论：**「一个组件一份」要看类名是否真的私有。** `plugin-memory` 的 89 个类名里有 13 个（`row*` / `seg*` / `error` / `notice` / `modalBody` …）被两个以上组件共用，那是**共享版式类**；硬拆就得靠 `composes` 或 `:global()` 兜，反而更绕。所以它保持一张 `settings-section.module.css` 靠哈希隔离，只有类名确实私有的组件（如 `ScaleSlider`）才另开一份。
 
@@ -303,12 +305,12 @@ src/client/
 
 **图片放哪的规则**（现在三种混用）：
 
-- 要进 bundle 的图 → `src/client/assets/`（vite 内联成 dataurl，见 `assets.d.ts`）。例：`notes/src/client/assets/note-flow-banner.webp`
+- 要进 bundle 的图 → `src/client/assets/`（见 `assets.d.ts`）。例：`notes/src/client/assets/note-flow-banner.webp`。**注意**：tsdown 预设目前不处理图片导入（notes / home-studio 还留在 esbuild 构建上），迁这两个包前要先补 asset 处理。
 - README 配图 / 文档截图 → 包根 `assets/`。例：`daily-log/assets/report-result.png`
 
 ## 以后能变成 lint 规则的
 
-这份文档如果不落到 lint 里，半年后又会漂。以下规则可以机械化，等 eslint 接入时一并加：
+这份文档如果不落到 lint 里，半年后又会漂。以下规则可以机械化，等 oxlint 配置继续补齐时一并加：
 
 | 约定 | 对应的 lint 规则 |
 |---|---|

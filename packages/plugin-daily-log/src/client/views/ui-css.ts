@@ -11,7 +11,7 @@
  * 样式根标记 `data-dsh-dailylog-ui`：设置分区根节点与每个 Modal 内容包装层都带它
  * （见 views/parts.tsx 的 DialogRoot）。
  */
-// 样式正文在 ui-css.css（真 CSS 文件，编辑器有高亮/补全；vite 的 `?inline` 查询返回
+// 样式正文在 ui-css.css（真 CSS 文件，编辑器有高亮/补全；`?inline` 查询返回
 // 编译后的 CSS 文本且不自动注入，语义等价于原先 esbuild 的 text loader）。
 import CSS from './ui-css.css?inline'
 

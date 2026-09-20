@@ -1,0 +1,15 @@
+# 编辑器侧的文本约定声明，与 .gitattributes 分工：
+# 那个管 git 产出什么（LF 检出），这个管编辑器往磁盘上写什么。
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# Makefile 的 recipe 必须用真实 tab（GNU Make 硬性要求）。
+[Makefile]
+indent_style = tab
