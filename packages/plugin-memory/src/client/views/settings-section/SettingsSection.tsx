@@ -10,21 +10,22 @@
  * 读写全部走 Typert remote（ctx.remote.memory.*）；开关写的是设置命名空间的用户层，
  * 与插件设置卡片同源，改完即时生效。
  */
-import { SCOPE_LABELS, MEMORY_TABS, TAB_LABELS, timeText, durationText, ORIGIN_LABELS, AUDIT_KIND_LABELS, sourceLabel, entityKindClass, linkedMemoryIds, NODE_KIND_OPTIONS, RELATION_OPTIONS, IMPORTANCE_STEPS, CAPTURE_EVERY_STEPS, CAPTURE_TURNS_STEPS, CAPTURE_CHARS_STEPS, importanceLevelAt, importanceStep, IMPORT_MODE_OPTIONS, BUNDLE_MODE_OPTIONS } from '../../core/memory-model.ts'
+import { SCOPE_LABELS, SCOPE_OPTIONS, MEMORY_TABS, TAB_LABELS, timeText, durationText, ORIGIN_LABELS, AUDIT_KIND_LABELS, sourceLabel, entityKindClass, linkedMemoryIds, NODE_KIND_OPTIONS, RELATION_OPTIONS, IMPORTANCE_STEPS, CAPTURE_EVERY_STEPS, CAPTURE_TURNS_STEPS, CAPTURE_CHARS_STEPS, importanceLevelAt, importanceStep, IMPORT_MODE_OPTIONS, BUNDLE_MODE_OPTIONS } from '../../core/memory-model.ts'
 import type { MemoryRecord, MemoryEdgeRelation } from '../../../types.ts'
-import { Button, IconArchiveOutline20, IconChecklistOutline14, IconCopyOutline16, IconDownloadOutline16, IconEditOutline16, IconEllipsisOutline16, IconFolderOpenOutline16, IconListPenOutline16, IconPlusOutline16, IconRefreshOutline16, IconTrashOutline16, Input, Menu, Modal, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconArchiveOutline20, IconChecklistOutline14, IconCopyOutline16, IconDownloadOutline16, IconEditOutline16, IconEllipsisOutline16, IconFolderOpenOutline16, IconListPenOutline16, IconPlusOutline16, IconRefreshOutline16, IconShareOutline16, IconTrashOutline16, Input, Menu, Modal, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ChevronDown } from 'lucide-react'
 import type { SettingsSectionProps } from '../../core/memory-section-types.ts'
 import { pluginVersion } from '../../../version.ts'
 import { IMPORT_PROMPT_TEXT, MEMORY_CONFIG_BASE, MEMORY_ENTITY_KIND_LABELS, MEMORY_KIND_LABELS, importanceLabel } from '../../../types.ts'
 import { ScaleSlider } from '../../components/ScaleSlider.tsx'
-import { ModalFeedback } from '../../components/ModalFeedback.tsx'
+import { FeedbackToast } from '../../components/FeedbackToast.tsx'
 import { SwitchRow } from '../../components/SwitchRow.tsx'
 import { Segmented } from '../../components/Segmented.tsx'
 import { MemoryDraftForm } from './components/MemoryDraftForm.tsx'
 import { EntityDraftForm } from './components/EntityDraftForm.tsx'
 import { EdgeList } from './components/EdgeList.tsx'
+import { MemoryGraph } from '../../components/MemoryGraph.tsx'
 import { useSettingsSection } from '../../hooks/useSettingsSection.ts'
 import styles from '../../styles/settings-section.module.css'
 
@@ -69,12 +70,20 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
     setDetail,
     ledgerOpen,
     setLedgerOpen,
+    graphOpen,
+    graphScope,
+    graphProjectPath,
+    graphRecords,
+    closeGraph,
+    switchGraphScope,
+    changeGraphProject,
     raws,
     audits,
     rawText,
     setRawText,
     conflicts,
     entities,
+    edges,
     entityDraft,
     setEntityDraft,
     openEntityId,
@@ -85,8 +94,8 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
     busy,
     moreOpen,
     setMoreOpen,
-    error,
-    notice,
+    feedback,
+    dismissFeedback,
     run,
     startEdit,
     startCreate,
@@ -286,6 +295,12 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
    */
   const moreEntries: MenuEntry[] = [
     {
+      id: 'graph',
+      label: '记忆图谱',
+      icon: <IconShareOutline16 size={14} />,
+      disabled: locked,
+    },
+    {
       id: 'export-file',
       label: '导出为文件（全库备份）',
       icon: <IconDownloadOutline16 size={14} />,
@@ -333,6 +348,7 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
 
   return (
     <div data-dsh-memory-ui="">
+      <FeedbackToast feedback={feedback} onDone={dismissFeedback} />
       <div className={styles.titleRow}>
         <h2 className={styles.title}>记忆</h2>
         <span className={styles.version} title="插件版本">v{pluginVersion()}</span>
@@ -500,9 +516,6 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
         {projects.map((item) => <option key={item.path} value={item.path} />)}
       </datalist>
 
-      {error !== '' && <span className={styles.error}>{error}</span>}
-      {notice !== '' && <span className={styles.notice}>{notice}</span>}
-
       {tab === 'entity' ? renderEntities() : (
         <>
           <div className={styles.fieldRow}>
@@ -594,7 +607,6 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
             disabled={busy}
             onChange={setImportMode}
           />
-          <ModalFeedback error={error} notice={notice} />
         </div>
       </Modal>
 
@@ -671,7 +683,6 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
             归档的记忆仍保留在库里，随时可以恢复。
           </p>
           <span className={styles.notice}>当前作用域共 {records.length} 条（含筛选条件）。</span>
-          <ModalFeedback error={error} notice={notice} />
         </div>
       </Modal>
 
@@ -843,8 +854,6 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
                   </div>
                 )}
               </div>
-
-              <ModalFeedback error={error} notice={notice} />
             </>
           )}
         </div>
@@ -935,7 +944,6 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
               </div>
             ))}
           </div>
-          <ModalFeedback error={error} notice={notice} />
         </div>
       </Modal>
 
@@ -977,6 +985,50 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
         {entityDraft !== null && (
           <EntityDraftForm draft={entityDraft} disabled={locked} onChange={(next) => { setEntityDraft(next) }} />
         )}
+      </Modal>
+
+      <Modal
+        className={styles.modalGraph}
+        contentClassName={styles.modalScroll}
+        open={graphOpen}
+        onClose={() => { if (detail === null) closeGraph() }}
+        title="记忆图谱"
+        closeLabel="关闭"
+        description="拖动缩放；点记忆节点开详情。"
+        footer={<Button variant="ghost" onClick={closeGraph}>关闭</Button>}
+      >
+        <div className={styles.modalBody} data-dsh-memory-ui="">
+          <div className={styles.fieldRow}>
+            <Segmented
+              label="范围"
+              value={graphScope}
+              options={SCOPE_OPTIONS}
+              onChange={switchGraphScope}
+            />
+            {graphScope === 'project' && (
+              <>
+                <span>项目</span>
+                <select
+                  className={styles.select}
+                  value={graphProjectPath}
+                  onChange={(event) => { changeGraphProject(event.currentTarget.value) }}
+                >
+                  <option value="">全部项目</option>
+                  {projects.map((item) => (
+                    <option key={item.path} value={item.path}>{item.label + '（' + item.count + ' 条）'}</option>
+                  ))}
+                </select>
+              </>
+            )}
+          </div>
+          <MemoryGraph
+            key={graphScope + '|' + graphProjectPath}
+            records={graphRecords}
+            entities={entities}
+            edges={edges}
+            onOpenMemory={(record) => { void openDetail(record) }}
+          />
+        </div>
       </Modal>
     </div>
   )

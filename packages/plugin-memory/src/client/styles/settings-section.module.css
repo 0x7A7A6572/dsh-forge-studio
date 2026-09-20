@@ -468,11 +468,6 @@ body[data-ds-dark-theme] .select {
   border-radius: 10px;
 }
 
-[data-dsh-memory-ui] .error {
-  font-size: 12.5px;
-  color: var(--dsw-alias-state-error-primary, #d64545);
-}
-
 [data-dsh-memory-ui] .notice {
   font-size: 12.5px;
   color: var(--dsw-alias-label-tertiary);
@@ -544,10 +539,59 @@ body[data-ds-dark-theme] .select {
    漏一个就是「限高生效、内容却被宿主的 overflow: hidden 裁掉」，比不限高更难查）。
    header / description / body 都在这个 flex 子项里：min-height: 0 才让它真缩到限高
    以下（min-height: auto 会顶住不缩），overscroll-behavior 防止滚到底把宿主页面带走。 */
-[role="dialog"].modalWide .modalScroll {
+[role="dialog"].modalWide .modalScroll,
+[role="dialog"].modalGraph .modalScroll {
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+/* 图谱弹窗：画布自己撑满，只在矮窗口里才用内层滚动区兜底。
+   权重理由同 .modalWide：单类会被宿主的 .dialog 压住。 */
+[role="dialog"].modalGraph {
+  width: min(1400px, 100%);
+  max-height: calc(100vh - 48px);
+}
+
+/* 弹窗层序（宿主已知的三档：设置面板 1000 / Modal 1000 / 菜单·提示 1100）：
+   设置面板 1000 → 图谱 1010 → 详情等宽弹窗 1050 → 菜单与提示 1100。
+   压图谱到 1000 以下会被设置面板盖住，所以只往上抬，不再往下压。 */
+body > div:has(> [role="dialog"].modalGraph) {
+  z-index: 1010;
+}
+
+body > div:has(> [role="dialog"].modalWide) {
+  z-index: 1050;
+}
+
+@supports (height: 100dvh) {
+  [role="dialog"].modalGraph {
+    max-height: calc(100dvh - 48px);
+  }
+}
+
+[role="dialog"].modalGraph [data-dsh-memory-ui].modalBody {
+  max-width: none;
+}
+
+/* 画布吃掉「视口减去弹窗头尾」的高度：比写死 vh 更不容易在矮窗口里被裁。 */
+[data-dsh-memory-ui] .graphHost {
+  width: 100%;
+  height: clamp(320px, calc(100vh - 300px), 860px);
+}
+
+[data-dsh-memory-ui] .graphMeta {
+  margin: 0;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+[data-dsh-memory-ui] .graphEmpty {
+  margin: 0;
+  padding: 48px 0;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--dsw-alias-label-tertiary);
 }
 
 /* ---- 节点滑杆（ScaleSlider）：重要性 / 注入门槛 / 高级配置共用 ---- */

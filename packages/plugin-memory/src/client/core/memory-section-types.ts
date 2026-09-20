@@ -21,6 +21,19 @@ export type SettingsSectionProps =
 /** 页签：两个记忆作用域 + wiki 图层的实体目录。 */
 export type MemoryTab = MemoryScope | 'entity'
 
+/** 反馈的口气：错误（带警告图标）/ 通知。 */
+export type FeedbackTone = 'error' | 'notice'
+
+/**
+ * 分区里唯一一条瞬时反馈。
+ * seq 是重放键：同一句话再说一次也要重新冒出来（连点两次「保存」）。
+ */
+export interface Feedback {
+  seq: number
+  text: string
+  tone: FeedbackTone
+}
+
 /** 编辑中的草稿（id 为 null 表示新增）。 */
 export interface Draft {
   id: string | null

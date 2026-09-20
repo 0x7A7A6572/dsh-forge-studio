@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { errText, memoryLinkCounts, entityMentionCounts, SCOPE_LABELS } from '../core/memory-model.ts'
 import { IMPORT_PROMPT_TEXT } from '../../types.ts'
-import type { MemoryTab } from '../core/memory-section-types.ts'
-import type { MemoryAuditEntry, MemoryConfig, MemoryConflict, MemoryEdge, MemoryEntity, MemoryProjectSummary, MemoryRawDocument, MemoryRawId, MemoryRecord, MemoryStats } from '../../types.ts'
+import type { Feedback, FeedbackTone, MemoryTab } from '../core/memory-section-types.ts'
+import type { MemoryAuditEntry, MemoryConfig, MemoryConflict, MemoryEdge, MemoryEntity, MemoryProjectSummary, MemoryRawDocument, MemoryRawId, MemoryRecord, MemoryScope, MemoryStats } from '../../types.ts'
 import type { MemoryRemote } from '../core/remote.ts'
 import { bundleFileName, downloadText, peekBundle, readTextFile } from '../core/bundle-file.ts'
 import type { BundlePeek } from '../core/bundle-file.ts'
@@ -21,6 +21,11 @@ export function useSettingsSection(memory: MemoryRemote) {
   const [importText, setImportText] = useState('')
   const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge')
   const [resetOpen, setResetOpen] = useState(false)
+  /** 记忆图谱：自带范围与记忆，弹窗里切范围不动背后的列表。 */
+  const [graphOpen, setGraphOpen] = useState(false)
+  const [graphScope, setGraphScope] = useState<MemoryScope>('global')
+  const [graphProjectPath, setGraphProjectPath] = useState('')
+  const [graphRecords, setGraphRecords] = useState<readonly MemoryRecord[]>([])
   /** 详情抽屉：当前查看的那条（快照，操作后即关闭，避免看到过期内容）。 */
   /** 沉淀面板：原文留档 + 后台调用审计。 */
   const [ledgerOpen, setLedgerOpen] = useState(false)
@@ -44,8 +49,24 @@ export function useSettingsSection(memory: MemoryRemote) {
   const [bundleText, setBundleText] = useState('')
   const [bundlePeek, setBundlePeek] = useState<BundlePeek | null>(null)
   const [bundleMode, setBundleMode] = useState<'merge' | 'replace'>('merge')
-  const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
+  /** 反馈只有一条：新的顶掉旧的，视图把它画成 Toast。 */
+  const [feedback, setFeedback] = useState<Feedback | null>(null)
+  const feedbackSeq = useRef(0)
+
+  const showFeedback = useCallback((tone: FeedbackTone, text: string) => {
+    // '' 是旧的「清空」写法，调用点照旧。
+    if (text === '') {
+      setFeedback((current) => (current?.tone === tone ? null : current))
+      return
+    }
+    feedbackSeq.current += 1
+    setFeedback({ seq: feedbackSeq.current, text, tone })
+  }, [])
+
+  /** run() 与详情子块都往这两个口子写，不自己造一套。 */
+  const setError = useCallback((text: string) => { showFeedback('error', text) }, [showFeedback])
+  const setNotice = useCallback((text: string) => { showFeedback('notice', text) }, [showFeedback])
+  const dismissFeedback = useCallback(() => { setFeedback(null) }, [])
 
   const refreshOverview = useCallback(async () => {
     const [c, s, p, k] = await Promise.all([
@@ -62,7 +83,7 @@ export function useSettingsSection(memory: MemoryRemote) {
     else setError(errText(p.error))
     if (k.ok) setConflicts(k.value)
     else setError(errText(k.error))
-  }, [memory])
+  }, [memory, setError])
 
   const refreshRecords = useCallback(async () => {
     // 实体页签不按作用域筛选：拉全量条目（含归档），供「实体 → 关联记忆」在内存里映射。
@@ -73,7 +94,7 @@ export function useSettingsSection(memory: MemoryRemote) {
     const result = await memory.list(query)
     if (result.ok) setRecords(result.value)
     else setError(errText(result.error))
-  }, [memory, tab, projectPath, keyword, includeArchived])
+  }, [memory, tab, projectPath, keyword, includeArchived, setError])
 
   /** wiki 图层的取数：实体目录 + 全量边（一次拉全，关联数在内存里聚合）。 */
   const refreshWiki = useCallback(async () => {
@@ -87,7 +108,17 @@ export function useSettingsSection(memory: MemoryRemote) {
     else setError(errText(entityResult.error))
     if (edgeResult.ok) setEdges(edgeResult.value)
     else setError(errText(edgeResult.error))
-  }, [memory])
+  }, [memory, setError])
+
+  /** 图谱那份记忆：不看关键字（图谱是总览），但跟随「含已归档」。 */
+  const loadGraphRecords = useCallback(async (scope: MemoryScope, path: string): Promise<void> => {
+    const query: Record<string, unknown> = { scope }
+    if (scope === 'project' && path !== '') query.projectPath = path
+    if (includeArchived) query.includeArchived = true
+    const result = await memory.list(query)
+    if (result.ok) setGraphRecords(result.value)
+    else setError(errText(result.error))
+  }, [memory, includeArchived, setError])
 
   useEffect(() => { void refreshOverview() }, [refreshOverview])
   useEffect(() => { void refreshRecords() }, [refreshRecords])
@@ -102,6 +133,8 @@ export function useSettingsSection(memory: MemoryRemote) {
       await refreshOverview()
       await refreshRecords()
       await refreshWiki()
+      // 图谱开着时改数据（详情里归档/删边）：它那份记忆也得跟着新。
+      if (graphOpen) await loadGraphRecords(graphScope, graphProjectPath)
       if (done !== undefined) setNotice(done)
     } catch (e) {
       setError(errText(e))
@@ -245,6 +278,34 @@ export function useSettingsSection(memory: MemoryRemote) {
     void run(loadLedger)
   }
 
+  /** 打开图谱：实体与边由 refreshWiki 常驻，记忆按进来的页签定范围。 */
+  function openGraph(): void {
+    // 从实体页签进来时看全局 —— 图谱只分全局与项目两种。
+    const scope: MemoryScope = tab === 'project' ? 'project' : 'global'
+    const path = scope === 'project' ? projectPath : ''
+    setGraphScope(scope)
+    setGraphProjectPath(path)
+    setGraphOpen(true)
+    void loadGraphRecords(scope, path)
+  }
+
+  function closeGraph(): void {
+    setGraphOpen(false)
+  }
+
+  /** 弹窗里换范围：沿用上一次选过的项目，没选过就跟着面板上的选择。 */
+  function switchGraphScope(scope: MemoryScope): void {
+    const path = scope === 'project' ? (graphProjectPath !== '' ? graphProjectPath : projectPath) : ''
+    setGraphScope(scope)
+    setGraphProjectPath(path)
+    void loadGraphRecords(scope, path)
+  }
+
+  function changeGraphProject(path: string): void {
+    setGraphProjectPath(path)
+    void loadGraphRecords('project', path)
+  }
+
   /** 展开某份原文的全文（第一次点才取，避免列表传输整库转录）。 */
   async function showRawText(id: MemoryRawId): Promise<void> {
     await run(async () => {
@@ -373,6 +434,7 @@ export function useSettingsSection(memory: MemoryRemote) {
     else if (id === 'export-file') void exportBundleFile()
     else if (id === 'import-file') openBundleImport()
     else if (id === 'copy') void copyExport()
+    else if (id === 'graph') openGraph()
     else if (id === 'import') openModal(setImportOpen)
     else if (id === 'reset') openModal(setResetOpen)
   }
@@ -432,10 +494,8 @@ export function useSettingsSection(memory: MemoryRemote) {
     setBundlePeek,
     bundleMode,
     setBundleMode,
-    error,
-    setError,
-    notice,
-    setNotice,
+    feedback,
+    dismissFeedback,
     refreshOverview,
     refreshRecords,
     refreshWiki,
@@ -457,6 +517,14 @@ export function useSettingsSection(memory: MemoryRemote) {
     reingestRaw,
     removeRaw,
     runReset,
+    graphOpen,
+    graphScope,
+    graphProjectPath,
+    graphRecords,
+    openGraph,
+    closeGraph,
+    switchGraphScope,
+    changeGraphProject,
     counts,
     activeProjectLabel,
     linkCounts,
