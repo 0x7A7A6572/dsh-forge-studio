@@ -1,7 +1,7 @@
 {
   "name": "@zzerx/dsh-plugin-notes",
-  "version": "0.2.4",
-  "description": "dsh 便签插件：独立便签板 UI（侧栏入口 + 中间列面板，Markdown 编辑器，Typert 直连 host 持久化）",
+  "version": "0.3.0",
+  "description": "dsh 便签插件：纸卡墙便签板 + Markdown 编辑器，便签能变任务——拖进泳道、交给 AI 在指定工作区执行、按日程定时跑；支持 WebDAV 备份与 agent 工具读写。",
   "keywords": [
     "dsh",
     "deepseek-harness",
