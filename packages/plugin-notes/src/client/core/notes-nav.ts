@@ -8,7 +8,7 @@
  * 列表页始终可见。
  *
  * **设置不在这里**：便签的设置已搬到 dsh 设置面板的「便签」分区
- * （views/settings-section.tsx），板内的设置弹窗与齿轮入口一并删除 —— 设置入口
+ * （views/settings-section/），板内的设置弹窗与齿轮入口一并删除 —— 设置入口
  * 不再依赖便签自己的入口开关，也就没有「入口全关 → 进不去设置」的死角。
  *
  * 模块级单例（与 board-store 相同的 subscribe + useSyncExternalStore 范式）；

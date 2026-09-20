@@ -243,7 +243,7 @@ export interface NotesEntryConfig {
   /**
    * **侧栏顶部**那一行（sidebar.panellist）—— 便签板本体的入口。渲染成
    * [图标 便签 ......... 待办数 (＋)] 的**整行**：标题与两个控件都在插件字形里，
-   * 靠 CSS 接管宿主那一行（判定与回退见 styles/notes-entry-css.ts）。
+   * 靠 CSS 接管宿主那一行（判定与回退见 styles/notes-entry.module.css）。
    */
   readonly sidebarPanelIcon: boolean
   /**

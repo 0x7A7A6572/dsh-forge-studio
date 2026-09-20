@@ -12,7 +12,7 @@
 
 import type { NoteLane, NoteRecord, TaskStatus } from '../../types.ts'
 
-// TaskStatus 已迁至 types.ts；此处转发导出以兼容旧 import（board-main/board-view）。
+// TaskStatus 已迁至 types.ts；此处转发导出以兼容旧 import（BoardMain/NotesBoard）。
 export type { TaskStatus } from '../../types.ts'
 
 /** 泳道列定义：状态 id + 列头中文标签（颜色不再表状态）。 */

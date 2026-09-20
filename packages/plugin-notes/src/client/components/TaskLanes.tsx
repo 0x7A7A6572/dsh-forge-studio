@@ -8,8 +8,8 @@
  *   onMove(noteId, status)（同列放下无操作），由 board-view 落
  *   notes.update({ lane: { status } }) 并刷新；
  * - 只有带 lane 的任务便签进泳道，普通便签与归档便签不进（归档即离开工作流，
- *   由 board-main 提示切列表管理）。
- * 类选择器样式见导出的 LANES_CSS（由 board-main 统一注入一次 <style>）。
+ *   由 BoardMain 提示切列表管理）。
+ * 类选择器样式见 styles/notes-board.module.css 的 .laneCards（各组件导入同一份 CSS Module）。
  */
 
 import { useMemo, useState } from 'react'
@@ -18,16 +18,10 @@ import {
   groupNotesByLane,
   type TaskStatus,
 } from '../core/task-lanes.ts'
-import { TaskLaneCard } from './task-lane-card.tsx'
+import { TaskLaneCard } from './TaskLaneCard.tsx'
 import { t } from '../core/theme-tokens.ts'
 import { Plus } from 'lucide-react'
-
-/** 拖拽经过列的高亮（内联样式 + transition 实现淡入淡出）与列内滚动条。 */
-export const LANES_CSS = `
-.fs-note-lane-cards::-webkit-scrollbar { width: 8px; }
-.fs-note-lane-cards::-webkit-scrollbar-thumb { background: var(--dsw-alias-border-l3); border-radius: 4px; }
-.fs-note-lane-cards::-webkit-scrollbar-track { background: transparent; }
-`
+import styles from '../styles/notes-board.module.css'
 
 export interface TaskLanesProps {
   /** 已分区/已排序/已搜索的活动便签（泳道内不再懒加载分批）。 */
@@ -68,7 +62,7 @@ export function TaskLanes(props: TaskLanesProps): JSX.Element {
         return (
           <section
             key={lane.status}
-            className="fs-note-lane"
+            data-dsh-part="lane"
             data-dropping={dropping}
             style={{
               ...laneStyle,
@@ -126,7 +120,7 @@ export function TaskLanes(props: TaskLanesProps): JSX.Element {
             {count === 0 ? (
               <div style={laneEmptyStyle}>此列暂无便签</div>
             ) : (
-              <ul className="fs-note-lane-cards" style={laneListStyle}>
+              <ul className={styles.laneCards} style={laneListStyle}>
                 {lane.notes.map((note) => (
                   <TaskLaneCard
                     key={note.id}

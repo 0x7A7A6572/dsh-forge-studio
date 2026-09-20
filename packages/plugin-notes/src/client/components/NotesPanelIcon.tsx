@@ -8,6 +8,7 @@ import type { SettingsScope } from "@deepseek-ai/dsh-client-ui-settings/client";
 import type { NotesConfig } from "../../types.ts";
 import { useNotesEntryEnabled } from "../hooks/useNotesEntryEnabled.ts";
 import { notesStatsStore, openTaskText } from "../core/notes-stats.ts";
+import styles from "../styles/notes-entry.module.css";
 
 export interface NotesPanelIconProps {
   /** forge-studio-notes 命名空间 scope（读入口开关）。 */
@@ -37,14 +38,14 @@ export function NotesPanelIcon({
   );
   if (!enabled) return null;
   return (
-    <div className="fs-note-panel-glyph">
+    <div className={styles.panelGlyph}>
       <div style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0, flex: "1 1 auto" }}>
         <NotepadText
           size={size}
           aria-hidden
           style={{ opacity: active ? 1 : 0.75 }}
         />
-        <span className="fs-note-panel-title">{label}</span>
+        <span className={styles.panelTitle}>{label}</span>
       </div>
 
       {/* 不需要弹簧元素：字形是 inline-flex + justify-content: space-between，
@@ -60,14 +61,14 @@ export function NotesPanelIcon({
         }}
       >
         {count > 0 && (
-          <span className="fs-note-panel-count" title={openTaskText(count)}>
+          <span className={styles.panelCount} title={openTaskText(count)}>
             {count > 99 ? "99+" : count}
           </span>
         )}
 
         <PlusIcon
           size={14}
-          className="fs-note-panel-add"
+          className={styles.panelAdd}
           data-testid="notes-panel-add"
           onClick={(event) => {
             event.stopPropagation();

@@ -1,7 +1,7 @@
 /**
  * 便签板「编辑器弹窗」：浮在列表页（BoardMain）之上的居中弹窗层。
  * 半透明遮罩 + 纸卡（背景即当前便签纸色）；整卡无边框，正文与控件走 NOTE_INK
- * 墨迹族（见 note-editor 的 .fs-note-editor--paper）。
+ * 墨迹族（见 NoteEditor 的 styles.paper）。
  * 弹窗头部不再有独立「新建便签」标签行 —— 可编辑的便签标题由 NoteEditor 自己的
  * header 行承担（标题即 header，省一行），关闭钮也在该行右侧。
  * 由 notes-nav 的 editing 目标驱动渲染，target（create | edit+note）翻译成
@@ -9,14 +9,14 @@
  * 新建/每条便签各一个编辑器实例由 key 保证（编辑器的初值即草稿内容）。
  */
 
-import { useEffect, useState } from 'react'
-import { DEFAULT_NOTE_COLOR } from '../../types.ts'
 import type { NoteColor, NoteLane, TaskStatus } from '../../types.ts'
-import { NoteEditor } from '../components/note-editor.tsx'
-import type { NoteSaveOptions, NoteTaskDraft } from '../components/note-editor.tsx'
+import { NoteEditor } from './NoteEditor.tsx'
+import type { NoteSaveOptions, NoteTaskDraft } from './NoteEditor.tsx'
 import { noteColorMeta } from '../core/note-colors.ts'
 import type { EditorTarget } from '../core/notes-nav.ts'
 import { t } from '../core/theme-tokens.ts'
+import { useEditorPageDialog } from '../hooks/useEditorPageDialog.ts'
+import styles from '../styles/notes-board.module.css'
 
 export interface EditorPageDialogProps {
   /** 当前编辑目标（打开编辑器弹窗必带）。 */
@@ -51,18 +51,12 @@ export function EditorPageDialog(props: EditorPageDialogProps): JSX.Element {
   const initialLaneStatus: TaskStatus | undefined =
     props.target.mode === 'create' ? props.target.laneStatus : undefined
   // 当前弹窗纸色：编辑带出便签既有色，新建默认黄；随底部取色器实时更新。
-  const initialPaper: NoteColor = editing?.color ?? DEFAULT_NOTE_COLOR
-  const [paper, setPaper] = useState<NoteColor>(initialPaper)
-  // 编辑目标切换（编辑 A → 编辑 B / 新建）时同步纸色初值，避免沿用上一张颜色。
-  useEffect(() => {
-    setPaper(initialPaper)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.target])
+  const { paper, setPaper } = useEditorPageDialog(props.target)
   const paperMeta = noteColorMeta(paper)
   return (
-    <div className="fs-note-overlay" style={overlayStyle} onClick={props.onCancel}>
+    <div className={styles.overlay} style={overlayStyle} onClick={props.onCancel}>
       <div
-        className="fs-note-dialog"
+        className={styles.dialog}
         style={cardStyle(paperMeta.paper)}
         onClick={(e) => e.stopPropagation()}
         role="dialog"

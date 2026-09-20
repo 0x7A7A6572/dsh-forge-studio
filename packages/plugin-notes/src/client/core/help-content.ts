@@ -6,7 +6,7 @@
  * - agent 工具名与工具实现对齐 src/agent/tools.ts；
  * - 泳道五列按任务状态（note.lane.status）分列对齐 src/client/core/task-lanes.ts
  *   的 TASK_LANES；六色仅为纸色、与任务状态无关，对齐 src/client/core/note-colors.ts；
- * - 执行/重置/结果区交互对齐 src/client/components/task-lane-card.tsx、note-editor.tsx
+ * - 执行/重置/结果区交互对齐 src/client/components/TaskLaneCard.tsx、NoteEditor.tsx
  *   （点「执行」= 一次性授权；手动改状态/取消任务 = 接管）。
  * 注意：勿在「任务泳道」分节之外使用整词 待规划/待办/进行中/已完成/已失败
  * （覆盖测试按首次出现顺序断言映射行顺序）。

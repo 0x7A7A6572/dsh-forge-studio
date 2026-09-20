@@ -2,7 +2,7 @@
  * 便签板在**右侧栏 tab** 里的身子（slot: sidebar.right.pane.tab，key = 本插件注册的
  * tab 类型 id）。
  *
- * 复用 views/board-view 的同一个 NotesBoard，**不另写一份板子**：组件本身只是
+ * 复用 views/notes-board 的同一个 NotesBoard，**不另写一份板子**：组件本身只是
  * 「控制器 + 渲染出口」，状态在模块级 store（board-store / notes-stats / notes-nav），
  * 所以中间列与右侧栏两处挂载看到的是同一份数据、同一套代码，没有第二份要维护。
  *
@@ -17,39 +17,40 @@
  * 跨包注入、只 import 类型。
  */
 
-import { useMemo } from 'react';
+import { useMemo } from 'react'
 // type-only：把 sidebar.right.* 座位声明带进 SlotMap（运行时零依赖）。
-import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client';
-import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client';
-import type { NotesConfig } from '../../types.ts';
-import type { NotesRemote } from '../core/notes-remote.ts';
-import { NotesBoard } from './board-view.tsx';
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
+import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { NotesConfig } from '../../../types.ts'
+import type { NotesRemote } from '../../core/notes-remote.ts'
+import { NotesBoard } from '../notes-board/NotesBoard.tsx'
+import styles from '../../styles/notes-entry.module.css'
 
 export type NotesSidebarBodyProps = PropsRuntime<'sidebar.right.pane.tab'> & {
   /** notes 远程通道（注册处闭包注入）。 */
-  readonly notes: NotesRemote;
+  readonly notes: NotesRemote
   /** forge-studio-notes 命名空间 scope（注册处闭包注入）。 */
-  readonly scope: SettingsScope<NotesConfig>;
-};
+  readonly scope: SettingsScope<NotesConfig>
+}
 
 /** @returns 右侧栏 tab 里的便签板（与中间列主面板同一个组件）。 */
 export function NotesSidebarBody(props: NotesSidebarBodyProps): JSX.Element {
-  const { useTabInfo, notes, scope } = props;
-  const { tab } = useTabInfo();
+  const { useTabInfo, notes, scope } = props
+  const { tab } = useTabInfo()
   const face = useMemo(
     () => ({
       notes,
       scope,
       closeBoard: () => {
-        tab.actions.close();
+        tab.actions.close()
       },
     }),
     [notes, scope, tab],
-  );
+  )
   return (
-    <div className="fs-note-sidebar-body">
+    <div className={styles.sidebarBody}>
       <NotesBoard face={face} surface="sidebar" />
     </div>
-  );
+  )
 }

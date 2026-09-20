@@ -55,15 +55,14 @@ import {
   NOTES_PANEL_LABEL,
 } from './core/notes-panel.ts'
 import type { NotesUiFace } from './core/notes-ui-face.ts'
-import { ensureNotesEntryStyle } from './styles/notes-entry-css.ts'
-import { NotesBoard } from './views/board-view.tsx'
-import { NotesSidebarBody } from './views/board-sidebar-body.tsx'
+import { NotesBoard } from './views/notes-board/NotesBoard.tsx'
+import { NotesSidebarBody } from './views/notes-sidebar-body/NotesSidebarBody.tsx'
 import { NotesPanelIcon } from './components/NotesPanelIcon.tsx'
 import { NotesInputToolbar } from './components/NotesInputToolbar.tsx'
 import { NotesSaveMessageAction } from './components/NotesSaveMessageAction.tsx'
 import { NotesQuickAddOverlay } from './components/NotesQuickAddOverlay.tsx'
 import { NotesGuideIcon } from './components/NotesGuideIcon.tsx'
-import { NotesSettingsSection } from './views/settings-section.tsx'
+import { SettingsSection } from './views/settings-section/SettingsSection.tsx'
 
 export const name = '@zzerx/dsh-plugin-notes/client'
 /** \`layout\` 必须声明：读服务（ctx.layout）在 cordis 里要求先 inject。 */
@@ -136,9 +135,6 @@ export function apply(ctx: Context): void {
         },
       }
 
-      // 入口样式注入一次（plugin-notes 仍走 esbuild，见 styles/notes-entry-css.ts）。
-      ensureNotesEntryStyle()
-
       const boardFace = { ...face, closeBoard }
 
       // ---- 便签板本体：main keyed 槽 + 侧栏顶部入口（id 必须一致）----
@@ -198,7 +194,7 @@ export function apply(ctx: Context): void {
         order: ORDER,
         label: '便签',
         inject: () => ({ notes, scope }),
-      }, NotesSettingsSection))
+      }, SettingsSection))
 
       // ---- 右侧栏：notes tab 类型 + 导引卡片 ----
       //
@@ -238,7 +234,7 @@ export function apply(ctx: Context): void {
         const offScope = scope.subscribe(syncTabType)
         syncTabType()
 
-        // 板子本体复用同一个 NotesBoard（见 views/board-sidebar-body）。
+        // 板子本体复用同一个 NotesBoard（见 views/notes-sidebar-body）。
         ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
           name: 'sidebar.right.pane.tab',
           key: NOTES_TAB_ID,

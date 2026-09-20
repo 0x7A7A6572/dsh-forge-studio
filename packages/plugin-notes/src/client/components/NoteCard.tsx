@@ -2,30 +2,18 @@
  * 便签纸卡（grid 视图）：固定 pastel 纸色 + 深色文字，纸色由 note.color 决定。
  * 悬停浮出操作（编辑/置顶/归档或恢复/删除）；归档态显示「恢复」而非「归档」，
  * 且不提供置顶（归档便签不再参与置顶语义）。
- * 类选择器样式见导出的 CARD_CSS（由 board-main 统一注入一次 <style>）。
+ * 类选择器样式见 styles/notes-board.module.css 的 .card（各组件导入同一份 CSS Module）。
  */
 
 import type { NoteRecord } from '../../types.ts'
 import { NOTE_INK, NOTE_INK_MUTED, noteColorMeta } from '../core/note-colors.ts'
 import { mdSnippet, firstImageUrl, todoProgress } from '../core/markdown-text.ts'
 import { fmtDateTime, fmtRelative } from '../core/time-text.ts'
-import { TaskBadge } from './task-badge.tsx'
-import { TodoBadge } from './todo-badge.tsx'
-import { PinnedCornerMark } from './pin-corner.tsx'
+import { TaskBadge } from './TaskBadge.tsx'
+import { TodoBadge } from './TodoBadge.tsx'
+import { PinnedCornerMark } from './PinnedCornerMark.tsx'
 import { Archive, ArchiveRestore, Pencil, Pin, Trash2 } from 'lucide-react'
-
-/** 纸卡 hover/焦点态与两行截断（:hover 无法用行内样式表达）。 */
-export const CARD_CSS = `
-.fs-note-card { transition: box-shadow 140ms ease, transform 140ms ease; animation: fs-note-in 220ms ease-out backwards; }
-.fs-note-card:hover { box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18); transform: translateY(-1px); }
-.fs-note-card:focus-visible { outline: 2px solid rgba(0, 0, 0, 0.45); outline-offset: 1px; }
-.fs-note-actions { opacity: 0; pointer-events: none; transition: opacity 120ms ease; }
-.fs-note-card:hover .fs-note-actions, .fs-note-card:focus-within .fs-note-actions { opacity: 1; pointer-events: auto; }
-.fs-note-snippet { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.fs-note-card .fs-note-actions button { color: rgba(46, 42, 34, 0.55); transition: background 110ms ease, color 110ms ease; }
-.fs-note-card .fs-note-actions button:hover:not(:disabled) { background: rgba(0, 0, 0, 0.1); color: #2e2a22; }
-.fs-note-card .fs-note-actions button[data-danger]:hover:not(:disabled) { background: rgba(197, 48, 48, 0.18); color: #b3261e; }
-`
+import styles from '../styles/notes-board.module.css'
 
 export interface NoteCardProps {
   readonly note: NoteRecord
@@ -45,7 +33,7 @@ export function NoteCard(props: NoteCardProps): JSX.Element {
   return (
     <li>
       <div
-        className="fs-note-card"
+        className={styles.card}
         role="button"
         tabIndex={0}
         aria-label={note.archived
@@ -88,13 +76,13 @@ export function NoteCard(props: NoteCardProps): JSX.Element {
           </span>
         )}
         {snippet ? (
-          <span className="fs-note-snippet" style={{ ...cardSnippet, color: NOTE_INK_MUTED }}>{snippet}</span>
+          <span className={styles.snippet} style={{ ...cardSnippet, color: NOTE_INK_MUTED }}>{snippet}</span>
         ) : (
           <span style={{ ...cardSnippet, color: NOTE_INK_MUTED, fontStyle: 'italic' }}>（无正文）</span>
         )}
         <span style={cardFooter}>
           <time style={{ color: NOTE_INK_MUTED }} title={fmtDateTime(note.updatedAt)}>{fmtRelative(note.updatedAt)}</time>
-          <span className="fs-note-actions" style={cardActions}>
+          <span className={styles.actions} style={cardActions}>
             <button type="button" title="编辑" aria-label="编辑" disabled={props.busy}
               onClick={(e) => { e.stopPropagation(); props.onEdit() }} style={actionBtn}>
               <Pencil size={13} />

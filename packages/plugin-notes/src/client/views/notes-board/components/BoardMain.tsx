@@ -1,46 +1,26 @@
 /**
- * 便签板主体视图（board-view 内容区）：工具栏（提示/显示模式切换/新建）+
+ * 便签板主体视图（NotesBoard 内容区）：工具栏（显示模式切换/新建）+
  * 搜索行 + 颜色筛选行 + 活动便签 + 底部归档折叠区。
  *
- * 三种显示模式（board-store 记忆，模块级）：
+ * 三种显示模式：
  * - grid：纸卡墙（默认） / list：行式列表 —— 数据整理全部走 core/board-filter
- *   纯函数：分区（活动/归档）→ 排序 → 颜色过滤 → 文字搜索；展示做**懒加载**
- *   （首批 16 条，底部哨兵进入视口即续批，见 nextWindow）；颜色筛选只作用于活动区；
- *   文字搜索同时作用于活动区与归档区（展开后可见）；
- * - lanes：任务泳道 —— 五列状态看板（布局参考 dsh-task-board），纸色即状态
- *   （core/task-lanes 派生），活动便签全量渲染（泳道列内自带滚动，不做懒加载
- *   窗口以免把后列切空）；颜色筛选行在泳道下隐藏（列本身已按色分列，语义冲突）；
+ *   纯函数（分区 → 排序 → 颜色过滤 → 文字搜索），展示做懒加载；
+ * - lanes：任务泳道 —— 五列状态看板，纸色即状态（core/task-lanes 派生），
+ *   活动便签全量渲染；颜色筛选行在泳道下隐藏（列本身已按色分列，语义冲突）；
  *   归档便签不进泳道（已离开工作流），底部以细提示行引导切列表视图管理。
  *
- * 视图/筛选/搜索变更时窗口重置回首批；视图选择、颜色筛选、搜索词存于
- * board-store（模块级），开关浮层不丢。
+ * 本文件只有 JSX：状态与派生数据在 useBoardMain（同目录）。
  */
 
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from "react";
-import type { NoteId, NoteRecord } from "../../types.ts";
-import type { TaskStatus } from "../core/task-lanes.ts";
-import { boardStore } from "../core/board-store.ts";
-import {
-  partitionNotes,
-  filterNotesByColors,
-  searchNotes,
-  initialWindow,
-  nextWindow,
-  type LazyWindow,
-} from "../core/board-filter.ts";
-import { t } from "../core/theme-tokens.ts";
-import { NoteCard, CARD_CSS } from "../components/note-card.tsx";
-import { NoteRow, ROW_CSS } from "../components/note-row.tsx";
-import { TaskLanes, LANES_CSS } from "../components/task-lanes.tsx";
-import { LANE_CARD_CSS } from "../components/task-lane-card.tsx";
-import { ColorFilter, FILTER_CSS } from "../components/color-filter.tsx";
-import { EmptyState } from "../components/empty-state.tsx";
+import type { NoteId, NoteRecord } from '../../../../types.ts'
+import type { TaskStatus } from '../../../core/task-lanes.ts'
+import { t } from '../../../core/theme-tokens.ts'
+import { useBoardMain } from './useBoardMain.ts'
+import { NoteCard } from '../../../components/NoteCard.tsx'
+import { NoteRow } from '../../../components/NoteRow.tsx'
+import { TaskLanes } from '../../../components/TaskLanes.tsx'
+import { ColorFilter } from '../../../components/ColorFilter.tsx'
+import { EmptyState } from '../../../components/EmptyState.tsx'
 import {
   Archive,
   ChevronRight,
@@ -52,6 +32,7 @@ import {
   SearchX,
   X,
 } from "lucide-react";
+import styles from '../../../styles/notes-board.module.css'
 
 export interface BoardMainProps {
   readonly notes: readonly NoteRecord[];
@@ -61,7 +42,7 @@ export interface BoardMainProps {
   readonly onToggleArchive: (note: NoteRecord) => void;
   readonly onRemove: (note: NoteRecord) => void;
   readonly onCreate: () => void;
-  /** 任务泳道：拖拽换列（目标状态→纸色由 board-view 落 notes.update）。 */
+  /** 任务泳道：拖拽换列（目标状态→纸色由 NotesBoard 落 notes.update）。 */
   readonly onMove: (noteId: NoteId, status: TaskStatus) => void;
   /** 任务泳道：执行/重跑（非 running 卡主入口）。 */
   readonly onExecute: (note: NoteRecord) => void;
@@ -71,169 +52,35 @@ export interface BoardMainProps {
   readonly onCreateTask: (status: TaskStatus) => void;
 }
 
-/** 动效基础层：入场 keyframes、工具栏按压、搜索聚焦与 reduced-motion 降级。
- *  fs-note-in 被纸卡/行/泳道卡/归档展开/空状态共同引用（同注入一次 <style>）。 */
-const MOTION_CSS = `
-@keyframes fs-note-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-/* 任务徽章 running 呼吸点（task-badge.tsx 引用，纸卡/行/泳道共用一次注入）。 */
-@keyframes fs-task-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.25; }
-}
-.fs-task-live-dot { animation: fs-task-pulse 1.3s ease-in-out infinite; }
-.fs-note-tool { transition: background 130ms ease, color 130ms ease, transform 90ms ease; }
-.fs-note-tool:active:not(:disabled) { transform: scale(0.95); }
-.fs-note-search-row { transition: border-color 160ms ease, box-shadow 160ms ease; }
-.fs-note-search-row:focus-within { border-color: var(--dsw-static-deepseek-450); box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-static-deepseek-450) 18%, transparent); }
-.fs-note-search-clear { animation: fs-note-in 160ms ease-out backwards; }
-.fs-note-empty { animation: fs-note-in 240ms ease-out backwards; }
-@media (prefers-reduced-motion: reduce) {
-  .fs-note-card, .fs-note-row, .fs-lane-card,
-  .fs-note-search-clear, .fs-note-empty, .fs-note-filter-chip, .fs-note-tool,
-  .fs-note-search-row, .fs-note-lane, .fs-task-live-dot { animation: none !important; transition: none !important; }
-  .fs-lane-card.fs-lane-running::after { animation: none !important; opacity: 0 !important; }
-}
-`;
-
-/** board-main 覆盖的所有类选择器样式（统一注入一次）。 */
-const BOARD_CSS = `${MOTION_CSS}${CARD_CSS}${ROW_CSS}${FILTER_CSS}${LANE_CARD_CSS}${LANES_CSS}`;
-
 export function BoardMain(props: BoardMainProps): JSX.Element {
-  const view = useSyncExternalStore(
-    boardStore.subscribe,
-    () => boardStore.view,
-  );
-  const colors = useSyncExternalStore(
-    boardStore.subscribe,
-    () => boardStore.colors,
-  );
-  const query = useSyncExternalStore(
-    boardStore.subscribe,
-    () => boardStore.query,
-  );
-
-  const [win, setWin] = useState<LazyWindow>(initialWindow);
-  const [archivedOpen, setArchivedOpen] = useState(false);
-  // 底部哨兵：进入视口下沿附近即继续展开懒加载窗口（见下方 effect）。
-  const [sentinelInView, setSentinelInView] = useState(false);
-  const sentinelRef = useRef<HTMLDivElement | null>(null);
-  // 归档 dock 展开后把列表滚到底所需（列表 div 本身是滚动容器）。
-  const listScrollRef = useRef<HTMLDivElement | null>(null);
-
-  const { active, archived } = useMemo(
-    () => partitionNotes(props.notes),
-    [props.notes],
-  );
-  const activeMatched = useMemo(
-    () => searchNotes(filterNotesByColors(active, colors), query),
-    [active, colors, query],
-  );
-  const archivedMatched = useMemo(
-    () => searchNotes(archived, query),
-    [archived, query],
-  );
-
-  // 视图/筛选/搜索变化时，懒加载窗口回到首批。
-  useEffect(() => {
-    setWin(initialWindow());
-    setArchivedOpen(false);
-  }, [view, colors, query]);
-
-  const activeVisible = useMemo(
-    () => activeMatched.slice(0, win.active),
-    [activeMatched, win.active],
-  );
-  const archivedVisible = useMemo(
-    () => archivedMatched.slice(0, win.archived),
-    [archivedMatched, win.archived],
-  );
-
-  /** 尚未懒加载显示的条目数（活动区 + 展开中的归档区）。 */
-  const remaining =
-    activeMatched.length - activeVisible.length +
-    (archivedOpen ? archivedMatched.length - archivedVisible.length : 0);
-
-  const noNotes = props.notes.length === 0;
-  const hasFilter = colors.length > 0 || query.trim() !== "";
-  const noMatch =
-    hasFilter && activeMatched.length === 0 && archivedMatched.length === 0;
-
-  // 底部哨兵观察：宿主外层或列表 div 任意一方滚动到哨兵附近都触发（不依赖
-  // 具体哪个容器在滚 —— 旧 onScroll 在首批内容不足一屏时永不触发）。
-  useEffect(() => {
-    const el = sentinelRef.current;
-    // jsdom/无 IO 环境静默降级（不自动续批，仍有「加载更多」按钮兜底）。
-    if (!el || view === "lanes" || typeof IntersectionObserver === "undefined") return;
-    const io = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) setSentinelInView(entry.isIntersecting);
-      },
-      { root: null, rootMargin: "300px 0px" },
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, [view]);
-
-  // 哨兵可见期间逐批展开，直到填满可视区或全部加载完。
-  useEffect(() => {
-    if (!sentinelInView || view === "lanes") return;
-    if (
-      win.active >= activeMatched.length &&
-      (!archivedOpen || win.archived >= archivedMatched.length)
-    ) {
-      return;
-    }
-    setWin((w) =>
-      nextWindow(
-        w,
-        { active: activeMatched.length, archived: archivedMatched.length },
-        archivedOpen,
-      ),
-    );
-  }, [sentinelInView, view, win, archivedOpen, activeMatched.length, archivedMatched.length]);
-
-  /** 「加载更多」手动兜底：点一次展开一批。 */
-  function loadMore(): void {
-    setWin((w) =>
-      nextWindow(
-        w,
-        { active: activeMatched.length, archived: archivedMatched.length },
-        archivedOpen,
-      ),
-    );
-  }
-
-  /** 展开/收起归档：展开后把列表滚到底，让归档内容直接出现在 dock 条上方。 */
-  function toggleArchived(): void {
-    setArchivedOpen((open) => {
-      if (!open) {
-        window.requestAnimationFrame(() => {
-          const el = listScrollRef.current;
-          if (!el) return;
-          el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-        });
-      }
-      return !open;
-    });
-  }
-
-  const rowHandlers = (note: NoteRecord) => ({
-    onEdit: () => props.onEdit(note),
-    onTogglePin: () => props.onTogglePin(note),
-    onToggleArchive: () => props.onToggleArchive(note),
-    onRemove: () => props.onRemove(note),
-  });
+  const {
+    view,
+    colors,
+    query,
+    sentinelRef,
+    listScrollRef,
+    activeMatched,
+    archivedMatched,
+    activeVisible,
+    archivedVisible,
+    archivedOpen,
+    remaining,
+    noNotes,
+    noMatch,
+    loadMore,
+    toggleArchived,
+    rowHandlers,
+    setView,
+    setQuery,
+    toggleColor,
+    clearColors,
+  } = useBoardMain(props)
 
   return (
     <>
-      <style>{BOARD_CSS}</style>
-
       <div style={toolbarStyle}>
         {!noNotes && (
-          <div className="fs-note-search-row" style={searchRowStyle}>
+          <div className={styles.searchRow} style={searchRowStyle}>
             <Search
               size={14}
               style={{ flex: "none", color: t.labelTertiary }}
@@ -242,7 +89,7 @@ export function BoardMain(props: BoardMainProps): JSX.Element {
               value={query}
               placeholder="搜索标题或正文…"
               aria-label="搜索便签"
-              onChange={(e) => boardStore.setQuery(e.target.value)}
+              onChange={(e) => setQuery(e.target.value)}
               style={searchInput}
             />
             {query !== "" && (
@@ -250,24 +97,15 @@ export function BoardMain(props: BoardMainProps): JSX.Element {
                 type="button"
                 title="清除搜索"
                 aria-label="清除搜索"
-                className="fs-note-search-clear"
+                className={styles.searchClear}
                 style={clearBtn}
-                onClick={() => boardStore.setQuery("")}
+                onClick={() => setQuery("")}
               >
                 <X size={13} />
               </button>
             )}
           </div>
         )}
-        {/* <span style={hintStyle}>
-          {noNotes
-            ? ''
-            : noMatch
-              ? `无匹配 · 共 ${props.notes.length} 条便签`
-              : hasFilter
-                ? `匹配 ${activeMatched.length + archivedMatched.length} 条`
-                : '置顶优先 · 最近更新在前'}
-        </span> */}
         <span style={{ flex: 1 }} />
         <div role="group" aria-label="视图切换" style={viewGroup}>
           <button
@@ -275,9 +113,9 @@ export function BoardMain(props: BoardMainProps): JSX.Element {
             title="纸卡墙"
             aria-label="纸卡墙"
             aria-pressed={view === "grid"}
-            className="fs-note-tool"
+            className={styles.tool}
             style={viewBtn(view === "grid")}
-            onClick={() => boardStore.setView("grid")}
+            onClick={() => setView("grid")}
           >
             <LayoutGrid size={15} />
           </button>
@@ -286,9 +124,9 @@ export function BoardMain(props: BoardMainProps): JSX.Element {
             title="任务泳道"
             aria-label="任务泳道"
             aria-pressed={view === "lanes"}
-            className="fs-note-tool"
+            className={styles.tool}
             style={viewBtn(view === "lanes")}
-            onClick={() => boardStore.setView("lanes")}
+            onClick={() => setView("lanes")}
           >
             <Kanban size={15} />
           </button>
@@ -297,16 +135,16 @@ export function BoardMain(props: BoardMainProps): JSX.Element {
             title="行式列表"
             aria-label="行式列表"
             aria-pressed={view === "list"}
-            className="fs-note-tool"
+            className={styles.tool}
             style={viewBtn(view === "list")}
-            onClick={() => boardStore.setView("list")}
+            onClick={() => setView("list")}
           >
             <Rows3 size={15} />
           </button>
         </div>
         <button
           type="button"
-          className="fs-note-tool"
+          className={styles.tool}
           style={{ ...btnPrimary, ...(props.busy ? disabledStyle : {}) }}
           disabled={props.busy}
           onClick={props.onCreate}
@@ -319,8 +157,8 @@ export function BoardMain(props: BoardMainProps): JSX.Element {
         <div style={filterRowStyle}>
           <ColorFilter
             colors={colors}
-            onToggle={(c) => boardStore.toggleColor(c)}
-            onClear={() => boardStore.clearColors()}
+            onToggle={toggleColor}
+            onClear={clearColors}
           />
         </div>
       )}
@@ -366,7 +204,7 @@ export function BoardMain(props: BoardMainProps): JSX.Element {
                   <button
                     type="button"
                     style={clearFilterBtn}
-                    onClick={() => boardStore.setView("list")}
+                    onClick={() => setView("list")}
                   >
                     去列表视图管理
                   </button>
@@ -450,7 +288,7 @@ export function BoardMain(props: BoardMainProps): JSX.Element {
                   <button
                     type="button"
                     style={clearFilterBtn}
-                    onClick={() => boardStore.setQuery("")}
+                    onClick={() => setQuery("")}
                   >
                     清除搜索「{query.trim()}」
                   </button>
@@ -459,7 +297,7 @@ export function BoardMain(props: BoardMainProps): JSX.Element {
                   <button
                     type="button"
                     style={clearFilterBtn}
-                    onClick={() => boardStore.clearColors()}
+                    onClick={clearColors}
                   >
                     清除颜色筛选
                   </button>
@@ -506,20 +344,13 @@ export function BoardMain(props: BoardMainProps): JSX.Element {
   );
 }
 
-/* ---------- 样式 ---------- */
+/* ---------- 样式（内联几何 + 主题令牌；hover/动效在 notes-board.module.css） ---------- */
 
 const toolbarStyle: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
   gap: 10,
   padding: "10px 16px 4px",
-};
-const _hintStyle: React.CSSProperties = {
-  color: t.labelCaption,
-  fontSize: 12,
-  whiteSpace: "nowrap",
-  overflow: "hidden",
-  textOverflow: "ellipsis",
 };
 const viewGroup: React.CSSProperties = {
   display: "inline-flex",

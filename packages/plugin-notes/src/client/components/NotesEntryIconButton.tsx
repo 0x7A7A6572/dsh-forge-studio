@@ -6,6 +6,7 @@
  */
 
 import type { ReactNode } from 'react';
+import styles from '../styles/notes-entry.module.css';
 
 export interface NotesEntryIconButtonProps {
   /** 无障碍名与 tooltip 文案。 */
@@ -22,7 +23,7 @@ export function NotesEntryIconButton(props: NotesEntryIconButtonProps): JSX.Elem
   return (
     <button
       type="button"
-      className="fs-note-entry-btn"
+      className={styles.entryBtn}
       title={props.label}
       aria-label={props.label}
       data-active={props.active === true ? '' : undefined}

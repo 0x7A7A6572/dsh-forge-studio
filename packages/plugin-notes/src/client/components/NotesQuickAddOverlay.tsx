@@ -9,7 +9,7 @@
  */
 
 import { useNotesEntryEnabled } from '../hooks/useNotesEntryEnabled.ts';
-import { QuickAddDialog } from '../views/quick-add-dialog.tsx';
+import { QuickAddDialog } from '../views/quick-add-dialog/QuickAddDialog.tsx';
 import type { NotesUiFace } from '../core/notes-ui-face.ts';
 
 export interface NotesQuickAddOverlayProps extends NotesUiFace {}

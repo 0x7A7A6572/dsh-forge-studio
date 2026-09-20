@@ -8,13 +8,7 @@
 import type { NoteColor } from '../../types.ts'
 import { NOTE_COLOR_PALETTE } from '../core/note-colors.ts'
 import { t } from '../core/theme-tokens.ts'
-
-/** 色块 hover/focus 态；ring 选中描边与淡化过渡。 */
-export const FILTER_CSS = `
-.fs-note-filter-chip { transition: transform 120ms ease, box-shadow 160ms ease, opacity 140ms ease; }
-.fs-note-filter-chip:hover:not(:disabled) { transform: scale(1.12); }
-.fs-note-filter-chip:focus-visible { outline: 2px solid var(--dsw-static-deepseek-450); outline-offset: 1px; }
-`
+import styles from '../styles/notes-board.module.css'
 
 export interface ColorFilterProps {
   /** 当前选中的颜色；空数组 = 不过滤。 */
@@ -35,7 +29,7 @@ export function ColorFilter(props: ColorFilterProps): JSX.Element {
           <button
             key={c.id}
             type="button"
-            className="fs-note-filter-chip"
+            className={styles.filterChip}
             title={`${c.label}色便签${active ? '（筛选中）' : ''}`}
             aria-label={`${active ? '取消' : '按'}${c.label}色筛选`}
             aria-pressed={active}

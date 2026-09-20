@@ -1,7 +1,7 @@
 /**
  * 便签 Markdown「只读渲染」组件：复用便签编辑器同款渲染栈与排版
- * （core/note-richtext.ts 的 buildNoteRichTextExtensions + note-editor 导出的
- * EDITOR_CSS），以 editable:false 的 tiptap 只读实例静态展示 markdown，
+ * （core/note-richtext.ts 的 buildNoteRichTextExtensions + styles/notes-editor.module.css
+ * 的 .editor/.preview 排版层），以 editable:false 的 tiptap 只读实例静态展示 markdown，
  * 观感与便签正文一致 —— 链接/表格/代码语言高亮与编辑器同源。
  *
  * 用途：便签板「使用说明」弹窗等把 markdown 常量按便签正文观感渲染的场合。
@@ -13,17 +13,12 @@
 
 import { EditorContent, useEditor } from '@tiptap/react';
 import { buildNoteRichTextExtensions } from '../core/note-richtext.ts';
-import { EDITOR_CSS } from './note-editor.tsx';
+import editorStyles from '../styles/notes-editor.module.css';
 
 export interface NoteMarkdownViewProps {
   /** 待渲染的 markdown 正文（只读展示）。 */
   readonly markdown: string;
 }
-
-/** 只读覆盖：说明正文不做输入框式高度/光标约束（卡片滚动由调用方负责）。 */
-const PREVIEW_CSS = `
-.fs-note-preview .ProseMirror { min-height: 0; caret-color: transparent; }
-`;
 
 export function NoteMarkdownView(props: NoteMarkdownViewProps): JSX.Element {
   const editor = useEditor({
@@ -32,8 +27,7 @@ export function NoteMarkdownView(props: NoteMarkdownViewProps): JSX.Element {
     editable: false,
   });
   return (
-    <div className="fs-note-editor fs-note-preview">
-      <style>{`${EDITOR_CSS}${PREVIEW_CSS}`}</style>
+    <div className={`${editorStyles.editor} ${editorStyles.preview}`}>
       <EditorContent editor={editor} />
     </div>
   );

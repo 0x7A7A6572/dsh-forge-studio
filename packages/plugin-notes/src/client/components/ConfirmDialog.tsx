@@ -14,6 +14,7 @@
 
 import { useEffect } from 'react'
 import { t } from '../core/theme-tokens.ts'
+import styles from '../styles/notes-board.module.css'
 
 export interface ConfirmDialogProps {
   /** 标题（同时作为无障碍名）。 */
@@ -46,9 +47,9 @@ export function ConfirmDialog(props: ConfirmDialogProps): JSX.Element {
   }, [onCancel])
 
   return (
-    <div className="fs-note-overlay" style={overlayStyle} onClick={onCancel}>
+    <div className={styles.overlay} style={overlayStyle} onClick={onCancel}>
       <div
-        className="fs-note-dialog"
+        className={styles.dialog}
         style={{ ...cardStyle, borderLeft: `4px solid ${props.accent ?? t.borderL2}` }}
         onClick={(e) => e.stopPropagation()}
         role="dialog"

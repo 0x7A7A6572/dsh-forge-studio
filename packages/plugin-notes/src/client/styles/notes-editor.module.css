@@ -1,0 +1,149 @@
+/*
+ * 便签编辑器 / 只读正文样式正文。
+ *
+ * 用法：import styles from '../styles/notes-editor.module.css'。由 tsdown 预设的
+ * lightningcss 编译成 [hash]_[local]，类名不再需要手写 fs-note- 前缀。
+ *
+ * 使用者：components/NoteEditor.tsx（正文编辑器与工具栏）、
+ * components/NotePreview.tsx（只读 markdown）、components/NoteImageView.tsx
+ * （tiptap 图片 NodeView）。三者共用同一份排版栈，所以放同一个模块文件 ——
+ * 拆开就会让 .editor .ProseMirror 这类后代选择器跨不到别的哈希。
+ */
+
+/* ---------- 正文排版 ---------- */
+
+.editor { position: relative; font-size: 14px; line-height: 1.7; color: var(--dsw-alias-label-primary); padding: 10px; }
+.editor .ProseMirror { outline: none; min-height: 200px; caret-color: var(--dsw-static-deepseek-400); }
+.editor .ProseMirror p { margin: 0 0 4px; }
+.editor .ProseMirror h1, .editor .ProseMirror h2, .editor .ProseMirror h3 { margin: 10px 0 4px; line-height: 1.35; }
+.editor .ProseMirror h1 { font-size: 19px; } .editor .ProseMirror h2 { font-size: 17px; }
+.editor .ProseMirror h3 { font-size: 15px; }
+.editor .ProseMirror ul, .editor .ProseMirror ol { margin: 2px 0; padding-left: 22px; }
+.editor .ProseMirror li { margin: 1px 0; }
+.editor .ProseMirror blockquote { margin: 4px 0; padding: 0 0 0 10px; border-left: 3px solid var(--dsw-alias-border-l3); color: var(--dsw-alias-label-secondary); }
+.editor .ProseMirror code { background: var(--dsw-alias-markdown-inline-code); border-radius: 4px; padding: 1px 4px; font-size: 0.9em; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.editor .ProseMirror pre { background: var(--dsw-alias-markdown-code-block); border: 1px solid var(--dsw-alias-border-l1); border-radius: 8px; padding: 8px 10px; overflow-x: auto; margin: 6px 0; }
+.editor .ProseMirror pre code { background: none; padding: 0; font-size: 13px; }
+.editor .ProseMirror hr { border: none; border-top: 1px solid var(--dsw-alias-border-l2); margin: 10px 0; }
+.editor .ProseMirror a { color: var(--dsw-static-deepseek-450); cursor: pointer; text-decoration: none; }
+.editor .ProseMirror a:hover { text-decoration: underline; text-underline-offset: 2px; }
+/* 只读展示态（.preview）链接默认带下划线，可直接点开（openOnClick）。 */
+.editor.preview .ProseMirror a { text-decoration: underline; text-underline-offset: 2px; }
+.editor .ProseMirror img { max-width: 66.67%; height: auto; border-radius: 6px; }
+.editor .ProseMirror img[width] { max-width: 100%; }
+.imageWrap { position: relative; display: inline; }
+.imageWrap img { vertical-align: bottom; }
+.imageHandle { position: absolute; right: 2px; bottom: 2px; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; padding: 0; border: none; border-radius: 6px; background: var(--dsw-static-deepseek-450); color: #fff; cursor: nwse-resize; z-index: 5; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28); }
+/* 选中态（主题表面＝只读预览）：宿主 bubble-highlight 是给气泡内标记用的极淡高亮，
+   作选区几乎看不见，改用品牌蓝半透明（保留文字原色，明暗主题都清晰）。
+   纸面编辑态另有反相规则，见下方 .paper 段（顺序在后、层叠胜出）。 */
+.editor .ProseMirror ::selection { background: color-mix(in srgb, var(--dsw-static-deepseek-450) 32%, transparent); }
+.editor input:focus { border-color: var(--dsw-static-deepseek-450); }
+
+.tool { transition: background 130ms ease, color 130ms ease, transform 90ms ease; }
+.tool:active:not(:disabled) { transform: scale(0.95); }
+.tool:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.editor .btn:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.editor .btnPrimary:hover:not(:disabled) { background: var(--dsw-alias-button-primary-hover); }
+.color { transition: transform 100ms ease; }
+.color:hover:not(:disabled) { transform: scale(1.15); }
+.color:focus-visible { outline: 2px solid var(--dsw-static-deepseek-450); outline-offset: 1px; }
+
+/* ---------- 表格 ---------- */
+.editor .ProseMirror table { border-collapse: collapse; table-layout: fixed; width: 100%; margin: 6px 0; overflow: hidden; }
+.editor .ProseMirror th, .editor .ProseMirror td { border: 1px solid var(--dsw-alias-border-l3); padding: 5px 8px; vertical-align: top; min-width: 40px; position: relative; word-break: break-word; }
+.editor .ProseMirror th { font-weight: 600; text-align: left; background: color-mix(in srgb, var(--dsw-alias-label-secondary) 10%, transparent); }
+.editor .ProseMirror .selectedCell::after { content: ""; position: absolute; inset: 0; background: color-mix(in srgb, var(--dsw-static-deepseek-400) 18%, transparent); pointer-events: none; }
+
+/* ---------- 待办清单（todolist） ----------
+   官方 taskItem 结构：ul[data-type=taskList] > li[data-checked] > label>input + div>p。
+   label/input 由扩展渲染（勾选框不参与文本编辑），这里只做排版与勾选态观感；
+   勾选状态来自 checked 属性（data-checked），与 Markdown 的 - [ ]/- [x] 一一对应。 */
+.editor .ProseMirror ul[data-type="taskList"] { list-style: none; margin: 2px 0; padding-left: 2px; }
+.editor .ProseMirror ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 6px; margin: 1px 0; }
+.editor .ProseMirror ul[data-type="taskList"] li > label { flex: none; display: inline-flex; align-items: center; margin-top: 0.32em; user-select: none; }
+.editor .ProseMirror ul[data-type="taskList"] li > label input { width: 14px; height: 14px; margin: 0; cursor: pointer; accent-color: var(--dsw-static-deepseek-450); }
+.editor .ProseMirror ul[data-type="taskList"] li > div { flex: 1 1 auto; min-width: 0; }
+.editor .ProseMirror ul[data-type="taskList"] li > div > p { margin: 0; }
+.editor .ProseMirror ul[data-type="taskList"] li[data-checked="true"] > div { color: var(--dsw-alias-label-secondary); text-decoration: line-through; }
+.editor .ProseMirror ul[data-type="taskList"] ul[data-type="taskList"] { margin: 1px 0 1px 4px; padding-left: 0; }
+/* 只读展示态（NotePreview / 任务结果区 / 使用说明）：勾选框仅展示状态，不可交互。 */
+.editor.preview .ProseMirror ul[data-type="taskList"] li > label input { cursor: default; }
+
+/* ---------- 代码语法高亮 token（映射宿主 --shiki-token-*，带字面量回退） ---------- */
+.editor .ProseMirror .hljs-comment, .editor .ProseMirror .hljs-quote { color: var(--shiki-token-comment, #868e96); font-style: italic; }
+.editor .ProseMirror .hljs-keyword, .editor .ProseMirror .hljs-selector-tag, .editor .ProseMirror .hljs-name, .editor .ProseMirror .hljs-doctag, .editor .ProseMirror .hljs-meta { color: var(--shiki-token-keyword, #d6336c); }
+.editor .ProseMirror .hljs-string, .editor .ProseMirror .hljs-regexp, .editor .ProseMirror .hljs-addition, .editor .ProseMirror .hljs-attr, .editor .ProseMirror .hljs-attribute, .editor .ProseMirror .hljs-selector-attr, .editor .ProseMirror .hljs-template-variable { color: var(--shiki-token-string, #2f9e44); }
+.editor .ProseMirror .hljs-number, .editor .ProseMirror .hljs-literal, .editor .ProseMirror .hljs-constant, .editor .ProseMirror .hljs-symbol, .editor .ProseMirror .hljs-bullet { color: var(--shiki-token-constant, #1c7ed6); }
+.editor .ProseMirror .hljs-title, .editor .ProseMirror .hljs-function, .editor .ProseMirror .hljs-type, .editor .ProseMirror .hljs-section, .editor .ProseMirror .hljs-class { color: var(--shiki-token-function, #6741d9); }
+.editor .ProseMirror .hljs-params, .editor .ProseMirror .hljs-operator { color: var(--shiki-token-parameter, #e8590c); }
+.editor .ProseMirror .hljs-link { color: var(--shiki-token-link, #1971c2); text-decoration: underline; }
+
+/* ---------- 工具栏弹层（链接 / 表格）与代码语言下拉 ---------- */
+.editor .pop { position: absolute; top: 100%; left: 0; z-index: 40; margin-top: 6px; min-width: 236px; max-width: 320px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; padding: 10px; background: var(--dsw-alias-bg-layer-3, var(--dsw-alias-bg-layer-2)); border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; box-shadow: var(--dsw-shadow-lv3); }
+.editor .popTitle { margin: 0; font-size: 12px; font-weight: 600; color: var(--dsw-alias-label-secondary); }
+.editor .field { box-sizing: border-box; width: 100%; padding: 6px 8px; font-size: 13px; color: var(--dsw-alias-label-primary); background: transparent; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; outline: none; }
+.editor .field:focus { border-color: var(--dsw-static-deepseek-450); }
+.editor .field[disabled] { opacity: 0.6; }
+.editor .popRow { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
+.editor .popItem { display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box; padding: 6px 8px; border: none; border-radius: 7px; background: transparent; color: var(--dsw-alias-label-primary); font-size: 12.5px; cursor: pointer; text-align: left; }
+.editor .popItem:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.editor .popItem:disabled { opacity: 0.4; cursor: default; }
+.editor .popGrid { display: inline-flex; flex-direction: column; gap: 3px; align-self: flex-start; }
+.editor .popGridRow { display: flex; gap: 3px; }
+.editor .popGridCell { width: 17px; height: 17px; padding: 0; border: 1px solid var(--dsw-alias-border-l3); border-radius: 3px; background: transparent; cursor: pointer; box-sizing: border-box; }
+.editor .popGridCell.on { background: color-mix(in srgb, var(--dsw-static-deepseek-450) 55%, transparent); border-color: var(--dsw-static-deepseek-450); }
+.editor .popGridCell:hover:not(:disabled) { background: color-mix(in srgb, var(--dsw-static-deepseek-450) 30%, transparent); }
+.langSelect { max-width: 150px; height: 28px; padding: 0 6px; font-size: 12.5px; color: var(--dsw-alias-label-secondary); background: transparent; border: 1px solid var(--dsw-alias-border-l2); border-radius: 7px; outline: none; cursor: pointer; }
+.langSelect:focus { border-color: var(--dsw-static-deepseek-450); }
+.langSelect:disabled { opacity: 0.35; cursor: default; }
+
+/* ---------- 弹窗纸态覆盖（.paper） ----------
+   编辑器所在弹窗整卡是浅 pastel 便签纸（纸色实时随取色器变化），正文与控件统一
+   转 NOTE_INK 墨迹族（明暗自适应无效，纸底恒浅）；只读预览（.preview）
+   不带该修饰类，仍走宿主令牌自适应。弹层（链接/表格）是悬浮控件，保持主题表面。 */
+.paper { color: #2E2A22; }
+.paper .ProseMirror { color: #2E2A22; caret-color: var(--dsw-static-deepseek-400); }
+.paper .ProseMirror blockquote { border-left-color: rgba(46, 42, 34, 0.32); color: rgba(46, 42, 34, 0.6); }
+.paper .ProseMirror code { background: rgba(46, 42, 34, 0.1); color: #2E2A22; }
+.paper .ProseMirror pre { background: rgba(46, 42, 34, 0.07); border-color: rgba(46, 42, 34, 0.14); color: #2E2A22; }
+.paper .ProseMirror pre code { background: none; color: #2E2A22; }
+.paper .ProseMirror hr { border-top-color: rgba(46, 42, 34, 0.22); }
+.paper .ProseMirror a { color: #1458a0; }
+.paper .ProseMirror a:hover { color: #0d3f75; }
+.paper .ProseMirror th, .paper .ProseMirror td { border-color: rgba(46, 42, 34, 0.26); }
+.paper .ProseMirror th { background: rgba(46, 42, 34, 0.06); }
+.paper input::placeholder { color: rgba(46, 42, 34, 0.45); }
+.paper input:focus { border-color: rgba(46, 42, 34, 0.5); }
+/* 纸面待办清单：勾选框随墨迹（不用品牌蓝），勾选后墨字弱化（删除线走通用规则）。 */
+.paper .ProseMirror ul[data-type="taskList"] li > label input { accent-color: #2E2A22; }
+.paper .ProseMirror ul[data-type="taskList"] li[data-checked="true"] > div { color: rgba(46, 42, 34, 0.5); }
+/* 便签标题（header 直写）：无边框输入，聚焦仅淡墨染底，保持「写在纸上」观感。 */
+.paper .title { border-radius: 7px; }
+.paper .title:hover { background: rgba(46, 42, 34, 0.045); }
+.paper .title:focus { background: rgba(46, 42, 34, 0.08); outline: none; }
+.paper .tool { color: rgba(46, 42, 34, 0.75); }
+.paper .tool:hover:not(:disabled) { background: rgba(46, 42, 34, 0.09); color: #2E2A22; }
+.paper .color:focus-visible { outline: 2px solid rgba(46, 42, 34, 0.55); }
+.paper .btnPrimary:hover:not(:disabled) { background: #100e08; }
+.paper .langSelect { color: rgba(46, 42, 34, 0.85); border: none; background: rgba(46, 42, 34, 0.06); }
+/* 选中态（纸面编辑）：纸底恒浅 + 墨字，若沿用主题高亮就只剩「灰底黑字」，选区与正文
+   几乎分不出来。这里改为反相选中（墨底 + 纸白字）：六种纸色、标题/正文/代码块/结果区
+   一律高对比。注意两条选择器都要写——.ProseMirror 那条与上方主题规则同为 (0,2,1)，
+   靠「顺序在后」取胜；泛化那条管标题输入框与只读结果区（不受主题规则覆盖）。 */
+.paper .ProseMirror ::selection,
+.paper ::selection {
+  background: rgba(46, 42, 34, 0.85);
+  color: #FFFDF4;
+}
+
+.runToggle { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border: none; border-radius: 7px; background: transparent; color: rgba(46, 42, 34, 0.72); font-size: 12.5px; cursor: pointer; }
+.runToggle:hover { background: rgba(46, 42, 34, 0.09); color: #2E2A22; }
+
+/* ---------- 只读展示态 ---------- */
+
+/* 只读 markdown（NotePreview）：正文栈原样复用，只把光标与最小高度收掉。 */
+.preview .ProseMirror { min-height: 0; caret-color: transparent; }
+/* run.summary 内嵌在编辑器里，再压一层高度上限。 */
+.runSummary { padding: 0; max-height: 36vh; overflow-y: auto; }
+.runSummary .ProseMirror { min-height: 0; caret-color: transparent; }

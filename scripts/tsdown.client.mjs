@@ -16,11 +16,14 @@
  * JS 走。*.module.css 由 lightningcss 编译成哈希类名映射并在 factory 执行时插
  * 一个带 data-plugin 标记的 <style>；*.css?inline 只给文本不注入（供 ui-css.ts
  * 那套 ensure*Style() 用）；其余普通 css 整段内联并注入。
+ *
+ * 图片同理走虚拟模块 base64 内联（见 assetPlugin）：宿主只发 /plugins/<id>/client.js
+ * 一个文件，任何「吐成独立文件」的资源管线在这里都是死路。
  */
 import { createRequire } from 'node:module'
 import { builtinModules } from 'node:module'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
-import { basename, dirname, join, resolve as resolvePath } from 'node:path'
+import { basename, dirname, extname, join, resolve as resolvePath } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { transform } from 'lightningcss'
 
@@ -186,6 +189,50 @@ function cssPlugin(pluginId) {
 }
 
 /**
+ * 图片虚拟模块插件：dsh client bundle 没有静态资源通道（宿主只发 /plugins/<id>/client.js），
+ * 图片必须 base64 内联进 JS —— 与 CSS 同一条理由。esbuild 时代的 .png/.webp loader 等价物。
+ *
+ * 只认白名单后缀。命中就返回虚拟 id，绝不落到 rolldown 自己的 asset 管线（它会吐成
+ * 独立文件，而闭包产物只有一个文件、require 也认不得相对地址）。
+ */
+const INLINE_IMAGE_MIME = new Map([
+  ['.png', 'image/png'],
+  ['.webp', 'image/webp'],
+  ['.jpg', 'image/jpeg'],
+  ['.jpeg', 'image/jpeg'],
+  ['.gif', 'image/gif'],
+  ['.svg', 'image/svg+xml'],
+])
+const ASSET_VIRTUAL_PREFIX = '\0dsh-asset:'
+const ASSET_VIRTUAL_SUFFIX = '.mjs'
+
+function assetPlugin() {
+  return {
+    name: 'dsh-asset-inline',
+    resolveId(source, importer) {
+      // 去掉 ?url / ?inline 之类的查询后缀再判类型。
+      const specifier = source.split('?')[0]
+      const ext = extname(specifier).toLowerCase()
+      const mime = INLINE_IMAGE_MIME.get(ext)
+      if (mime === undefined) return null
+      const abs = specifier.startsWith('.') || specifier.startsWith('/') || /^[A-Za-z]:[\\/]/.test(specifier)
+        ? (importer === undefined ? specifier : resolvePath(dirname(importer), specifier))
+        : require.resolve(specifier)
+      return ASSET_VIRTUAL_PREFIX + abs + ASSET_VIRTUAL_SUFFIX
+    },
+    load(virtualId) {
+      if (!virtualId.startsWith(ASSET_VIRTUAL_PREFIX)) return null
+      const fileId = virtualId.slice(ASSET_VIRTUAL_PREFIX.length, -ASSET_VIRTUAL_SUFFIX.length)
+      // 虚拟 id 会把物理文件藏出 rolldown 的 watch 图，这里补回去。
+      this.addWatchFile(fileId)
+      const mime = INLINE_IMAGE_MIME.get(extname(fileId).toLowerCase())
+      const dataUrl = `data:${mime};base64,${readFileSync(fileId).toString('base64')}`
+      return `export default ${JSON.stringify(dataUrl)};`
+    },
+  }
+}
+
+/**
  * 客户端产物（lib/client.js）。
  *
  * 与官方的一处**有意偏离**：minify 默认开。官方自己的产物不压缩（DSH 内置插件
@@ -252,7 +299,7 @@ export function clientBundle(id, options = {}) {
       'import.meta.env': JSON.stringify({ MODE: nodeEnv }),
       __PLUGIN_VERSION__: JSON.stringify(pluginVersion),
     },
-    plugins: [purityGatePlugin(externals), cssPlugin(id)],
+    plugins: [purityGatePlugin(externals), cssPlugin(id), assetPlugin()],
     outputOptions: {
       entryFileNames: options.outFile ?? 'client.js',
       banner: `window.__ModuleLoader__.load({ id: ${JSON.stringify(id)}, factory: (require) => {`,

@@ -9,10 +9,11 @@
 import { t } from '../core/theme-tokens.ts';
 import { HELP_MARKDOWN } from '../core/help-content.ts';
 import { pluginVersion } from '../../version.ts';
-import { NoteMarkdownView } from './note-preview.tsx';
+import { NoteMarkdownView } from './NotePreview.tsx';
 import { X } from 'lucide-react';
 // esbuild dataurl loader 内联的 data URI（见 src/client/assets.d.ts），运行时无外部请求。
 import noteFlowBanner from '../assets/note-flow-banner.webp';
+import styles from '../styles/notes-board.module.css';
 
 export interface NotesHelpDialogProps {
   readonly onClose: () => void;
@@ -20,9 +21,9 @@ export interface NotesHelpDialogProps {
 
 export function NotesHelpDialog(props: NotesHelpDialogProps): JSX.Element {
   return (
-    <div className="fs-note-overlay" style={overlayStyle} onClick={props.onClose}>
+    <div className={styles.overlay} style={overlayStyle} onClick={props.onClose}>
       <div
-        className="fs-note-dialog"
+        className={styles.dialog}
         style={cardStyle}
         onClick={(e) => e.stopPropagation()}
         role="dialog"

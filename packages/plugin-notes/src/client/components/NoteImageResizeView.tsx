@@ -16,6 +16,7 @@ import {
   clampImageWidthPercent,
   nextImageWidthPercent,
 } from '../core/image-resize.ts'
+import editorStyles from '../styles/notes-editor.module.css'
 
 interface DragState {
   startX: number
@@ -90,7 +91,7 @@ export function NoteImageResizeView(props: NodeViewProps): JSX.Element {
   }
 
   return (
-    <NodeViewWrapper as="span" className="fs-note-image-wrap">
+    <NodeViewWrapper as="span" className={editorStyles.imageWrap}>
       <img
         ref={imgRef}
         src={typeof node.attrs.src === 'string' ? node.attrs.src : ''}
@@ -104,7 +105,7 @@ export function NoteImageResizeView(props: NodeViewProps): JSX.Element {
       />
       {selected && editor.isEditable && (
         <span
-          className="fs-note-image-handle"
+          className={editorStyles.imageHandle}
           title="拖拽缩放图片宽度（双击恢复默认）"
           aria-label="缩放图片宽度"
           role="button"

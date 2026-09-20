@@ -26,6 +26,7 @@ import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client';
 import { useNotesEntryEnabled } from '../hooks/useNotesEntryEnabled.ts';
 import type { NotesUiFace } from '../core/notes-ui-face.ts';
+import styles from '../styles/notes-entry.module.css';
 
 /** 提不出首行时的标题兜底（用户可在编辑器里改）。 */
 export const SAVE_MESSAGE_TITLE = '对话摘录';
@@ -129,7 +130,7 @@ export function NotesSaveMessageAction(props: NotesSaveMessageActionProps): JSX.
   return (
     <button
       type="button"
-      className="fs-note-entry-btn"
+      className={styles.entryBtn}
       title="存成便签"
       aria-label="存成便签"
       onClick={save}

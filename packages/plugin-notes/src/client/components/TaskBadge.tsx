@@ -6,12 +6,13 @@
  * 形态：墨迹系小胶囊 + 状态中文；running 常驻呼吸圆点提示执行中；done 用 ✓ 弱化，
  * failed 用 ✗ 警示（红墨迹）。徽章浮在浅 pastel 纸色上，颜色一律用 NOTE_INK 墨迹
  * 族（纸色固定浅底，深字对比恒成立），全部内联样式，无需额外注入 CSS。
- * 呼吸动画 keyframes（fs-task-live-dot）由 board-main 的 MOTION_CSS 统一提供。
+ * 呼吸动画 keyframes 由 notes-board.module.css 的 .taskLiveDot 提供。
  */
 
 import type { NoteLane } from '../../types.ts'
 import { laneLabel, isRunOpen } from '../core/task-lanes.ts'
 import { NOTE_INK, NOTE_INK_MUTED } from '../core/note-colors.ts'
+import styles from '../styles/notes-board.module.css'
 
 /** 失败警示墨迹（与卡片 danger 动作同色系，便于识别）。 */
 const FAIL_INK = '#b3261e'
@@ -59,7 +60,7 @@ export function TaskBadge(props: TaskBadgeProps): JSX.Element {
     >
       {running && (
         <span
-          className="fs-task-live-dot"
+          className={styles.taskLiveDot}
           aria-hidden="true"
           style={{ width: 6, height: 6, borderRadius: 3, background: NOTE_INK }}
         />

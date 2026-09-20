@@ -14,6 +14,7 @@ import { useNotesEntryEnabled } from '../hooks/useNotesEntryEnabled.ts';
 import { notesStatsStore } from '../core/notes-stats.ts';
 import { NotesEntryIconButton } from './NotesEntryIconButton.tsx';
 import type { NotesUiFace } from '../core/notes-ui-face.ts';
+import styles from '../styles/notes-entry.module.css';
 
 export interface NotesInputToolbarProps extends NotesUiFace {}
 
@@ -27,7 +28,7 @@ export function NotesInputToolbar(props: NotesInputToolbarProps): JSX.Element | 
   if (!enabled) return null;
   const text = `待办 ${count > 99 ? '99+' : count}`;
   return (
-    <div className="fs-note-toolbar" role="toolbar" aria-label="便签">
+    <div className={styles.toolbar} role="toolbar" aria-label="便签">
       <NotesEntryIconButton label="记一笔便签" onClick={props.capture}>
         <StickyNotePlus size={16} />
       </NotesEntryIconButton>
@@ -36,7 +37,7 @@ export function NotesInputToolbar(props: NotesInputToolbarProps): JSX.Element | 
       </NotesEntryIconButton>
       <button
         type="button"
-        className="fs-note-toolbar-count"
+        className={styles.toolbarCount}
         data-empty={count <= 0 ? '' : undefined}
         title={`${text}；点开便签板`}
         aria-label={`${text}；打开便签板`}

@@ -1,0 +1,157 @@
+/*
+ * 便签板样式正文（板子本身 + 纸卡 / 行 / 泳道卡 / 色筛 / 空状态 / 弹窗遮罩）。
+ *
+ * 用法：import styles from '../styles/notes-board.module.css'，取 styles.xxx。
+ * 类名由 tsdown 预设的 lightningcss 编译成 [hash]_[local]（见 scripts/tsdown.client.mjs），
+ * 不再需要手写 fs-note- 前缀防串台；键帧名同样被哈希，所以**跨文件的 animation
+ * 引用一定会断**——需要的键帧必须声明在本文件里，别处引用不到。
+ *
+ * 硬约束：
+ *   - 颜色只走 design-platform.css 里确实定义过的 --dsw-* alias token；未定义的
+ *     var() 不报错，只让整条声明在 computed-value 阶段失效。便签纸色那套例外：
+ *     纸底恒浅，墨迹写死深色（见 note-colors）。
+ *   - 选择器不得依赖插件之外的祖先作用域。
+ */
+
+/* ---------- 面板框架（board-view） ---------- */
+
+.headerBtn { transition: background 130ms ease, color 130ms ease, transform 90ms ease; }
+.headerBtn:active:not(:disabled) { transform: scale(0.94); }
+.headerBtn:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+
+.backBtn { transition: background 130ms ease, color 130ms ease; }
+.backBtn:hover { display: flex; align-items: center; background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner {
+  border: 2px solid var(--dsw-alias-border-l2);
+  border-top-color: var(--dsw-alias-label-tertiary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pop { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+.overlay { animation: fade 160ms ease-out backwards; }
+.dialog { animation: pop 200ms cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+
+/* ---------- 动效基础层（board-main） ---------- */
+
+@keyframes noteIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+/* 任务徽章 running 呼吸点（task-badge 引用）。 */
+@keyframes taskPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+.taskLiveDot { animation: taskPulse 1.3s ease-in-out infinite; }
+
+.tool { transition: background 130ms ease, color 130ms ease, transform 90ms ease; }
+.tool:active:not(:disabled) { transform: scale(0.95); }
+
+.searchRow { transition: border-color 160ms ease, box-shadow 160ms ease; }
+.searchRow:focus-within {
+  border-color: var(--dsw-static-deepseek-450);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-static-deepseek-450) 18%, transparent);
+}
+.searchClear { animation: noteIn 160ms ease-out backwards; }
+.empty { animation: noteIn 240ms ease-out backwards; }
+
+/* ---------- 纸卡 / 行（note-card / note-row） ---------- */
+
+.card { transition: box-shadow 140ms ease, transform 140ms ease; animation: noteIn 220ms ease-out backwards; }
+.card:hover { box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18); transform: translateY(-1px); }
+.card:focus-visible { outline: 2px solid rgba(0, 0, 0, 0.45); outline-offset: 1px; }
+.card:hover .actions, .card:focus-within .actions { opacity: 1; pointer-events: auto; }
+.card .actions button { color: rgba(46, 42, 34, 0.55); transition: background 110ms ease, color 110ms ease; }
+.card .actions button:hover:not(:disabled) { background: rgba(0, 0, 0, 0.1); color: #2e2a22; }
+.card .actions button[data-danger]:hover:not(:disabled) { background: rgba(197, 48, 48, 0.18); color: #b3261e; }
+
+.snippet { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+.row { transition: box-shadow 120ms ease; animation: noteIn 240ms ease-out backwards; }
+.row:hover { box-shadow: inset 0 0 0 999px rgba(0, 0, 0, 0.06); }
+.row:focus-visible { outline: 2px solid var(--dsw-static-deepseek-450); outline-offset: -1px; }
+.row:hover .actions, .row:focus-within .actions { opacity: 1; pointer-events: auto; }
+.row .actions button { color: rgba(46, 42, 34, 0.55); transition: background 110ms ease, color 110ms ease; }
+.row .actions button:hover:not(:disabled) { background: rgba(0, 0, 0, 0.1); color: #2e2a22; }
+.row .actions button[data-danger]:hover:not(:disabled) { background: rgba(197, 48, 48, 0.18); color: #b3261e; }
+
+/* 卡片/行共用的操作区淡入（两种容器各自挑 hover/focus-within）。 */
+.actions { opacity: 0; pointer-events: none; transition: opacity 120ms ease; }
+
+/* ---------- 颜色筛选（color-filter） ---------- */
+
+.filterChip { transition: transform 120ms ease, box-shadow 160ms ease, opacity 140ms ease; }
+.filterChip:hover:not(:disabled) { transform: scale(1.12); }
+.filterChip:focus-visible { outline: 2px solid var(--dsw-static-deepseek-450); outline-offset: 1px; }
+
+/* ---------- 任务泳道（task-lanes / task-lane-card） ---------- */
+
+.laneCards::-webkit-scrollbar { width: 8px; }
+.laneCards::-webkit-scrollbar-thumb { background: var(--dsw-alias-border-l3); border-radius: 4px; }
+.laneCards::-webkit-scrollbar-track { background: transparent; }
+
+.laneCard { transition: box-shadow 140ms ease, transform 140ms ease, opacity 150ms ease; animation: noteIn 200ms ease-out backwards; }
+.laneCard:hover { box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16); transform: translateY(-1px); }
+.laneCard:focus-visible { outline: 2px solid rgba(0, 0, 0, 0.45); outline-offset: 1px; }
+.laneCard[draggable='true'] { cursor: grab; }
+.laneCard[draggable='true']:active { cursor: grabbing; }
+.laneCard:hover .laneActions, .laneCard:focus-within .laneActions { opacity: 1; pointer-events: auto; }
+.laneCard .laneActions button { color: rgba(46, 42, 34, 0.55); transition: background 110ms ease, color 110ms ease; }
+.laneCard .laneActions button:hover:not(:disabled) { background: rgba(0, 0, 0, 0.1); color: #2e2a22; }
+.laneCard .laneActions button[data-danger]:hover:not(:disabled) { background: rgba(197, 48, 48, 0.18); color: #b3261e; }
+
+.laneActions { opacity: 0; pointer-events: none; transition: opacity 120ms ease; }
+.laneSnippet { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.laneSummary { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+
+@keyframes laneSpin { to { transform: rotate(360deg); } }
+.laneSpinner {
+  border: 2px solid rgba(0, 0, 0, 0.12);
+  border-top-color: rgba(46, 42, 34, 0.55);
+  border-radius: 50%;
+  animation: laneSpin 0.8s linear infinite;
+}
+
+/* running 斜向扫光（光栅扫描）：一道柔光带以约 -18° 倾角从卡片左外斜穿到右外
+   （替代原蓝色 inset 状态边框，见组件 JSX —— running 卡不再加
+   var(--dsw-alias-state-business-primary) 描边）。
+   形态要点：整卡 overflow hidden 收圆角；带子做 skewX 倾斜 + 上下各超伸 30%，
+   保证过卡全程覆盖；渐变两端大段透明、峰值柔化（避免硬边「突兀」）；起止点都在
+   卡片可视区外，循环无闪跳。::after 盖在内容上但 pointer-events 放行交互。 */
+@keyframes laneDiag {
+  0% { transform: translateX(-300%) skewX(-18deg); }
+  100% { transform: translateX(300%) skewX(-18deg); }
+}
+.laneCard.laneRunning { position: relative; overflow: hidden; }
+.laneCard.laneRunning::after {
+  content: "";
+  position: absolute;
+  top: -30%;
+  bottom: -30%;
+  left: 0;
+  width: 46%;
+  pointer-events: none;
+  background: linear-gradient(
+    to right,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.14) 24%,
+    rgba(255, 255, 255, 0.52) 50%,
+    rgba(255, 255, 255, 0.14) 76%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  animation: laneDiag 2.6s cubic-bezier(0.33, 0, 0.67, 1) infinite;
+  will-change: transform;
+}
+
+/* ---------- 动效降级 ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .headerBtn, .backBtn, .overlay, .dialog,
+  .card, .row, .laneCard, .searchClear, .empty, .filterChip, .tool,
+  .searchRow, .taskLiveDot { animation: none !important; transition: none !important; }
+  .laneCard.laneRunning::after { animation: none !important; opacity: 0 !important; }
+}

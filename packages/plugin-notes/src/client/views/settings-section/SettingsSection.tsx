@@ -14,21 +14,18 @@
  *   备份当前）→ 调 notes/webdavRestore，成功后刷新便签统计（板子靠宿主推送同步）。
  */
 
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
-import type { NotesRemote } from '../core/notes-remote.ts'
-import type { NotesConfig, NotesEntryConfig, WebdavStatus } from '../../types.ts'
-import { DEFAULT_NOTES_ENTRY_CONFIG, DEFAULT_WEBDAV_CONFIG, enabledEntryCount } from '../../types.ts'
-import type { NotesWebdavConfig } from '../../types.ts'
+import type { NotesRemote } from '../../core/notes-remote.ts'
+import type { NotesConfig, NotesEntryConfig } from '../../../types.ts'
 import { Input, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
-import { t } from '../core/theme-tokens.ts'
-import { folderNameOf, workspaceLabels } from '../core/workspace-path.ts'
-import { refreshNotesStats } from '../core/notes-stats.ts'
-import { SettingsCard } from '../components/SettingsCard.tsx'
-import { SettingsRow } from '../components/SettingsRow.tsx'
-import { SettingsSwitchRow } from '../components/SettingsSwitchRow.tsx'
-import { pluginVersion } from '../../version.ts'
+import { t } from '../../core/theme-tokens.ts'
+import { folderNameOf } from '../../core/workspace-path.ts'
+import { SettingsCard } from '../../components/SettingsCard.tsx'
+import { SettingsRow } from '../../components/SettingsRow.tsx'
+import { SettingsSwitchRow } from '../../components/SettingsSwitchRow.tsx'
+import { pluginVersion } from '../../../version.ts'
+import { useSettingsSection, type SettingsGroup } from './useSettingsSection.ts'
 
 /** 注册侧注入的业务面（见 src/client/index.ts）。 */
 export interface NotesSettingsSectionInjected {
@@ -39,13 +36,8 @@ export interface NotesSettingsSectionInjected {
 }
 
 /** 分区组件完整 props：设置外壳 owner props + 插件注入面。 */
-export type NotesSettingsSectionProps =
+export type SettingsSectionProps =
   PropsRuntime<'settings.section'> & InjectFace<NotesSettingsSectionInjected>
-
-type Notice = { readonly kind: 'info' | 'error'; readonly text: string } | null
-
-/** 分区内的分组（横向 tab）。 */
-type SettingsGroup = 'general' | 'entries' | 'backup'
 
 /** 分组（顺序即 tab 顺序）。 */
 const SETTINGS_GROUPS: readonly { readonly id: SettingsGroup; readonly label: string }[] = [
@@ -75,260 +67,46 @@ function fmtTime(ts: number | null): string {
   return new Date(ts).toLocaleString()
 }
 
-/**
- * remote 传输层失败（result.ok=false）时的可读原因：优先用网关 error.message
- * （如「方法未注册」/调用异常），没有才落到调用方兜底文案。
- */
-function transportReason(result: { readonly ok?: boolean; readonly error?: { readonly message?: string } }, fallback: string): string {
-  const message = result.error?.message?.trim()
-  return message !== undefined && message !== '' ? message : fallback
-}
-
-/** @returns dsh 设置里的便签分区（基础 / 入口 / 备份 三个 tab）。 */
-export function NotesSettingsSection(props: NotesSettingsSectionProps): JSX.Element {
-  const scope = props.scope
-  // 订阅命名空间 scope：写完之后当前值与「已覆盖」标记要立刻跟上，不等重新打开设置。
-  const snapshot = useSyncExternalStore(
-    (cb) => scope.subscribe(cb),
-    () => scope.getSnapshot(),
-  )
-  const writable = snapshot.writable
-
-  // ---- 基础分区状态 ----
-  const current = snapshot.value?.defaultTitle ?? '新便签'
-  const overridden = snapshot.user !== undefined && 'defaultTitle' in (snapshot.user as object)
-  const [draft, setDraft] = useState(current)
-  const [saving, setSaving] = useState(false)
-  const dirty = draft.trim() !== current
-
-  const currentWorkspace = snapshot.value?.defaultWorkspace ?? ''
-  const workspaceOverridden =
-    snapshot.user !== undefined && 'defaultWorkspace' in (snapshot.user as object)
-  /** 候选目录（最近会话用过的 cwd；host 侧 notes/listWorkspaces 提供）。 */
-  const [wsCandidates, setWsCandidates] = useState<readonly string[]>([])
-  /** 选项集：候选 + 已配置但不在候选里的旧值（否则 select 会显示空白并把它抹掉）。 */
-  const wsOptions = useMemo(() => {
-    const list = [...wsCandidates]
-    if (currentWorkspace !== '' && !list.includes(currentWorkspace)) list.push(currentWorkspace)
-    return list
-  }, [wsCandidates, currentWorkspace])
-  /** 选项标签只给文件夹名，同名冲突才补父目录段。 */
-  const wsLabels = useMemo(() => workspaceLabels(wsOptions), [wsOptions])
-  /**
-   * 默认值：设置值优先；未配置则自动取最近会话用过的目录（与 host 侧兜底一致），
-   * 所以这个下拉一打开就有值可看/可存，而不是空框等用户填。
-   */
-  const effectiveWorkspace = currentWorkspace !== '' ? currentWorkspace : (wsCandidates[0] ?? '')
-  const [wsDraft, setWsDraft] = useState(effectiveWorkspace)
-  const [wsSaving, setWsSaving] = useState(false)
-  const wsDirty = wsDraft.trim() !== currentWorkspace
-
-  // ---- 备份分区（WebDAV）状态 ----
-  const [wd, setWd] = useState<NotesWebdavConfig>({
-    ...DEFAULT_WEBDAV_CONFIG,
-    ...(snapshot.value?.webdav ?? {}),
-  })
-  const [wdDirty, setWdDirty] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [status, setStatus] = useState<WebdavStatus | null>(null)
-  const [notice, setNotice] = useState<Notice>(null)
-  const [files, setFiles] = useState<readonly string[]>([])
-  const [showFiles, setShowFiles] = useState(false)
-  const [pick, setPick] = useState('')
-  const [armed, setArmed] = useState(false)
-
-  // ---- tab + 入口开关 ----
-  const [group, setGroup] = useState<SettingsGroup>('general')
-  // 入口开关留本地副本：设置快照不保证随写即时回传，本地状态让勾选立刻响应，
-  // 写失败再回滚（否则用户会看到一个「勾上了但其实没存」的假象）。
-  const [entryDraft, setEntryDraft] = useState<NotesEntryConfig>(
-    () => snapshot.value?.entry ?? DEFAULT_NOTES_ENTRY_CONFIG,
-  )
-
-  /** 已开启的入口数量：靠它守住「至少留一个」。 */
-  const enabledCount = enabledEntryCount(entryDraft)
-
-  /** 工作区候选：读一次（只读端点，失败即「无候选」）。 */
-  useEffect(() => {
-    let alive = true
-    void (async () => {
-      try {
-        const result = await props.notes.listWorkspaces()
-        if (alive && result.ok) setWsCandidates(result.value)
-      } catch {
-        // 候选拿不到就只留「自动」一项，不打扰用户。
-      }
-    })()
-    return () => {
-      alive = false
-    }
-  }, [props.notes])
-
-  /** 写一个入口开关：先本地生效，再落配置。 */
-  async function setEntry(key: keyof NotesEntryConfig, value: boolean): Promise<void> {
-    if (!writable) return
-    // 至少留一个：把最后一个开着的入口也关掉，便签板就一个打开的地方都没有了。
-    // 设置页会把那个开关禁掉，这里再挡一道，防别的调用路径绕过去。
-    if (!value && enabledCount <= 1 && entryDraft[key]) return
-    const previous = entryDraft
-    const next = { ...entryDraft, [key]: value }
-    setEntryDraft(next)
-    try {
-      await scope.set('entry', next)
-    } catch (cause) {
-      setEntryDraft(previous)
-      setNotice({ kind: 'error', text: cause instanceof Error ? cause.message : String(cause) })
-    }
-  }
-
-  const patchWd = (patch: Partial<NotesWebdavConfig>): void => {
-    setWd((prev) => ({ ...prev, ...patch }))
-    setWdDirty(true)
-  }
-  const num = (raw: string, fallback: number): number => {
-    const n = Number.parseInt(raw, 10)
-    return Number.isFinite(n) ? n : fallback
-  }
-
-  async function refreshStatus(): Promise<void> {
-    try {
-      const result = await props.notes.webdavStatus()
-      if (result.ok) setStatus(result.value)
-    } catch {
-      // 状态查询失败静默（非关键路径）。
-    }
-  }
-
-  useEffect(() => {
-    void refreshStatus()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  async function saveDefaultTitle(): Promise<void> {
-    if (!writable || !dirty || saving) return
-    setSaving(true)
-    try {
-      const trimmed = draft.trim()
-      if (trimmed === '') await scope.unset('defaultTitle')
-      else await scope.set('defaultTitle', trimmed)
-      setNotice({ kind: 'info', text: '默认标题已保存' })
-    } catch (cause) {
-      setNotice({ kind: 'error', text: cause instanceof Error ? cause.message : String(cause) })
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  /** 保存默认工作区：清空即 unset（回退「未配置」）。 */
-  async function saveDefaultWorkspace(): Promise<void> {
-    if (!writable || !wsDirty || wsSaving) return
-    setWsSaving(true)
-    try {
-      const trimmed = wsDraft.trim()
-      if (trimmed === '') await scope.unset('defaultWorkspace')
-      else await scope.set('defaultWorkspace', trimmed)
-      setNotice({ kind: 'info', text: '默认工作区已保存' })
-    } catch (cause) {
-      setNotice({ kind: 'error', text: cause instanceof Error ? cause.message : String(cause) })
-    } finally {
-      setWsSaving(false)
-    }
-  }
-
-  /** 保存 WebDAV 配置；enabled 时随即试跑一次备份（验证连通 + 落首份）。 */
-  async function saveWebdav(andBackup: boolean): Promise<void> {
-    if (!writable || busy) return
-    const next: NotesWebdavConfig = {
-      ...wd,
-      url: wd.url.trim(),
-      username: wd.username.trim(),
-      path: wd.path.trim().replace(/^\/+/, '').replace(/\/+$/, '') + '/',
-      intervalMin: Math.min(1440, Math.max(1, wd.intervalMin)),
-      keep: Math.min(99, Math.max(1, wd.keep)),
-    }
-    setBusy(true)
-    setNotice(null)
-    try {
-      await scope.set('webdav', next)
-      setWd(next)
-      setWdDirty(false)
-      if (andBackup && next.enabled) {
-        const result = await props.notes.webdavBackup()
-        if (result.ok && result.value.ok) {
-          setNotice({ kind: 'info', text: `备份成功：${result.value.snapshot}` })
-        } else {
-          const reason = result.ok && !result.value.ok ? result.value.reason : transportReason(result, '备份请求失败')
-          setNotice({ kind: 'error', text: `备份失败：${reason}` })
-        }
-      } else {
-        setNotice({ kind: 'info', text: next.enabled ? '配置已保存（定时备份按间隔自动执行）' : '配置已保存（未启用）' })
-      }
-      await refreshStatus()
-    } catch (cause) {
-      setNotice({ kind: 'error', text: cause instanceof Error ? cause.message : String(cause) })
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  /** 打开恢复面板：列远端快照供选择。 */
-  async function openRestore(): Promise<void> {
-    if (busy) return
-    setBusy(true)
-    setNotice(null)
-    setFiles([])
-    setArmed(false)
-    try {
-      const result = await props.notes.webdavList()
-      if (result.ok && result.value.ok) {
-        setFiles(result.value.files)
-        setPick(result.value.files[0] ?? '')
-        setShowFiles(true)
-        if (result.value.files.length === 0) {
-          setNotice({ kind: 'error', text: '远端没有可用快照（先「保存并立即备份」）' })
-        }
-      } else {
-        const reason = result.ok && !result.value.ok ? result.value.reason : transportReason(result, '列取失败')
-        setNotice({ kind: 'error', text: reason })
-      }
-    } catch (cause) {
-      setNotice({ kind: 'error', text: cause instanceof Error ? cause.message : String(cause) })
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  /** 恢复执行（两步确认：点一下进入确认态，再点一次真正执行）。 */
-  async function runRestore(): Promise<void> {
-    if (busy || pick === '') return
-    if (!armed) {
-      setArmed(true)
-      return
-    }
-    setBusy(true)
-    setNotice(null)
-    try {
-      const result = await props.notes.webdavRestore(pick)
-      if (result.ok && result.value.ok) {
-        setNotice({ kind: 'info', text: `已从 ${result.value.from} 恢复 ${result.value.restored} 条便签` })
-        // 板子靠宿主推送同步，这里只把侧栏/工具条的待办计数立刻刷一遍。
-        void refreshNotesStats()
-      } else {
-        const reason = result.ok && !result.value.ok ? result.value.reason : transportReason(result, '恢复请求失败')
-        setNotice({ kind: 'error', text: `恢复失败：${reason}` })
-      }
-      await refreshStatus()
-      setShowFiles(false)
-      setFiles([])
-      setPick('')
-      setArmed(false)
-    } catch (cause) {
-      setNotice({ kind: 'error', text: cause instanceof Error ? cause.message : String(cause) })
-    } finally {
-      setBusy(false)
-    }
-  }
-
+export function SettingsSection(props: SettingsSectionProps): JSX.Element {
+  const {
+    writable,
+    group,
+    setGroup,
+    draft,
+    setDraft,
+    saving,
+    dirty,
+    saveDefaultTitle,
+    overridden,
+    workspaceOverridden,
+    wsDraft,
+    setWsDraft,
+    wsSaving,
+    wsDirty,
+    saveDefaultWorkspace,
+    wsOptions,
+    wsLabels,
+    notice,
+    entryDraft,
+    enabledCount,
+    setEntry,
+    wd,
+    busy,
+    patchWd,
+    num,
+    wdDirty,
+    saveWebdav,
+    openRestore,
+    runRestore,
+    status,
+    showFiles,
+    files,
+    pick,
+    setPick,
+    armed,
+    setArmed,
+    setShowFiles,
+  } = useSettingsSection(props.notes, props.scope)
   return (
     <div style={sectionStyle}>
       {/* 标题区：分区名 + 插件版本 + 一句说明 —— 与 memory / daily-log / usage-billing 的分区一致。 */}

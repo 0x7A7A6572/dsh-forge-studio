@@ -134,7 +134,7 @@ export function useSettingsSection(memory: MemoryRemote) {
 .list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
 ```
 
-`.root` 编译后变成 `[hash]_root` —— 这就是 `<style scoped>`。由 **lightningcss 编译**（在 `scripts/tsdown.client.mjs` 的 CSS 插件里）：类名规则是 `cssModules: { pattern: '[hash]_[local]' }`（哈希在前，两个插件撞同名文件也不撞类名），CSS 正文在 factory 执行时插成 `<style data-plugin>`。已跑通三个包（memory / daily-log / usage-billing）。
+`.root` 编译后变成 `[hash]_root` —— 这就是 `<style scoped>`。由 **lightningcss 编译**（在 `scripts/tsdown.client.mjs` 的 CSS 插件里）：类名规则是 `cssModules: { pattern: '[hash]_[local]' }`（哈希在前，两个插件撞同名文件也不撞类名），CSS 正文在 factory 执行时插成 `<style data-plugin>`。已跑通四个包（memory / daily-log / usage-billing / notes）；`notes` 走的就是 CSS Modules 那条路。
 
 这个插件的 `topExecutionPriority` **必须设 false**。默认 true 会把注入的 IIFE 顶到 banner 之前，bundle 就不再以 `window.__ModuleLoader__.load(` 开头 —— 语法上合法，但那是宿主注册契约，别赌。设 false 后注入代码留在 factory 内部，时机跟原先的手动 injector 一致。
 
@@ -215,7 +215,7 @@ src/client/
 ├── components/    # 展示组件：零件（按钮、卡片、图标、图表）
 ├── views/         # 页面级：一屏 / 一个页签 / 一个设置分区
 ├── styles/        # 插件级样式：*.module.css
-├── assets/        # 要打进 bundle 的图（见 assets.d.ts；tsdown 预设暂未处理图片导入）
+├── assets/        # 要打进 bundle 的图（见 assets.d.ts；tsdown 预设内联成 data URL）
 └── *.d.ts         # 资源导入声明
 ```
 
@@ -229,20 +229,26 @@ src/client/
 
 **硬的**：
 
-- `core/` 不许 import react。现在只有两处违反 —— `plugin-notes` 的 `core/panel-mount.ts` 和 `core/quick-add.ts`（都 import 了 `react-dom/client`）。它们干的事就是「往一个 DOM 节点上挂 React 树」，天然属于 `hooks/`。
+- `core/` 不许 import react。目前**全部包都合规**：`plugin-notes` 原先违规的 `core/panel-mount.ts` 和 `core/quick-add.ts`（都 import 了 `react-dom/client`）已搬进 `hooks/`。
 - 只有 `views/` 和 `components/` 放 `.tsx`。`.ts` 文件里不许有 JSX。
 - `index.ts` 只在区域根部做 barrel，不要再深一层。
 
 ## 样式文件放哪
 
 1. **插件级样式**（整块 UI 共用一张表）→ `client/styles/<它作用的区域>.module.css`。**不需要注入函数** —— tsdown 预设的 CSS 插件会在 factory 执行时自动插 `<style data-plugin>`。
-2. **组件级样式** → 与组件同名同目录（`NoteCard.tsx` + `NoteCard.module.css`）。CSS Modules 已随 tsdown 预设落地（限已迁移的三个包）。
+2. **组件级样式** → 与组件同名同目录（`NoteCard.tsx` + `NoteCard.module.css`）。CSS Modules 已随 tsdown 预设落地（现覆盖 `memory` / `notes` 两个包）。
 
 > 实测结论：**「一个组件一份」要看类名是否真的私有。** `plugin-memory` 的 89 个类名里有 13 个（`row*` / `seg*` / `error` / `notice` / `modalBody` …）被两个以上组件共用，那是**共享版式类**；硬拆就得靠 `composes` 或 `:global()` 兜，反而更绕。所以它保持一张 `settings-section.module.css` 靠哈希隔离，只有类名确实私有的组件（如 `ScaleSlider`）才另开一份。
 
 `plugin-memory` 已完成迁移 → `client/styles/settings-section.module.css`（同名 `.ts` 注入函数已删）。89 个类名去掉了 `mem-` 前缀，`className` 一律走 `styles.xxx` —— 「视图文件里不许出现 `className="mem-xxx"`」这条铁律在 memory 上已经成立。
 
 **有两样东西不受 CSS Modules 保护，必须保留手写命名空间**：CSS 自定义属性（`--mem-fill`）和 DOM `id`（`mem-project-options` 这类 `<datalist>`）。它们不参与类名哈希，去掉前缀就会跟别的插件撞。改前缀时尤其别用「全文件替换 `mem-`」这种粗规则 —— 它会连 `--mem-fill` 一起改掉，而报错为零，只是滑杆填充色默默失效。
+
+`plugin-notes` 也已迁完，但走的是「**共享版式表**」而不是「一个组件一份」：`client/styles/` 下三张表 —— `notes-board.module.css`（板子骨架 + 卡片 + 泳道 + 动效）、`notes-editor.module.css`（编辑器 + 只读预览 + 执行记录）、`notes-entry.module.css`（会话区入口 + 侧栏字形）。理由同上：`card` / `tool` / `editor` 这类版式类被多个组件共用。三条实测结论记录在此：
+
+- **`@keyframes` 不能跨 `.module.css` 共享** —— lightningcss 会把**本文件内声明**的 `@keyframes` 名一起哈希，于是别的模块里 `animation: spin` 会编译成未声明的 `hash_spin`。共用动画只能和用到它的类放在同一张表里。
+- `:has(.hashed)` 正常参与哈希，所以「靠 CSS 接管宿主那一行」的写法（`notes-entry.module.css`）照旧成立。
+- 类名一律去掉 `fs-note-` / `fs-lane-` / `fs-task-` 前缀后 camelCase；**没有对应规则的死钩子类**（`fs-note-lane`、`fs-lane-status`）不留 `className`，改挂 `data-dsh-part="…"`。
 
 `daily-log` / `usage-billing` 的 `views/ui-css.{ts,css}` 待同样处理。
 
@@ -283,9 +289,15 @@ src/client/
 - 单个组件 > **200 行**通常意味着它既在画界面又在管状态 —— 把状态和取数挪进 `hooks/`。
 - `core/` 单文件 > **300 行**通常意味着它干了不止一件事。
 
-当前越线：`plugin-memory/src/client/views/settings-section/SettingsSection.tsx`（903 行，纯 JSX，无状态无逻辑）。再降就得把 JSX 本身拆成展示组件，属于下一轮的事。
+当前越线：
 
-`plugin-memory/src/client/styles/settings-section.module.css`（932 行；单文件，但已是 CSS Module，见上文为何不按组件拆）。
+- `plugin-memory/src/client/views/settings-section/SettingsSection.tsx`（903 行，纯 JSX，无状态无逻辑）。再降就得把 JSX 本身拆成展示组件，属于下一轮的事。
+- `plugin-notes/src/client/components/NoteEditor.tsx`（1225 行，纯 JSX；状态与逻辑已全部挪进 `hooks/useNoteEditor.ts`）。编辑器是一整块「标题 + 操作栏 + 正文 + 任务/定时区」，按零件硬切会把几十个 handler 当 props 往下传，反而更难读。
+- `plugin-notes/src/client/hooks/useNoteEditor.ts`（611 行）—— tiptap 装配、自动保存、弹层、快捷键是**同一台状态机**：保存要读编辑器正文、弹层要读编辑器选区，彼此互写，按「有没有环」这条红线不该拆。
+- `plugin-notes/src/client/views/settings-section/SettingsSection.tsx`（586 行纯 JSX）+ `hooks/useSettingsSection.ts`（316 行）—— 同 memory 的理由。
+- `plugin-notes/src/client/views/notes-board/components/BoardMain.tsx`（545 行）+ `useBoardMain.ts`（逻辑面）—— 列表与泳道两套版式共用同一条滚动 / 懒加载通道。
+
+越线的 `*.module.css`：`plugin-memory/src/client/styles/settings-section.module.css`（932 行）、`plugin-notes/src/client/styles/notes-board.module.css`（板子骨架 + 卡片 + 泳道 + 动效合表）。单文件，但都是 CSS Module，见上文为何不按组件拆。
 
 ## 现状与约定的差距（照着改就行）
 
@@ -298,14 +310,16 @@ src/client/
 | `{daily-log,memory}/src/client/views/nav-icon.tsx` | `client/components/NavIcon.tsx` —— **memory 已迁**，daily-log 待做 |
 | `{daily-log,memory,usage-billing}/…/views/ui-css.{ts,css}` | `client/styles/settings-section.module.css` —— **memory 已迁**（含去前缀、CSS Modules、删注入函数） |
 | billing `views/` 里的零件（chart / heat-chart / trend-chart / entry-card / backfill-notice / echarts-runtime） | `client/components/` |
-| `notes/src/client/core/panel-mount.ts`、`core/quick-add.ts` | `client/hooks/` |
+| ~~`notes/src/client/core/panel-mount.ts`、`core/quick-add.ts`~~ | **已完成**：搬进 `client/hooks/`（`useEditorPageDialog.ts` / `useQuickAddDialog.ts`）|
 | `home-studio/src/client/icons.ts` | 看内容：图标组件 → `components/`；图标数据 → `core/` |
 | `daily-log/.pubclean/`（遗留空目录） | 删掉 |
 | ~~`memory` 的 `SettingsSection.tsx` 1314 行单文件~~ | **已完成**：`hooks/useSettingsSection.ts`（381）+ `hooks/useMemoryDetail.ts`（290），视图只剩解构 + 渲染函数 + JSX |
+| ~~`notes`：`components/note-editor.tsx` 2149 行 + 6 个散在 `views/` 的 `board-*.tsx` / 5 个 `*_CSS` 常量 + `<style>` 注入~~ | **已完成**：`NoteEditor.tsx` + `hooks/useNoteEditor.ts` + `components/NoteRunBlock.tsx` / `NoteToolButton.tsx`；页面视图全部改成 `views/<页面>/{<Page>.tsx,use<Page>.ts,}` 三件套；CSS 进 `styles/*.module.css`；构建从 esbuild/tsup 换成 tsdown 预设 |
+| ~~`notes` 的 host 侧 `core/*.ts` 里内联 CSS 字符串~~ | **已完成**：三张 `.module.css` 取代注入函数（`notes-entry-css.ts` 已删）|
 
 **图片放哪的规则**（现在三种混用）：
 
-- 要进 bundle 的图 → `src/client/assets/`（见 `assets.d.ts`）。例：`notes/src/client/assets/note-flow-banner.webp`。**注意**：tsdown 预设目前不处理图片导入（notes / home-studio 还留在 esbuild 构建上），迁这两个包前要先补 asset 处理。
+- 要进 bundle 的图 → `src/client/assets/`（见 `assets.d.ts`）。例：`notes/src/client/assets/note-flow-banner.webp`。tsdown 预设的 asset 插件会按后缀（`.png/.webp/.jpg/.jpeg/.gif/.svg`）把图读成 base64 data URL 内联进产物 —— 图片不产生独立文件，`lib/client.js` 是唯一静态通道。`home-studio` 还在 esbuild 上，迁它时直接用这套即可。
 - README 配图 / 文档截图 → 包根 `assets/`。例：`daily-log/assets/report-result.png`
 
 ## 以后能变成 lint 规则的
