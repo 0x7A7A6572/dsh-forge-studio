@@ -1,9 +1,10 @@
 /**
  * 读一个入口开关的当前值（设置命名空间 snapshot 叠加缺省表）。
  *
- * 视图只拿 boolean：关闭时组件返回 null —— **不是**注销槽位注册。理由见
- * types.ts 的 NotesEntryConfig：这些位置都带 `:empty { display: none }`，
- * 必须真返回 null，渲染空 div 会留下空白条。
+ * **只给 list 槽用**：关闭时组件返回 null —— 不注销槽位注册。这些位点带
+ * `:empty { display: none }`，必须真返回 null，渲染空 div 会留下空白条。
+ * 宿主自画外壳的位点（`sidebar.panellist`）不走这里，它按开关注销注册，
+ * 见 types.ts 的 NotesEntryConfig。
  */
 
 import { useSyncExternalStore } from 'react';

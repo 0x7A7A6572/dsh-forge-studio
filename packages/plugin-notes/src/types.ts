@@ -223,7 +223,7 @@ export interface NotesConfig {
   readonly webdav?: NotesWebdavConfig
   /**
    * UI 入口开关（缺省见 DEFAULT_NOTES_ENTRY_CONFIG）。
-   * 关闭只让该入口不渲染，不注销它的槽位注册（理由见 NotesEntryConfig）。
+   * 关掉即整个入口消失（list 槽返回 null / panellist 注销注册，见 NotesEntryConfig）。
    */
   readonly entry?: NotesEntryConfig
 }
@@ -231,9 +231,14 @@ export interface NotesConfig {
 /**
  * UI 入口开关：每个可插入位点一个布尔，用户在便签板设置里逐项开关。
  *
- * 关闭 = 该入口的组件返回 null，注册本身保持不动。之所以不「关闭即注销注册」：
- * 一是 slots.inject 的回调生命周期归 owner 管，自己找注销点容易漏；二是这些位置
- * 都带 `:empty { display: none }`，必须真返回 null —— 渲染空 div 会留下空白条。
+ * **两种关法，按宿主怎么画这个位点选**：
+ * - **list 槽**（输入栏工具条、助手消息动作）：关掉 = 组件返回 null。这些位点带
+ *   `:empty { display: none }`，渲染空 div 会留下空白条，所以必须真返回 null；
+ *   注册本身不用动。
+ * - **宿主自画外壳的位点**（`sidebar.panellist`）：关掉 = **注销注册**。宿主会给每个
+ *   panellist 项画自己的按钮外壳（`label` 也在壳里），让组件返回 null 只会剩下一条
+ *   写着「便签」的空壳 —— 所以这里走 `scope.subscribe` + 注销 / 重注册（写法见
+ *   client/index.ts 的 syncPanelEntry，与右侧栏 tab 类型同一套）。
  *
  * **至少留一个**：全部关掉之后便签板自己就一个打开的地方都没有了（设置页在
  * dsh 设置里，不受入口开关影响，所以进得去设置、改得回来，但板子开不出来）。
@@ -257,8 +262,6 @@ export interface NotesEntryConfig {
    * 带进新建便签编辑器（预填标题与正文），由用户确认后保存。
    */
   readonly saveMessageAction: boolean
-  /** 全局快捷新建浮层（shell.overlay）。 */
-  readonly quickAddOverlay: boolean
   /**
    * 右侧栏导引卡片 + 便签 tab：在 dsh 的 tab 类型注册表里注册一个 notes 类型，
    * 它带一张导引卡（导引页点一下就在右侧栏以 tab 形式打开便签板），本体复用
@@ -271,7 +274,6 @@ export interface NotesEntryConfig {
 export const DEFAULT_NOTES_ENTRY_CONFIG: NotesEntryConfig = {
   sidebarPanelIcon: true,
   inputToolbar: true,
-  quickAddOverlay: true,
   saveMessageAction: true,
   rightSidebarGuide: true,
 }
@@ -280,7 +282,6 @@ export const DEFAULT_NOTES_ENTRY_CONFIG: NotesEntryConfig = {
 export const NOTES_ENTRY_KEYS: readonly (keyof NotesEntryConfig)[] = [
   'sidebarPanelIcon',
   'inputToolbar',
-  'quickAddOverlay',
   'saveMessageAction',
   'rightSidebarGuide',
 ]

@@ -144,19 +144,46 @@ export function apply(ctx: Context): void {
         key: NOTES_PANEL_ID,
       }, () => createElement(NotesBoard, { face: boardFace })))
 
-      // 侧栏字形也带开关（sidebarPanelIcon）；设置页保证入口不至于全关。
-      // 字形里额外长出待办数与快捷新建 (＋)，所以 capture 也要传进去。
-      ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
-        name: 'sidebar.panellist',
-        id: NOTES_PANEL_ID,
-        order: ORDER,
-        label: NOTES_PANEL_LABEL,
-      }, (props) => createElement(NotesPanelIcon, {
-        ...props,
-        scope,
-        capture: face.capture,
-        label: NOTES_PANEL_LABEL,
-      })))
+      // 侧栏顶部那一行：开关关掉必须**整行收掉**。宿主会给每个 panellist 项画自己的
+      // 按钮外壳（label 也在壳里），让组件返回 null 只会剩一条写着「便签」的空壳 ——
+      // 所以关掉 = 注销注册（写法与下面右侧栏 tab 类型同一套）。
+      ctx.slots.inject('sidebar.panellist', () => {
+        let disposePanel: (() => void) | undefined
+
+        /** 读开关并把整行注册 / 注销到与之一致的状态（幂等）。 */
+        const syncPanelEntry = (): void => {
+          const enabled = scope.getSnapshot().value?.entry?.sidebarPanelIcon
+            ?? DEFAULT_NOTES_ENTRY_CONFIG.sidebarPanelIcon
+          if (enabled === (disposePanel !== undefined)) return
+          if (enabled) {
+            // 字形里额外长出待办数与快捷新建 (＋)，所以 capture 也要传进去。
+            disposePanel = ctx.slots.register({
+              name: 'sidebar.panellist',
+              id: NOTES_PANEL_ID,
+              order: ORDER,
+              label: NOTES_PANEL_LABEL,
+            }, (props) => createElement(NotesPanelIcon, {
+              ...props,
+              capture: face.capture,
+              label: NOTES_PANEL_LABEL,
+            }))
+            return
+          }
+          const dispose = disposePanel
+          disposePanel = undefined
+          dispose?.()
+        }
+
+        const offPanelScope = scope.subscribe(syncPanelEntry)
+        syncPanelEntry()
+
+        return () => {
+          offPanelScope()
+          const dispose = disposePanel
+          disposePanel = undefined
+          dispose?.()
+        }
+      })
 
       // ---- 会话区增量入口（全是 list 槽，纯叠加）----
 

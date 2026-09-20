@@ -57,7 +57,6 @@ const ENTRY_ITEMS: readonly {
 }[] = [
   { key: 'sidebarPanelIcon', label: '侧栏顶部入口', hint: '侧边栏顶部那一整行：[图标 便签 ......... 待办数 (＋)]，点行打开便签板，点 (＋) 只开快捷新建；关掉后便签板只能从别处打开。' },
   { key: 'inputToolbar', label: '输入栏工具条', hint: '输入框左下角那一条：记一笔 | 打开便签板 | 待办数。' },
-  { key: 'quickAddOverlay', label: '快捷新建浮层', hint: '浮层本体；关掉后「记一笔」与侧栏 (＋) 都不会弹出。' },
   { key: 'saveMessageAction', label: '助手消息「存成便签」', hint: '每条助手回复下方的按钮，把该条回答收进便签。' },
   { key: 'rightSidebarGuide', label: '右侧栏导引卡片', hint: '右侧栏导引页里的便签卡片；点一下就在右侧栏以标签页打开便签板。' },
 ]

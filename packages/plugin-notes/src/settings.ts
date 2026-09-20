@@ -36,7 +36,6 @@ const entrySchema = Schema.object({
   sidebarPanelIcon: Schema.boolean().default(DEFAULT_NOTES_ENTRY_CONFIG.sidebarPanelIcon),
   inputToolbar: Schema.boolean().default(DEFAULT_NOTES_ENTRY_CONFIG.inputToolbar),
   saveMessageAction: Schema.boolean().default(DEFAULT_NOTES_ENTRY_CONFIG.saveMessageAction),
-  quickAddOverlay: Schema.boolean().default(DEFAULT_NOTES_ENTRY_CONFIG.quickAddOverlay),
   rightSidebarGuide: Schema.boolean().default(DEFAULT_NOTES_ENTRY_CONFIG.rightSidebarGuide),
 }).default(DEFAULT_NOTES_ENTRY_CONFIG as NotesEntryConfig)
 
