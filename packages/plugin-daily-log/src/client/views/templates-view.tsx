@@ -10,7 +10,7 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DailyLogRemote } from '../core/remote.ts'
 import type { TemplateRecord } from '../../types.ts'
-import { DATA_MARKER, joinTemplate, parseTemplate } from '../../template.ts'
+import {  joinTemplate, parseTemplate } from '../../template.ts'
 import { AddButton, DialogRoot, IconAction, errText } from './parts.tsx'
 
 /** MarkdownText 本地化文案（模板预览用，引用稳定常量）。 */

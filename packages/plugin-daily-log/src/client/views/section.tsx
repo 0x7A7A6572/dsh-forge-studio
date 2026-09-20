@@ -12,7 +12,7 @@
  */
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
-import { Button, IconSendOutline14, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconSendOutline14,  } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { DailyLogRemote } from '../core/remote.ts'
@@ -109,7 +109,7 @@ export function DailyLogSection(props: DailyLogSectionProps): JSX.Element {
     }
   }
 
-  const defaultTemplate = templates.find((t) => t.isDefault) ?? templates.find((t) => t.isBuiltin)
+  const _defaultTemplate = templates.find((t) => t.isDefault) ?? templates.find((t) => t.isBuiltin)
   const counts: Record<DailyLogTab, number> = {
     reports: reports.length,
     sources: sources.length,

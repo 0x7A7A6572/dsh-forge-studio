@@ -17,7 +17,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // 类型增广：把设置外壳声明的 settings.section 带进本程序的 SlotMap；
 // SettingsScope 是同一包给出的命名空间读写句柄类型（type-only，无运行时依赖）。
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type {  } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { DailyLogConfig } from '../types.ts'
 import { DAILY_LOG_NAMESPACE } from '../types.ts'
 import { mountDailyLogRemote, dailyLogOf } from './core/remote.ts'

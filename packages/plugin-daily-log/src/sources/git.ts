@@ -28,7 +28,7 @@ async function gitLog(projectPath: string, args: string[]): Promise<string> {
     return stdout
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error)
-    throw new Error(`git 扫描失败（${projectPath}）：${msg}`)
+    throw new Error(`git 扫描失败（${projectPath}）：${msg}`, { cause: error })
   }
 }
 

@@ -178,7 +178,7 @@ export function renderScan(entries: readonly ActivityEntry[], options: RenderSca
   const footer: string[] = []
   if (folded.length > 0) footer.push('… 未展开分组：' + folded.join('；'))
   if (truncatedLines > 0) footer.push('… 另有 ' + truncatedLines + ' 行未显示')
-  const total = entries.reduce((n, e) => n + 1, 0)
+  const total = entries.reduce((n, _e) => n + 1, 0)
   footer.push('（共 ' + total + ' 条 · ' + blocksOf(entries).reduce((n, b) => n + groupsOf(b.entries).length, 0) + ' 组；下钻：level=summary，或 level=raw + session_id / keywords）')
   return lines.concat(footer).join('\n')
 }
