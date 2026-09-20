@@ -1,6 +1,6 @@
 /** 热力图：日历色阶（5 档）+ 活跃天数 / 连续天数。 */
 
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useEffect,  useState, useSyncExternalStore } from 'react'
 import type { UsageBillingRemote } from '../core/remote.ts'
 import type { BillingStore } from '../core/store.ts'
 import {
