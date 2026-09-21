@@ -17,7 +17,8 @@ export interface GraphHost {
 }
 
 export function useGraphHost(
-  build: () => EChartsCoreOption,
+  // 把宿主元素交给 build：颜色 token 得从图所在的元素现读（主题变量挂在 body 上）。
+  build: (host: HTMLElement | null) => EChartsCoreOption,
   onClick?: (params: EChartsEvent) => void,
 ): GraphHost {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -45,7 +46,7 @@ export function useGraphHost(
       try {
         chart = echarts.init(host, undefined, { renderer: 'canvas' })
         chartRef.current = chart
-        chart.setOption(buildRef.current())
+        chart.setOption(buildRef.current(host))
         chart.resize()
         chart.on('click', (params) => { clickRef.current?.(params) })
         setMode('echarts')
@@ -60,15 +61,20 @@ export function useGraphHost(
         ? new ResizeObserver(() => { chartRef.current?.resize() })
         : null
       resizeObserver?.observe(host)
-      // 主题切换会换掉 token：重跑 build（它现读 token）。
+      // 主题切换会换掉 token：重跑 build（它现读 token），并且不合并 ——
+      // 合并会把上一主题的颜色留在 data 里。
       themeObserver = typeof MutationObserver === 'function'
         ? new MutationObserver(() => {
-          try { chartRef.current?.setOption(buildRef.current()) } catch { /* 重建失败就保持上一帧 */ }
+          try { chartRef.current?.setOption(buildRef.current(hostRef.current), { notMerge: true }) } catch { /* 重建失败就保持上一帧 */ }
         })
         : null
-      themeObserver?.observe(document.documentElement, {
-        attributes: true, attributeFilter: ['class', 'data-theme', 'style'],
-      })
+      // 两个挂点都盯：主题变量的作用域是 body（data-ds-dark-theme），宿主也会往 html 上挂 class。
+      for (const target of [document.documentElement, document.body]) {
+        themeObserver?.observe(target, {
+          attributes: true,
+          attributeFilter: ['class', 'style', 'data-theme', 'data-ds-dark-theme'],
+        })
+      }
     })()
 
     return () => {
@@ -84,7 +90,7 @@ export function useGraphHost(
   // 数据变化：同一个实例上重设 option（echarts 自己 diff，不重建 canvas）。
   useEffect(() => {
     if (mode !== 'echarts') return
-    try { chartRef.current?.setOption(buildRef.current()) } catch { /* 保持上一帧 */ }
+    try { chartRef.current?.setOption(buildRef.current(hostRef.current)) } catch { /* 保持上一帧 */ }
   })
 
   return { hostRef, mode }

@@ -62,13 +62,46 @@ function entityTip(entity: MemoryEntity, mentions: number): string {
   return entity.summary === '' ? head : head + '<br/>' + entity.summary
 }
 
-/** 记忆 + 实体 + 边 → 力导向图的 option（顺带回报实际画了多少）。 */
-export function buildMemoryGraphOption(input: MemoryGraphInput, palette: GraphPalette): MemoryGraphBuild {
+/** 建图前的准备：挑出要画的记忆，滤掉两端不全的边，把计数一次聚好。 */
+function prepareGraph(input: MemoryGraphInput): {
+  records: readonly MemoryRecord[]
+  entities: readonly MemoryEntity[]
+  edges: readonly MemoryEdge[]
+  linkCounts: Map<string, number>
+  mentionCounts: Map<string, number>
+} {
   const linkCounts = memoryLinkCounts(input.edges)
-  const mentionCounts = entityMentionCounts(input.edges)
   const records = pickRecords(input.records, linkCounts)
   const memoryIds = new Set<string>(records.map((record) => record.id))
   const entityIds = new Set<string>(input.entities.map((entity) => entity.id))
+  // 两端都得在图里才画这条边：过滤后留下的节点之间不该出现断头线。
+  const edges = input.edges.filter((edge) => {
+    const fromInside = edge.from.kind === 'memory' ? memoryIds.has(edge.from.id) : entityIds.has(edge.from.id)
+    const toInside = edge.to.kind === 'memory' ? memoryIds.has(edge.to.id) : entityIds.has(edge.to.id)
+    return fromInside && toInside
+  })
+  return {
+    records,
+    entities: input.entities,
+    edges,
+    linkCounts,
+    mentionCounts: entityMentionCounts(input.edges),
+  }
+}
+
+/** 只报数量：视图要在这张图之外写「N 个节点 · N 条关联」，不必先拼出整份 option。 */
+export function graphCounts(input: MemoryGraphInput): { nodes: number; links: number; omitted: number } {
+  const prepared = prepareGraph(input)
+  return {
+    nodes: prepared.records.length + prepared.entities.length,
+    links: prepared.edges.length,
+    omitted: input.records.length - prepared.records.length,
+  }
+}
+
+/** 记忆 + 实体 + 边 → 力导向图的 option（顺带回报实际画了多少）。 */
+export function buildMemoryGraphOption(input: MemoryGraphInput, palette: GraphPalette): MemoryGraphBuild {
+  const { records, entities, edges, linkCounts, mentionCounts } = prepareGraph(input)
 
   const categories = [
     { name: '记忆', itemStyle: { color: palette.memory } },
@@ -77,7 +110,7 @@ export function buildMemoryGraphOption(input: MemoryGraphInput, palette: GraphPa
       itemStyle: { color: palette.entity[kind] },
     })),
   ]
-  const showMemoryLabels = records.length + input.entities.length <= MEMORY_LABEL_LIMIT
+  const showMemoryLabels = records.length + entities.length <= MEMORY_LABEL_LIMIT
 
   const nodes = [
     ...records.map((record) => ({
@@ -90,7 +123,7 @@ export function buildMemoryGraphOption(input: MemoryGraphInput, palette: GraphPa
       label: { show: showMemoryLabels },
       tip: memoryTip(record, linkCounts.get(record.id) ?? 0),
     })),
-    ...input.entities.map((entity) => ({
+    ...entities.map((entity) => ({
       id: nodeId('entity', entity.id),
       name: entity.name,
       category: 1 + MEMORY_ENTITY_KINDS.indexOf(entity.kind),
@@ -102,36 +135,37 @@ export function buildMemoryGraphOption(input: MemoryGraphInput, palette: GraphPa
     })),
   ]
 
-  // 两端都得在图里才画这条边：过滤后留下的节点之间不该出现断头线。
-  const links = input.edges.flatMap((edge) => {
-    const fromInside = edge.from.kind === 'memory' ? memoryIds.has(edge.from.id) : entityIds.has(edge.from.id)
-    const toInside = edge.to.kind === 'memory' ? memoryIds.has(edge.to.id) : entityIds.has(edge.to.id)
-    if (!fromInside || !toInside) return []
-    return [{
-      source: nodeId(edge.from.kind, edge.from.id),
-      target: nodeId(edge.to.kind, edge.to.id),
-      lineStyle: {
-        color: palette.edge[edgeGroup(edge)],
-        width: edge.origin === 'auto' ? 1 : 1.4,
-        type: edge.origin === 'auto' ? 'dashed' : 'solid',
-        opacity: 0.55,
-      },
-      tip: MEMORY_EDGE_RELATION_LABELS[edge.relation] + ' · ' + MEMORY_EDGE_ORIGIN_LABELS[edge.origin],
-    }]
-  })
+  const links = edges.map((edge) => ({
+    source: nodeId(edge.from.kind, edge.from.id),
+    target: nodeId(edge.to.kind, edge.to.id),
+    lineStyle: {
+      color: palette.edge[edgeGroup(edge)],
+      width: edge.origin === 'auto' ? 1 : 1.4,
+      type: edge.origin === 'auto' ? 'dashed' : 'solid',
+      opacity: 0.55,
+    },
+    tip: MEMORY_EDGE_RELATION_LABELS[edge.relation] + ' · ' + MEMORY_EDGE_ORIGIN_LABELS[edge.origin],
+  }))
 
   const option: EChartsCoreOption = {
     backgroundColor: 'transparent',
     tooltip: {
       show: true,
       confine: true,
-      textStyle: { fontSize: 12 },
+      backgroundColor: palette.surface,
+      borderColor: palette.surface,
+      borderWidth: 1,
+      padding: [6, 10],
+      extraCssText: 'border-radius: 8px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);',
+      textStyle: { color: palette.text, fontSize: 12 },
       formatter: (params: { name?: string; data?: { tip?: string } }) =>
         params.data?.tip ?? params.name ?? '',
     },
     legend: {
-      top: 0,
+      // 压在图上的图例会被力导向的节点与标签盖住，一律放底部，series 再让出它的高度。
+      bottom: 0,
       left: 'center',
+      itemGap: 12,
       itemWidth: 10,
       itemHeight: 10,
       textStyle: { color: palette.text, fontSize: 11 },
@@ -142,7 +176,8 @@ export function buildMemoryGraphOption(input: MemoryGraphInput, palette: GraphPa
       layout: 'force',
       roam: true,
       draggable: true,
-      top: 34,
+      top: 8,
+      bottom: 46,
       data: nodes,
       links,
       categories,

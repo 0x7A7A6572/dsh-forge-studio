@@ -4,7 +4,7 @@
  * 拿不到 canvas 或 echarts 加载失败时退成一句说明 —— 空白画布比不画更难查。
  */
 import type { MemoryEdge, MemoryEntity, MemoryRecord } from '../../types.ts'
-import { buildMemoryGraphOption } from '../core/graph-option.ts'
+import { buildMemoryGraphOption, graphCounts } from '../core/graph-option.ts'
 import { graphPalette } from '../core/graph-runtime.ts'
 import { useGraphHost } from '../hooks/useGraphHost.ts'
 import styles from '../styles/settings-section.module.css'
@@ -18,13 +18,12 @@ export interface MemoryGraphProps {
 }
 
 export function MemoryGraph(props: MemoryGraphProps): JSX.Element {
-  const build = buildMemoryGraphOption(
-    { records: props.records, entities: props.entities, edges: props.edges },
-    graphPalette(),
-  )
+  const input = { records: props.records, entities: props.entities, edges: props.edges }
+  const counts = graphCounts(input)
   const byId = new Map(props.records.map((record) => ['m:' + record.id, record]))
   const { hostRef, mode } = useGraphHost(
-    () => build.option,
+    // 颜色每次 build 现读图谱容器：主题变量挂在 body 上，切主题时宿主会重跑这里。
+    (host) => buildMemoryGraphOption(input, graphPalette(host)).option,
     (params) => {
       // 实体节点点了不开详情（实体没有独立弹窗），要看得回列表页签。
       const record = params.data?.id === undefined ? undefined : byId.get(params.data.id)
@@ -32,8 +31,8 @@ export function MemoryGraph(props: MemoryGraphProps): JSX.Element {
     },
   )
 
-  const meta = build.nodes + ' 个节点 · ' + build.links + ' 条关联'
-    + (build.omitted > 0 ? ' · 已省略 ' + build.omitted + ' 条记忆' : '')
+  const meta = counts.nodes + ' 个节点 · ' + counts.links + ' 条关联'
+    + (counts.omitted > 0 ? ' · 已省略 ' + counts.omitted + ' 条记忆' : '')
 
   return (
     <>

@@ -6,13 +6,14 @@
 import type { EChartsCoreOption } from 'echarts/core'
 import type { MemoryEntityKind } from '../../types.ts'
 
-/** token 读不到时的兜底色（暗色主题口径）。 */
-const FALLBACK_TEXT = '#e6e8ee'
+/** token 读不到时的兜底色：挑两种主题下都还看得清的中间调。 */
+const FALLBACK_TEXT = '#8a8f98'
 const FALLBACK_DIM = '#8a8f98'
 const FALLBACK_BLUE = '#4d6bfe'
 const FALLBACK_RED = '#d64545'
 const FALLBACK_GREEN = '#2fa36b'
 const FALLBACK_ORANGE = '#e08a2e'
+const FALLBACK_SURFACE = '#2b2d33'
 
 /**
  * 图谱调色板。
@@ -29,11 +30,17 @@ export interface GraphPalette {
     readonly entityEntity: string
   }
   readonly text: string
+  /** 悬浮提示的底色：ECharts 默认白底，在深色主题下是一块刺眼的白。 */
+  readonly surface: string
 }
 
-export function readToken(name: string, fallback: string): string {
+export function readToken(name: string, fallback: string, scope?: HTMLElement | null): string {
   if (typeof document === 'undefined' || typeof getComputedStyle !== 'function') return fallback
-  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  // 读 body 而不是 documentElement：--dsw-alias-* 定义在 body / body[data-ds-dark-theme] 上，
+  // 自定义属性只往下继承 —— 从 html 读永远拿到空串，图谱会一直停在兜底色（踩过）。
+  const element = scope ?? document.body
+  if (element === null || element === undefined) return fallback
+  const value = getComputedStyle(element).getPropertyValue(name).trim()
   return value === '' ? fallback : value
 }
 
@@ -76,7 +83,7 @@ export interface EChartsEvent {
 }
 
 export interface EChartsHandle {
-  setOption: (option: EChartsCoreOption) => void
+  setOption: (option: EChartsCoreOption, opts?: { notMerge?: boolean }) => void
   resize: () => void
   dispose: () => void
   on: (event: 'click', handler: (params: EChartsEvent) => void) => void
@@ -118,10 +125,10 @@ export function loadEcharts(): Promise<EChartsModule | null> {
   return loading
 }
 
-/** 现读一次调色板：主题切换时宿主会重新 build 一遍。 */
-export function graphPalette(): GraphPalette {
+/** 现读一次调色板：传图谱容器进来会拿到它所在主题的实时值（主题切换后重建走这里）。 */
+export function graphPalette(scope?: HTMLElement | null): GraphPalette {
   const token = (name: string, fallback: string): string =>
-    resolveCssColor(readToken(name, fallback), fallback)
+    resolveCssColor(readToken(name, fallback, scope), fallback)
   return {
     memory: token('--dsw-alias-label-secondary', FALLBACK_DIM),
     entity: {
@@ -138,5 +145,6 @@ export function graphPalette(): GraphPalette {
       entityEntity: token('--dsw-alias-state-success-primary', FALLBACK_GREEN),
     },
     text: token('--dsw-alias-label-secondary', FALLBACK_TEXT),
+    surface: token('--dsw-alias-bg-overlay', FALLBACK_SURFACE),
   }
 }
