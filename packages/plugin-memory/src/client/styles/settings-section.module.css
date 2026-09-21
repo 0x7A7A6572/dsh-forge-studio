@@ -12,6 +12,12 @@
  * 注入由 vite-plugin-css-injected-by-js 在 bundle 执行时插成 <style>，插件不再有手动 injector。
  */
 
+/*
+ * 动态类名：编译期静态匹配不到（styles['importanceLv' + step]、styles[entityKindClass(kind)]），
+ * 由 scripts/client-bundle-css.spec.ts 的 :global() 门禁放行。
+ * dynamic-classes: importanceLv* entity*
+ */
+
 [data-dsh-memory-ui] {
   display: flex;
   flex-direction: column;
@@ -906,35 +912,53 @@ body > div:has(> [role="dialog"].modalWide) {
   color: var(--dsw-alias-label-secondary);
 }
 
-/* 类别着色：靠「描边 + 亮度 + 虚实」区分，不引新颜色。 */
+/* 六个类别共用的调色板：图谱 canvas 与列表徽标都读这组变量。
+   两边各写一套颜色必然漂（改前项目与概念同蓝、工具与组织与兜底同灰）。
+   青与紫没有对应色族、琥珀浅色下太淡，这三类只能写色值并按主题各给一份。 */
+[data-dsh-memory-ui] {
+  --dsh-memory-kind-project: var(--dsw-alias-state-business-primary);
+  --dsh-memory-kind-tool: #0f766e;
+  --dsh-memory-kind-person: var(--dsw-alias-state-error-primary);
+  --dsh-memory-kind-org: #7c3aed;
+  --dsh-memory-kind-concept: #b45309;
+  --dsh-memory-kind-other: var(--dsw-alias-label-tertiary);
+}
+
+body[data-ds-dark-theme] [data-dsh-memory-ui] {
+  --dsh-memory-kind-tool: #2dd4bf;
+  --dsh-memory-kind-org: #a78bfa;
+  --dsh-memory-kind-concept: var(--dsw-alias-state-warn-primary);
+}
+
+/* 徽标：描边与文字同一色相，只有兜底的「其他」留虚线。 */
 [data-dsh-memory-ui] .entityProject {
-  color: var(--dsw-alias-state-business-primary);
-  border-color: var(--dsw-alias-state-business-primary);
+  color: var(--dsh-memory-kind-project);
+  border-color: var(--dsh-memory-kind-project);
 }
 
 [data-dsh-memory-ui] .entityTool {
-  color: var(--dsw-alias-label-primary);
-  border-color: var(--dsw-alias-label-primary);
+  color: var(--dsh-memory-kind-tool);
+  border-color: var(--dsh-memory-kind-tool);
 }
 
 [data-dsh-memory-ui] .entityPerson {
-  color: var(--dsw-alias-state-error-primary);
-  border-color: var(--dsw-alias-state-error-primary);
+  color: var(--dsh-memory-kind-person);
+  border-color: var(--dsh-memory-kind-person);
 }
 
 [data-dsh-memory-ui] .entityOrg {
-  color: var(--dsw-alias-label-secondary);
-  border-color: var(--dsw-alias-label-secondary);
+  color: var(--dsh-memory-kind-org);
+  border-color: var(--dsh-memory-kind-org);
 }
 
 [data-dsh-memory-ui] .entityConcept {
-  color: var(--dsw-alias-state-business-primary);
-  border-style: dashed;
+  color: var(--dsh-memory-kind-concept);
+  border-color: var(--dsh-memory-kind-concept);
 }
 
 [data-dsh-memory-ui] .entityOther {
-  color: var(--dsw-alias-label-tertiary);
-  border-color: var(--dsw-alias-label-tertiary);
+  color: var(--dsh-memory-kind-other);
+  border-color: var(--dsh-memory-kind-other);
   border-style: dashed;
 }
 

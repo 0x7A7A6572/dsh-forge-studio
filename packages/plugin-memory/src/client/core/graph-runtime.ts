@@ -10,16 +10,24 @@ import type { MemoryEntityKind } from '../../types.ts'
 const FALLBACK_TEXT = '#8a8f98'
 const FALLBACK_DIM = '#8a8f98'
 const FALLBACK_BLUE = '#4d6bfe'
-const FALLBACK_RED = '#d64545'
 const FALLBACK_GREEN = '#2fa36b'
-const FALLBACK_ORANGE = '#e08a2e'
 const FALLBACK_SURFACE = '#2b2d33'
+
+/** 类别的兜底色：色相与样式表里那组 --dsh-memory-kind-* 一一对应。主题无关，取中间调。 */
+const FALLBACK_KIND: Record<MemoryEntityKind, string> = {
+  project: FALLBACK_BLUE,
+  tool: '#14b8a6',
+  person: '#d64545',
+  org: '#8b5cf6',
+  concept: '#e08a2e',
+  other: FALLBACK_DIM,
+}
 
 /**
  * 图谱调色板。
  *
- * 不复用列表徽标那套「同色 + 描边虚实」：图上圆点小，虚实看不出来，
- * 只能靠色相分开，所以项目与概念在这里是两种颜色。
+ * 六个类别与列表徽标同源（样式表里的 --dsh-memory-kind-*）：两处各写一套必然漂。
+ * 色相按蓝 / 青 / 红 / 紫 / 橙 / 灰拉开，圆点小也分得清。
  */
 export interface GraphPalette {
   readonly memory: string
@@ -131,15 +139,17 @@ export function loadEcharts(): Promise<EChartsModule | null> {
 export function graphPalette(scope?: HTMLElement | null): GraphPalette {
   const token = (name: string, fallback: string): string =>
     resolveCssColor(readToken(name, fallback, scope), fallback)
+  const kind = (name: MemoryEntityKind): string =>
+    token('--dsh-memory-kind-' + name, FALLBACK_KIND[name])
   return {
     memory: token('--dsw-alias-label-secondary', FALLBACK_DIM),
     entity: {
-      project: token('--dsw-alias-state-business-primary', FALLBACK_BLUE),
-      tool: token('--dsw-alias-label-primary', FALLBACK_TEXT),
-      person: token('--dsw-alias-state-error-primary', FALLBACK_RED),
-      org: token('--dsw-alias-state-success-primary', FALLBACK_GREEN),
-      concept: token('--dsw-alias-state-warn-primary', FALLBACK_ORANGE),
-      other: token('--dsw-alias-label-tertiary', FALLBACK_DIM),
+      project: kind('project'),
+      tool: kind('tool'),
+      person: kind('person'),
+      org: kind('org'),
+      concept: kind('concept'),
+      other: kind('other'),
     },
     edge: {
       memoryEntity: token('--dsw-alias-state-business-primary', FALLBACK_BLUE),

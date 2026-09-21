@@ -106,11 +106,13 @@ export function graphCounts(input: MemoryGraphInput): { nodes: number; links: nu
 export function buildMemoryGraphOption(input: MemoryGraphInput, palette: GraphPalette): MemoryGraphBuild {
   const { records, entities, edges, linkCounts, mentionCounts } = prepareGraph(input)
 
+  // 记忆与「其他」同为灰调，图例上用形状再分一次（画布上本来就是方点对圆点）。
   const categories = [
-    { name: '记忆', itemStyle: { color: palette.memory } },
+    { name: '记忆', itemStyle: { color: palette.memory }, icon: 'roundRect' },
     ...MEMORY_ENTITY_KINDS.map((kind) => ({
       name: MEMORY_ENTITY_KIND_LABELS[kind],
       itemStyle: { color: palette.entity[kind] },
+      icon: 'circle',
     })),
   ]
   const showMemoryLabels = records.length + entities.length <= MEMORY_LABEL_LIMIT
@@ -172,7 +174,12 @@ export function buildMemoryGraphOption(input: MemoryGraphInput, palette: GraphPa
       itemWidth: 10,
       itemHeight: 10,
       textStyle: { color: palette.text, fontSize: 11 },
-      data: categories.map((category) => category.name),
+      // 颜色显式带上：图例靠 category 反猜颜色，改一次调色板就可能对不上。
+      data: categories.map((category) => ({
+        name: category.name,
+        icon: category.icon,
+        itemStyle: category.itemStyle,
+      })),
     },
     series: [{
       type: 'graph',
