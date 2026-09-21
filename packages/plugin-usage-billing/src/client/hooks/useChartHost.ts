@@ -49,12 +49,12 @@ export function useChartHost(build: () => EChartsCoreOption): ChartHost {
         chart.resize()
         setMode('echarts')
       } catch (error: unknown) {
-        // 图表挂了不该把整个弹窗带崩：warn + 退到降级实现。
+        // 图表挂了不该把整张视图带崩：warn + 退到降级实现。
         console.warn('[usage-billing] 图表初始化失败，退回降级实现', error)
         setMode('fallback')
         return
       }
-      // 容器宽度变化（弹窗缩放 / 侧栏折叠）时 echarts 不会自己重排。
+      // 容器宽度变化（面板缩放 / 侧栏折叠）时 echarts 不会自己重排。
       resizeObserver = typeof ResizeObserver === 'function'
         ? new ResizeObserver(() => { chartRef.current?.resize() })
         : null

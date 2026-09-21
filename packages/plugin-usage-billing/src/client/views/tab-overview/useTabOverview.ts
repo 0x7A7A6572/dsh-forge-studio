@@ -35,7 +35,7 @@ export interface TabOverviewProps {
 
 export function useTabOverview(props: TabOverviewProps) {
   const { billing, store, scope } = props
-  // 必须订阅（不订阅的话切子代理口径不会重取数据）：与 Dashboard / 入口卡同一姿态。
+  // 必须订阅（不订阅的话切子代理口径不会重取数据）：与设置页 / 入口卡同一姿态。
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot)
   const settings = useSyncExternalStore(
     useCallback((notify: () => void) => scope.subscribe(notify), [scope]),

@@ -1,5 +1,5 @@
 /**
- * 费率页的状态与动作：当前生效价表 + 来源徽标 + **自定义单价录入/删除** + 未计价历史重算 + 手工别名。
+ * 设置-计费分区里价面（价表来源 / 自定义单价 / 手工别名）的状态与动作：当前生效价表 + 来源徽标 + **自定义单价录入/删除** + 未计价历史重算 + 手工别名。
  *
  * 录入走既有的 `setCustomPrice` / `removeCustomPrice` 远程方法（宿主侧的价表写入链），
  * 保存/删除后重新拉一次 `pricing()`，表格与「自定义」标记都来自同一次响应里的
@@ -7,7 +7,6 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import type { UsageBillingRemote } from '../../core/remote.ts'
-import type { BillingStore } from '../../core/store.ts'
 import type { Currency, CustomPriceInput, PriceEntry } from '../../../types.ts'
 
 export interface Draft {
@@ -63,12 +62,11 @@ export function validateDraft(draft: Draft): { ok: true; entry: CustomPriceInput
   return { ok: true, entry: { provider, model, currency: draft.currency, input, cacheRead, cacheWrite, output } }
 }
 
-export interface TabPricingProps {
+export interface PricingPanelProps {
   billing: UsageBillingRemote | undefined
-  store: BillingStore
 }
 
-export function useTabPricing(props: TabPricingProps) {
+export function usePricingPanel(props: PricingPanelProps) {
   const { billing } = props
   const [entries, setEntries] = useState<Record<string, PriceEntry> | null>(null)
   const [customKeys, setCustomKeys] = useState<string[]>([])

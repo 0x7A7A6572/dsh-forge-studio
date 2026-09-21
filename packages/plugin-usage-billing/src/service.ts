@@ -71,7 +71,7 @@ export class UsageBillingService extends TypertRemoteService {
   /**
    * 正在跑的那一趟聚合（本实例内**合并**并发调用）。
    *
-   * 为什么必须有：侧栏卡片一次就并发发 overview + daily，弹窗再叠几张 tab —— 每个读端点
+   * 为什么必须有：侧栏卡片一次就并发发 overview + daily，用量视图再叠几张表 —— 每个读端点
    * 都要聚合。此前没有任何合并，一次开面板 = 4~6 趟全量扫描同时压在 host 上，磁盘和
    * 事件循环互相踩，看起来就是"所有接口都挂起"。现在同一时刻只有一趟，其余调用共享它。
    * 单实例字段（不是模块级）：测试各自 new 一个服务，不会互相串。
@@ -210,7 +210,7 @@ export class UsageBillingService extends TypertRemoteService {
   async pricing(): Promise<{
     entries: Record<string, PriceEntry>; usdToCny: number; usdToCnySource: 'live' | 'default'
     snapshotId: string
-    /** 当前**仍然生效**的自定义单价 key（费率页据此显示「自定义」与逐行删除）。 */
+    /** 当前**仍然生效**的自定义单价 key（设置-计费据此显示「自定义」与逐行删除）。 */
     customKeys: string[]
   }> {
     const all = [...this.snapshots.entries()].map(([, s]) => s)

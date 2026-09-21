@@ -7,6 +7,12 @@
 /** 计价所用单价的原生币种。 */
 export type Currency = 'CNY' | 'USD'
 
+/** 旧配置里的入口落点（二选一）；已被两个独立开关取代，只在开关缺席时被翻译。 */
+export type EntryPosition = 'sidebar' | 'composer'
+
+/** 入口开关的键：两个入口各自独立，可只开一处、也可两处都开。 */
+export type EntryKey = 'sidebar' | 'composer'
+
 /** 一条模型单价（每百万 token）。 */
 export interface PriceEntry {
   input: number

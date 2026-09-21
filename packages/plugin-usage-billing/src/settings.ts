@@ -9,20 +9,33 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import Schema from '@deepseek-ai/schemastery'
 import { USAGE_BILLING_NAMESPACE } from './types.ts'
+import type { EntryPosition } from './types.ts'
 
 export { USAGE_BILLING_NAMESPACE }
 export type { SettingsProvider }
 
 export interface UsageBillingConfig {
   budget: { enabled: boolean; monthlyCny: number }
-  display: { showUnpricedWarning: boolean; includeSubagents: boolean }
+  display: {
+    showUnpricedWarning: boolean
+    includeSubagents: boolean
+    /** 旧配置的落点：已无写入口，只在两个开关都缺席时被读侧翻译。 */
+    entryPosition: EntryPosition
+    /** 侧边栏底部入口开关（首装默认开，与旧落点的「侧栏」一致）。 */
+    entrySidebar: boolean
+    /** 输入框下方入口开关（首装默认关）。 */
+    entryComposer: boolean
+  }
   pricing: { autoRefresh: boolean; refreshHours: number }
   notices: { backfillDismissed: boolean; budgetNotified: Record<string, string> }
 }
 
 export const USAGE_BILLING_CONFIG_BASE: UsageBillingConfig = {
   budget: { enabled: false, monthlyCny: 100 },
-  display: { showUnpricedWarning: true, includeSubagents: true },
+  display: {
+    showUnpricedWarning: true, includeSubagents: true,
+    entrySidebar: true, entryComposer: false, entryPosition: 'sidebar',
+  },
   pricing: { autoRefresh: true, refreshHours: 6 },
   notices: { backfillDismissed: false, budgetNotified: {} },
 }
@@ -35,6 +48,16 @@ export const UsageBillingConfigSchema = Schema.object({
   display: Schema.object({
     showUnpricedWarning: Schema.boolean().default(USAGE_BILLING_CONFIG_BASE.display.showUnpricedWarning),
     includeSubagents: Schema.boolean().default(USAGE_BILLING_CONFIG_BASE.display.includeSubagents),
+    // 首装默认 = 只开侧栏（旧落点 base 的 sidebar）；旧配置的 entryPosition 仍在下方，
+    // 但校验后字段一律补齐，所以旧值只对「还没写开关的旧 host」有翻译价值。
+    entrySidebar: Schema.boolean().default(USAGE_BILLING_CONFIG_BASE.display.entrySidebar),
+    entryComposer: Schema.boolean().default(USAGE_BILLING_CONFIG_BASE.display.entryComposer),
+    // 枚举走 Schema.union + const（与 plugin-notes 的 openMode 同一写法）：字符串枚举
+    // 用 Schema.string() 会让脏值一路透传到视图。仅兼容旧配置，不再有写入口。
+    entryPosition: Schema.union([
+      Schema.const('sidebar'),
+      Schema.const('composer'),
+    ]).default(USAGE_BILLING_CONFIG_BASE.display.entryPosition),
   }),
   pricing: Schema.object({
     autoRefresh: Schema.boolean().default(USAGE_BILLING_CONFIG_BASE.pricing.autoRefresh),

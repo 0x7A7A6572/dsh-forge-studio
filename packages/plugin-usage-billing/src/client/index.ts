@@ -4,8 +4,11 @@
  * 三个正规 slot：
  * - `sidebar.footer.action` 入口卡（**id 必须用 zzerx-usage-billing**：`usage-billing`
  *   已被参考插件占用，复用会顶掉它）
- * - `shell.overlay` 仪表盘弹窗（该层 click-through，占用者自行 opt-in 指针事件）
- * - `settings.section` 设置页
+ * - `conversation.composer.dock` 输入框下方的入口（与上面各自独立开关，设置里可分别关掉）
+ * - `settings.section` 设置页（预算 / 显示 / 用量视图 / 价面都在这里）
+ *
+ * 计费明细不再有独立浮层：原来挂在 `shell.overlay` 的仪表盘弹窗已取消，三张用量视图
+ * 由设置页的分段控件切换；两个入口各自 portal 一个锚定 popup（components/BillingPopover.tsx）。
  *
  * 全部经 `slots.inject` 声明感知注册，与加载顺序无关；每个注册的 disposer 由
  * `slots.inject` / `slots.register` 通过调用 fiber 回收，设置快照订阅则走一条
@@ -32,11 +35,13 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+// `conversation.composer.dock` 槽（输入框下方的状态区）的契约在本包之外。
+import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { mountUsageBillingRemote, usageBillingOf } from './core/remote.ts'
 import { createBillingStore } from './core/store.ts'
 import type { BillingConfigLike } from './core/config.ts'
 import { EntryCard } from './components/EntryCard.tsx'
-import { Dashboard } from './views/dashboard/Dashboard.tsx'
+import { ComposerEntry } from './components/ComposerEntry.tsx'
 import { SettingsSection } from './views/settings-section/SettingsSection.tsx'
 import { USAGE_BILLING_NAMESPACE } from '../types.ts'
 
@@ -47,7 +52,7 @@ export const inject = ['slots', 'remote', 'settingsScope']
 // 已被同时挂载的参考插件 `@kenz1117/dsh-ui-usage-billing` 占用，复用会顶掉它。
 // host 侧 settings 命名空间（USAGE_BILLING_NAMESPACE）是每插件独立的存储 key，不受此约束。
 export const ENTRY_SLOT_ID = 'zzerx-usage-billing'
-export const OVERLAY_SLOT_ID = 'zzerx-usage-billing-dashboard'
+export const COMPOSER_SLOT_ID = 'zzerx-usage-billing-composer'
 export const SETTINGS_SECTION_ID = 'zzerx-usage-billing'
 export const ENTRY_LABEL = '计费'
 
@@ -76,7 +81,7 @@ export function apply(ctx: Context): void {
     // 也不会落在读不到面的 ctx 上；`d` 就是那个声明过面的 ctx，下面一律用它。
     c.inject(['remote.usageBilling', 'remote', 'slots', 'settingsScope'], (d) => {
       // 视图状态按 fiber 创建：模块级单例会在 fiber stop 后把上一轮的
-      // open/tab/range 带进下一次 apply（重新挂载的插件不该继承旧弹窗状态）。
+      // range/metric/口径带进下一次 apply（重新挂载的插件不该继承旧视图状态）。
       const store = createBillingStore()
       const scope = d.settingsScope.bind<BillingConfigLike>({ namespace: USAGE_BILLING_NAMESPACE })
       // 持久设置 → store 回灌：store 是按 fiber 新建的（`includeSubagents: true`），复选框读的是
@@ -91,21 +96,25 @@ export function apply(ctx: Context): void {
       }
       d.effect(() => { syncIncludeSubagents(); return scope.subscribe(syncIncludeSubagents) })
 
+      // 两个入口槽都常驻注册，谁渲染由设置里的两个开关决定（core/config.ts#entryFlagsOf）；
+      // 槽位 id 分属两个槽，不复用同一个 —— 同一 id 在两个槽里语义会打架。
       d.slots.inject('sidebar.footer.action', () => d.slots.register({
         name: 'sidebar.footer.action',
         id: ENTRY_SLOT_ID,
         order: 10,
         label: ENTRY_LABEL,
-        inject: () => ({ billing: usageBillingOf(d), store }),
+        inject: () => ({ billing: usageBillingOf(d), store, scope }),
       }, EntryCard))
 
-      d.slots.inject('shell.overlay', () => d.slots.register({
-        name: 'shell.overlay',
-        id: OVERLAY_SLOT_ID,
+      // 输入框下方的状态区（与 DSH 自己的会话统计胶囊同一行）：scope 用于读开关，
+      // sessionId 由框架按 session 作用域解析后当 inject 的第一个参数传进来（侧栏没有）。
+      d.slots.inject('conversation.composer.dock', () => d.slots.register({
+        name: 'conversation.composer.dock',
+        id: COMPOSER_SLOT_ID,
         order: 10,
         label: ENTRY_LABEL,
-        inject: () => ({ billing: usageBillingOf(d), store, scope }),
-      }, Dashboard))
+        inject: (sessionId: string) => ({ billing: usageBillingOf(d), store, scope, sessionId }),
+      }, ComposerEntry))
 
       d.slots.inject('settings.section', () => d.slots.register({
         name: 'settings.section',

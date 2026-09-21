@@ -1,19 +1,21 @@
 /**
- * 费率：当前生效价表 + 来源徽标 + 自定义单价录入/删除 + 未计价历史重算 + 手工别名。
+ * 价面（设置-计费分区）：当前生效价表 + 来源徽标 + 自定义单价录入/删除 + 未计价历史重算 + 手工别名。
  *
- * 版式：三块（价表来源 / 自定义单价 / 手工别名）各一张卡片，表单走 Input 原语 + FieldRow，
- * 价表与别名列表走 DataTable —— 不手写 `<table>` 与内联 style 的裸 `<input>`。
+ * 版式：四块（价表来源 / 自定义单价 / 生效中的价目 / 手工别名）各一张卡片，表单走 Input
+ * 原语 + FieldRow，价表走 DataTable —— 不手写 `<table>` 与内联 style 的裸 `<input>`。
+ * 根节点是 Fragment（不是包一层 div）：四张卡片要和外层设置分区的卡片一起排，
+ * 分节线靠 `.card + .card`，中间夹一层容器会把链子断掉。
  */
 import { Calculator, RefreshCw } from 'lucide-react'
 import { Button, Input, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { Currency } from '../../../types.ts'
-import { Card } from '../../components/Card.tsx'
-import { DataTable } from '../../components/DataTable.tsx'
-import type { TableColumn } from '../../components/DataTable.tsx'
-import { FieldRow } from '../../components/FieldRow.tsx'
-import { priceSearch, useTabPricing } from './useTabPricing.ts'
-import type { Draft, PriceRow, TabPricingProps } from './useTabPricing.ts'
-import styles from '../../styles/settings-section.module.css'
+import type { Currency } from '../../../../types.ts'
+import { Card } from '../../../components/Card.tsx'
+import { DataTable } from '../../../components/DataTable.tsx'
+import type { TableColumn } from '../../../components/DataTable.tsx'
+import { FieldRow } from '../../../components/FieldRow.tsx'
+import { priceSearch, usePricingPanel } from '../usePricingPanel.ts'
+import type { Draft, PriceRow, PricingPanelProps } from '../usePricingPanel.ts'
+import styles from '../../../styles/settings-section.module.css'
 
 /** 价目表列：`busy` 决定删除按钮能不能点，`remove` 是唯一的删除通道。 */
 function priceColumns(busy: boolean, remove: (key: string) => void): ReadonlyArray<TableColumn<PriceRow>> {
@@ -65,11 +67,11 @@ function priceField(label: string, value: string, set: (next: string) => void): 
   )
 }
 
-export function TabPricing(props: TabPricingProps): JSX.Element {
+export function PricingPanel(props: PricingPanelProps): JSX.Element {
   const {
     entries, rows, source, usdToCny, busy, msg, draft, setDraft, aliasDraft, setAliasDraft, aliases,
     save, remove, bindAlias, unbindAlias, refreshPricing, repricing,
-  } = useTabPricing(props)
+  } = usePricingPanel(props)
 
   if (entries === null) return <div className={styles.empty} data-dsh-ub-empty>正在读取价表…</div>
 
@@ -77,27 +79,32 @@ export function TabPricing(props: TabPricingProps): JSX.Element {
   const patch = (part: Partial<Draft>): void => { setDraft({ ...draft, ...part }) }
 
   return (
-    <div className={styles.section} data-dsh-usage-billing>
-      <div className={styles.head}>
-        <span className={styles.headTitle}>价表来源</span>
-        <Tag tone={source === 'live' ? 'success' : 'warning'}>{source === 'live' ? '实时价' : '内置价'}</Tag>
-        <span className={styles.sub}>USD → CNY {usdToCny.toFixed(4)}</span>
-        <div className={styles.toolbar}>
-          <Button
-            variant="outline" size="sm" disabled={busy} icon={<RefreshCw size={14} />}
-            onClick={() => { void refreshPricing() }}
-          >
-            立即刷新
-          </Button>
-          <Button
-            variant="ghost" size="sm" disabled={busy} icon={<Calculator size={14} />}
-            onClick={() => { void repricing() }}
-          >
-            重算未计价历史
-          </Button>
+    <>
+      <Card
+        title="价表来源"
+        extra={(
+          <div className={styles.toolbar}>
+            <Button
+              variant="outline" size="sm" disabled={busy} icon={<RefreshCw size={14} />}
+              onClick={() => { void refreshPricing() }}
+            >
+              立即刷新
+            </Button>
+            <Button
+              variant="ghost" size="sm" disabled={busy} icon={<Calculator size={14} />}
+              onClick={() => { void repricing() }}
+            >
+              重算未计价历史
+            </Button>
+          </div>
+        )}
+      >
+        <div className={styles.head}>
+          <Tag tone={source === 'live' ? 'success' : 'warning'}>{source === 'live' ? '实时价' : '内置价'}</Tag>
+          <span className={styles.sub}>USD → CNY {usdToCny.toFixed(4)}</span>
         </div>
-      </div>
-      {msg === '' ? null : <div className={styles.notice} data-kind="info" role="status">{msg}</div>}
+        {msg === '' ? null : <div className={styles.notice} data-kind="info" role="status">{msg}</div>}
+      </Card>
 
       <Card
         title="自定义单价"
@@ -188,6 +195,6 @@ export function TabPricing(props: TabPricingProps): JSX.Element {
           </div>
         )}
       </Card>
-    </div>
+    </>
   )
 }

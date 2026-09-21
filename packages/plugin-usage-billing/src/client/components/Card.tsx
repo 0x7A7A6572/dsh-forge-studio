@@ -14,7 +14,8 @@ export function Card(props: {
   /** 卡片内的说明段。 */
   desc?: string
   className?: string
-  children: ReactNode
+  /** 允许只有卡头（标题 + 右侧操作）而没有正文：开关型的卡就是这种。 */
+  children?: ReactNode
 }): JSX.Element {
   const cls = props.className === undefined ? styles.card : styles.card + ' ' + props.className
   return (
@@ -26,7 +27,7 @@ export function Card(props: {
         </div>
       )}
       {props.desc === undefined ? null : <p className={styles.rowDesc}>{props.desc}</p>}
-      {props.children}
+      {props.children === undefined ? null : props.children}
     </section>
   )
 }

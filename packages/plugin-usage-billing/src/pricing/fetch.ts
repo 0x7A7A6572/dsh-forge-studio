@@ -59,6 +59,10 @@ export function projectModelsDev(json: unknown): Record<string, PriceEntry> {
 }
 
 export interface PricingFetchDeps {
+  /**
+   * 宿主抓取面（ctx.web.fetch）。`truncated` 说的是**宿主自己砍过响应体**：
+   * 抓取层有单次响应上限，超限即截断并置位 —— 调用方必须据此拒绝结果。
+   */
   web: { fetch(request: { url: string }, signal?: AbortSignal): Promise<{ url: string; statusCode: number; body: { kind: string; content: string }; truncated: boolean }> }
   snapshots: KvTable<string, PriceSnapshot>
   now: () => number
@@ -102,10 +106,20 @@ function ttlMsOf(refreshHours: number | undefined): number {
   return Math.min(refreshHours, MAX_REFRESH_HOURS) * 60 * 60 * 1000
 }
 
-/** 取 JSON 文本（fetch 只给 text/html 两种 body，需自行解析）。 */
+/**
+ * 取 JSON 文本（fetch 只给 text/html 两种 body，需自行解析）。
+ *
+ * **截断必须在这里拦住**：宿主的抓取层有单次响应上限（web-fetch-http 的 `maxBodyChars`，
+ * 默认 100000 字符，请求侧无法放宽），models.dev 的 api.json 远大于那个数。硬解析一个被
+ * 砍掉尾巴的 JSON 只会抛「Expected double-quoted property name at position 100000」这种
+ * 看不出病因的错误；更坏的是**半份目录看起来是合法结果** —— 缺失的模型会被快照层当成
+ * 「目录里已删」而清掉价（runRefresh 里那段「0 条 = 目录已删」注释说的是同一个坑）。
+ * 所以这里宁可整次失败，降级到内置价。
+ */
 async function fetchJson(deps: PricingFetchDeps, url: string): Promise<unknown> {
   const res = await deps.web.fetch({ url })
   if (res.statusCode < 200 || res.statusCode >= 300) throw new Error(`HTTP ${res.statusCode}`)
+  if (res.truncated) throw new Error('响应被截断（超过宿主单次抓取上限），本次不合并半份目录')
   return JSON.parse(res.body.content) as unknown
 }
 

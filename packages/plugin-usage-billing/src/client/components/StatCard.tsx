@@ -1,4 +1,4 @@
-/** 统计卡：一个数字 + 一句标签（概览 / 热力图 / 设置页共用）。 */
+/** 统计卡：一个数字 + 一句标签（概览与设置页共用）。 */
 import type { ReactNode } from 'react'
 import styles from '../styles/settings-section.module.css'
 

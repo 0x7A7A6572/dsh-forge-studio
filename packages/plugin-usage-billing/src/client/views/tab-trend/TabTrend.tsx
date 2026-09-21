@@ -4,7 +4,6 @@
  * 图从手绘柱子换成 echarts（见 components/TrendChart.tsx）；柱子下面另给一张逐日表 ——
  * 图表回答「形状」，表格回答「到底多少」，两件事本来就不该挤在同一屏的同一个控件里。
  */
-import { Pill } from '@deepseek-ai/dsh-client-ui-primitives'
 import { buildTrendOption } from '../../core/trend-option.ts'
 import type { TrendPoint } from '../../core/trend-option.ts'
 import {
@@ -13,11 +12,24 @@ import {
 import { Card } from '../../components/Card.tsx'
 import { DataTable } from '../../components/DataTable.tsx'
 import type { TableColumn } from '../../components/DataTable.tsx'
+import { SegmentedControl } from '../../components/SegmentedControl.tsx'
+import type { SegmentedOption } from '../../components/SegmentedControl.tsx'
 import { TrendChart } from '../../components/TrendChart.tsx'
 import { useTabTrend } from './useTabTrend.ts'
 import type { TabTrendProps } from './useTabTrend.ts'
 import type { DailyPoint } from '../../../view.ts'
 import styles from '../../styles/settings-section.module.css'
+
+/** 两个分段开关的选项（模块级常量：身份稳定，卡片被重建时子节点不白重渲）。 */
+const RANGE_OPTIONS: ReadonlyArray<SegmentedOption<'7d' | '30d'>> = [
+  { value: '7d', label: '近 7 天' },
+  { value: '30d', label: '近 30 天' },
+]
+
+const METRIC_OPTIONS: ReadonlyArray<SegmentedOption<'cost' | 'token'>> = [
+  { value: 'cost', label: '费用' },
+  { value: 'token', label: 'Token' },
+]
 
 /** 过滤用的可搜索文本（模块级常量：身份稳定，列表的 memo 才不会每帧重算）。 */
 const daySearch = (d: DailyPoint): string => d.day
@@ -61,37 +73,34 @@ export function TabTrend(props: TabTrendProps): JSX.Element {
 
   return (
     <div className={styles.section} data-dsh-usage-billing>
-      <div className={styles.field}>
-        <div className={styles.tabs} role="group" aria-label="时间范围">
-          {(['7d', '30d'] as const).map((r) => (
-            <Pill key={r} active={range === r} onClick={() => { setRange(r) }}>
-              {r === '7d' ? '近 7 天' : '近 30 天'}
-            </Pill>
-          ))}
+      {/* 两个开关进卡片头（与概览页的活跃度时间窗同一落点）：图表范围内的切换永远在
+          它管的那张图的右上角，不再是一排浮在图上的胶囊。 */}
+      <Card
+        title="用量趋势"
+        extra={(
+          <div className={styles.toolbar}>
+            <SegmentedControl label="指标" value={metric} options={METRIC_OPTIONS} onChange={setMetric} />
+            <SegmentedControl label="时间范围" value={range} options={RANGE_OPTIONS} onChange={setRange} />
+          </div>
+        )}
+      >
+        <TrendChart
+          option={buildTrendOption({
+            points,
+            formatDay,
+            formatValue,
+            // 30 天的柱子会挤成一样细线：超过 14 天改用折线。
+            line: points.length > 14,
+          })}
+          fallback={{ values, labels, formatValue }}
+        />
+        <div className={styles.chartFoot}>
+          <span className={styles.sub}>
+            合计 {tokenMetric ? formatInt(values.reduce((a, b) => a + b, 0)) + ' tok' : money(totalCost)}
+          </span>
+          {hasBackfilled ? <span className={styles.estimate} data-dsh-ub-estimate>含安装前估算</span> : null}
         </div>
-        <div className={styles.tabs} role="group" aria-label="指标">
-          {(['cost', 'token'] as const).map((m) => (
-            <Pill key={m} active={metric === m} onClick={() => { setMetric(m) }}>
-              {m === 'cost' ? '费用' : 'Token'}
-            </Pill>
-          ))}
-        </div>
-        {hasBackfilled ? <span className={styles.estimate} data-dsh-ub-estimate>含安装前估算</span> : null}
-        <span className={styles.sub + ' ' + styles.pushEnd}>
-          合计 {tokenMetric ? formatInt(values.reduce((a, b) => a + b, 0)) + ' tok' : money(totalCost)}
-        </span>
-      </div>
-
-      <TrendChart
-        option={buildTrendOption({
-          points,
-          formatDay,
-          formatValue,
-          // 30 天的柱子会挤成一样细线：超过 14 天改用折线。
-          line: points.length > 14,
-        })}
-        fallback={{ values, labels, formatValue }}
-      />
+      </Card>
 
       <Card title="逐日明细">
         <DataTable
