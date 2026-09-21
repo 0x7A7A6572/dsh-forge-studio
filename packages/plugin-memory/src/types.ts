@@ -501,6 +501,9 @@ export interface MemoryGraphNode {
   /** 记忆的 kind 或实体的 kind；给 UI 上色用。 */
   readonly kind: string
   readonly archived: boolean
+  /** 记忆节点的归属：跳去图谱定位时要按它切范围（实体是全量在图里，没有归属）。 */
+  readonly scope?: MemoryScope
+  readonly projectPath?: string
 }
 
 /** 关联视图：一条记忆 + 与它相连的边 + 每条边另一端的节点。 */

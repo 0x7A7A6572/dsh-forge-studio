@@ -7,6 +7,7 @@ import type { MemoryEdge, MemoryEntity, MemoryRecord } from '../../types.ts'
 import { buildMemoryGraphOption, graphCounts } from '../core/graph-option.ts'
 import { graphPalette } from '../core/graph-runtime.ts'
 import { useGraphHost } from '../hooks/useGraphHost.ts'
+import type { GraphFocus } from '../hooks/useGraphHost.ts'
 import styles from '../styles/settings-section.module.css'
 
 export interface MemoryGraphProps {
@@ -15,6 +16,8 @@ export interface MemoryGraphProps {
   readonly edges: readonly MemoryEdge[]
   /** 点记忆节点：外边开详情；图谱自己不关（详情盖在它上面）。 */
   readonly onOpenMemory: (record: MemoryRecord) => void
+  /** 外部要求定位到某个节点（详情里的定位图标）。 */
+  readonly focus?: GraphFocus
 }
 
 export function MemoryGraph(props: MemoryGraphProps): JSX.Element {
@@ -29,6 +32,7 @@ export function MemoryGraph(props: MemoryGraphProps): JSX.Element {
       const record = params.data?.id === undefined ? undefined : byId.get(params.data.id)
       if (record !== undefined) props.onOpenMemory(record)
     },
+    props.focus,
   )
 
   const meta = counts.nodes + ' 个节点 · ' + counts.links + ' 条关联'

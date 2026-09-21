@@ -30,8 +30,11 @@ export interface MemoryGraphBuild {
   readonly omitted: number
 }
 
-/** 节点 id 加类型前缀：记忆与实体的 id 各自独立，不加前缀会撞。 */
-function nodeId(kind: 'memory' | 'entity', id: string): string {
+/**
+ * 节点 id 加类型前缀：记忆与实体的 id 各自独立，不加前缀会撞。
+ * 定位（高亮某个节点）按同一个 id 找，所以这里不是内部细节。
+ */
+export function graphNodeId(kind: 'memory' | 'entity', id: string): string {
   return (kind === 'memory' ? 'm:' : 'e:') + id
 }
 
@@ -114,7 +117,7 @@ export function buildMemoryGraphOption(input: MemoryGraphInput, palette: GraphPa
 
   const nodes = [
     ...records.map((record) => ({
-      id: nodeId('memory', record.id),
+      id: graphNodeId('memory', record.id),
       name: record.title,
       category: 0,
       symbol: 'roundRect',
@@ -124,7 +127,7 @@ export function buildMemoryGraphOption(input: MemoryGraphInput, palette: GraphPa
       tip: memoryTip(record, linkCounts.get(record.id) ?? 0),
     })),
     ...entities.map((entity) => ({
-      id: nodeId('entity', entity.id),
+      id: graphNodeId('entity', entity.id),
       name: entity.name,
       category: 1 + MEMORY_ENTITY_KINDS.indexOf(entity.kind),
       symbol: 'circle',
@@ -136,8 +139,8 @@ export function buildMemoryGraphOption(input: MemoryGraphInput, palette: GraphPa
   ]
 
   const links = edges.map((edge) => ({
-    source: nodeId(edge.from.kind, edge.from.id),
-    target: nodeId(edge.to.kind, edge.to.id),
+    source: graphNodeId(edge.from.kind, edge.from.id),
+    target: graphNodeId(edge.to.kind, edge.to.id),
     lineStyle: {
       color: palette.edge[edgeGroup(edge)],
       width: edge.origin === 'auto' ? 1 : 1.4,

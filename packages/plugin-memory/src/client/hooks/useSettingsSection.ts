@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { errText, memoryLinkCounts, entityMentionCounts, SCOPE_LABELS } from '../core/memory-model.ts'
 import { IMPORT_PROMPT_TEXT } from '../../types.ts'
-import type { Feedback, FeedbackTone, MemoryTab } from '../core/memory-section-types.ts'
+import type { Feedback, FeedbackTone, GraphLocateTarget, MemoryTab } from '../core/memory-section-types.ts'
+import { graphNodeId } from '../core/graph-option.ts'
 import type { MemoryAuditEntry, MemoryConfig, MemoryConflict, MemoryEdge, MemoryEntity, MemoryProjectSummary, MemoryRawDocument, MemoryRawId, MemoryRecord, MemoryScope, MemoryStats } from '../../types.ts'
 import type { MemoryRemote } from '../core/remote.ts'
 import { bundleFileName, downloadText, peekBundle, readTextFile } from '../core/bundle-file.ts'
@@ -26,6 +27,9 @@ export function useSettingsSection(memory: MemoryRemote) {
   const [graphScope, setGraphScope] = useState<MemoryScope>('global')
   const [graphProjectPath, setGraphProjectPath] = useState('')
   const [graphRecords, setGraphRecords] = useState<readonly MemoryRecord[]>([])
+  /** 定位请求：图谱收到就点亮对应节点（seq 是重放键，同一个节点再点也要亮）。 */
+  const [graphFocus, setGraphFocus] = useState<{ id: string; seq: number } | undefined>(undefined)
+  const graphFocusSeq = useRef(0)
   /** 详情抽屉：当前查看的那条（快照，操作后即关闭，避免看到过期内容）。 */
   /** 沉淀面板：原文留档 + 后台调用审计。 */
   const [ledgerOpen, setLedgerOpen] = useState(false)
@@ -306,6 +310,27 @@ export function useSettingsSection(memory: MemoryRemote) {
     void loadGraphRecords('project', path)
   }
 
+  /**
+   * 跳去图谱看某个节点。
+   * 记忆先按它自己的范围切图（否则节点可能不在这张图里），实体不用 —— 实体是全量进图的。
+   * 详情的层级比图谱高，所以顺手关掉，不然点了看不见。
+   */
+  function locateGraphNode(target: GraphLocateTarget): void {
+    if (target.kind === 'memory') {
+      const scope: MemoryScope = target.scope ?? 'global'
+      const path = scope === 'project' ? (target.projectPath ?? '') : ''
+      setGraphScope(scope)
+      setGraphProjectPath(path)
+      void loadGraphRecords(scope, path)
+      setGraphOpen(true)
+    } else if (!graphOpen) {
+      openGraph()
+    }
+    detailApi.closeDetail()
+    graphFocusSeq.current += 1
+    setGraphFocus({ id: graphNodeId(target.kind, target.id), seq: graphFocusSeq.current })
+  }
+
   /** 展开某份原文的全文（第一次点才取，避免列表传输整库转录）。 */
   async function showRawText(id: MemoryRawId): Promise<void> {
     await run(async () => {
@@ -521,6 +546,8 @@ export function useSettingsSection(memory: MemoryRemote) {
     graphScope,
     graphProjectPath,
     graphRecords,
+    graphFocus,
+    locateGraphNode,
     openGraph,
     closeGraph,
     switchGraphScope,

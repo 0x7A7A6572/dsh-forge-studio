@@ -1197,6 +1197,8 @@ export class MemoryService extends TypertRemoteService {
         label: record.title,
         kind: record.kind,
         archived: record.archived,
+        scope: record.scope,
+        projectPath: record.projectPath,
       }
     }
     const entity = await this.entities.get(brandString<MemoryEntityId>(ref.id))

@@ -9,6 +9,14 @@ import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { MemoryRemote } from './remote.ts'
 import type { MemoryEdgeRelation, MemoryEntityKind, MemoryKind, MemoryNodeKind, MemoryScope } from '../../types.ts'
 
+/** 跳去图谱定位的目标：实体全量在图里（没有归属），记忆要带上自己的范围好切图。 */
+export interface GraphLocateTarget {
+  kind: MemoryNodeKind
+  id: string
+  scope?: MemoryScope
+  projectPath?: string
+}
+
 /** 注册侧注入的业务面（见 src/client/index.ts）。 */
 export interface SettingsSectionInjected {
   memory: MemoryRemote

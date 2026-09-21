@@ -84,6 +84,8 @@ export interface EChartsEvent {
 
 export interface EChartsHandle {
   setOption: (option: EChartsCoreOption, opts?: { notMerge?: boolean }) => void
+  /** 定位用：焦点邻接（focusNodeAdjacency）走 action 面。 */
+  dispatchAction: (action: Record<string, unknown>) => void
   resize: () => void
   dispose: () => void
   on: (event: 'click', handler: (params: EChartsEvent) => void) => void

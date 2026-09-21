@@ -988,6 +988,12 @@ body > div:has(> [role="dialog"].modalWide) {
   border-top: 0.5px solid var(--dsw-alias-border-l4);
 }
 
+[data-dsh-memory-ui] .edgeBlockHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 [data-dsh-memory-ui] .edgeList {
   display: flex;
   flex-direction: column;

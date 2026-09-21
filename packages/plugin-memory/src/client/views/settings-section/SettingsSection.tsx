@@ -12,7 +12,7 @@
  */
 import { SCOPE_LABELS, SCOPE_OPTIONS, MEMORY_TABS, TAB_LABELS, timeText, durationText, ORIGIN_LABELS, AUDIT_KIND_LABELS, sourceLabel, entityKindClass, linkedMemoryIds, NODE_KIND_OPTIONS, RELATION_OPTIONS, IMPORTANCE_STEPS, CAPTURE_EVERY_STEPS, CAPTURE_TURNS_STEPS, CAPTURE_CHARS_STEPS, importanceLevelAt, importanceStep, IMPORT_MODE_OPTIONS, BUNDLE_MODE_OPTIONS } from '../../core/memory-model.ts'
 import type { MemoryRecord, MemoryEdgeRelation } from '../../../types.ts'
-import { Button, IconArchiveOutline20, IconChecklistOutline14, IconCopyOutline16, IconDownloadOutline16, IconEditOutline16, IconEllipsisOutline16, IconFolderOpenOutline16, IconListPenOutline16, IconPlusOutline16, IconRefreshOutline16, IconShareOutline16, IconTrashOutline16, Input, Menu, Modal, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconBranchOutline16, IconArchiveOutline20, IconChecklistOutline14, IconCopyOutline16, IconDownloadOutline16, IconEditOutline16, IconEllipsisOutline16, IconFolderOpenOutline16, IconListPenOutline16, IconPlusOutline16, IconRefreshOutline16, IconShareOutline16, IconTrashOutline16, Input, Menu, Modal, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ChevronDown } from 'lucide-react'
 import type { SettingsSectionProps } from '../../core/memory-section-types.ts'
@@ -74,6 +74,8 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
     graphScope,
     graphProjectPath,
     graphRecords,
+    graphFocus,
+    locateGraphNode,
     closeGraph,
     switchGraphScope,
     changeGraphProject,
@@ -777,7 +779,22 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
               <pre className={styles.detailBody}>{detail.content}</pre>
 
               <div className={styles.edgeBlock}>
-                <span className={styles.rowTitle}>{'关联（' + (neighborhood?.edges.length ?? 0) + '）'}</span>
+                <div className={styles.edgeBlockHead}>
+                  <span className={styles.rowTitle}>{'关联（' + (neighborhood?.edges.length ?? 0) + '）'}</span>
+                  <Button
+                    variant="ghost" size="sm"
+                    icon={<IconBranchOutline16 size={14} />}
+                    title="在图谱里定位本条记忆"
+                    onClick={() => {
+                      locateGraphNode({
+                        kind: 'memory',
+                        id: detail.id,
+                        scope: detail.scope,
+                        projectPath: detail.projectPath,
+                      })
+                    }}
+                  />
+                </div>
                 {neighborhood === null && <p className={styles.rowDesc}>正在读取关联…</p>}
                 {neighborhood !== null && neighborhood.edges.length === 0 && (
                   <p className={styles.rowDesc}>
@@ -790,6 +807,7 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
                     related={neighborhood.related}
                     disabled={busy || locked}
                     onJump={(id) => { void jumpToMemory(id) }}
+                    onLocate={locateGraphNode}
                     onUnlink={(edge) => { void removeEdge(edge) }}
                   />
                 )}
@@ -995,7 +1013,6 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
         title="记忆图谱"
         closeLabel="关闭"
         description="拖动缩放；点记忆节点开详情。"
-        footer={<Button variant="ghost" onClick={closeGraph}>关闭</Button>}
       >
         <div className={styles.modalBody} data-dsh-memory-ui="">
           <div className={styles.fieldRow}>
@@ -1026,6 +1043,7 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
             records={graphRecords}
             entities={entities}
             edges={edges}
+            focus={graphFocus}
             onOpenMemory={(record) => { void openDetail(record) }}
           />
         </div>
