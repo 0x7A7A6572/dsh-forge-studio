@@ -40,9 +40,20 @@ export interface DailyPoint {
 export interface SessionRow {
   sessionId: string; cwd?: string; day: string; calls: number
   costCny: number; lastTime: number; isSubagent: boolean
+  /** 该会话**今天**的金额（day === todayKey 的那部分）；与 costCny 同源、同一次响应。 */
+  todayCny: number
+  /** 该会话的**历史累计**（不按时间窗过滤，只跟子代理口径走）：由 attachAllCny 从全账本填。 */
+  allCny: number
 }
 
-export interface WorkspaceRow { cwd: string; calls: number; costCny: number; sessions: SessionRow[] }
+export interface WorkspaceRow {
+  cwd: string; calls: number; costCny: number
+  /** 该项目**今天**的金额：popup 的「今日消耗分布」用它，与 costCny 同源、同一次响应。 */
+  todayCny: number
+  /** 该项目的**历史累计**：只汇总窗口内的会话会漏掉更早的会话，所以同样由 attachAllCny 填。 */
+  allCny: number
+  sessions: SessionRow[]
+}
 
 /**
  * 每个携带金额的响应都必须**自带**的口径标记。
@@ -176,13 +187,17 @@ export function buildDaily(rows: readonly LedgerRow[], days: readonly string[]):
   return [...outside, ...known]
 }
 
-export function buildBySession(rows: readonly LedgerRow[]): SessionRow[] {
+/**
+ * 按会话聚合。今日字段与总额出自**同一批行**（同一次响应），所以「本会话今日 ≤ 本项目今日 ≤
+ * 今日总额」这类包含关系在界面上永远成立，不靠两次取数去拼。
+ */
+export function buildBySession(rows: readonly LedgerRow[], todayKey: string): SessionRow[] {
   const byId = new Map<string, SessionRow>()
   for (const r of rows) {
     let s = byId.get(r.sessionId)
     if (s === undefined) {
       s = {
-        sessionId: r.sessionId, day: r.day, calls: 0, costCny: 0,
+        sessionId: r.sessionId, day: r.day, calls: 0, costCny: 0, todayCny: 0, allCny: 0,
         lastTime: r.time, isSubagent: r.isSubagent,
       }
       byId.set(r.sessionId, s)
@@ -190,22 +205,46 @@ export function buildBySession(rows: readonly LedgerRow[]): SessionRow[] {
     // 取首个「已定义」的 cwd：首行缺 cwd 时后面的行可以补上。
     if (s.cwd === undefined && r.cwd !== undefined) s.cwd = r.cwd
     s.calls += 1; s.costCny += r.costCny
+    if (r.day === todayKey) s.todayCny += r.costCny
     if (r.time > s.lastTime) s.lastTime = r.time
     if (r.day < s.day) s.day = r.day
   }
   return [...byId.values()].sort((a, b) => b.costCny - a.costCny || a.sessionId.localeCompare(b.sessionId))
 }
 
-export function buildByWorkspace(rows: readonly LedgerRow[]): WorkspaceRow[] {
-  const sessions = buildBySession(rows)
+export function buildByWorkspace(rows: readonly LedgerRow[], todayKey: string): WorkspaceRow[] {
+  const sessions = buildBySession(rows, todayKey)
   const byCwd = new Map<string, WorkspaceRow>()
   for (const s of sessions) {
     const cwd = s.cwd ?? UNKNOWN_WORKSPACE
     let w = byCwd.get(cwd)
-    if (w === undefined) { w = { cwd, calls: 0, costCny: 0, sessions: [] }; byCwd.set(cwd, w) }
-    w.calls += s.calls; w.costCny += s.costCny; w.sessions.push(s)
+    if (w === undefined) { w = { cwd, calls: 0, costCny: 0, todayCny: 0, allCny: 0, sessions: [] }; byCwd.set(cwd, w) }
+    w.calls += s.calls; w.costCny += s.costCny; w.todayCny += s.todayCny; w.sessions.push(s)
   }
   return [...byCwd.values()].sort((a, b) => b.costCny - a.costCny || a.cwd.localeCompare(b.cwd))
+}
+
+/**
+ * 给窗口里的会话与项目补上**历史累计**：两样都从全账本汇总 —— 只把窗口内的会话加起来
+ * 会漏掉这个项目更早的会话。子代理口径与窗口金额一致，不能各算一套。
+ */
+export function attachAllCny(
+  workspaces: readonly WorkspaceRow[],
+  all: readonly LedgerRow[],
+  includeSubagents: boolean,
+): void {
+  const bySession = new Map<string, number>()
+  const byCwd = new Map<string, number>()
+  for (const r of filterRows(all, { includeSubagents })) {
+    bySession.set(r.sessionId, (bySession.get(r.sessionId) ?? 0) + r.costCny)
+    const cwd = r.cwd ?? UNKNOWN_WORKSPACE
+    byCwd.set(cwd, (byCwd.get(cwd) ?? 0) + r.costCny)
+  }
+  for (const w of workspaces) {
+    // 窗口里的会话必定也在全账本里；万一缺了，退到窗口值，宁可少算也不写成 0。
+    for (const s of w.sessions) s.allCny = bySession.get(s.sessionId) ?? s.costCny
+    w.allCny = byCwd.get(w.cwd) ?? w.costCny
+  }
 }
 
 /**

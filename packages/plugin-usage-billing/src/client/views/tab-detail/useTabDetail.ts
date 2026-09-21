@@ -1,11 +1,17 @@
 /**
  * 明细页的取数与列表状态：按工作区下钻到会话 + 按模型
  * （**同名模型跨 provider 一行**，标注混合单价 / 未收录）。
+ *
+ * 自动重取见 core/revalidate.ts：心跳换 revision，本 hook 依赖它重取；同拍请求走 query 合并。
  */
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import type { UsageBillingRemote } from '../../core/remote.ts'
+import { byModelKey, byWorkspaceKey } from '../../core/query.ts'
+import type { QueryCache } from '../../core/query.ts'
+import type { Revalidator } from '../../core/revalidate.ts'
 import type { BillingStore } from '../../core/store.ts'
 import { useList } from '../../hooks/useList.ts'
+import { useRevision } from '../../hooks/useRevision.ts'
 import type { ListController } from '../../hooks/useList.ts'
 import type { ModelRow, WorkspaceRow } from '../../../view.ts'
 
@@ -37,6 +43,10 @@ export interface DetailPayload {
 export interface TabDetailProps {
   billing: UsageBillingRemote | undefined
   store: BillingStore
+  /** 同一拍的重复请求合并。 */
+  query: QueryCache
+  /** 自动重取心跳（按 fiber 创建，见 core/revalidate.ts）。 */
+  revalidate: Revalidator
 }
 
 export interface TabDetailState {
@@ -47,8 +57,10 @@ export interface TabDetailState {
 }
 
 export function useTabDetail(props: TabDetailProps): TabDetailState {
-  const { billing, store } = props
+  const { billing, store, query, revalidate } = props
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot)
+  // 心跳一拍换一个 revision，下面的取数 effect 依赖它重跑。
+  const revision = useRevision(revalidate)
   const [data, setData] = useState<DetailPayload | null>(null)
   const [expanded, setExpanded] = useState<string | null>(null)
 
@@ -66,8 +78,8 @@ export function useTabDetail(props: TabDetailProps): TabDetailState {
     let alive = true
     // 两个响应各自自带披露标记；任何一个为 present 都按 present 披露（或起来 = 保守）。
     void Promise.all([
-      billing.byWorkspace(state.range, state.includeSubagents),
-      billing.byModel(state.range, state.includeSubagents),
+      query.run(byWorkspaceKey(state.range, state.includeSubagents), () => billing.byWorkspace(state.range, state.includeSubagents)),
+      query.run(byModelKey(state.range, state.includeSubagents), () => billing.byModel(state.range, state.includeSubagents)),
     ]).then(([w, m]) => {
       if (!alive) return
       // 两份数据都必须到达才渲染：任一缺席时页面停在「正在读取用量…」，
@@ -90,7 +102,7 @@ export function useTabDetail(props: TabDetailProps): TabDetailState {
       console.warn('[usage-billing] 明细通道异常', error)
     })
     return () => { alive = false }
-  }, [billing, state.range, state.includeSubagents])
+  }, [billing, state.range, state.includeSubagents, revision, query])
 
   const toggleExpanded = useCallback((cwd: string) => {
     setExpanded((current) => (current === cwd ? null : cwd))

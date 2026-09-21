@@ -8,6 +8,9 @@
  *
  * 计费弹窗取消后，原来挂在弹窗上的两件事（跨档提醒、回填提示条）搬到这里：判定时机从
  * 「面板真的打开」变成「这一页真的被看到」，语义没变（没被看到的提醒不该被记成已提醒）。
+ *
+ * 用量数据的自动重取见 core/revalidate.ts：跨档提醒跟着心跳重判（用的是同一份 overview，
+ * 与入口卡在 query 里合并成一份）；账本状态与价表是「打开时看一眼」的快照，不跟心跳。
  */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { KeyboardEvent } from 'react'
@@ -16,6 +19,10 @@ import type { BillingStore, TabId } from '../../core/store.ts'
 import type { BillingConfigLike, BillingScope } from '../../core/config.ts'
 import { entryFlagsOf } from '../../core/config.ts'
 import { NON_FINITE_PLACEHOLDER } from '../../core/format.ts'
+import { overviewKey } from '../../core/query.ts'
+import type { QueryCache } from '../../core/query.ts'
+import type { Revalidator } from '../../core/revalidate.ts'
+import { useRevision } from '../../hooks/useRevision.ts'
 import { evaluateBudget } from '../../../budget.ts'
 import type { EntryKey } from '../../../types.ts'
 
@@ -23,6 +30,10 @@ export interface SettingsSectionProps {
   billing: UsageBillingRemote | undefined
   scope: BillingScope
   store: BillingStore
+  /** 同一拍的重复请求合并（用量视图与入口卡共用同一份 overview）。 */
+  query: QueryCache
+  /** 自动重取心跳（按 fiber 创建，见 core/revalidate.ts）。 */
+  revalidate: Revalidator
 }
 
 export interface LedgerStatus {
@@ -39,7 +50,9 @@ export interface BudgetNoticeState {
 }
 
 export function useSettingsSection(props: SettingsSectionProps) {
-  const { billing, scope, store } = props
+  const { billing, scope, store, query, revalidate } = props
+  // 心跳一拍换一个 revision：用量视图与跨档提醒依赖它重取，账本状态/价表不跟心跳。
+  const revision = useRevision(revalidate)
   const settings = useSyncExternalStore(
     useCallback((notify: () => void) => scope.subscribe(notify), [scope]),
     () => scope.getSnapshot(),
@@ -112,7 +125,7 @@ export function useSettingsSection(props: SettingsSectionProps) {
   useEffect(() => {
     if (billing === undefined || cfg === undefined) return
     let alive = true
-    void billing.overview('month', includeSubagents).then((r) => {
+    void query.run(overviewKey('month', includeSubagents), () => billing.overview('month', includeSubagents)).then((r) => {
       if (!alive || !r.ok) return
       const monthKey = r.value.todayKey.slice(0, 7)
       const notified = cfg.notices?.budgetNotified ?? {}
@@ -125,7 +138,7 @@ export function useSettingsSection(props: SettingsSectionProps) {
       void writeNotices({ budgetNotified: { ...notified, [monthKey]: String(spend.shouldNotify) } })
     }).catch(() => { /* 取数通道异常：不提醒，也不制造 unhandled rejection */ })
     return () => { alive = false }
-  }, [billing, includeSubagents, scope, cfg, writeNotices])
+  }, [billing, includeSubagents, scope, cfg, writeNotices, revision, query])
 
   const dismissBudgetNotice = useCallback(() => { setBudgetNotice(null) }, [])
 

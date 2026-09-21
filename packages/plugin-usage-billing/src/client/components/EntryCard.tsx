@@ -3,7 +3,7 @@
  * 收起成 36px rail 时文字与条都藏起来，只留一个预算饼图。
  *
  * 版式保留原样（这一条要的是「本月花了多少」），明细在点击后弹出的 popup 里
- * （components/BillingPopover.tsx）。预算条与 popup 里那条是**同一件**（叠加条），
+ * （components/BillingPopover.tsx）。卡上那条是叠加条，与 popup 里那两条不是同一件：
  * 档位只由 `evaluateBudget` 决定（ok / warn / over）。
  * 设置里关掉「侧边栏底部」这个入口时整卡不渲染（见 hooks/useEntryFlags.ts）。
  */
@@ -32,6 +32,9 @@ export function EntryCard(props: EntryCardProps): JSX.Element | null {
     budgetBar,
     unpricedText,
     segments,
+    totalSegments,
+    todaySegments,
+    popoverBudget,
     seat,
     ...rest
   } = useEntryCard(props);
@@ -112,9 +115,10 @@ export function EntryCard(props: EntryCardProps): JSX.Element | null {
       <BillingPopover
         seat={seat}
         headlineText={headlineText}
-        segments={segments}
+        totalSegments={totalSegments}
+        todaySegments={todaySegments}
         unpricedText={unpricedText}
-        budget={budgetBar}
+        budget={popoverBudget}
       />
     </span>
   );

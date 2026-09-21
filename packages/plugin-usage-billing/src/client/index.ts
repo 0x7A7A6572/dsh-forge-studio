@@ -10,6 +10,9 @@
  * 计费明细不再有独立浮层：原来挂在 `shell.overlay` 的仪表盘弹窗已取消，三张用量视图
  * 由设置页的分段控件切换；两个入口各自 portal 一个锚定 popup（components/BillingPopover.tsx）。
  *
+ * 用量数据不随宿主会话事件推送，靠一条共享的重取心跳（core/revalidate.ts，60s 一拍 +
+ * 30s 节流 + 切回前台补拍）让挂载中的视图再问一次；同一拍的重复请求由 core/query.ts 合并。
+ *
  * 全部经 `slots.inject` 声明感知注册，与加载顺序无关；每个注册的 disposer 由
  * `slots.inject` / `slots.register` 通过调用 fiber 回收，设置快照订阅则走一条
  * `ctx.effect`（下面 `d.effect`：订阅的 disposer 必须挂在 fiber 上，否则 stop 后订阅泄漏）。
@@ -38,6 +41,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 // `conversation.composer.dock` 槽（输入框下方的状态区）的契约在本包之外。
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { mountUsageBillingRemote, usageBillingOf } from './core/remote.ts'
+import { createQueryCache } from './core/query.ts'
+import { createRevalidator } from './core/revalidate.ts'
 import { createBillingStore } from './core/store.ts'
 import type { BillingConfigLike } from './core/config.ts'
 import { EntryCard } from './components/EntryCard.tsx'
@@ -84,6 +89,13 @@ export function apply(ctx: Context): void {
       // range/metric/口径带进下一次 apply（重新挂载的插件不该继承旧视图状态）。
       const store = createBillingStore()
       const scope = d.settingsScope.bind<BillingConfigLike>({ namespace: USAGE_BILLING_NAMESPACE })
+      // 请求合并与重取心跳同样按 fiber 创建：模块级单例会把上一轮的定时器与在飞请求
+      // 带进下一次 apply（store 当初也是这个理由）。
+      const query = createQueryCache()
+      const revalidate = createRevalidator({
+        source: typeof document === 'undefined' ? undefined : document,
+      })
+      d.effect(() => () => revalidate.dispose())
       // 持久设置 → store 回灌：store 是按 fiber 新建的（`includeSubagents: true`），复选框读的是
       // 设置快照、四个分区读的却是 store。只在设置页「写」而从不「回读」，重新挂载后就会出现
       // 「勾选框说不含子代理，账里却仍有子代理行」——两处口径必须收敛到同一个值。
@@ -103,7 +115,7 @@ export function apply(ctx: Context): void {
         id: ENTRY_SLOT_ID,
         order: 10,
         label: ENTRY_LABEL,
-        inject: () => ({ billing: usageBillingOf(d), store, scope }),
+        inject: () => ({ billing: usageBillingOf(d), store, scope, query, revalidate }),
       }, EntryCard))
 
       // 输入框下方的状态区（与 DSH 自己的会话统计胶囊同一行）：scope 用于读开关，
@@ -113,7 +125,7 @@ export function apply(ctx: Context): void {
         id: COMPOSER_SLOT_ID,
         order: 10,
         label: ENTRY_LABEL,
-        inject: (sessionId: string) => ({ billing: usageBillingOf(d), store, scope, sessionId }),
+        inject: (sessionId: string) => ({ billing: usageBillingOf(d), store, scope, sessionId, query, revalidate }),
       }, ComposerEntry))
 
       d.slots.inject('settings.section', () => d.slots.register({
@@ -121,7 +133,7 @@ export function apply(ctx: Context): void {
         id: SETTINGS_SECTION_ID,
         order: 40,
         label: ENTRY_LABEL,
-        inject: () => ({ billing: usageBillingOf(d), scope, store }),
+        inject: () => ({ billing: usageBillingOf(d), scope, store, query, revalidate }),
       }, SettingsSection))
     })
   })

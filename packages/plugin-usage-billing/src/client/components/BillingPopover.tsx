@@ -5,12 +5,20 @@
  * 两列右对齐的 dt/dd。位置与关闭交给 usePopoverSeat（portal 到 body、夹在视口内），
  * 这里只管内容，所以组件是纯展示的、不持有状态。
  *
+ * 三个时间轴各说各的（别混）：
+ * - **本月**：标题值 + 一条预算进度（整条 = 本月总额度，填充 = 本月已用）。没设预算时整行不画，
+ *   只在明细里写一句「预算 未设置」—— 没有分母就没有进度可言，画一条满格只会骗人。
+ * - **累计（不区分时间）**：会话与项目的历史总额，只是两个数、不进任何条 —— 它们跟今天没有
+ *   包含关系，塞进下面的分布条会溢出。
+ * - **今日**：分布条（整条 = 今日合计）分段说明今天的钱花在本项目还是别处。
+ *
  * 标题值写成「本月已用 ¥已用 / ¥预算」：`/ ¥预算` 是**分母不是余额**。原先那行
  * 「预算余额 ¥473.95 / ¥600.00」会被下意识读成「已用 ¥473.95」，所以撤掉余额这一行 ——
  * 剩下的钱谁都能拿 600 减一下。
  */
 import { createPortal } from 'react-dom'
-import { BudgetStackBar } from './BudgetStackBar.tsx'
+import { ProgressBar } from './ProgressBar.tsx'
+import { TodayStackBar } from './TodayStackBar.tsx'
 import { MEASURE_STYLE } from '../hooks/usePopoverSeat.ts'
 import type { PopoverSeat } from '../hooks/usePopoverSeat.ts'
 import type { PopoverSegment } from '../hooks/useEntryCard.ts'
@@ -20,17 +28,14 @@ export interface BillingPopoverProps {
   seat: PopoverSeat
   /** 标题值：`本月已用 ¥已用 / ¥预算`（没开预算或整本账未定价时只有已用）。 */
   headlineText: string
-  /** 三行指标（当前会话 / 本项目 / 今日），顺序即颜色顺序。 */
-  segments: readonly PopoverSegment[]
+  /** 预算进度要的两个数；没开预算时为 null —— 整条不画，只在明细里写「未设置」。 */
+  budget: { level: 'ok' | 'warn' | 'over'; ratio: number } | null
+  /** 累计（不区分时间）：当前会话累计 / 本项目累计；这两行不在任何条上。 */
+  totalSegments: readonly PopoverSegment[]
+  /** 今日消耗分布：本项目今日 / 其他项目今日 / 今日合计，顺序即颜色顺序。 */
+  todaySegments: readonly PopoverSegment[]
   /** 未收录提醒；没有未收录模型时为 null。 */
   unpricedText: string | null
-  /** 预算口径：只给画条要的三个数；没开预算时为 null。 */
-  budget: {
-    level: 'ok' | 'warn' | 'over'
-    ratio: number
-    /** 本月已用金额（所有项目）：三段在已用段内按它换算长度。 */
-    spentValue: number
-  } | null
 }
 
 export function BillingPopover(props: BillingPopoverProps): JSX.Element | null {
@@ -67,22 +72,44 @@ export function BillingPopover(props: BillingPopoverProps): JSX.Element | null {
           </div>
         </dl>
       ) : (
-        // 条上的已用段就是上面那个数：三层叠放（整条 = 预算 → 已用段 → 三段指标）。
         <div className={styles.popoverBudget}>
-          <BudgetStackBar
+          {/* 条是纯视觉的：读屏靠 label 读出「本月已用多少」，与标题值是同一个数、同一个口径。 */}
+          <ProgressBar
             level={props.budget.level}
             ratio={props.budget.ratio}
-            spentValue={props.budget.spentValue}
-            segments={props.segments}
+            label={`本月已用 ${props.headlineText}`}
           />
         </div>
       )}
 
+      {/* 累计两个数并成一行：它们都不在条上，各占一行只会把 popup 拉长。 */}
       <dl className={styles.popoverDetails}>
-        {props.segments.map((s) => (
+        <div className={styles.popoverRow}>
+          <dt className={styles.popoverTerm}>累计</dt>
+          <dd className={styles.popoverInline}>
+            {props.totalSegments.map((s) => (
+              <span key={s.key} className={styles.popoverChip}>
+                <span className={styles.dot} data-kind={s.key} aria-hidden="true" />
+                {s.label}
+                <span className={styles.popoverValue}>{s.text}</span>
+              </span>
+            ))}
+          </dd>
+        </div>
+      </dl>
+
+      <div className={styles.popoverSection}>今日消耗分布</div>
+      <div className={styles.popoverBudget}>
+        <TodayStackBar segments={props.todaySegments} />
+      </div>
+      <dl className={styles.popoverDetails}>
+        {props.todaySegments.map((s) => (
           <div key={s.key} className={styles.popoverRow}>
             <dt className={styles.popoverTerm}>
-              <span className={styles.dot} data-kind={s.key} aria-hidden="true" />
+              {/* 只有「条上真有一段」的指标带色标；今日合计是整条本身，给个色标会被对成琥珀那段。 */}
+              {s.key === 'today' ? null : (
+                <span className={styles.dot} data-kind={s.key} aria-hidden="true" />
+              )}
               {s.label}
             </dt>
             <dd className={styles.popoverValue}>{s.text}</dd>

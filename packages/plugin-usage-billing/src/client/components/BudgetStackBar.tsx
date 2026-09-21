@@ -2,8 +2,8 @@
  * 叠加预算条：整条 = 本月预算，已用段 = 本月已用（按档位着色），段内三段 = 本会话 /
  * 本项目 / 今日（长度在**已用段里**量：÷ 本月已用，不是拿整条预算当尺子）。
  *
- * 侧栏入口卡与 popup **共用同一件**，所以这里只做几何与叠放顺序，颜色全在样式表的
- * [data-kind] / [data-level] 规则里（主题切换、换色都不用改组件）。
+ * 两个入口卡共用同一件；popup 里那两条（预算进度 / 今日分布）不是它 —— 那边没有叠放关系。
+ * 这里只做几何与叠放顺序，颜色全在样式表的 [data-kind] / [data-level] 规则里。
  */
 import { barRatio } from '../core/budget-display.ts'
 import type { PopoverSegment } from '../hooks/useEntryCard.ts'

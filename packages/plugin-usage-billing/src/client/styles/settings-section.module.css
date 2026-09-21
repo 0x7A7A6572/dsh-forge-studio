@@ -782,6 +782,52 @@
   background: var(--ub-today);
 }
 
+/*
+ * 今日消耗分布条：整条 = 今日合计（所有项目），三段**并排铺满**（不是叠放）——
+ * 这里没有预算，左端是几何起点，右端就是「今天到现在」。
+ * 颜色与入口卡那三段共用同一组变量：同一个颜色在哪儿都指同一样东西。
+ */
+.todayBar {
+  display: flex;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--dsw-alias-bg-layer-3);
+}
+/* 与 segPiece 同规则：几块钱的一段不到 1px，但「有」和「没有」必须看得出。 */
+.todayPiece {
+  min-width: 2px;
+}
+.todayPiece[data-kind="workspace"] {
+  background: var(--ub-workspace);
+}
+/* 其他项目＝今天花在别处的钱，与入口卡上那个琥珀段是同一个意思。 */
+.todayPiece[data-kind="others"] {
+  background: var(--ub-today);
+}
+/* 两组之间（累计 → 今日）留一点距离：时间轴不同，贴在一起会被读成一组。 */
+.popoverDetails + .popoverSection {
+  margin-top: 10px;
+}
+/* 第二节（今日分布）的小节标题：数字都在下面三行里，所以右侧刻意不放值。 */
+.popoverSection {
+  margin-bottom: 6px;
+  color: var(--dsw-alias-label-tertiary);
+}
+/* 累计两个数并成一行：它们都不在条上，各占一行只会把 popup 拉长；窄屏自动折成两行。 */
+.popoverInline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 4px 12px;
+}
+.popoverChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .popoverDetails {
   display: grid;
   gap: 6px;
@@ -830,6 +876,9 @@
 }
 .dot[data-kind="workspace"] {
   background: var(--ub-workspace);
+}
+.dot[data-kind="others"] {
+  background: var(--ub-today);
 }
 .dot[data-kind="today"] {
   background: var(--ub-today);

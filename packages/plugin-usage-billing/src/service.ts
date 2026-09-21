@@ -24,7 +24,7 @@ import { SNAPSHOT_BASE_ID, SNAPSHOT_INSTALL_ID, uniqueSnapshotDeltaKey } from '.
 import { dayKey, daysInRange, rangeToSpec } from './time.ts'
 import type { RangeKind } from './time.ts'
 import {
-  buildByWorkspace, buildDaily, buildMarkers, buildOverview, filterRows, mergeByModel,
+  attachAllCny, buildByWorkspace, buildDaily, buildMarkers, buildOverview, filterRows, mergeByModel,
 } from './view.ts'
 import type {
   AliasInput, CustomPriceInput, Diagnostic, FoldState, LedgerRow,
@@ -205,8 +205,13 @@ export class UsageBillingService extends TypertRemoteService {
   }
 
   async byWorkspace(rangeKind: RangeKind, includeSubagents: boolean) {
-    const rows = this.scoped(await this.rows(), rangeKind, includeSubagents)
-    return { workspaces: buildByWorkspace(rows), ...buildMarkers(rows) }
+    const all = await this.rows()
+    const rows = this.scoped(all, rangeKind, includeSubagents)
+    // 今日口径与 overview 用同一个 dayKey(now)：同一拍里两个端点的「今天」不可能差一天。
+    const workspaces = buildByWorkspace(rows, dayKey(this.now()))
+    // 历史累计必须从全账本算：只加起来窗口里的会话会漏掉项目更早的会话。
+    attachAllCny(workspaces, all, includeSubagents)
+    return { workspaces, ...buildMarkers(rows) }
   }
 
   async pricing(): Promise<{

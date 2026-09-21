@@ -131,9 +131,21 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
         title="用量"
         extra={<SegmentedControl label="用量视图" value={view} options={USAGE_VIEWS} onChange={setView} />}
       />
-      {view === 'overview' ? <TabOverview billing={props.billing} store={props.store} scope={props.scope} /> : null}
-      {view === 'trend' ? <TabTrend billing={props.billing} store={props.store} /> : null}
-      {view === 'detail' ? <TabDetail billing={props.billing} store={props.store} /> : null}
+      {view === 'overview' ? (
+        <TabOverview
+          billing={props.billing}
+          store={props.store}
+          scope={props.scope}
+          query={props.query}
+          revalidate={props.revalidate}
+        />
+      ) : null}
+      {view === 'trend' ? (
+        <TabTrend billing={props.billing} store={props.store} query={props.query} revalidate={props.revalidate} />
+      ) : null}
+      {view === 'detail' ? (
+        <TabDetail billing={props.billing} store={props.store} query={props.query} revalidate={props.revalidate} />
+      ) : null}
 
       <Card title="价表">
         <SwitchRow
