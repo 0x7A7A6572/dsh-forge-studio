@@ -32,6 +32,15 @@ export interface AliasRow {
   canonicalModel: string
 }
 
+/** 手工别名草稿（`<provider>/<原始 model>` + canonical）。 */
+export interface AliasDraft {
+  key: string
+  canonical: string
+}
+
+/** 提交结果：弹窗据此决定关窗，还是把原因留在弹窗里。 */
+export type SubmitOutcome = { ok: true } | { ok: false; reason: string }
+
 export const EMPTY_DRAFT: Draft = { key: '', input: '', cacheRead: '', cacheWrite: '', output: '', currency: 'CNY' }
 
 /** 价表的可搜索文本（模块级常量：身份稳定）。 */
@@ -75,8 +84,7 @@ export function usePricingPanel(props: PricingPanelProps) {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT)
-  /** 手工别名草稿（`<provider>/<原始 model>` + canonical）。 */
-  const [aliasDraft, setAliasDraft] = useState({ key: '', canonical: '' })
+  const [aliasDraft, setAliasDraft] = useState<AliasDraft>({ key: '', canonical: '' })
   const [aliases, setAliases] = useState<AliasRow[]>([])
 
   const reload = useCallback(async () => {
@@ -107,18 +115,21 @@ export function usePricingPanel(props: PricingPanelProps) {
     return () => { alive = false }
   }, [billing])
 
-  /** 保存草稿；校验不过只报错，不发远程调用。 */
-  const save = useCallback(async () => {
-    if (billing === undefined) return
+  /** 保存草稿；校验不过只报错，不发远程调用。返回结果给弹窗决定关不关。 */
+  const save = useCallback(async (): Promise<SubmitOutcome> => {
+    if (billing === undefined) return { ok: false, reason: '保存失败' }
     const checked = validateDraft(draft)
-    if (!checked.ok) { setMsg(checked.reason); return }
+    if (!checked.ok) { setMsg(checked.reason); return { ok: false, reason: checked.reason } }
     setBusy(true)
     try {
       const r = await billing.setCustomPrice(checked.entry)
       setMsg(r.ok ? `已保存 ${checked.entry.provider}/${checked.entry.model}` : '保存失败')
       if (r.ok) setDraft(EMPTY_DRAFT)
+      return r.ok ? { ok: true } : { ok: false, reason: '保存失败' }
     } catch {
-      setMsg('保存失败：远程通道不可用')
+      const reason = '保存失败：远程通道不可用'
+      setMsg(reason)
+      return { ok: false, reason }
     } finally {
       await reload().catch(() => { /* 刷新失败时保留上一次的表格 */ })
       setBusy(false)
@@ -165,23 +176,27 @@ export function usePricingPanel(props: PricingPanelProps) {
   }, [billing])
 
   /** 绑定：只按第一个 '/' 切（model id 自身可能带 '/'），三段都非空才发远程调用。 */
-  const bindAlias = useCallback(async () => {
-    if (billing === undefined) return
+  const bindAlias = useCallback(async (): Promise<SubmitOutcome> => {
+    if (billing === undefined) return { ok: false, reason: '绑定失败' }
     const slash = aliasDraft.key.indexOf('/')
     const provider = slash < 0 ? '' : aliasDraft.key.slice(0, slash).trim()
     const rawModel = slash < 0 ? '' : aliasDraft.key.slice(slash + 1).trim()
     const canonicalModel = aliasDraft.canonical.trim()
     if (provider === '' || rawModel === '' || canonicalModel === '') {
-      setMsg('别名要写「<provider>/<原始 model id>」与 canonical 模型名，两段都不能空')
-      return
+      const reason = '别名要写「<provider>/<原始 model id>」与 canonical 模型名，两段都不能空'
+      setMsg(reason)
+      return { ok: false, reason }
     }
     setBusy(true)
     try {
       const r = await billing.setAlias({ provider, rawModel, canonicalModel })
       setMsg(r.ok ? `已绑定 ${provider}/${rawModel} → ${canonicalModel}` : '绑定失败')
       if (r.ok) setAliasDraft({ key: '', canonical: '' })
+      return r.ok ? { ok: true } : { ok: false, reason: '绑定失败' }
     } catch {
-      setMsg('绑定失败：远程通道不可用')
+      const reason = '绑定失败：远程通道不可用'
+      setMsg(reason)
+      return { ok: false, reason }
     } finally {
       await reloadAliases().catch(() => { /* 保留上一次的列表 */ })
       setBusy(false)
@@ -214,7 +229,7 @@ export function usePricingPanel(props: PricingPanelProps) {
     setMsg(!r.ok
       ? failure(r.error.message)
       : r.value.ok
-        ? `已更新 ${r.value.entries ?? 0} 条价目`
+        ? `已更新 ${r.value.entries ?? 0} 条价目${r.value.partial === true ? '（部分模型未更新）' : ''}`
         : failure(r.value.reason ?? '未知原因'))
     await reload()
     setBusy(false)

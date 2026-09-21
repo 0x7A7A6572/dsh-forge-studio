@@ -123,9 +123,10 @@
   gap: 4px;
   min-width: 0;
 }
+/* 行标题只标注一个开关，比分区小标题（13/600）轻一档，不与它抢层级。 */
 .rowTitle {
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 500;
 }
 .rowDesc {
   margin: 0;
@@ -148,6 +149,13 @@
 .fieldNote {
   font-size: 12px;
   color: var(--dsw-alias-label-tertiary);
+}
+/* 弹窗里的表单：与卡片正文同一个竖向节奏（弹窗正文没有自带 gap）。 */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
 }
 /* 只给显式加了 .inputSm 的输入定宽：裸的 .field input 选择器会连 Input 原语内部的
    <input> 一起压窄（原语的权重更低），搜索框和复选框会被连带压成一条。 */
@@ -252,13 +260,6 @@
 }
 .bar[data-thin="true"] {
   height: 4px;
-}
-.barMeta {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  font-size: 11.5px;
-  color: var(--dsw-alias-label-tertiary);
 }
 
 /* ---------- 表格（primitives 里没有 Table 原语，这里是本插件的唯一实现） ---------- */
@@ -450,9 +451,6 @@
 .unpriced {
   color: var(--dsw-alias-state-warn-primary);
 }
-.danger {
-  color: var(--dsw-alias-state-error-primary);
-}
 
 /* 检测到跨档/回填这类需要「看一眼」的提示：左侧一道色条，比整块染色克制。 */
 .notice[data-kind="warn"] {
@@ -619,7 +617,8 @@
 .heat > span {
   width: 10px;
   height: 10px;
-  border-radius: 2px;
+  /* 与 echarts 路径的 series.itemStyle.borderRadius 对齐，两条路径同款方块。 */
+  border-radius: 3px;
   background: var(--dsw-alias-bg-layer-2);
 }
 .heat > span[data-level="1"] {

@@ -21,8 +21,6 @@ export function buildHeatOption(props: {
   colors: HeatColors
   formatDay: (day: string) => string
   formatValue: (value: number) => string
-  /** 每格边框色（跟随卡片底色，让格子之间有呼吸感）。 */
-  borderColor: string
   labelColor: string
 }): EChartsCoreOption {
   const values = props.points.map((p) => p.value)
@@ -52,7 +50,9 @@ export function buildHeatOption(props: {
       right: 8,
       bottom: 8,
       splitLine: { show: false },
-      itemStyle: { color: 'transparent', borderWidth: 2, borderColor: props.borderColor },
+      // 格子间距靠日历格边框让出来（方块按 borderWidth 内缩）。
+      // 边框自己透明：缝隙里露出来的就是卡片底色，不是一圈深色描边。
+      itemStyle: { color: 'transparent', borderWidth: 2, borderColor: 'transparent' },
       dayLabel: { firstDay: 1, nameMap: ['日', '一', '二', '三', '四', '五', '六'], color: props.labelColor, fontSize: 10 },
       monthLabel: { color: props.labelColor, fontSize: 10 },
       yearLabel: { show: false },
@@ -60,6 +60,8 @@ export function buildHeatOption(props: {
     series: [{
       type: 'heatmap',
       coordinateSystem: 'calendar',
+      // 圆角只认 series 的 itemStyle：它会被写进 Rect 的 shape.r。
+      itemStyle: { borderRadius: 3 },
       data: props.points.map((p) => [p.day, p.value]),
     }],
   }

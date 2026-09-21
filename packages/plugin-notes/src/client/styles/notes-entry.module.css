@@ -11,6 +11,7 @@
 
 .entryBtn {
   box-sizing: border-box;
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -40,51 +41,36 @@
   background: var(--dsw-alias-interactive-bg-active);
 }
 
-/* 输入栏工具条（记一笔 | 打开便签板 | 待办数）：一个槽位注册，三格并排。
-   底色是一层极淡的便签黄（#f0cd00 + 8% 透明度）：输入框左下角那条本来就贴边，
-   没有底会看不出这是一条整体的工具条。 */
+/* 图标右上角的待办数（与侧栏小签同一套便签黄）。只是计数提示，不接指针事件，
+   免得 13px 的小签把图标本身的点击面咬掉一块。 */
+.entryBadge {
+  box-sizing: border-box;
+  position: absolute;
+  top: -3px;
+  right: -4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 13px;
+  height: 13px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: #e3b341;
+  color: #2e2a22;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+/* 输入栏入口：只剩一个字形，外框不再有底色与内边距 —— 输入框左下角本来就窄，
+   那层淡便签黄会把视觉重心从输入区拉走。 */
 .toolbar {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
   flex: none;
-  background: #f0cd0014;
-  border-radius: 8px;
-  padding: 1px 4px;
 }
-.toolbarCount {
-  box-sizing: border-box;
-  display: inline-flex;
-  align-items: center;
-  height: 22px;
-  padding: 0 7px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 11.5px;
-  line-height: 1;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-  transition: background 130ms ease, color 130ms ease;
-}
-.toolbarCount:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
-}
-.toolbarCount:focus-visible {
-  outline: 2px solid var(--dsw-static-deepseek-450);
-  outline-offset: -2px;
-}
-/* 有待办时给一层淡便签黄（与侧栏小签同一套语义）；没有时只降调，**不移除** ——
-   工具条三格位置要稳定，否则每次计数归零按钮都会跳一格。 */
-.toolbarCount:not([data-empty]) {
-  background: rgba(227, 179, 65, 0.18);
-  color: var(--dsw-alias-label-primary);
-}
-.toolbarCount[data-empty] { opacity: 0.55; font-weight: 500; }
 
 /* 侧栏顶部入口那一行：图标 + 标题 + 弹簧 + 待办数 + 快捷新建 (＋)。侧栏那行只给一个
    字形位，五件东西都长在里面（见 components/NotesPanelIcon）。默认版式里只有

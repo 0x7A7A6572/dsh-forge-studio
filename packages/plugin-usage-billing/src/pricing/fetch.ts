@@ -4,7 +4,8 @@
  * 三条硬要求（spec §6.5）：
  * 1. **只把可解析的部分并进来**，结构不认识就整块丢弃（`projectModelsDev` 永不抛）；
  * 2. 失败一律**降级**到内置价表 + 默认汇率，并在返回值里给出 reason，UI 据此标「内置价」；
- * 3. **只有实质价变才追加 delta 快照**（汇率变化也算，因为金额折算依赖它）。
+ * 3. **只有实质价变才追加 delta 快照**（汇率变化也算，因为金额折算依赖它）；
+ * 4. 响应被宿主截断时抢救完整前缀，且**只增不删**（缺 key 是没抓到，不是目录已删）。
  *
  * TTL 只在内存里（重启后重新拉一次是可接受的）；durable 的价格记录就是 snapshots 表本身。
  */
@@ -13,7 +14,8 @@ import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { resetAggregateCache } from '../aggregate.ts'
 import { SNAPSHOT_BASE_ID, uniqueSnapshotDeltaKey } from '../storage-key.ts'
 import { BUILTIN_CATALOG, DEFAULT_USD_TO_CNY } from './catalog.ts'
-import { activeOverridesAt, planSnapshot, resolveSnapshotAt } from './snapshot.ts'
+import { CATALOG_REASONS, activeOverridesAt, planSnapshot, resolveLayerAt, resolveSnapshotAt } from './snapshot.ts'
+import { salvageJsonPrefix } from './salvage.ts'
 import type { PricingRefreshResult } from '../service.ts'
 import type { PriceEntry, PriceSnapshot } from '../types.ts'
 
@@ -106,28 +108,35 @@ function ttlMsOf(refreshHours: number | undefined): number {
   return Math.min(refreshHours, MAX_REFRESH_HOURS) * 60 * 60 * 1000
 }
 
+/** 截断且救不回来时的文案（直通 UI）。 */
+const TRUNCATED = '响应被截断（超过宿主单次抓取上限），本次不合并半份目录'
+
 /**
  * 取 JSON 文本（fetch 只给 text/html 两种 body，需自行解析）。
  *
- * **截断必须在这里拦住**：宿主的抓取层有单次响应上限（web-fetch-http 的 `maxBodyChars`，
- * 默认 100000 字符，请求侧无法放宽），models.dev 的 api.json 远大于那个数。硬解析一个被
- * 砍掉尾巴的 JSON 只会抛「Expected double-quoted property name at position 100000」这种
- * 看不出病因的错误；更坏的是**半份目录看起来是合法结果** —— 缺失的模型会被快照层当成
- * 「目录里已删」而清掉价（runRefresh 里那段「0 条 = 目录已删」注释说的是同一个坑）。
- * 所以这里宁可整次失败，降级到内置价。
+ * 宿主按 maxBodyChars 砍响应体：目录页抢救完整前缀用（allowPartial），
+ * 汇率页一律不救 —— 半截的汇率会静默缩放全部金额。
  */
-async function fetchJson(deps: PricingFetchDeps, url: string): Promise<unknown> {
+async function fetchJson(
+  deps: PricingFetchDeps, url: string, allowPartial = false,
+): Promise<{ json: unknown; partial: boolean }> {
   const res = await deps.web.fetch({ url })
   if (res.statusCode < 200 || res.statusCode >= 300) throw new Error(`HTTP ${res.statusCode}`)
-  if (res.truncated) throw new Error('响应被截断（超过宿主单次抓取上限），本次不合并半份目录')
-  return JSON.parse(res.body.content) as unknown
+  if (!res.truncated) return { json: JSON.parse(res.body.content) as unknown, partial: false }
+  const repaired = allowPartial ? salvageJsonPrefix(res.body.content) : null
+  if (repaired === null) throw new Error(TRUNCATED)
+  try {
+    return { json: JSON.parse(repaired) as unknown, partial: true }
+  } catch {
+    throw new Error(TRUNCATED)
+  }
 }
 
 export async function fetchUsdCny(
   deps: PricingFetchDeps,
 ): Promise<{ value: number; source: 'live' | 'default' }> {
   try {
-    const json = await fetchJson(deps, FX_URL)
+    const { json } = await fetchJson(deps, FX_URL)
     const rates = (json as { rates?: Record<string, unknown> }).rates
     const cny = num(rates?.CNY)
     if (cny === undefined || cny <= 0) throw new Error('CNY 汇率缺失')
@@ -140,8 +149,11 @@ export async function fetchUsdCny(
 /** 真正打网络并写快照的那一次读-改-写；缓存与去重由 `fetchPricingFromNetwork` 负责。 */
 async function runRefresh(deps: PricingFetchDeps, now: number): Promise<PricingRefreshResult> {
   let fetched: Record<string, PriceEntry>
+  let partial = false
   try {
-    fetched = projectModelsDev(await fetchJson(deps, MODELS_DEV_URL))
+    const res = await fetchJson(deps, MODELS_DEV_URL, true)
+    partial = res.partial
+    fetched = projectModelsDev(res.json)
   } catch (error) {
     return { ok: false, reason: `models.dev 拉取失败：${error instanceof Error ? error.message : String(error)}` }
   }
@@ -157,7 +169,10 @@ async function runRefresh(deps: PricingFetchDeps, now: number): Promise<PricingR
   // 但也不能原样重放整个 custom-price 层——一条「取消记录」携带的是取消当刻的目录价，
   // 整层重放会把它当成自定义价重新盖上，该 key 从此再也跟不上目录调价。
   const overrides = all.length === 0 ? {} : activeOverridesAt(now, all)
-  const entries: Record<string, PriceEntry> = { ...BUILTIN_CATALOG, ...fetched, ...overrides }
+  // 部分目录只增不删：缺的 key 是「没抓到」而不是「目录已删」，
+  // 抹掉等于让这些模型从此查不到价。基线取目录层，取消自定义价照旧生效。
+  const baseline = partial && all.length > 0 ? resolveLayerAt(now, all, CATALOG_REASONS).entries : {}
+  const entries: Record<string, PriceEntry> = { ...baseline, ...BUILTIN_CATALOG, ...fetched, ...overrides }
 
   // 同 appendDelta：拿完整状态当基线，否则目录里被删掉的模型会永远留在价表里。
   const prev = all.length === 0 ? undefined : resolveSnapshotAt(now, all)
@@ -177,7 +192,7 @@ async function runRefresh(deps: PricingFetchDeps, now: number): Promise<PricingR
     resetAggregateCache()
   }
 
-  return { ok: true, entries: Object.keys(fetched).length, usdToCny: fx.value }
+  return { ok: true, entries: Object.keys(fetched).length, usdToCny: fx.value, ...(partial ? { partial: true } : {}) }
 }
 
 export async function fetchPricingFromNetwork(

@@ -1,15 +1,19 @@
 /**
- * 输入栏左侧的入口工具条（slot: conversation.input.left）：记一笔 | 打开便签板 | 待办数。
+ * 输入栏左侧的便签入口（slot: conversation.input.left）：**一个** notepad-text 字形，
+ * 点开才弹出「新增便签 / 便签板」两行菜单。
  *
- * 合并前输入框左右各站一个按钮（左边「记一笔」、右边「打开便签板」），同一件事被拆到
- * 两头；现在只留左侧**一个**槽位注册，三项都长在这条工具条里。
+ * 以前这里并排三个格子（记一笔 | 打开便签板 | 待办数）还带一层淡便签黄底：输入框
+ * 左下角本来就窄，三个字形都在跟输入区抢宽度。收成一个字形后两件事进弹层，底色
+ * 一并去掉 —— 入口只剩一个字形。
  *
- * 待办数直接读 notesStatsStore（与侧栏徽标同源、事件驱动无轮询）。为 0 时只是变淡并
- * 改文案，**不隐藏** —— 工具条的三格位置必须稳定，否则每次计数归零按钮都会跳一格。
+ * 角标读 notesStatsStore（与侧栏小签同源、事件驱动无轮询）；待办为 0 时不渲染，
+ * 免得图标长期挂一个没意义的数字。
  */
 
-import { useSyncExternalStore } from 'react';
-import { StickyNote, StickyNotePlus } from 'lucide-react';
+import { useCallback, useState, useSyncExternalStore } from 'react';
+import { NotepadText, Plus, StickyNote } from 'lucide-react';
+import { Menu } from '@deepseek-ai/dsh-client-ui-primitives';
+import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives';
 import { useNotesEntryEnabled } from '../hooks/useNotesEntryEnabled.ts';
 import { notesStatsStore } from '../core/notes-stats.ts';
 import { NotesEntryIconButton } from './NotesEntryIconButton.tsx';
@@ -18,33 +22,52 @@ import styles from '../styles/notes-entry.module.css';
 
 export interface NotesInputToolbarProps extends NotesUiFace {}
 
-/** @returns 输入栏便签工具条；开关关闭时渲染 null（不占位）。 */
+/** 入口弹层的两行：新增便签（快捷新建浮层）/ 便签板。 */
+const MENU_ITEMS: readonly MenuEntry[] = [
+  { id: 'capture', label: '新增便签', icon: <Plus size={14} /> },
+  { id: 'board', label: '便签板', icon: <StickyNote size={14} /> },
+];
+
+/** @returns 输入栏便签入口；开关关闭时渲染 null（不占位）。 */
 export function NotesInputToolbar(props: NotesInputToolbarProps): JSX.Element | null {
   const enabled = useNotesEntryEnabled(props.scope, 'inputToolbar');
   const count = useSyncExternalStore(
     notesStatsStore.subscribe,
     () => notesStatsStore.openTasks,
   );
+  const [menuOpen, setMenuOpen] = useState(false);
+  const { capture, openBoard } = props;
+
+  const select = useCallback((id: string): void => {
+    if (id === 'capture') capture();
+    else if (id === 'board') openBoard();
+  }, [capture, openBoard]);
+
   if (!enabled) return null;
-  const text = `待办 ${count > 99 ? '99+' : count}`;
+  const badge = count > 99 ? '99+' : String(count);
+  const label = count > 0 ? `便签（待办 ${badge}）` : '便签';
+
   return (
-    <div className={styles.toolbar} role="toolbar" aria-label="便签">
-      <NotesEntryIconButton label="记一笔便签" onClick={props.capture}>
-        <StickyNotePlus size={16} />
-      </NotesEntryIconButton>
-      <NotesEntryIconButton label="打开便签板" onClick={props.openBoard}>
-        <StickyNote size={16} />
-      </NotesEntryIconButton>
-      <button
-        type="button"
-        className={styles.toolbarCount}
-        data-empty={count <= 0 ? '' : undefined}
-        title={`${text}；点开便签板`}
-        aria-label={`${text}；打开便签板`}
-        onClick={props.openBoard}
-      >
-        {text}
-      </button>
-    </div>
+    <Menu
+      className={styles.toolbar}
+      open={menuOpen}
+      anchor={(
+        <NotesEntryIconButton
+          label={label}
+          badge={count > 0 ? badge : undefined}
+          expanded={menuOpen}
+          onClick={() => { setMenuOpen((open) => !open); }}
+        >
+          <NotepadText size={16} />
+        </NotesEntryIconButton>
+      )}
+      items={MENU_ITEMS}
+      onSelect={select}
+      onClose={() => { setMenuOpen(false); }}
+      align="start"
+      side="top"
+      dense
+      portal
+    />
   );
 }

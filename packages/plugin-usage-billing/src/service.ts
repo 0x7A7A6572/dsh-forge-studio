@@ -37,6 +37,8 @@ export interface PricingRefreshResult {
   /** **本次**从 models.dev 抓到的条目数，不是在效价表的总量。 */
   entries?: number
   usdToCny?: number
+  /** 目录被截断，只并入了抢救到的那部分（只增不删）。 */
+  partial?: boolean
 }
 
 export interface UsageBillingServiceConfig {

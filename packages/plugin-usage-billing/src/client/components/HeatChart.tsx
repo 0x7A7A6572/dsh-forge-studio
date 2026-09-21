@@ -38,7 +38,6 @@ export function HeatChart(props: HeatChartProps): JSX.Element {
     colors: heatColors(),
     formatDay,
     formatValue: (value) => (unpriced ? NON_FINITE_PLACEHOLDER : formatCny(value)),
-    borderColor: resolveCssColor(readToken('--dsw-alias-bg-module-platform', '#16181d'), '#16181d'),
     labelColor: resolveCssColor(readToken('--dsw-alias-label-tertiary', '#8b8f98'), '#8b8f98'),
   }))
 

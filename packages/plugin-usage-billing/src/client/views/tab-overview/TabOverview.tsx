@@ -1,7 +1,6 @@
 /**
  * 概览：单列堆叠四张卡 —— 累计 Token 消耗 / 今日 Token 消耗 / 最近活跃度 / 分模型消耗。
  */
-import { evaluateBudget } from "../../../budget.ts";
 import {
   NON_FINITE_PLACEHOLDER,
   backfilledDisclosure,
@@ -22,12 +21,10 @@ import {
   windowStart,
 } from "../../core/token-stats.ts";
 import type { HeatWeeks } from "../../core/token-stats.ts";
-import { BUDGET_LEVEL_LABEL } from "../../core/budget-display.ts";
 import { Card } from "../../components/Card.tsx";
 import { DataTable } from "../../components/DataTable.tsx";
 import type { TableColumn } from "../../components/DataTable.tsx";
 import { HeroCard } from "../../components/HeroCard.tsx";
-import { ProgressBar } from "../../components/ProgressBar.tsx";
 import { HeatChart } from "../../components/HeatChart.tsx";
 import { HeatLegend } from "../../components/HeatLegend.tsx";
 import { SegmentedControl } from "../../components/SegmentedControl.tsx";
@@ -145,7 +142,7 @@ export function TabOverview(props: TabOverviewProps): JSX.Element {
         正在读取用量…
       </div>
     );
-  const { overview, budget, todayKey, days, models } = data;
+  const { overview, todayKey, days, models } = data;
   // 唯一判据（client/core/format.ts）：整份账一行都没定价时，本页**所有**金额级数字都占位。
   const unpriced = isUnpricedTotal(overview.totalCny, overview.unpricedModels);
   const money = (n: number): string =>
@@ -153,19 +150,6 @@ export function TabOverview(props: TabOverviewProps): JSX.Element {
 
   const all = sumDays(days);
   const today = days.find((d) => d.day === todayKey) ?? ZERO_DAY;
-  // 预算天然是**月度**口径：从全量按天数据里切当月，而不是拿「累计金额」去比月度预算。
-  const monthKey = todayKey.slice(0, 7);
-  const monthSpend = days.reduce(
-    (sum, d) => (d.day.startsWith(monthKey) ? sum + d.costCny : sum),
-    0,
-  );
-  const spend = evaluateBudget({
-    spentCny: monthSpend,
-    monthlyCny: budget.monthlyCny,
-    enabled: budget.enabled,
-    notified: {},
-    monthKey,
-  });
   // 窗口以「今天」结尾（而不是最后一条记录）：最近几天没用量的空格子也要画出来。
   const windowDaysList = windowDays(
     days,
@@ -201,29 +185,6 @@ export function TabOverview(props: TabOverviewProps): JSX.Element {
                 </span>
               ) : null}
             </>
-          }
-          footnote={
-            budget.enabled ? (
-              <>
-                <div className={styles.barMeta}>
-                  <span>本月预算 {formatCny(budget.monthlyCny)}</span>
-                  <span>·</span>
-                  <span>已用 {formatPct(spend.pct, 0)}</span>
-                  <span>·</span>
-                  <span>{BUDGET_LEVEL_LABEL[spend.level]}</span>
-                  {spend.pct >= 1 ? (
-                    <span className={styles.danger}>
-                      超支 {formatCny(monthSpend - budget.monthlyCny)}
-                    </span>
-                  ) : null}
-                </div>
-                <ProgressBar
-                  level={spend.level}
-                  ratio={spend.pct}
-                  label={`月度预算已用 ${formatPct(spend.pct, 0)}`}
-                />
-              </>
-            ) : undefined
           }
         />
 

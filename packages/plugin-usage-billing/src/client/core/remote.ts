@@ -86,7 +86,9 @@ export interface UsageBillingRemote {
   }>>
   setCustomPrice(entry: CustomPriceInput): Promise<RemoteResult<{ ok: true }>>
   removeCustomPrice(key: string): Promise<RemoteResult<{ ok: boolean }>>
-  refreshPricing(force: boolean): Promise<RemoteResult<{ ok: boolean; reason?: string; entries?: number; usdToCny?: number }>>
+  refreshPricing(force: boolean): Promise<RemoteResult<{
+    ok: boolean; reason?: string; entries?: number; usdToCny?: number; partial?: boolean
+  }>>
   setAlias(input: AliasInput): Promise<RemoteResult<{ ok: true }>>
   aliasList(): Promise<RemoteResult<{ aliases: Array<{ provider: string; rawModel: string; canonicalModel: string }> }>>
   repricing(): Promise<RemoteResult<{ changed: number }>>
