@@ -24,7 +24,7 @@ import type { MemorySettingsAccess } from './settings.ts'
 import type {
   MemoryAuditEntry, MemoryAuditInput, MemoryAuditQuery, MemoryConfig, MemoryEdge,
   MemoryEdgeQuery, MemoryEdgeRelation, MemoryEntity, MemoryEntityId, MemoryEntityInput,
-  MemoryEntityQuery, MemoryGraphNode, MemoryId, MemoryImportInput,
+  MemoryEntityKind, MemoryEntityQuery, MemoryEntityRef, MemoryGraphNode, MemoryId, MemoryImportInput,
   MemoryImportResult, MemoryIngestInput, MemoryIngestResult, MemoryKind, MemoryLinkInput, MemoryNeighborhood,
   MemoryPatch, MemoryConflict, MemoryNodeRef,
   MemoryProjectSummary, MemoryQuery, MemoryRawDocument, MemoryRawId, MemoryRawInput, MemoryRawQuery,
@@ -1326,16 +1326,26 @@ export class MemoryService extends TypertRemoteService {
   }
 
   /**
-   * 把 memory_save 声明的实体挂上：命中已有实体（名称或别名）就复用，否则按名称
-   * 新建一个 concept 实体，然后落一条 about 边（origin=agent，说明是模型自己指的）。
+   * 把 memory_save 声明的实体挂上：命中已有实体（名称或别名）就复用（带 kind 时一并
+   * 改写它的分类），否则新建，然后落一条 about 边（origin=agent，说明是模型自己指的）。
+   * 声明时不带 kind 就只能沿用默认的 concept。
    */
-  private async attachEntities(record: MemoryRecord, names: readonly string[] | undefined): Promise<void> {
-    if (names === undefined || names.length === 0) return
+  private async attachEntities(record: MemoryRecord, refs: readonly (string | MemoryEntityRef)[] | undefined): Promise<void> {
+    if (refs === undefined || refs.length === 0) return
     const from: MemoryNodeRef = { kind: 'memory', id: record.id }
-    for (const raw of names) {
-      const name = normalizeEntityName(raw)
+    // 同一次声明里同名合并成一次 upsert：后到的 kind 补上，先到的名字写法保留。
+    const desired = new Map<string, { name: string; kind?: MemoryEntityKind }>()
+    for (const raw of refs) {
+      const ref = typeof raw === 'string' ? { name: raw } : raw
+      const name = normalizeEntityName(ref.name)
       if (name === '') continue
-      const entity = await this.upsertEntity({ name })
+      const key = entityNameKey(name)
+      const previous = desired.get(key)
+      const kind = ref.kind ?? previous?.kind
+      desired.set(key, { name: previous?.name ?? name, ...(kind !== undefined ? { kind } : {}) })
+    }
+    for (const item of desired.values()) {
+      const entity = await this.upsertEntity({ name: item.name, ...(item.kind !== undefined ? { kind: item.kind } : {}) })
       await this.link({ from, to: { kind: 'entity', id: entity.id }, relation: 'about', origin: 'agent' })
     }
   }

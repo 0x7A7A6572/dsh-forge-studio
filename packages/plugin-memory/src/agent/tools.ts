@@ -15,7 +15,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type {
   MemoryConflict, MemoryEdge, MemoryEdgeOrigin, MemoryEdgeRelation, MemoryEntity, MemoryEntityId,
-  MemoryEntityKind, MemoryId, MemoryKind, MemoryNodeRef, MemoryRecord, MemoryScope,
+  MemoryEntityKind, MemoryEntityRef, MemoryId, MemoryKind, MemoryNodeRef, MemoryRecord, MemoryScope,
 } from '../types.ts'
 import {
   MEMORY_EDGE_ORIGINS, MEMORY_EDGE_RELATION_LABELS, MEMORY_EDGE_RELATIONS, MEMORY_ENTITY_KINDS,
@@ -233,6 +233,26 @@ async function labelIndex(svc: MemoryService): Promise<Map<string, string>> {
   return map
 }
 
+/**
+ * 收窄模型给的 entities 参数：字符串照旧按名字收，对象才认 kind，其余形态丢弃。
+ * schema 声明为 oneOf，运行时不拿它当信任边界，兜住不同 provider 的偏差。
+ */
+function parseEntityRefs(raw: readonly unknown[]): (string | MemoryEntityRef)[] {
+  const out: (string | MemoryEntityRef)[] = []
+  for (const item of raw) {
+    if (typeof item === 'string') {
+      out.push(item)
+      continue
+    }
+    if (item === null || typeof item !== 'object') continue
+    const record = item as { name?: unknown; kind?: unknown }
+    if (typeof record.name !== 'string') continue
+    const kind = MEMORY_ENTITY_KINDS.find((candidate) => candidate === record.kind)
+    out.push(kind === undefined ? { name: record.name } : { name: record.name, kind })
+  }
+  return out
+}
+
 /** 按 id / 名称 / 别名精确解析一个实体（工具参数里直接写名字时用）。 */
 async function resolveEntity(svc: MemoryService, ref: string): Promise<MemoryEntity | undefined> {
   const trimmed = ref.trim()
@@ -348,8 +368,10 @@ function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): voi
       + 'Over-limit bodies are rejected, not truncated. '
       // 不要记任务进度、进行中的快照、可重跑的验证结果（测试全过 / tsc 干净 / build 成功）。
       + 'Skip task progress, in-flight snapshots and re-runnable verification results (tests pass / tsc clean / build ok). '
-      // 用 entities 声明这条记忆讲的实体（项目/工具/人/概念）：命中已有实体则复用，未命中按名称新建，并落一条 about 边。
-      + 'Pass entities to declare what this memory is about (project / tool / person / concept names): each name is matched against existing entities or created, then linked with an about edge. '
+      // 用 entities 声明这条记忆讲的实体：命中已有实体则复用，未命中按名称新建，并落一条 about 边。
+      + 'Pass entities to declare what this memory is about: each name is matched against existing entities or created, then linked with an about edge. '
+      // 认得出来就给 kind（项目/工具/人/组织/概念）；缺省是 concept，所以能判就填，别一律省。
+      + 'Give each entity its kind (project / tool / person / org / concept) whenever you can tell — the default is concept, so an omitted kind loses the distinction. '
       // aliases 是同一条记忆的别的说法：之后用别名当标题写入会并进这一条，而不是另起一条。
       + 'aliases are alternative spellings of this same entry, so a later save titled with an alias merges here instead of creating a duplicate. '
       // summary 是一行摘要（目录卡 / 关联视图用）；正文仍要写完整结论。
@@ -367,7 +389,23 @@ function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): voi
       project_path: { type: 'string', description: 'Workspace directory for scope=project; defaults to the session cwd.' },
       summary: { type: 'string', description: 'One-line abstract for catalog and relation views.' },
       aliases: { type: 'array', items: { type: 'string' }, description: 'Alternative spellings of this same entry (they become merge targets).' },
-      entities: { type: 'array', items: { type: 'string' }, description: 'Entity names this memory is about (project / tool / person / concept); matched or created, then linked.' },
+      entities: {
+        type: 'array',
+        description: 'Entities this memory is about: a bare name, or { name, kind } when the kind is known.',
+        items: {
+          oneOf: [
+            { type: 'string' },
+            {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                name: { type: 'string', required: true, description: 'Entity name.' },
+                kind: { type: 'string', enum: MEMORY_ENTITY_KINDS, description: 'Entity category. Omit only when genuinely unclear.' },
+              },
+            },
+          ],
+        },
+      },
       importance: { type: 'integer', description: '1-5; >= the injection threshold gets auto-injected later.' },
       tags: { type: 'array', items: { type: 'string' }, description: 'Optional tags.' },
     },
@@ -435,7 +473,7 @@ function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): voi
         ...(args.kind !== undefined ? { kind: args.kind as MemoryKind } : {}),
         ...(args.summary !== undefined ? { summary: args.summary as string } : {}),
         ...(Array.isArray(args.aliases) ? { aliases: args.aliases as string[] } : {}),
-        ...(Array.isArray(args.entities) ? { entities: args.entities as string[] } : {}),
+        ...(Array.isArray(args.entities) ? { entities: parseEntityRefs(args.entities) } : {}),
         ...(args.importance !== undefined ? { importance: args.importance as number } : {}),
         ...(Array.isArray(args.tags) ? { tags: args.tags as string[] } : {}),
         source: 'agent',

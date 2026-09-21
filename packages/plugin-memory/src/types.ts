@@ -89,10 +89,11 @@ export interface MemorySaveInput {
   /** 别名；与已有条目的别名 / 标题撞上时并入那一条。 */
   readonly aliases?: readonly string[]
   /**
-   * 关联实体（实体 id、名称或别名）。写记忆时声明「这条讲的是谁」：
-   * 命中已有实体则复用，未命中则按名称新建，并落一条 about 边。
+   * 关联实体（名称或别名，可附 kind）。写记忆时声明「这条讲的是谁」：
+   * 命中已有实体则复用（带 kind 时同时纠正它的分类），未命中则按名称新建，
+   * 并落一条 about 边。
    */
-  readonly entities?: readonly string[]
+  readonly entities?: readonly (string | MemoryEntityRef)[]
   readonly kind?: MemoryKind
   readonly scope?: MemoryScope
   /** 项目记忆的工作区目录；scope=project 且缺省时由 host 用会话 cwd 兜底。 */
@@ -369,6 +370,15 @@ export const MEMORY_ENTITY_KIND_LABELS: Record<MemoryEntityKind, string> = {
   org: '组织',
   concept: '概念',
   other: '其他',
+}
+
+/**
+ * 记忆里引用一个实体的两种写法：只给名字（分类沿用现状 / 新建时为 concept），
+ * 或给 { name, kind } 让分类一次到位（命中已有实体时会顺带纠正它的 kind）。
+ */
+export interface MemoryEntityRef {
+  readonly name: string
+  readonly kind?: MemoryEntityKind
 }
 
 /** 一个实体。 */
