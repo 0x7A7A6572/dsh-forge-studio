@@ -9,7 +9,8 @@
     "typecheck": "pnpm -r --filter \"./packages/*\" run typecheck",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
-    "check": "pnpm lint && pnpm typecheck && pnpm build"
+    "test": "vitest run",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },
   "devDependencies": {
     "@deepseek-ai/dsh": "0.1.5-rc.2",
@@ -17,6 +18,7 @@
     "lightningcss": "^1.33.0",
     "oxlint": "^1.83.0",
     "oxlint-tsgolint": "^7.0.2002",
-    "tsdown": "^0.22.14"
+    "tsdown": "^0.22.14",
+    "vitest": "^5.0.1"
   }
 }

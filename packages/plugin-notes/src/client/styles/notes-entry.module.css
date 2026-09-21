@@ -104,11 +104,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* 弹簧：把待办数与 (＋) 顶到行最右。没接管时字形宽度 = 内容宽，弹簧拿到 0 宽。 */
-.panelSpacer {
-  flex: 1 1 auto;
-  min-width: 6px;
-}
 /* ---- 接管侧栏那一行：[图标 标题 ......... 待办数 (＋)] ----
    宿主那行是 button > span（字形位） + span（标题，仅宽态渲染），两个类名都被哈希掉，
    没有稳定钩子，只能 :has() 从 button 反查。条件**逐字相同**（这个行里既有我们的

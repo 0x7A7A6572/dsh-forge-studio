@@ -339,11 +339,16 @@ export function installNotesTools(ctx: Context): void {
 
   ctx.tools.register(defineTool({
     name: TOOL_CREATE,
-    description: 'Create a sticky note. Notes created through this tool are marked origin=agent (the user\'s own notes are origin=user).',
+    description:
+      'Create a sticky note. Notes created through this tool are marked origin=agent ' +
+      '(the user\'s own notes are origin=user). Pass laneStatus to create it as a task note ' +
+      'sitting in that lane (task notes are the ones that can be dispatched to an agent); ' +
+      'omit it for a plain note.',
     parameters: {
       title: { type: 'string', description: 'Note title. Defaults to 新便签 when omitted.' },
       text: { type: 'string', required: true, description: 'Note body (plain text or markdown).' },
       color: { type: 'string', enum: [...NOTE_COLORS], description: 'Sticky-note color. Defaults to yellow when omitted.' },
+      laneStatus: { type: 'string', enum: [...TASK_STATUSES], description: 'Create it as a task note in this lane (Backlog / To do / Running / Done / Failed). Omit for a plain note.' },
     },
     output: {
       schema: NOTE_OUTPUT_SCHEMA,
@@ -354,6 +359,8 @@ export function installNotesTools(ctx: Context): void {
         ...args.title !== undefined ? { title: args.title } : {},
         text: args.text,
         ...args.color !== undefined ? { color: args.color as NoteRecord['color'] } : {},
+        // 建即任务：只透传 laneStatus，日程仍由用户在 UI 里配（普通便签无 lane，日程无意义）。
+        ...args.laneStatus !== undefined ? { laneStatus: args.laneStatus as TaskStatus } : {},
         // agent 工具层创建 → 来源 'agent'（UI/用户创建才落 'user'）。
         origin: 'agent',
       })

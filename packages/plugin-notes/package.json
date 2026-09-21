@@ -1,6 +1,6 @@
 {
   "name": "@zzerx/dsh-plugin-notes",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "dsh 便签插件：纸卡墙便签板 + Markdown 编辑器，便签能变任务——拖进泳道、交给 AI 在指定工作区执行、按日程定时跑；支持 WebDAV 备份与 agent 工具读写。",
   "keywords": [
     "dsh",

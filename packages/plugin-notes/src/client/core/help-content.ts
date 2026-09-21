@@ -36,7 +36,7 @@ AI 助手也能读能写——记笔记、查资料、整理任务都可以直�
 - **链接**：选中文字点工具栏链接钮（或按 Ctrl+K）输入地址即可；直接粘贴 URL、输入完 URL 后敲空格也会自动成链；再点链接钮可改地址或移除。
 - **表格**：点工具栏表格钮，在网格里拖选行列数插入；光标在表格内时同钮变成行/列增删与整表删除操作。
 - **任务清单**（todolist）：工具栏点 **任务清单**（快捷键 **Ctrl+Shift+9**）插入勾选项，输入 \`- [ ] \` 也会自动转换；勾上即写回 \`- [x]\`、取消勾选回到 \`- [ ]\`，回车续行、Tab 缩进成子项都有。纸卡与行列表会在标题旁显示完成度（如 2/5），一眼看出还剩几件。
-- **代码块**：光标进入代码块后，工具栏会浮现**语言下拉**——选中语言立即**语法高亮**（HTML/JavaScript/TypeScript/React(JSX/TSX)/Vue/CSS/Shell/PowerShell/BAT/Python/JSON/YAML/SQL/XML/Markdown/Diff/INI 等）；语言随 Markdown 围栏一并保存。
+- **代码块**：选中多行再点工具栏代码块钮，会合并成**一个**代码块（不会再一行一块）；光标进入代码块后，工具栏会浮现**语言下拉**——选中语言立即**语法高亮**（HTML/JavaScript/TypeScript/React(JSX/TSX)/Vue/CSS/Shell/PowerShell/BAT/Python/JSON/YAML/SQL/XML/Markdown/Diff/INI 等）；语言随 Markdown 围栏一并保存。
 - 图片可直接 **粘贴** 进正文（自动内联保存）。
 - 标题留空自动用「默认标题」，可在 **dsh 设置 → 便签** 里修改。
 - 示例正文：

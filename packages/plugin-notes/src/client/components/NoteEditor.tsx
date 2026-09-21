@@ -7,7 +7,8 @@
  *
  * - 正文经 tiptap-markdown 序列化保存为真实 Markdown（不再丢格式）；
  * - 操作栏：粗体/斜体/删除线/标题H1-H3/无序·有序列表/任务清单(todolist)/引用/
- *   行内代码/代码块（+ 语言选择）/分隔线/链接（弹层设置）/表格（插入·行列操作）/撤销/重做；
+ *   行内代码/代码块（+ 语言选择；多行选区一次并成一块，见 core/note-code-block.ts）/
+ *   分隔线/链接（弹层设置）/表格（插入·行列操作）/撤销/重做；
  * - 代码块语言高亮、链接与表格能力来自共享扩展层 core/note-richtext.ts；
  * - 粘贴图片：剪贴板图片文件 → data URL 内联插入正文（守卫在 core/note-paste-guard.ts）；
  * - 保存：编辑既有便签时**停顿约 1 秒自动保存**（不关弹窗、不打断输入），
@@ -35,6 +36,7 @@ import { TASK_LANES, laneLabel } from "../core/task-lanes.ts"
 import { fmtDateTime } from "../core/time-text.ts"
 import { t } from "../core/theme-tokens.ts"
 import { CODE_LANGUAGES, codeLanguageLabel } from "../core/code-languages.ts"
+import { toggleNoteCodeBlock } from "../core/note-code-block.ts"
 import {
   ArrowDownToLine,
   ArrowLeftToLine,
@@ -321,7 +323,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
           title="代码块"
           active={fmt.codeBlock}
           disabled={saving}
-          onClick={() => run((e) => e.chain().focus().toggleCodeBlock().run())}
+          onClick={() => run(toggleNoteCodeBlock)}
         >
           <CodeXml size={16} />
         </ToolButton>
