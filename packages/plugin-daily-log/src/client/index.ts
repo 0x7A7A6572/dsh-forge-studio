@@ -3,7 +3,8 @@
  *
  * 唯一 UI 面 = dsh 设置面板里的一级「工作报告」分区（settings.section）：
  * 1. 先挂载 Typert 远程命名空间 dailyLog（host DailyLogService 直连，见 core/remote.ts）
- * 2. 再在设置面板注册分区（视图见 views/section.tsx，样式见 views/ui-css.ts）
+ * 2. 再在设置面板注册分区（视图见 views/settings-section/SettingsSection.tsx，
+ *    样式见 styles/settings-section.module.css —— CSS Modules 由构建预设自动注入）
  *
  * 分区的「注册 /report 指令」开关经 ctx.settingsScope 绑定本插件的设置命名空间
  * （host 侧由 src/settings.ts 注册，两边同一份命名空间），开关只决定 /report 是否
@@ -21,9 +22,8 @@ import type {  } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { DailyLogConfig } from '../types.ts'
 import { DAILY_LOG_NAMESPACE } from '../types.ts'
 import { mountDailyLogRemote, dailyLogOf } from './core/remote.ts'
-import { DailyLogSection } from './views/section.tsx'
-import { ensureDailyLogStyle } from './views/ui-css.ts'
-import { installDailyLogNavIcon } from './views/nav-icon.tsx'
+import { SettingsSection } from './views/settings-section/SettingsSection.tsx'
+import { installDailyLogNavIcon } from './components/NavIcon.tsx'
 
 export const name = '@zzerx/dsh-plugin-daily-log/client'
 export const inject = ['slots', 'settingsScope', 'remote']
@@ -32,8 +32,7 @@ export function apply(ctx: Context): void {
   // 第一层：先挂载 dailyLog 远程命名空间（self-mount，不走会话）。
   ctx.inject(['slots', 'settingsScope', 'remote'], async (ctx) => {
     await mountDailyLogRemote(ctx)
-    ensureDailyLogStyle()
-    // 侧边栏图标：外壳没有图标入口，只能打补丁（见 views/nav-icon.tsx）。失败即降级。
+    // 侧边栏图标：外壳没有图标入口，只能打补丁（见 components/NavIcon.tsx）。失败即降级。
     ctx.effect(() => installDailyLogNavIcon())
     // 第二层：命名空间就绪后再读 remote.dailyLog。
     ctx.inject(['remote.dailyLog', 'remote', 'slots', 'settingsScope'], (ctx) => {
@@ -48,7 +47,7 @@ export function apply(ctx: Context): void {
         order: 30,
         label: '工作报告',
         inject: () => ({ dailyLog, scope }),
-      }, DailyLogSection))
+      }, SettingsSection))
     })
   })
 }

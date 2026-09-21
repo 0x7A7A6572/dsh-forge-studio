@@ -31,6 +31,12 @@ export const CHANNEL_LABELS: Record<SourceKind, string> = {
 export const SOURCE_TYPES = ['code', 'other'] as const
 export type SourceType = (typeof SOURCE_TYPES)[number]
 
+/** 项目类型显示名（UI 徽标）。 */
+export const SOURCE_TYPE_LABELS: Record<SourceType, string> = {
+  code: '代码项目',
+  other: '其他',
+}
+
 /**
  * 项目记录（数据源 = 一个项目/工作区路径，渠道在扫描时对 path 自动探测聚合）。
  */

@@ -1,16 +1,19 @@
 /*
- * plugin-daily-log 样式正文。
+ * plugin-daily-log 样式正文（CSS Modules）。
  *
- * 注入与作用域契约见同目录 ui-css.ts；下面是必须遵守的硬约束：
- *   - 颜色只走 design-platform.css 里确实定义过的 --dsw-* alias token：
- *     未定义的 var() 不报错，只是让整条声明在 computed-value 阶段失效。
- *   - 选择器不得依赖插件之外的祖先作用域（Modal 是 portal 到 body 的）。
- * 这两条原先由 tests/ 的守卫测试盯着；测试已整体移除，改之前自己盯。
+ * 用法：import styles from '../styles/settings-section.module.css'，取 styles.xxx。
+ * 类名由 tsdown 预设的 lightningcss 编译成 [hash]_[local]（见 scripts/tsdown.client.mjs），
+ * 不再需要手写 dl- 前缀防串台；键帧名同样被哈希，跨文件的 animation 引用一定会断。
  *
- * 导入走 vite 的 `?inline` 查询（见 scripts/vite.client.mjs）：它返回编译后的 CSS 文本
- * 且不自动注入，语义等价于原先 esbuild 的 text loader；运行时由 ensureDailyLogStyle() 注入 <style>。
+ * 硬约束：
+ *   - 颜色只走 design-platform.css 里确实定义过的 --dsw-* alias token：未定义的 var()
+ *     不报错，只让整条声明在 computed-value 阶段失效。
+ *   - 类名之外的东西不受哈希保护，必须保留手写命名空间：CSS 自定义属性（--dsh-scrollbar-*）
+ *     与 DOM id。改前缀时别用「全文件替换 dl-」这类粗规则。
+ *   - 弹窗是 portal 到 body 的，但内容包了 DialogRoot（带同一个根标记），所以后代选择器照旧成立。
  */
 
+.root,
 [data-dsh-dailylog-ui] {
   display: flex;
   flex-direction: column;
@@ -21,27 +24,27 @@
 }
 
 /* 分区标题与引言（与 Agent 预设分区同规格）。 */
-[data-dsh-dailylog-ui] .dl-title-row {
+[data-dsh-dailylog-ui] .titleRow {
   display: flex;
   align-items: baseline;
   gap: 8px;
 }
 
-[data-dsh-dailylog-ui] .dl-title {
+[data-dsh-dailylog-ui] .title {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
 }
 
 /* 版本号：贴着标题但不抢标题（基线对齐 + 弱化色 + 等宽数字）。 */
-[data-dsh-dailylog-ui] .dl-version {
+[data-dsh-dailylog-ui] .version {
   font-size: 12px;
   font-weight: 400;
   color: var(--dsw-alias-label-tertiary);
   font-variant-numeric: tabular-nums;
 }
 
-[data-dsh-dailylog-ui] .dl-intro {
+[data-dsh-dailylog-ui] .intro {
   margin: 0;
   font-size: 13px;
   line-height: 1.6;
@@ -50,7 +53,7 @@
 
 /* 「注册 /report 指令」开关行：一个开关 + 解释文案（关掉后模型仍可自行启用，必须说清）。
    位置在分区顶部：它决定指令是否存在，属于使用前先看一眼的配置。 */
-[data-dsh-dailylog-ui] .dl-switch-row {
+[data-dsh-dailylog-ui] .switchRow {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -61,33 +64,33 @@
   background: var(--dsw-alias-bg-module-platform);
 }
 
-[data-dsh-dailylog-ui] .dl-switch-copy {
+[data-dsh-dailylog-ui] .switchCopy {
   display: grid;
   gap: 4px;
   min-width: 0;
 }
 
-[data-dsh-dailylog-ui] .dl-switch-title {
+[data-dsh-dailylog-ui] .switchTitle {
   font-size: 13.5px;
   font-weight: 600;
   line-height: 1.5;
 }
 
-[data-dsh-dailylog-ui] .dl-switch-desc {
+[data-dsh-dailylog-ui] .switchDesc {
   margin: 0;
   font-size: 12px;
   line-height: 1.6;
   color: var(--dsw-alias-label-secondary);
 }
 
-[data-dsh-dailylog-ui] .dl-switch-hint {
+[data-dsh-dailylog-ui] .switchHint {
   margin: 0;
   font-size: 11.5px;
   line-height: 1.6;
   color: var(--dsw-alias-label-tertiary);
 }
 
-[data-dsh-dailylog-ui] .dl-switch {
+[data-dsh-dailylog-ui] .switch {
   position: relative;
   flex: none;
   width: 40px;
@@ -101,18 +104,18 @@
   transition: background 120ms ease, border-color 120ms ease;
 }
 
-[data-dsh-dailylog-ui] .dl-switch:disabled {
+[data-dsh-dailylog-ui] .switch:disabled {
   cursor: not-allowed;
   opacity: 0.5;
 }
 
-[data-dsh-dailylog-ui] .dl-switch-on {
+[data-dsh-dailylog-ui] .switchOn {
   /* 同 mem-switch：没有 --dsw-alias-bg-accent，品牌色是 state-business-primary。 */
   background: var(--dsw-alias-state-business-primary, var(--dsw-alias-label-primary));
   border-color: transparent;
 }
 
-[data-dsh-dailylog-ui] .dl-switch-knob {
+[data-dsh-dailylog-ui] .switchKnob {
   position: absolute;
   top: 2px;
   left: 2px;
@@ -123,13 +126,13 @@
   transition: transform 120ms ease, background 120ms ease;
 }
 
-[data-dsh-dailylog-ui] .dl-switch-on .dl-switch-knob {
+[data-dsh-dailylog-ui] .switchOn .switchKnob {
   transform: translateX(16px);
   background: var(--dsw-alias-bg-module-platform);
 }
 
 /* 对话式生成：分区唯一的主操作，做成一块 framed 模块。 */
-[data-dsh-dailylog-ui] .dl-generate {
+[data-dsh-dailylog-ui] .generate {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -140,45 +143,37 @@
   background: var(--dsw-alias-bg-module-platform);
 }
 
-[data-dsh-dailylog-ui] .dl-generate-copy {
+[data-dsh-dailylog-ui] .generateCopy {
   display: grid;
   gap: 6px;
   min-width: 0;
 }
 
-[data-dsh-dailylog-ui] .dl-generate-title {
+[data-dsh-dailylog-ui] .generateTitle {
   font-size: 14px;
   font-weight: 600;
   line-height: 1.5;
 }
 
-[data-dsh-dailylog-ui] .dl-generate-desc {
+[data-dsh-dailylog-ui] .generateDesc {
   margin: 0;
   font-size: 12px;
   line-height: 1.6;
   color: var(--dsw-alias-label-tertiary);
 }
 
-[data-dsh-dailylog-ui] .dl-generate-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  font-size: 12px;
-  color: var(--dsw-alias-label-secondary);
-}
-
-[data-dsh-dailylog-ui] .dl-generate-action {
+[data-dsh-dailylog-ui] .generateAction {
   flex: none;
 }
 
 /* 分组内的页签：与设置左导航同款单元格（32px、r12、选中填充）。 */
-[data-dsh-dailylog-ui] .dl-tabs {
+[data-dsh-dailylog-ui] .tabs {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
 }
 
-[data-dsh-dailylog-ui] .dl-tab {
+[data-dsh-dailylog-ui] .tab {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -194,35 +189,35 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-[data-dsh-dailylog-ui] .dl-tab:hover {
+[data-dsh-dailylog-ui] .tab:hover {
   background: var(--dsw-specific-sidebar-nav-item-hover);
   color: var(--dsw-alias-label-primary);
 }
 
-[data-dsh-dailylog-ui] .dl-tab-active,
-[data-dsh-dailylog-ui] .dl-tab-active:hover {
+[data-dsh-dailylog-ui] .tabActive,
+[data-dsh-dailylog-ui] .tabActive:hover {
   background: var(--dsw-specific-sidebar-nav-item-active);
   color: var(--dsw-alias-label-primary);
   font-weight: 600;
 }
 
-[data-dsh-dailylog-ui] .dl-tab-count {
+[data-dsh-dailylog-ui] .tabCount {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   color: var(--dsw-alias-label-tertiary);
 }
 
-[data-dsh-dailylog-ui] .dl-tab-active .dl-tab-count {
+[data-dsh-dailylog-ui] .tabActive .tabCount {
   color: var(--dsw-alias-label-secondary);
 }
 
-[data-dsh-dailylog-ui] .dl-pane {
+[data-dsh-dailylog-ui] .pane {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-[data-dsh-dailylog-ui] .dl-group-head {
+[data-dsh-dailylog-ui] .groupHead {
   margin: 0;
   font-size: 12px;
   font-weight: 600;
@@ -231,29 +226,29 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-[data-dsh-dailylog-ui] .dl-empty,
-[data-dsh-dailylog-ui] .dl-note {
+[data-dsh-dailylog-ui] .empty,
+[data-dsh-dailylog-ui] .note {
   margin: 0;
   font-size: 12px;
   line-height: 1.7;
 }
 
-[data-dsh-dailylog-ui] .dl-empty {
+[data-dsh-dailylog-ui] .empty {
   color: var(--dsw-alias-label-tertiary);
 }
 
-[data-dsh-dailylog-ui] .dl-note {
+[data-dsh-dailylog-ui] .note {
   color: var(--dsw-alias-label-secondary);
 }
 
-[data-dsh-dailylog-ui] .dl-error {
+[data-dsh-dailylog-ui] .error {
   margin: 0;
   font-size: 12px;
   color: var(--dsw-alias-state-error-primary);
 }
 
 /* 卡片栅格：与 Agent 预设的 roster 同规格（auto-fill 268 起，行等高）。 */
-[data-dsh-dailylog-ui] .dl-cards {
+[data-dsh-dailylog-ui] .cards {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -263,7 +258,7 @@
   gap: 12px;
 }
 
-[data-dsh-dailylog-ui] .dl-card {
+[data-dsh-dailylog-ui] .card {
   display: flex;
   flex-direction: column;
   border: 0.5px solid var(--dsw-alias-border-l4);
@@ -272,16 +267,16 @@
   transition: border-color .16s, background .16s;
 }
 
-[data-dsh-dailylog-ui] .dl-card:hover {
+[data-dsh-dailylog-ui] .card:hover {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
 /* 展开的报告正文横跨整行：栅格列宽读长文太窄。 */
-[data-dsh-dailylog-ui] .dl-card-wide {
+[data-dsh-dailylog-ui] .cardWide {
   grid-column: 1 / -1;
 }
 
-[data-dsh-dailylog-ui] .dl-card-body {
+[data-dsh-dailylog-ui] .cardBody {
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -290,7 +285,7 @@
   padding: 14px 16px 12px;
 }
 
-[data-dsh-dailylog-ui] .dl-card-head {
+[data-dsh-dailylog-ui] .cardHead {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -298,7 +293,7 @@
   min-width: 0;
 }
 
-[data-dsh-dailylog-ui] .dl-card-name {
+[data-dsh-dailylog-ui] .cardName {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -308,14 +303,14 @@
   line-height: 1.4;
 }
 
-[data-dsh-dailylog-ui] .dl-card-desc {
+[data-dsh-dailylog-ui] .cardDesc {
   font-size: 13px;
   line-height: 1.55;
   color: var(--dsw-alias-label-secondary);
   overflow-wrap: anywhere;
 }
 
-[data-dsh-dailylog-ui] .dl-clamp {
+[data-dsh-dailylog-ui] .clamp {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -323,7 +318,7 @@
   min-height: 21px;
 }
 
-[data-dsh-dailylog-ui] .dl-card-path {
+[data-dsh-dailylog-ui] .cardPath {
   margin-top: auto;
   font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-size: 11px;
@@ -334,12 +329,12 @@
 }
 
 /* Input 原语的包壳是 inline-flex：放进 flex 行里要显式长开。 */
-[data-dsh-dailylog-ui] .dl-grow {
+[data-dsh-dailylog-ui] .grow {
   flex: 1 1 0;
   min-width: 0;
 }
 
-[data-dsh-dailylog-ui] .dl-card-foot {
+[data-dsh-dailylog-ui] .cardFoot {
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -349,7 +344,7 @@
 }
 
 /* 图标按钮：标签走 data-tip 气泡，行内保持安静。 */
-[data-dsh-dailylog-ui] .dl-icon-btn {
+[data-dsh-dailylog-ui] .iconBtn {
   position: relative;
   appearance: none;
   display: inline-flex;
@@ -362,27 +357,27 @@
   cursor: pointer;
 }
 
-[data-dsh-dailylog-ui] .dl-icon-btn:disabled {
+[data-dsh-dailylog-ui] .iconBtn:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
-[data-dsh-dailylog-ui] .dl-icon-btn:hover:not(:disabled) {
+[data-dsh-dailylog-ui] .iconBtn:hover:not(:disabled) {
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
 }
 
-[data-dsh-dailylog-ui] .dl-icon-btn:focus-visible {
+[data-dsh-dailylog-ui] .iconBtn:focus-visible {
   outline: 2px solid var(--dsw-alias-brand-primary);
   outline-offset: -1px;
 }
 
-[data-dsh-dailylog-ui] .dl-icon-danger:hover:not(:disabled) {
+[data-dsh-dailylog-ui] .iconDanger:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover-danger);
   color: var(--dsw-alias-state-error-primary);
 }
 
-[data-dsh-dailylog-ui] .dl-icon-btn::after {
+[data-dsh-dailylog-ui] .iconBtn::after {
   content: attr(data-tip);
   position: absolute;
   bottom: calc(100% + 6px);
@@ -400,13 +395,13 @@
   transition: opacity .12s;
 }
 
-[data-dsh-dailylog-ui] .dl-icon-btn:hover::after,
-[data-dsh-dailylog-ui] .dl-icon-btn:focus-visible::after {
+[data-dsh-dailylog-ui] .iconBtn:hover::after,
+[data-dsh-dailylog-ui] .iconBtn:focus-visible::after {
   opacity: 1;
 }
 
 /* 新增位：虚线胶囊，像一个「之后会长出东西」的位置，而不是一条命令。 */
-[data-dsh-dailylog-ui] .dl-add {
+[data-dsh-dailylog-ui] .add {
   box-sizing: border-box;
   align-self: stretch;
   display: flex;
@@ -424,22 +419,22 @@
   cursor: pointer;
 }
 
-[data-dsh-dailylog-ui] .dl-add:hover:not(:disabled) {
+[data-dsh-dailylog-ui] .add:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-[data-dsh-dailylog-ui] .dl-add:disabled {
+[data-dsh-dailylog-ui] .add:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
-[data-dsh-dailylog-ui] .dl-add-row {
+[data-dsh-dailylog-ui] .addRow {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-[data-dsh-dailylog-ui] .dl-text-btn {
+[data-dsh-dailylog-ui] .textBtn {
   border: none;
   border-radius: 7px;
   padding: 6px 8px;
@@ -450,25 +445,30 @@
   cursor: pointer;
 }
 
-[data-dsh-dailylog-ui] .dl-text-btn:hover:not(:disabled) {
+[data-dsh-dailylog-ui] .textBtn:hover:not(:disabled) {
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
 }
 
-[data-dsh-dailylog-ui] .dl-text-btn:disabled {
+[data-dsh-dailylog-ui] .textBtn:disabled {
   opacity: 0.5;
   cursor: default;
 }
 
+/* 会话库导入入口：整屏唯一的主引导链接，给一点业务色。 */
+[data-dsh-dailylog-ui] .textAccent {
+  color: var(--dsw-alias-state-business-primary);
+}
+
 /* 渠道小标（Git / DSH / Claude / Codex）：命中即亮。 */
-[data-dsh-dailylog-ui] .dl-chips {
+[data-dsh-dailylog-ui] .chips {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   flex: none;
 }
 
-[data-dsh-dailylog-ui] .dl-chip {
+[data-dsh-dailylog-ui] .chip {
   padding: 0 6px;
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 999px;
@@ -479,38 +479,42 @@
   flex: none;
 }
 
-[data-dsh-dailylog-ui] .dl-chip-on {
+[data-dsh-dailylog-ui] .chipOn {
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
 /* 弹窗（Modal 内容包一层带同一个根标记）。 */
-[data-dsh-dailylog-ui] .dl-dialog-body {
+[data-dsh-dailylog-ui] .dialogBody {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-[data-dsh-dailylog-ui] .dl-field {
+[data-dsh-dailylog-ui] .field {
   display: flex;
   flex-direction: column;
   gap: 6px;
   min-width: 0;
 }
 
-[data-dsh-dailylog-ui] .dl-field-label {
+[data-dsh-dailylog-ui] .fieldLabel {
   font-size: 12px;
   font-weight: 500;
   color: var(--dsw-alias-label-secondary);
 }
 
-[data-dsh-dailylog-ui] .dl-field-row {
+[data-dsh-dailylog-ui] .fieldRow {
   display: flex;
   gap: 8px;
   min-width: 0;
 }
 
-[data-dsh-dailylog-ui] .dl-textarea {
+[data-dsh-dailylog-ui] .fieldRowCenter {
+  align-items: center;
+}
+
+[data-dsh-dailylog-ui] .textarea {
   box-sizing: border-box;
   width: 100%;
   padding: 9px 12px;
@@ -524,16 +528,16 @@
   resize: vertical;
 }
 
-[data-dsh-dailylog-ui] .dl-textarea:focus {
+[data-dsh-dailylog-ui] .textarea:focus {
   outline: none;
   border-color: var(--dsw-alias-brand-primary);
 }
 
-[data-dsh-dailylog-ui] .dl-textarea::placeholder {
+[data-dsh-dailylog-ui] .textarea::placeholder {
   color: var(--dsw-alias-label-dimmed);
 }
 
-[data-dsh-dailylog-ui] .dl-seg {
+[data-dsh-dailylog-ui] .seg {
   display: inline-flex;
   flex: none;
   gap: 2px;
@@ -543,7 +547,7 @@
   background: var(--dsw-alias-bg-base);
 }
 
-[data-dsh-dailylog-ui] .dl-seg-btn {
+[data-dsh-dailylog-ui] .segBtn {
   border: none;
   border-radius: 12px;
   padding: 4px 12px;
@@ -554,13 +558,13 @@
   cursor: pointer;
 }
 
-[data-dsh-dailylog-ui] .dl-seg-btn-active {
+[data-dsh-dailylog-ui] .segBtnActive {
   background: var(--dsw-alias-button-primary-fill);
   color: var(--dsw-alias-label-primary-foreground);
   font-weight: 600;
 }
 
-[data-dsh-dailylog-ui] .dl-divider {
+[data-dsh-dailylog-ui] .divider {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -568,21 +572,21 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-[data-dsh-dailylog-ui] .dl-divider::before,
-[data-dsh-dailylog-ui] .dl-divider::after {
+[data-dsh-dailylog-ui] .divider::before,
+[data-dsh-dailylog-ui] .divider::after {
   content: '';
   flex: 1;
   border-top: 0.5px solid var(--dsw-alias-border-l2);
 }
 
 /* 穿梭框（会话库导入）：左右两个滚动列表。 */
-[data-dsh-dailylog-ui] .dl-transfer {
+[data-dsh-dailylog-ui] .transfer {
   display: flex;
   gap: 10px;
   min-height: 0;
 }
 
-[data-dsh-dailylog-ui] .dl-transfer-pane {
+[data-dsh-dailylog-ui] .transferPane {
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -590,14 +594,14 @@
   min-width: 0;
 }
 
-[data-dsh-dailylog-ui] .dl-transfer-head {
+[data-dsh-dailylog-ui] .transferHead {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
 
-[data-dsh-dailylog-ui] .dl-list-box {
+[data-dsh-dailylog-ui] .listBox {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -612,7 +616,7 @@
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
-[data-dsh-dailylog-ui] .dl-item {
+[data-dsh-dailylog-ui] .item {
   display: flex;
   flex-direction: column;
   flex: none;
@@ -623,14 +627,14 @@
   background: var(--dsw-alias-bg-layer-2);
 }
 
-[data-dsh-dailylog-ui] .dl-item-row {
+[data-dsh-dailylog-ui] .itemRow {
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
 }
 
-[data-dsh-dailylog-ui] .dl-item-name {
+[data-dsh-dailylog-ui] .itemName {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -640,7 +644,7 @@
   font-weight: 600;
 }
 
-[data-dsh-dailylog-ui] .dl-item-path {
+[data-dsh-dailylog-ui] .itemPath {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -648,32 +652,14 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-[data-dsh-dailylog-ui] .dl-item-detail {
+[data-dsh-dailylog-ui] .itemDetail {
   flex: none;
   font-size: 10.5px;
   color: var(--dsw-alias-label-tertiary);
 }
 
 /* 长正文（报告正文 / 模板预览）：卡片内滚动，不把卡片撑长。 */
-[data-dsh-dailylog-ui] .dl-code {
-  margin: 0;
-  padding: 12px;
-  max-height: min(52vh, 420px);
-  overflow: auto;
-  border: 0.5px solid var(--dsw-alias-border-l4);
-  border-radius: 12px;
-  background: var(--dsw-alias-bg-layer-2);
-  color: var(--dsw-alias-label-secondary);
-  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 12.5px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  word-break: break-word;
-  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
-  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
-}
-
-[data-dsh-dailylog-ui] .dl-preview {
+[data-dsh-dailylog-ui] .preview {
   min-height: 60px;
   max-height: 320px;
   overflow: auto;
@@ -686,24 +672,24 @@
 }
 
 /* 报告正文 / 模板预览的加高滚动区（长文读起来才够用）。 */
-[data-dsh-dailylog-ui] .dl-preview-tall {
+[data-dsh-dailylog-ui] .previewTall {
   max-height: min(52vh, 420px);
 }
 
-[data-dsh-dailylog-ui] .dl-textarea-prompt {
+[data-dsh-dailylog-ui] .textareaPrompt {
   min-height: 200px;
 }
 
-[data-dsh-dailylog-ui] .dl-textarea-skeleton {
+[data-dsh-dailylog-ui] .textareaSkeleton {
   min-height: 240px;
 }
 
 /* Modal 卡片宽度覆写：className 落在 portal 出去的卡片本身（不在根标记之内），
-   所以这两条按插件命名空间（dl-*）直接声明，宿主默认是 min(380px,100%)。 */
-.dl-dialog-md {
+   宿主默认是 min(380px,100%)。带 [role='dialog'] 是为了压过宿主 Modal 的单类规则。 */
+[role='dialog'].dialogMd {
   width: min(560px, 100%);
 }
 
-.dl-dialog-lg {
+[role='dialog'].dialogLg {
   width: min(760px, 100%);
 }
