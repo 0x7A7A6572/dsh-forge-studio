@@ -8,9 +8,10 @@
  * - `settings.section` 设置页
  *
  * 全部经 `slots.inject` 声明感知注册，与加载顺序无关；每个注册的 disposer 由
- * `slots.inject` / `slots.register` 通过调用 fiber 回收，样式注入与设置快照订阅则各走一条
+ * `slots.inject` / `slots.register` 通过调用 fiber 回收，设置快照订阅则走一条
  * `ctx.effect`（下面 `d.effect`：订阅的 disposer 必须挂在 fiber 上，否则 stop 后订阅泄漏）。
  * 两处回收路径不重叠：`ctx.effect` 只管它自己注册的那条副作用。
+ * 样式见 styles/settings-section.module.css，由构建预设的 CSS 插件自动注入，插件不再有手动 injector。
  *
  * **两层 inject**：`remote` 是**按 fiber 声明**的服务面 —— api-gateway 把每个命名空间
  * 注册成独立服务名 `remote.<namespace>`，cordis 只在「读过声明」的 fiber store 里解析它
@@ -34,10 +35,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import { mountUsageBillingRemote, usageBillingOf } from './core/remote.ts'
 import { createBillingStore } from './core/store.ts'
 import type { BillingConfigLike } from './core/config.ts'
-import { ensureUsageBillingStyle } from './views/ui-css.ts'
-import { EntryCard } from './views/entry-card.tsx'
-import { Dashboard } from './views/dashboard.tsx'
-import { SettingsSection } from './views/settings-section.tsx'
+import { EntryCard } from './components/EntryCard.tsx'
+import { Dashboard } from './views/dashboard/Dashboard.tsx'
+import { SettingsSection } from './views/settings-section/SettingsSection.tsx'
 import { USAGE_BILLING_NAMESPACE } from '../types.ts'
 
 export const name = '@zzerx/dsh-plugin-usage-billing/client'
@@ -75,7 +75,6 @@ export function apply(ctx: Context): void {
     // plugin-memory / plugin-daily-log 同一姿态）。面没出现前本层不会激活，所以三个注册
     // 也不会落在读不到面的 ctx 上；`d` 就是那个声明过面的 ctx，下面一律用它。
     c.inject(['remote.usageBilling', 'remote', 'slots', 'settingsScope'], (d) => {
-      ensureUsageBillingStyle(d)
       // 视图状态按 fiber 创建：模块级单例会在 fiber stop 后把上一轮的
       // open/tab/range 带进下一次 apply（重新挂载的插件不该继承旧弹窗状态）。
       const store = createBillingStore()

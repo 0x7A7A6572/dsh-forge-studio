@@ -1,42 +1,41 @@
 /**
- * 设置页（slot: settings.section）：预算、显示偏好、价表刷新、账本状态、口径说明。
- *
- * 版式对齐 plugin-memory 的设置分区：标题 + 版本号 + 引言 → 分组卡片（开关行 + 说明）
- * → 常驻口径说明。开关一律用 primitives 的 Switch 原语（role=switch + 必填可访问名），
- * 不再手写 `<input type="checkbox">`。
+ * 设置页的全部状态与动作：预算、显示偏好、价表刷新。
  *
  * 设置快照走宿主真实的 `ctx.settingsScope.bind<T>({ namespace })` 面
- * （`getSnapshot` / `subscribe`，与 plugin-daily-log 的设置分区同一姿态）——
+ * （`getSnapshot` / `subscribe`，与 plugin-daily-log / plugin-memory 同一姿态）——
  * 本地再声明一个 `{ get, watch }` 影子契约在宿主里根本不存在。
- * 样式由 client `apply` 经 `ctx.effect` 注入（这里不再重复注入）。
  *
  * 四个开关都**真的写**：预算与显示口径写宿主设置，子代理开关同时写视图 store，
  * 使当前弹窗立即按新口径重取数据（只写一半的话开关与页面上的账会互相打脸）。
  */
-
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import type { KeyboardEvent } from 'react'
-import { Input } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { UsageBillingRemote } from '../core/remote.ts'
-import type { BillingStore } from '../core/store.ts'
-import type { BillingScope } from '../core/config.ts'
-import { NON_FINITE_PLACEHOLDER } from '../core/format.ts'
-import { pluginVersion } from '../../version.ts'
-import { Card, FieldRow, StatCard, SwitchRow } from './components/kit.tsx'
-import { BackfillLedgerNote } from './backfill-notice.tsx'
+import type { UsageBillingRemote } from '../../core/remote.ts'
+import type { BillingStore } from '../../core/store.ts'
+import type { BillingScope } from '../../core/config.ts'
+import { NON_FINITE_PLACEHOLDER } from '../../core/format.ts'
 
-export function SettingsSection(props: {
+export interface SettingsSectionProps {
   billing: UsageBillingRemote | undefined
   scope: BillingScope
   store: BillingStore
-}): JSX.Element {
+}
+
+export interface LedgerStatus {
+  installAt: number
+  rows: number
+  sessions: number
+  snapshots: number
+}
+
+export function useSettingsSection(props: SettingsSectionProps) {
   const { billing, scope, store } = props
   const settings = useSyncExternalStore(
     useCallback((notify: () => void) => scope.subscribe(notify), [scope]),
     () => scope.getSnapshot(),
   )
   const cfg = settings.value
-  const [status, setStatus] = useState<{ installAt: number; rows: number; sessions: number; snapshots: number } | null>(null)
+  const [status, setStatus] = useState<LedgerStatus | null>(null)
   const [snapshotId, setSnapshotId] = useState(NON_FINITE_PLACEHOLDER)
   /** 预算金额草稿：`null` = 没在编辑，输入框直接显示快照真值。 */
   const [budgetDraft, setBudgetDraft] = useState<string | null>(null)
@@ -116,79 +115,19 @@ export function SettingsSection(props: {
     if (event.key === 'Enter') commitBudget()
   }, [commitBudget])
 
-  const locked = !settings.writable
-
-  return (
-    <section className="ub-section" data-dsh-usage-billing>
-      <div className="ub-title-row">
-        <h2 className="ub-title">计费</h2>
-        <span className="ub-version" title="插件版本">v{pluginVersion()}</span>
-      </div>
-      <p className="ub-intro">
-        从既有会话日志聚合真实 token 用量，按事件发生时刻的价表快照锁定费用。
-        这里只管口径与提醒；账目本身在侧栏的「计费」入口里看。
-      </p>
-
-      <Card title="预算">
-        <SwitchRow
-          title="启用预算提醒"
-          desc="跨 50% / 80% / 100% 各提醒一次，按「月份 + 档位」去重；只在你打开计费弹窗时判定，没看到的提醒不会被记成已提醒。"
-          checked={cfg?.budget?.enabled ?? false}
-          disabled={locked}
-          onChange={writeBudgetEnabled}
-        />
-        {/* 未配置时输入留空 + 占位而不是「0 元」：0 是一个真实的预算值，与「没设置」不是一回事。 */}
-        <FieldRow label="月度预算（元）">
-          <Input
-            className="ub-input-sm"
-            inputMode="decimal"
-            value={budgetDraft ?? budgetText}
-            placeholder={NON_FINITE_PLACEHOLDER}
-            disabled={locked}
-            onChange={(event) => { setBudgetDraft(event.currentTarget.value) }}
-            onBlur={commitBudget}
-            onKeyDown={onBudgetKeyDown}
-          />
-        </FieldRow>
-      </Card>
-
-      <Card title="显示与价表">
-        <SwitchRow
-          title="自动联网刷新价表"
-          desc="每 6 小时拉一次上游价表与汇率；关掉之后只用内置价与你手填的自定义价。"
-          checked={cfg?.pricing?.autoRefresh ?? true}
-          disabled={locked}
-          onChange={writeAutoRefresh}
-        />
-        <SwitchRow
-          title="统计包含子代理会话"
-          desc="关掉之后子代理会话的用量不计入总额、趋势与明细。"
-          checked={cfg?.display?.includeSubagents ?? true}
-          disabled={locked}
-          onChange={writeIncludeSubagents}
-        />
-        <SwitchRow
-          title="概览显示「未收录模型」提示条"
-          desc="只关掉概览页那条解释性文案；未收录的计数与徽标是事实，永远保留。"
-          checked={cfg?.display?.showUnpricedWarning ?? true}
-          disabled={locked}
-          onChange={writeShowUnpricedWarning}
-        />
-      </Card>
-
-      <Card title="账本状态">
-        <div className="ub-stats">
-          <StatCard label="账本行数" value={status?.rows ?? 0} hint="已折叠的原始记录" />
-          <StatCard label="已折叠会话" value={status?.sessions ?? 0} />
-          <StatCard label="价表快照" value={status?.snapshots ?? 0} hint="每笔价目变更一份" />
-        </div>
-        {/* 状态区在 status 未到 / 取数失败时停在 0 行：这是占位，不是「账本是空的」。 */}
-        <div className="ub-sub">账本 {status?.rows ?? 0} 行 · 已折叠 {status?.sessions ?? 0} 个会话</div>
-      </Card>
-
-      {/* status 未到（或取数失败）时传 null：说明段渲染占位，绝不把「不知道」印成 1970。
-          status 到了但 installAt 不是正数（命名空间里从未落盘）同样按未知处理。 */}
-      <BackfillLedgerNote installAt={status === null ? null : status.installAt} snapshotId={snapshotId} />
-    </section>
-  )
+  return {
+    cfg,
+    status,
+    snapshotId,
+    budgetDraft,
+    setBudgetDraft,
+    budgetText,
+    locked: !settings.writable,
+    commitBudget,
+    onBudgetKeyDown,
+    writeAutoRefresh,
+    writeBudgetEnabled,
+    writeIncludeSubagents,
+    writeShowUnpricedWarning,
+  }
 }

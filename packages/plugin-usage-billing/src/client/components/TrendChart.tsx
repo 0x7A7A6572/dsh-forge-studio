@@ -1,13 +1,14 @@
 /**
  * 趋势图 —— echarts（柱 / 折线 + 网格 + tooltip）。
  *
- * 生命周期（能力探测、加载、token 取色、销毁、主题重设）都在 echarts-runtime.ts，
+ * 生命周期（能力探测、加载、token 取色、销毁、主题重设）都在 hooks/useChartHost.ts，
  * 这里只负责「拿不到 canvas 时画什么」。
  */
-
 import type { EChartsCoreOption } from 'echarts/core'
-import { BarChart } from './chart.tsx'
-import { FALLBACK_LINE, readToken, useChartHost } from './echarts-runtime.ts'
+import { FALLBACK_LINE, readToken } from '../core/chart-tokens.ts'
+import { useChartHost } from '../hooks/useChartHost.ts'
+import { BarChart } from './BarChart.tsx'
+import styles from '../styles/settings-section.module.css'
 
 const COLOR_TOKEN = '--dsw-alias-state-business-primary'
 
@@ -28,7 +29,7 @@ export function TrendChart(props: TrendChartProps): JSX.Element {
 
   if (mode === 'fallback') {
     return (
-      <div className="ub-chart-fallback" style={{ height }}>
+      <div className={styles.chartFallback} style={{ height }}>
         <BarChart
           values={props.fallback.values}
           labels={props.fallback.labels}
@@ -42,7 +43,7 @@ export function TrendChart(props: TrendChartProps): JSX.Element {
   return (
     <div
       ref={hostRef}
-      className="ub-chart"
+      className={styles.chart}
       style={{ height }}
       role="img"
       aria-label="柱状图"

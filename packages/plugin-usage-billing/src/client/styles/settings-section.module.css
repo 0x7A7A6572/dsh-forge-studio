@@ -1,0 +1,336 @@
+/*
+ * plugin-usage-billing 样式正文（CSS Modules）。
+ *
+ * 用法：import styles from '../styles/settings-section.module.css'，取 styles.xxx。
+ * 类名由 tsdown 预设的 lightningcss 编译成 [hash]_[local]（见 scripts/tsdown.client.mjs），
+ * 不再需要手写 ub- 前缀防串台；键帧名同样被哈希，跨文件的 animation 引用一定会断。
+ *
+ * 硬约束：
+ *   - 颜色只走 design-platform.css 里确实定义过的 --dsw-* alias token：未定义的 var()
+ *     不报错，只让整条声明在 computed-value 阶段失效。
+ *   - 选择器不得依赖插件之外的祖先作用域（Modal 是 portal 到 body 的）—— 所以这里全用
+ *     单类选择器与 data-* 属性，不写 [data-dsh-usage-billing] 前缀。
+ *
+ * 注入由构建预设的 CSS 插件在 factory 执行时插 <style data-plugin>，插件不再有手动 injector。
+ */
+
+/* ---------- 基础 ---------- */
+[data-dsh-usage-billing] { box-sizing: border-box; font-variant-numeric: tabular-nums; }
+[data-dsh-usage-billing] * { box-sizing: border-box; }
+
+.section {
+  display: flex; flex-direction: column; gap: 12px;
+  min-width: 0; max-width: 100%;
+  color: var(--dsw-alias-label-primary); font-family: inherit; font-variant-numeric: tabular-nums;
+}
+
+.sub { font-size: 12px; line-height: 1.6; color: var(--dsw-alias-label-tertiary); }
+.estimate { color: var(--dsw-alias-state-warn-primary); font-size: 12px; }
+/* 推到最后一行（表单行右侧的合计）。 */
+.pushEnd { margin-left: auto; }
+
+/* ---------- 标题区 ---------- */
+.titleRow { display: flex; align-items: baseline; gap: 8px; }
+.title { margin: 0; font-size: 18px; font-weight: 600; }
+.version {
+  font-size: 12px; font-weight: 400; color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.intro { margin: 0; font-size: 13px; line-height: 1.6; color: var(--dsw-alias-label-tertiary); }
+
+.head { display: flex; align-items: center; gap: 8px; }
+.headTitle { font-size: 14px; font-weight: 600; }
+.toolbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.head .toolbar { margin-left: auto; }
+
+/* ---------- 卡片 ---------- */
+.card {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 14px 16px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 14px;
+  background: var(--dsw-alias-bg-module-platform);
+}
+.cardHead { display: flex; align-items: baseline; gap: 8px; }
+.cardTitle { font-size: 14px; font-weight: 600; }
+.cardActions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+
+/* 开关行 / 说明行：左文案右控件。 */
+.row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.rowCopy { display: grid; gap: 4px; min-width: 0; }
+.rowTitle { font-size: 14px; font-weight: 600; }
+.rowDesc { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--dsw-alias-label-tertiary); }
+
+/* 表单行：标签 + 控件（标签在行内，控件自然宽度）。 */
+.field { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.fieldLabel { font-size: 13px; color: var(--dsw-alias-label-secondary); }
+.fieldNote { font-size: 12px; color: var(--dsw-alias-label-tertiary); }
+/* 只给显式加了 .inputSm 的输入定宽：裸的 .field input 选择器会连 Input 原语内部的
+   <input> 一起压窄（原语的权重更低），搜索框和复选框会被连带压成一条。 */
+.inputSm { width: 96px; }
+.inputMd { width: 220px; }
+
+/* ---------- 页签 ---------- */
+/* 筛选用的小胶囊（时间范围 / 指标）。 */
+.tabs { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+/* 分区导航：下划线式页签 —— 与 plugin-memory 的 .tabs/.tab 同一套语言：
+   容器只有一条 0.5px 底线，选中态是 2px 下划线，不是「盒子 + 描边」那种标签。 */
+.tabnav {
+  display: flex; align-items: center; gap: 4px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l4);
+}
+.tab {
+  display: inline-flex; align-items: center; gap: 6px; padding: 7px 10px;
+  border: 0; border-bottom: 2px solid transparent; background: transparent;
+  color: var(--dsw-alias-label-tertiary); font-size: 13px; font-family: inherit; cursor: pointer;
+}
+.tab:hover { color: var(--dsw-alias-label-secondary); }
+.tabActive { color: var(--dsw-alias-label-primary); border-bottom-color: var(--dsw-alias-label-primary); }
+
+/* ---------- 统计卡 ---------- */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.stat {
+  display: grid; gap: 2px; padding: 12px 14px;
+  border: 0.5px solid var(--dsw-alias-border-l4); border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+.statLabel { font-size: 12px; color: var(--dsw-alias-label-tertiary); }
+.statValue {
+  font-size: 19px; font-weight: 600; letter-spacing: -0.01em;
+  color: var(--dsw-alias-label-primary); font-variant-numeric: tabular-nums;
+}
+.statHint { font-size: 11.5px; color: var(--dsw-alias-label-tertiary); }
+
+/* ---------- 预算进度条 ---------- */
+.bar {
+  display: block; width: 100%; height: 8px; overflow: hidden;
+  border-radius: 999px; background: var(--dsw-alias-bg-layer-2);
+}
+.bar > i {
+  display: block; height: 100%; border-radius: 999px;
+  background: var(--dsw-alias-state-business-primary);
+  transition: width 180ms ease, background 180ms ease;
+}
+.bar[data-level='warn'] > i { background: var(--dsw-alias-state-warn-primary); }
+.bar[data-level='over'] > i { background: var(--dsw-alias-state-error-primary); }
+.bar[data-thin='true'] { height: 4px; }
+.barMeta {
+  display: flex; align-items: baseline; gap: 6px;
+  font-size: 11.5px; color: var(--dsw-alias-label-tertiary);
+}
+
+/* ---------- 表格（primitives 里没有 Table 原语，这里是本插件的唯一实现） ---------- */
+.table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.table th {
+  padding: 6px 10px; text-align: left; font-weight: 500; white-space: nowrap;
+  color: var(--dsw-alias-label-tertiary); border-bottom: 0.5px solid var(--dsw-alias-border-l4);
+}
+.table td {
+  padding: 7px 10px; vertical-align: top; color: var(--dsw-alias-label-primary);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l4);
+}
+.table tbody tr:last-child td { border-bottom: none; }
+.table tbody tr:hover td { background: var(--dsw-alias-interactive-bg-hover); }
+.table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.table .cellMain { font-weight: 500; }
+.tableEmpty { padding: 24px; text-align: center; color: var(--dsw-alias-label-tertiary); font-size: 12.5px; }
+.tableWrap { overflow-x: auto; }
+.tableWrap .table { min-width: 520px; }
+
+/* ---------- 列表工具条 / 可排序表头 / 分页器 ---------- */
+.listbar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+/* 过滤框：弹性宽度，但窄屏下不低于 140px（再窄就只能看到几个字）。 */
+.search { flex: 0 1 220px; min-width: 140px; }
+.listbarCount {
+  font-size: 11.5px; color: var(--dsw-alias-label-tertiary); font-variant-numeric: tabular-nums;
+}
+.listbarExtra { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+/* 排序表头就是一个真按钮：键盘可达，读屏念「按 X 排序」。 */
+.thSort {
+  display: inline-flex; align-items: center; gap: 4px; padding: 0;
+  border: none; background: none; font: inherit; font-weight: 500;
+  color: inherit; cursor: pointer;
+}
+.thSort:hover { color: var(--dsw-alias-label-primary); }
+.table th[aria-sort='ascending'], .table th[aria-sort='descending'] { color: var(--dsw-alias-label-primary); }
+.pager {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 10px; padding-top: 10px; border-top: 0.5px solid var(--dsw-alias-border-l4);
+}
+.pagerSizes { display: flex; align-items: center; gap: 4px; }
+.pagerNav { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.pagerPos {
+  min-width: 52px; text-align: center; font-size: 11.5px;
+  color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 列表（工作区 → 会话下钻） ---------- */
+.list { display: flex; flex-direction: column; gap: 6px; }
+.item {
+  border: 0.5px solid var(--dsw-alias-border-l4); border-radius: 10px;
+  background: var(--dsw-alias-bg-module-platform); overflow: hidden;
+}
+.itemHead {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 9px 12px; border: none; background: transparent; font: inherit;
+  color: var(--dsw-alias-label-primary); text-align: left; cursor: pointer;
+}
+.itemHead:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.itemTitle {
+  flex: 1 1 auto; min-width: 0; font-size: 12.5px; font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.itemMeta { font-size: 11.5px; color: var(--dsw-alias-label-tertiary); white-space: nowrap; }
+.itemBody {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 8px 12px 10px 26px; border-top: 0.5px solid var(--dsw-alias-border-l4);
+}
+.itemBodyLine { font-size: 12px; color: var(--dsw-alias-label-secondary); }
+
+/* ---------- 提示条 ---------- */
+.notice {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px 14px; font-size: 12.5px; line-height: 1.6;
+  border: 0.5px solid var(--dsw-alias-border-l4); border-radius: 12px;
+  background: var(--dsw-alias-bg-module-platform); color: var(--dsw-alias-label-secondary);
+}
+.noticeFoot { display: flex; justify-content: flex-end; gap: 6px; }
+/* 未收录 / 未计价：不写成 ¥0.00，而是明确说「未收录」。 */
+.unpriced { color: var(--dsw-alias-state-warn-primary); }
+.danger { color: var(--dsw-alias-state-error-primary); }
+
+/* 检测到跨档/回填这类需要「看一眼」的提示：左侧一道色条，比整块染色克制。 */
+.notice[data-kind='warn'] { border-left: 3px solid var(--dsw-alias-state-warn-primary); }
+.notice[data-kind='error'] { border-left: 3px solid var(--dsw-alias-state-error-primary); }
+.notice[data-kind='info'] { border-left: 3px solid var(--dsw-alias-state-business-primary); }
+
+.empty {
+  padding: 28px 16px; text-align: center;
+  color: var(--dsw-alias-label-tertiary); font-size: 12.5px;
+}
+
+/* ---------- Hero 卡（累计 / 今日） ---------- */
+/* 版式对齐参考图：标题左上小字灰色 → 超大主数字 + 单位 → 指标格对齐成列。 */
+.heroRow { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.herocard {
+  flex: 1;
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 14px 16px;
+}
+.herocardTitle { font-size: 12px; color: var(--dsw-alias-label-tertiary); }
+.herocardMain { display: flex; align-items: baseline; gap: 8px; }
+.herocardValue {
+  font-size: 32px; font-weight: 600; line-height: 1.1; letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums; color: var(--dsw-alias-label-primary);
+}
+.herocardUnit { font-size: 12px; color: var(--dsw-alias-label-tertiary); }
+.herocardSub { font-size: 12px; color: var(--dsw-alias-label-secondary); }
+.herocardCells {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 10px;
+}
+.herocardCell {
+  display: grid; gap: 2px; padding: 8px 10px;
+  border-radius: 10px;
+}
+/* 格里是「上大数字、下文案」：数值是主角（比正文大一号），标签退到辅助色。 */
+.herocardCellValue {
+  font-size: 18px; font-weight: 600; line-height: 1.15;
+  font-variant-numeric: tabular-nums; color: var(--dsw-alias-label-primary);
+}
+.herocardCellLabel { font-size: 11.5px; color: var(--dsw-alias-label-tertiary); }
+.herocardFoot { display: flex; flex-direction: column; gap: 6px; }
+
+/* 活跃度脚注：图例在左（对齐参考图的左下角图例），区间统计在右。 */
+.activityFoot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.activityFoot .sub { margin-left: auto; }
+.heatlegend { display: inline-flex; align-items: center; gap: 4px; }
+.heatlegendLabel { font-size: 11.5px; color: var(--dsw-alias-label-tertiary); }
+.heatlegendSwatch {
+  width: 10px; height: 10px; border-radius: 2px; background: var(--dsw-alias-bg-layer-2);
+}
+/* 与 .heat > span 同一条五档色阶（改这里要同步改那里）。 */
+.heatlegendSwatch[data-level='1'] {
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 25%, var(--dsw-alias-bg-layer-2));
+}
+.heatlegendSwatch[data-level='2'] {
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, var(--dsw-alias-bg-layer-2));
+}
+.heatlegendSwatch[data-level='3'] {
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 70%, var(--dsw-alias-bg-layer-2));
+}
+.heatlegendSwatch[data-level='4'] { background: var(--dsw-alias-state-business-primary); }
+
+/* ---------- 热力图 ---------- */
+/*
+ * 日历热力图（降级实现）：7 行 = 一周 7 天，1 列 = 一周。只写 grid-auto-flow: column 而没给
+ * grid-template-rows 时，隐式网格只有一行 —— 整个日历会摊成一条横线（踩过）。
+ * matrix.flat() 是「按周优先」展开的，正好和列填充顺序一致。
+ */
+.heat {
+  display: grid; grid-template-rows: repeat(7, 10px); grid-auto-flow: column;
+  grid-auto-columns: 10px; gap: 2px; overflow-x: auto; padding-bottom: 2px;
+}
+.heat > span { width: 10px; height: 10px; border-radius: 2px; background: var(--dsw-alias-bg-layer-2); }
+.heat > span[data-level='1'] {
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 25%, var(--dsw-alias-bg-layer-2));
+}
+.heat > span[data-level='2'] {
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, var(--dsw-alias-bg-layer-2));
+}
+.heat > span[data-level='3'] {
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 70%, var(--dsw-alias-bg-layer-2));
+}
+.heat > span[data-level='4'] { background: var(--dsw-alias-state-business-primary); }
+
+/* ---------- 图表 ---------- */
+.chart { width: 100%; min-height: 180px; }
+.chartFallback { min-height: 180px; display: flex; align-items: center; justify-content: center; }
+
+/* ---------- 弹窗（portal 到 body） ---------- */
+[role='dialog'].modal { width: min(1040px, 94vw); max-height: 88vh; }
+.modalContent { overflow: auto; }
+
+/* ---------- 别名行 ---------- */
+.aliasRow {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 6px 0; border-bottom: 0.5px solid var(--dsw-alias-border-l4);
+}
+.aliasRow:last-child { border-bottom: none; }
+.aliasText { font-size: 12.5px; color: var(--dsw-alias-label-secondary); word-break: break-all; }
+.itemBodyPath { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; }
+
+/* 裸 select 必须自己受控：宿主没有 select 原语，这里只给它一条与 Input 同高的外观。 */
+.select {
+  padding: 4px 8px; border: 0.5px solid var(--dsw-alias-border-l4); border-radius: 8px;
+  background: var(--dsw-alias-bg-module-platform); color: var(--dsw-alias-label-primary); font: inherit; font-size: 12.5px;
+}
+.tagInline { margin-left: 6px; }
+
+/* ---------- 侧栏入口卡 ---------- */
+.entry {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 6px 8px; border: none; border-radius: 8px; background: transparent;
+  color: var(--dsw-alias-label-secondary); cursor: pointer; text-align: left; font: inherit;
+}
+.entry:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.entry[data-wide='false'] { justify-content: center; width: 36px; height: 36px; padding: 0; }
+.entry[data-wide='false'] .entryText { display: none; }
+.entryText { display: flex; flex-direction: column; gap: 4px; flex: 1 1 auto; min-width: 0; }
+.entryLine { display: flex; align-items: baseline; gap: 6px; }
+.entryAmount {
+  font-size: 13px; font-weight: 600; color: var(--dsw-alias-label-primary);
+  font-variant-numeric: tabular-nums;
+}
+.entryToday {
+  font-size: 11px; color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.entryBudget { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.entryBudget .bar { flex: 1 1 auto; min-width: 24px; }
+.entryPct {
+  flex: none; font-size: 10.5px; color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.entryIcon { flex: none; display: inline-flex; align-items: center; color: var(--dsw-alias-brand-primary); }
+.badge { flex: none; font-size: 10px; color: var(--dsw-alias-state-error-primary); }

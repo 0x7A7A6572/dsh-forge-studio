@@ -8,11 +8,13 @@
  * 语义与可达性按标准表格来：`<th scope="col">`、`aria-sort`、排序是一个真按钮
  * （键盘可点、读屏会念「按 X 排序」）、空态占满一整行而不是留一张空表。
  */
-
 import type { ReactNode } from 'react'
 import { ArrowDown, ArrowUp, ChevronsUpDown } from 'lucide-react'
-import type { SortState } from '../../core/list-state.ts'
-import { ListPager, ListToolbar, useList } from './list-controls.tsx'
+import { useList } from '../hooks/useList.ts'
+import type { SortState } from '../core/list-state.ts'
+import { ListPager } from './ListPager.tsx'
+import { ListToolbar } from './ListToolbar.tsx'
+import styles from '../styles/settings-section.module.css'
 
 export interface TableColumn<T> {
   key: string
@@ -53,7 +55,7 @@ export function DataTable<T>(props: {
   })
 
   const cellClass = (column: TableColumn<T>): string =>
-    [column.align === 'right' ? 'ub-num' : '', column.main === true ? 'ub-cell-main' : '']
+    [column.align === 'right' ? styles.num : '', column.main === true ? styles.cellMain : '']
       .filter((part) => part !== '').join(' ')
 
   return (
@@ -67,8 +69,8 @@ export function DataTable<T>(props: {
           filtered={list.view.filtered}
         />
       )}
-      <div className="ub-table-wrap">
-        <table className="ub-table" data-dsh-ub-table>
+      <div className={styles.tableWrap}>
+        <table className={styles.table} data-dsh-ub-table>
           <thead>
             <tr>
               {columns.map((column) => {
@@ -78,14 +80,14 @@ export function DataTable<T>(props: {
                   <th
                     key={column.key}
                     scope="col"
-                    className={column.align === 'right' ? 'ub-num' : undefined}
+                    className={column.align === 'right' ? styles.num : undefined}
                     aria-sort={column.sortValue === undefined ? undefined
                       : dir === 'asc' ? 'ascending' : dir === 'desc' ? 'descending' : 'none'}
                   >
                     {column.sortValue === undefined ? column.header : (
                       <button
                         type="button"
-                        className="ub-th-sort"
+                        className={styles.thSort}
                         aria-label={'按' + column.header + '排序'}
                         onClick={() => { list.toggleSort(column.key) }}
                       >
@@ -108,7 +110,7 @@ export function DataTable<T>(props: {
             ))}
             {list.view.rows.length === 0 ? (
               <tr>
-                <td className="ub-table-empty" colSpan={columns.length}>
+                <td className={styles.tableEmpty} colSpan={columns.length}>
                   {rows.length === 0 ? (props.empty ?? '还没有记录。') : '没有匹配的记录。'}
                 </td>
               </tr>

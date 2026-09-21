@@ -53,7 +53,7 @@ export async function apply(ctx: Context): Promise<void> {
    * 估算起点的时刻：**每次 apply 现取**，即「本次宿主加载该服务」的时间，不持久化。
    * 它只用于 `ensureBaseSnapshot` 那一刻的落盘（此后由 ledger 里 `reason: 'install'` 的
    * 快照自己留存），因此宿主重启后 `status()` 报的是本次加载时刻，不是当初首次安装的时刻 ——
-   * 界面文案按这个口径措辞（`client/views/backfill-notice.tsx`）。
+   * 界面文案按这个口径措辞（`client/components/BackfillNotice.tsx`）。
    */
   const installAt = Date.now()
 

@@ -180,6 +180,21 @@ oxlint（根 .oxlintrc.json）
 | 视图文件里不许出现 state/await | 自定义规则或 `no-restricted-syntax`（可选，后加） |
 | import 顺序 | `import-x/order` |
 
+## 依赖版本线（别把 `slots` 一起升级）
+
+仓库同时跑两条 `@deepseek-ai/*` 版本线，**只有 client 侧的包升到 `0.1.6-alpha.2`，host 侧一律留在 `0.1.5-rc.2`**：
+
+| 位置 | 版本 | 说明 |
+|---|---|---|
+| 各包 `peerDependencies` 里的 host 包 | `>=0.1.5-rc.2 <0.1.6-0 || >=0.1.6-alpha <0.2.0-0` | 双区间声明，两条线都算支持 |
+| `devDependencies` 的 host 包（agent / storage / settings / tools …） | `0.1.5-rc.2` | 宿主实际提供的还是 0.1.5 |
+| `devDependencies` 的 client 包（primitives / settings / sidebar / layout / renderer / store / locale / chat …） | `0.1.6-alpha.2` | `memory` / `notes` / `daily-log` / `usage-billing` 四包一致 |
+| **`@deepseek-ai/dsh-client-ui-slots`** | **`0.1.5-rc.2`，永远不动** | 见下 |
+
+**`slots` 必须钉在 `0.1.5-rc.2`，不然 `SlotMap` 增广直接失效。** 槽位契约是 `declare module '@deepseek-ai/dsh-client-ui-slots'` 的类型增广，两份实例就是两个不同的模块身份，增广合不上 —— 症状是 `PropsRuntime<'槽位'>` 报 `constraint never`，或者 `keyof SlotMap = never`，然后所有槽位注册在编译期集体消失。所以升级 client 包时**逐行点名**，不要用「全文件把 `0.1.5-rc.2` 换成 `0.1.6-alpha.2`」这类粗规则。
+
+改完的验证顺序：`pnpm install`（lockfile 要跟着变）→ `pnpm typecheck` → `pnpm build` → `pnpm lint`。**类型过了不等于运行时过了**：client 包在产物里是 external（`lib/client.js` 里只剩一个 `@deepseek-ai/dsh-client-ui-primitives`），真正解析它的是宿主，本地宿主版本决定能不能跑起来。
+
 ## 包的骨架
 
 ```
@@ -236,7 +251,7 @@ src/client/
 ## 样式文件放哪
 
 1. **插件级样式**（整块 UI 共用一张表）→ `client/styles/<它作用的区域>.module.css`。**不需要注入函数** —— tsdown 预设的 CSS 插件会在 factory 执行时自动插 `<style data-plugin>`。
-2. **组件级样式** → 与组件同名同目录（`NoteCard.tsx` + `NoteCard.module.css`）。CSS Modules 已随 tsdown 预设落地（现覆盖 `memory` / `notes` 两个包）。
+2. **组件级样式** → 与组件同名同目录（`NoteCard.tsx` + `NoteCard.module.css`）。CSS Modules 已随 tsdown 预设落地（现覆盖 `memory` / `notes` / `daily-log` / `usage-billing` 四个包）。
 
 > 实测结论：**「一个组件一份」要看类名是否真的私有。** `plugin-memory` 的 89 个类名里有 13 个（`row*` / `seg*` / `error` / `notice` / `modalBody` …）被两个以上组件共用，那是**共享版式类**；硬拆就得靠 `composes` 或 `:global()` 兜，反而更绕。所以它保持一张 `settings-section.module.css` 靠哈希隔离，只有类名确实私有的组件（如 `ScaleSlider`）才另开一份。
 
@@ -250,7 +265,13 @@ src/client/
 - `:has(.hashed)` 正常参与哈希，所以「靠 CSS 接管宿主那一行」的写法（`notes-entry.module.css`）照旧成立。
 - 类名一律去掉 `fs-note-` / `fs-lane-` / `fs-task-` 前缀后 camelCase；**没有对应规则的死钩子类**（`fs-note-lane`、`fs-lane-status`）不留 `className`，改挂 `data-dsh-part="…"`。
 
-`daily-log` / `usage-billing` 的 `views/ui-css.{ts,css}` 待同样处理。
+`daily-log` / `usage-billing` 也已迁完：两包各一张 `client/styles/settings-section.module.css`，`views/ui-css.{ts,css}` 与手写的 `ensure*Style()` 注入函数一并删除，`className` 全部走 `styles.xxx`。两包的取舍不同，都是有理由的：
+
+- **`daily-log` 跟 `memory` 一样保留祖先作用域**：`dl-` 前缀去掉、类名 camelCase，规则仍写成 `[data-dsh-dailylog-ui] .titleRow{…}`。它的设置分区与三个页签都挂在宿主既有版式里，作用域能把「宿主同名类」挡在外面。
+- **`usage-billing` 跟 `notes` 一样不写祖先作用域**：仪表盘是 `Modal`（portal 到 body），祖先链根本不在插件手里，前缀一去就只能靠哈希隔离。改写规则时别把 `[data-dsh-usage-billing]` 当前缀用 —— 那是**根挂点**，不是作用域（`data-dsh-ub-*` 这类属性钩子同理：属性不参与类名哈希，必须整体保留原名）。
+- 页面视图一律 `views/<页面>/{<Page>.tsx,use<Page>.ts}` 三件套，页面私有的零件进 `views/<页面>/components/`；跨页面共用的才进 `client/components/` 与 `client/hooks/`。`daily-log` 的三个页签与 `usage-billing` 的五个页签都按这套落地。
+
+去前缀有一个**构建与 `tsc` 都报不出错**的坑：`.ub-bar > i`、`.ub-table th` 这类后代 / 子选择器里的类名会跟着改，对不上只会默默少一条样式。迁完用「`styles.x` 用到的名字」与「CSS 里定义的类名」双向比对扫一遍（本次两包均为零差异）。
 
 ## 抽 hook 的实操经验（plugin-memory 踩出来的）
 
@@ -281,7 +302,7 @@ src/client/
 
 **禁用词**（文件名里出现即改名）：`parts` `kit` `utils` `helpers` `common` `misc` `shared`，以及单独用的 `section`。
 
-`section` 单独用是模糊的。`plugin-usage-billing` 的那个已经叫 `settings-section.tsx` —— 语义对了，但按上面的规则大小写要跟导出的组件走，最终应该是一致的三份：`views/settings-section/` 文件夹里的 `SettingsSection.tsx`。
+`section` 单独用是模糊的。三包现已一致：`views/settings-section/` 文件夹里的 `SettingsSection.tsx`（`{daily-log,memory,usage-billing}` 全部改完，逻辑在同目录 `useSettingsSection.ts`）。
 
 ## 尺寸红线
 
@@ -297,22 +318,22 @@ src/client/
 - `plugin-notes/src/client/views/settings-section/SettingsSection.tsx`（586 行纯 JSX）+ `hooks/useSettingsSection.ts`（316 行）—— 同 memory 的理由。
 - `plugin-notes/src/client/views/notes-board/components/BoardMain.tsx`（545 行）+ `useBoardMain.ts`（逻辑面）—— 列表与泳道两套版式共用同一条滚动 / 懒加载通道。
 
-越线的 `*.module.css`：`plugin-memory/src/client/styles/settings-section.module.css`（932 行）、`plugin-notes/src/client/styles/notes-board.module.css`（板子骨架 + 卡片 + 泳道 + 动效合表）。单文件，但都是 CSS Module，见上文为何不按组件拆。
+越线的 `*.module.css`：`plugin-memory/src/client/styles/settings-section.module.css`（932 行）、`plugin-daily-log/src/client/styles/settings-section.module.css`（596 行）、`plugin-notes/src/client/styles/notes-board.module.css`（板子骨架 + 卡片 + 泳道 + 动效合表）。单文件，但都是 CSS Module，见上文为何不按组件拆。
 
 ## 现状与约定的差距（照着改就行）
 
 | 现在 | 改成 |
 |---|---|
-| `usage-billing/src/client/views/components/` | `usage-billing/src/client/components/` |
-| `usage-billing/…/views/components/kit.tsx` | 拆开，按内容命名 |
-| `{daily-log,memory}/src/client/views/section.tsx` | `client/views/settings-section/SettingsSection.tsx`（逻辑拆进同目录 hook）—— **memory 已迁完**（目录+改名+拆零件+抽 hook）|
-| `daily-log/src/client/views/parts.tsx` | `client/components/` + 按内容命名 |
-| `{daily-log,memory}/src/client/views/nav-icon.tsx` | `client/components/NavIcon.tsx` —— **memory 已迁**，daily-log 待做 |
-| `{daily-log,memory,usage-billing}/…/views/ui-css.{ts,css}` | `client/styles/settings-section.module.css` —— **memory 已迁**（含去前缀、CSS Modules、删注入函数） |
-| billing `views/` 里的零件（chart / heat-chart / trend-chart / entry-card / backfill-notice / echarts-runtime） | `client/components/` |
+| ~~`usage-billing/src/client/views/components/`~~ | **已完成**：目录已删，零件进 `client/components/` |
+| ~~`usage-billing/…/views/components/kit.tsx`~~ | **已完成**：拆成 `Card` / `StatCard` / `HeroCard` / `ProgressBar` 等按内容命名的组件 |
+| ~~`{daily-log,memory}/src/client/views/section.tsx`~~ | **已完成**：`client/views/settings-section/SettingsSection.tsx` + 同目录 `useSettingsSection.ts` |
+| ~~`daily-log/src/client/views/parts.tsx`~~ | **已完成**：拆成 `components/`（`NavIcon` / `IconAction` / `AddButton` / `DialogRoot` / `ChannelChips`）与 `core/`（`format` / `run-action` / `template-summary`） |
+| ~~`{daily-log,memory}/src/client/views/nav-icon.tsx`~~ | **已完成**：`client/components/NavIcon.tsx` |
+| ~~`{daily-log,memory,usage-billing}/…/views/ui-css.{ts,css}`~~ | **已完成**：`client/styles/settings-section.module.css`（去前缀 + CSS Modules + 删注入函数） |
+| ~~billing `views/` 里的零件（chart / heat-chart / trend-chart / entry-card / backfill-notice / echarts-runtime）~~ | **已完成**：`client/components/` + `client/hooks/`（`useChartHost` / `useList` / `useEntryCard`）；五个页签各成 `views/tab-*/{Tab*.tsx,useTab*.ts}` |
 | ~~`notes/src/client/core/panel-mount.ts`、`core/quick-add.ts`~~ | **已完成**：搬进 `client/hooks/`（`useEditorPageDialog.ts` / `useQuickAddDialog.ts`）|
 | `home-studio/src/client/icons.ts` | 看内容：图标组件 → `components/`；图标数据 → `core/` |
-| `daily-log/.pubclean/`（遗留空目录） | 删掉 |
+| ~~`daily-log/.pubclean/`（遗留空目录）~~ | **已完成**：已删 |
 | ~~`memory` 的 `SettingsSection.tsx` 1314 行单文件~~ | **已完成**：`hooks/useSettingsSection.ts`（381）+ `hooks/useMemoryDetail.ts`（290），视图只剩解构 + 渲染函数 + JSX |
 | ~~`notes`：`components/note-editor.tsx` 2149 行 + 6 个散在 `views/` 的 `board-*.tsx` / 5 个 `*_CSS` 常量 + `<style>` 注入~~ | **已完成**：`NoteEditor.tsx` + `hooks/useNoteEditor.ts` + `components/NoteRunBlock.tsx` / `NoteToolButton.tsx`；页面视图全部改成 `views/<页面>/{<Page>.tsx,use<Page>.ts,}` 三件套；CSS 进 `styles/*.module.css`；构建从 esbuild/tsup 换成 tsdown 预设 |
 | ~~`notes` 的 host 侧 `core/*.ts` 里内联 CSS 字符串~~ | **已完成**：三张 `.module.css` 取代注入函数（`notes-entry-css.ts` 已删）|

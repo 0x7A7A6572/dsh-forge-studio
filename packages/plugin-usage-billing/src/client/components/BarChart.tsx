@@ -1,21 +1,8 @@
-/** 自绘 SVG 图表件（无图表库、无外链）。 */
-
-import { barGeometry, sparklinePoints } from '../core/chart-data.ts'
-
-export function Sparkline(props: { values: number[]; width?: number; height?: number }): JSX.Element {
-  const width = props.width ?? 120
-  const height = props.height ?? 28
-  const points = sparklinePoints(props.values, width, height)
-  if (points === '') return <svg width={width} height={height} aria-hidden="true" />
-  return (
-    <svg width={width} height={height} aria-hidden="true" data-dsh-usage-billing>
-      <polyline points={points} fill="none" stroke="currentColor" strokeWidth={1.5} />
-    </svg>
-  )
-}
+/** 自绘 SVG 柱状图（无图表库、无外链）：canvas 不可用时的降级实现。 */
+import { barGeometry } from '../core/chart-data.ts'
 
 /**
- * 柱状图。`formatValue` 是**必填**的：tooltip 曾经直接插值 `props.values[i]`，把
+ * `formatValue` 是**必填**的：tooltip 曾经直接插值 `props.values[i]`，把
  * `1234.5678901234` 这种原始浮点印给用户，绕过了 `core/format.ts` 这个唯一的金额格式化
  * 来源。调用方（趋势页）按当前指标（费用 / Token）各自传对应的格式化函数。
  */
