@@ -4,8 +4,9 @@
  * 关键设计（spec §5.5）：**账本永远存原始 provider + 原始 model id**，别名只在
  * 展示层与查价时使用。所以这里只产出「查价候选序列」，不改写任何落盘数据。
  *
- * 内置规则只做**确定性的字符串归一**（剥组织前缀、剥日期后缀、小写化），
- * 不做「猜同款模型」的映射 —— 那类映射只能由用户手工绑定（见 Task 16）。
+ * 内置规则只做**确定性的归一**：剥组织前缀、剥日期后缀、小写化，外加一张「同款异名」表
+ * （见 MODEL_SYNONYMS）。不做模糊猜 —— 猜错就是把贵的那档算成便宜的；表里没写的仍由用户
+ * 手工绑定（手工别名优先）。
  */
 
 import { aliasKey } from './storage-key.ts'
@@ -32,12 +33,28 @@ export function aliasId(provider: string, rawModel: string): string {
 const DATE_SUFFIX = /-(?:\d{8}|\d{6}|\d{4}-\d{2})$/
 const ORG_PREFIX = /^[a-z0-9][a-z0-9._-]*\//
 
-/** 确定性归一：小写去空格 → 剥组织前缀 → 剥日期后缀。 */
+/**
+ * 内置「同款异名」表：键与值都是**归一化后**的模型名。
+ *
+ * 只写确定是同一个模型的（同价、同参数）。官方 API 名 `deepseek-flash` 与目录名
+ * `deepseek-v4-flash` 就是同一个模型；写进这里，历史价表（可能只有其中一个名字）
+ * 也能命中，不必再让用户手工绑别名。
+ */
+const MODEL_SYNONYMS: Readonly<Record<string, string>> = {
+  'deepseek-flash': 'deepseek-v4-flash',
+}
+
+/** 同款异名归到目录名；不在表里原样返回。 */
+function canonicalModelName(name: string): string {
+  return MODEL_SYNONYMS[name] ?? name
+}
+
+/** 确定性归一：小写去空格 → 剥组织前缀 → 剥日期后缀 → 同款异名归一到目录名。 */
 export function normalizeModelId(raw: string): string {
   let id = raw.trim().toLowerCase()
   id = id.replace(ORG_PREFIX, '')
   id = id.replace(DATE_SUFFIX, '')
-  return id
+  return canonicalModelName(id)
 }
 
 /**
@@ -46,10 +63,10 @@ export function normalizeModelId(raw: string): string {
  * 与 `normalizeModelId` 的差别是有意的：`claude-...-20240620` 与 `-20241022` 是不同版本、
  * 单价也不同，并成一行会让金额失真；而 `openrouter/deepseek/deepseek-chat` 与
  * `deepseek/deepseek-chat` 就是同一个模型名，必须落在同一行。
- * 只做确定性字符串归一，不猜"同款模型"。账本仍存原始 provider + 原始 model，没有任何改写。
+ * 只做确定性归一 + 内置等价表，不猜"同款模型"。账本仍存原始 provider + 原始 model，没有任何改写。
  */
 export function sameModelName(raw: string): string {
-  return raw.trim().toLowerCase().replace(ORG_PREFIX, '')
+  return canonicalModelName(raw.trim().toLowerCase().replace(ORG_PREFIX, ''))
 }
 
 /**
