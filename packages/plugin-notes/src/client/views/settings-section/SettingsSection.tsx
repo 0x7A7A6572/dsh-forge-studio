@@ -3,8 +3,9 @@
  *
  * 注册见 src/client/index.ts：inject 面给 { notes, scope }，分区自己不再持 ctx。
  *
- * 基础分区：默认标题 / 默认工作区。默认工作区=任务便签未单独指定 workspace 时预置最近使用
- * 的目录。
+ * 基础分区：默认标题 / 打开方式 / 入口开关。**没有「默认工作区」**：M1-4 起任务必须
+ * 自带工作区（见 types.ts 的 NoteLane.workspace）—— 兜底值只会让「没配好的任务」看起来
+ * 像「能跑的任务」。
  *
  * 备份分区（WebDAV）：
  * - 表单读写 forge-studio-notes 命名空间的 webdav 对象；
@@ -20,7 +21,6 @@ import type { NotesRemote } from '../../core/notes-remote.ts'
 import type { NoteOpenMode, NotesConfig, NotesEntryConfig } from '../../../types.ts'
 import { Input, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import { t } from '../../core/theme-tokens.ts'
-import { folderNameOf } from '../../core/workspace-path.ts'
 import { SettingsCard } from '../../components/SettingsCard.tsx'
 import { SettingsRow } from '../../components/SettingsRow.tsx'
 import { SettingsSwitchRow } from '../../components/SettingsSwitchRow.tsx'
@@ -29,9 +29,9 @@ import { useSettingsSection, type SettingsGroup } from './useSettingsSection.ts'
 
 /** 注册侧注入的业务面（见 src/client/index.ts）。 */
 export interface NotesSettingsSectionInjected {
-  /** notes 远程通道（工作区候选 + WebDAV 备份/列表/恢复/状态端点）。 */
+  /** notes 远程通道（WebDAV 备份/列表/恢复/状态端点）。 */
   readonly notes: NotesRemote
-  /** forge-studio-notes 命名空间 scope（读写 defaultTitle / defaultWorkspace / entry / webdav）。 */
+  /** forge-studio-notes 命名空间 scope（读写 defaultTitle / entry / openMode / webdav）。 */
   readonly scope: SettingsScope<NotesConfig>
 }
 
@@ -56,7 +56,7 @@ const ENTRY_ITEMS: readonly {
   readonly hint: string
 }[] = [
   { key: 'sidebarPanelIcon', label: '侧栏顶部入口', hint: '侧边栏顶部那一整行：[图标 便签 ......... 待办数 (＋)]，点行打开便签板，点 (＋) 只开快捷新建；关掉后便签板只能从别处打开。' },
-  { key: 'inputToolbar', label: '输入栏工具条', hint: '输入框左下角那一条：记一笔 | 打开便签板 | 待办数。' },
+  { key: 'inputToolbar', label: '输入栏入口', hint: '输入框左下角那一个字形：点开是「新增便签 / 便签板 / 任务泳道」，待办数挂在任务泳道那一行。' },
   { key: 'saveMessageAction', label: '助手消息「存成便签」', hint: '每条助手回复下方的按钮，把该条回答收进便签。' },
   { key: 'rightSidebarGuide', label: '右侧栏导引卡片', hint: '右侧栏导引页里的便签卡片；点一下就在右侧栏以标签页打开便签板。' },
 ]
@@ -83,14 +83,6 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
     dirty,
     saveDefaultTitle,
     overridden,
-    workspaceOverridden,
-    wsDraft,
-    setWsDraft,
-    wsSaving,
-    wsDirty,
-    saveDefaultWorkspace,
-    wsOptions,
-    wsLabels,
     notice,
     openMode,
     setOpenMode,
@@ -124,7 +116,7 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
         </div>
         <p style={introStyle}>
           会话里随手记的便签板：记一笔、把待办挂成任务泳道、回头按列看进度。
-          这里管默认值、各入口开关与 WebDAV 备份；便签板本身从侧栏顶部那一行打开。
+          这里管默认标题、入口开关、打开方式与 WebDAV 备份；便签板本身从侧栏顶部那一行打开。
         </p>
       </div>
 
@@ -173,37 +165,9 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
               </div>
             </SettingsRow>
 
-            <SettingsRow
-              label="默认工作区"
-              badge={workspaceOverridden ? <span style={{ color: t.stateWarn, fontSize: 12 }}>已覆盖</span> : null}
-              hint="任务便签未单独指定工作区时，执行会以该目录新建会话。"
-            >
-              <select
-                value={wsDraft}
-                disabled={!writable || wsSaving}
-                aria-label="默认工作区"
-                title={wsDraft === '' ? '自动：优先最近会话用过的目录，其次宿主进程目录' : `工作区：${wsDraft}`}
-                onChange={(e) => setWsDraft(e.target.value)}
-                style={inputStyle}
-              >
-                <option value="">自动（最近使用的目录）</option>
-                {wsOptions.map((option) => (
-                  <option key={option} value={option} title={option}>
-                    {wsLabels.get(option) ?? folderNameOf(option)}
-                  </option>
-                ))}
-              </select>
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <button
-                  type="button"
-                  disabled={!writable || wsSaving || !wsDirty}
-                  onClick={() => void saveDefaultWorkspace()}
-                  style={{ ...btnPrimary, ...(!writable || wsSaving || !wsDirty ? dimmed : {}) }}
-                >
-                  {wsSaving ? '保存中…' : '保存默认工作区'}
-                </button>
-              </div>
-            </SettingsRow>
+
+            {/* 这里曾有「默认工作区」：M1-4 起取消 —— 任务必须有便签级工作区，
+                编辑器不给「用默认」，host 侧也不再有兜底。 */}
 
             {notice !== null && group === 'general' && (
               <div style={noticeStyle(notice.kind)} role="status">

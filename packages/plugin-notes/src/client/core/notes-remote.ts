@@ -25,12 +25,14 @@ import type {
   NoteColor,
   NoteCreateInput,
   NoteId,
+  NoteModelSelection,
   NoteRecord,
   NoteRun,
   NoteScheduleInput,
   NoteUpdateInput,
   ScheduleMode,
   TaskStatus,
+  TaskTargets,
 } from '../../types.ts'
 import type {
   WebdavBackupResult,
@@ -130,11 +132,38 @@ function parseOptionalRun(value: unknown): NoteRun | undefined {
 }
 
 /**
- * 可选 lane patch 校验：status/run/clear 均可选；undefined 字段被丢弃
- * （run: undefined 不出现）。clear 只接受布尔字面量 true（取消任务）；false /
- * 其它值一律拒绝（避免「clear: false」被误当成取消，或静默吞掉歧义输入）。
+ * 可选模型选择校验（M2）：provider / model 必填字符串，reasoningEffort 可选字符串。
+ * 是「对象」还是「null」由调用点决定（update 的 lane.model 用 null 表达清除）。
  */
-function parseOptionalLane(value: unknown): { status?: TaskStatus; run?: NoteRun; clear?: true } | undefined {
+function parseOptionalModel(value: unknown): NoteModelSelection | undefined {
+  if (value === undefined) return undefined
+  if (!isRecord(value)) throw new Error('expected model object')
+  if (typeof value.provider !== 'string' || value.provider === '') throw new Error('expected model.provider: string')
+  if (typeof value.model !== 'string' || value.model === '') throw new Error('expected model.model: string')
+  if (value.reasoningEffort !== undefined && typeof value.reasoningEffort !== 'string') {
+    throw new Error('expected model.reasoningEffort?: string')
+  }
+  return {
+    provider: value.provider,
+    model: value.model,
+    ...(value.reasoningEffort !== undefined ? { reasoningEffort: value.reasoningEffort } : {}),
+  }
+}
+
+/**
+ * 可选 lane patch 校验：status/run/clear/agentPreset/model 均可选；undefined 字段被
+ * 丢弃（run: undefined 不出现）。clear 只接受布尔字面量 true（取消任务）；false /
+ * 其它值一律拒绝（避免「clear: false」被误当成取消，或静默吞掉歧义输入）。
+ * agentPreset：字符串透传（空串 = 清除，host 侧 trim 后为空即删字段）；
+ * model：对象 = 整体替换，null = 清除（唯一清除信号）。
+ */
+function parseOptionalLane(value: unknown): {
+  status?: TaskStatus
+  run?: NoteRun
+  clear?: true
+  agentPreset?: string
+  model?: NoteModelSelection | null
+} | undefined {
   if (value === undefined) return undefined
   if (!isRecord(value)) throw new Error('expected lane object')
   const status = parseOptionalTaskStatus(value.status)
@@ -144,10 +173,16 @@ function parseOptionalLane(value: unknown): { status?: TaskStatus; run?: NoteRun
     if (value.clear !== true) throw new Error('expected lane.clear === true')
     clear = true
   }
+  if (value.agentPreset !== undefined && typeof value.agentPreset !== 'string') {
+    throw new Error('expected lane.agentPreset?: string')
+  }
+  const model = value.model === null ? null : parseOptionalModel(value.model)
   return {
     ...(status !== undefined ? { status } : {}),
     ...(run !== undefined ? { run } : {}),
     ...(clear !== undefined ? { clear } : {}),
+    ...(value.agentPreset !== undefined ? { agentPreset: value.agentPreset } : {}),
+    ...(model !== undefined ? { model } : {}),
   }
 }
 
@@ -209,15 +244,21 @@ const createInputSchema: TypertSchema<NoteCreateInput> = {
     if (!isRecord(value) || typeof value.text !== 'string') throw new Error('expected { text: string }')
     if (value.title !== undefined && typeof value.title !== 'string') throw new Error('expected title?: string')
     if (value.workspace !== undefined && typeof value.workspace !== 'string') throw new Error('expected workspace?: string')
+    if (value.agentPreset !== undefined && typeof value.agentPreset !== 'string') {
+      throw new Error('expected agentPreset?: string')
+    }
     // 新建不接受 null（没有「清除」语义），只接受对象或缺省。
     const schedule = parseOptionalSchedule(value.schedule)
     if (schedule === null) throw new Error('expected schedule object')
+    const model = parseOptionalModel(value.model)
     return {
       title: value.title,
       text: value.text,
       color: parseOptionalColor(value.color),
       ...(value.laneStatus !== undefined ? { laneStatus: parseOptionalTaskStatus(value.laneStatus) } : {}),
       ...(value.workspace !== undefined ? { workspace: value.workspace } : {}),
+      ...(value.agentPreset !== undefined ? { agentPreset: value.agentPreset } : {}),
+      ...(model !== undefined ? { model } : {}),
       ...(schedule !== undefined ? { schedule } : {}),
     }
   },
@@ -310,6 +351,8 @@ export const notesRemoteContribution: TypertRemoteContribution = {
     ]),
     // 工作区候选（最近会话用过的 cwd，供设置/编辑器下拉）：只读、永不抛（降级空数组）。
     descriptor('listWorkspaces', []),
+    // 任务执行目标目录（模型 / agent 预设，供编辑器两个下拉）：只读、永不抛（降级空目录）。
+    descriptor('taskTargets', []),
     descriptor('taskReset', [
       { name: 'id', wire: 'id', source: 'json', codec: strict('NoteId', idSchema) },
     ]),
@@ -343,6 +386,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'notes/delete': (id: NoteId) => Promise<RemoteResult<boolean>>
     'notes/taskExecute': (id: NoteId) => Promise<RemoteResult<TaskExecuteResult>>
     'notes/listWorkspaces': () => Promise<RemoteResult<readonly string[]>>
+    'notes/taskTargets': () => Promise<RemoteResult<TaskTargets>>
     'notes/taskReset': (id: NoteId) => Promise<RemoteResult<TaskResetResult>>
     'notes/webdavBackup': () => Promise<RemoteResult<WebdavBackupResult>>
     'notes/webdavList': () => Promise<RemoteResult<WebdavListResult>>
@@ -366,6 +410,7 @@ export interface NotesRemote {
   delete(id: NoteId): Promise<RemoteResult<boolean>>
   taskExecute(id: NoteId): Promise<RemoteResult<TaskExecuteResult>>
   listWorkspaces(): Promise<RemoteResult<readonly string[]>>
+  taskTargets(): Promise<RemoteResult<TaskTargets>>
   taskReset(id: NoteId): Promise<RemoteResult<TaskResetResult>>
   webdavBackup(): Promise<RemoteResult<WebdavBackupResult>>
   webdavList(): Promise<RemoteResult<WebdavListResult>>

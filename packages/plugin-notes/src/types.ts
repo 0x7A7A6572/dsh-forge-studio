@@ -50,12 +50,59 @@ export interface NoteRun {
 }
 
 /**
+ * 任务执行时用的模型选择（provider/model 必填，reasoningEffort 可选）。
+ * 只在本插件内表达「这张任务便签跑哪个模型」，跨包边界时按普通对象透传。
+ */
+export interface NoteModelSelection {
+  readonly provider: string
+  readonly model: string
+  readonly reasoningEffort?: string
+}
+
+/**
  * 便签的任务泳道身份（D1/D3：显式标记，存在即任务）。普通便签无此字段
  * （缺省 undefined），不进泳道。结果 run 不污染正文。
+ *
+ * agentPreset / model 是**可选执行目标**（M2）：都缺省即「用宿主默认」，执行时
+ * 新建会话照旧不带预设、也不额外选模型。旧记录天然无这两个字段，解析不炸。
  */
 export interface NoteLane {
   readonly status: TaskStatus
   readonly run?: NoteRun
+  /** 执行会话的 agent 预设 id；缺省 undefined = 宿主默认预设。 */
+  readonly agentPreset?: string
+  /** 执行会话的模型；缺省 undefined = 宿主默认模型。 */
+  readonly model?: NoteModelSelection
+}
+
+/* ---------- 任务执行目标目录（host 投影 → 编辑器下拉） ---------- */
+
+/** 一个可选模型（宿主模型目录的精简投影，只留下拉要用的字段）。 */
+export interface TaskModelOption {
+  readonly id: string
+  readonly name: string
+}
+
+/** 一个 provider 及其可选模型（下拉里按 provider 分组）。 */
+export interface TaskModelGroup {
+  readonly id: string
+  readonly name: string
+  readonly models: readonly TaskModelOption[]
+}
+
+/** 一个可选 agent 预设。 */
+export interface TaskPresetOption {
+  readonly id: string
+  readonly name: string
+}
+
+/**
+ * 任务执行目标目录（notes/taskTargets 端点返回值）：编辑器那两个下拉（模型 / 预设）
+ * 的数据源。宿主没装配会话控制器 / 预设服务时一律空目录，编辑器据此只显示「宿主默认」。
+ */
+export interface TaskTargets {
+  readonly models: readonly TaskModelGroup[]
+  readonly presets: readonly TaskPresetOption[]
 }
 
 /** 定时日程的循环形态：一次性 / 固定间隔 / 每天 / 每周 / 每月。 */
@@ -152,9 +199,9 @@ export interface NoteRecord {
    */
   readonly schedule?: NoteSchedule
   /**
-   * 任务执行工作区（可选，绝对目录路径）：执行时以该目录**新建会话**跑任务；
-   * 缺省 undefined = 回退设置里的默认工作区（NotesConfig.defaultWorkspace）。
-   * 便签级值优先于设置默认值；两者皆空则拒绝执行（reason='missing-workspace'）。
+   * 任务执行工作区（绝对目录路径）：执行时以该目录**新建会话**跑任务。
+   * **任务必须有工作区**（M1-4：不再有「默认工作区」兜底）——缺省 undefined 时
+   * 执行直接拒绝（reason='missing-workspace'），编辑器也不允许把便签设成任务。
    */
   readonly workspace?: string
   readonly createdAt: number
@@ -173,8 +220,14 @@ export interface NoteCreateInput {
   readonly origin?: NoteOrigin
   /** 新建即任务：初始泳道状态（列头「＋新建任务」用，缺省不落 lane）。 */
   readonly laneStatus?: TaskStatus
-  /** 任务执行工作区（可选）：trim 后为空串视同未给，不落该字段。 */
+  /** 任务执行工作区：trim 后为空串视同未给，不落该字段（任务必须有工作区）。 */
   readonly workspace?: string
+  /**
+   * 执行目标（可选）：仅与 laneStatus（新建即任务）搭配才有意义，缺省不落该字段。
+   * agentPreset trim 后为空视同未给；model 缺省 = 宿主默认模型。
+   */
+  readonly agentPreset?: string
+  readonly model?: NoteModelSelection
   /** 定时日程（可选）：仅与 laneStatus（新建即任务）搭配才有意义，缺省不落该字段。 */
   readonly schedule?: NoteScheduleInput
 }
@@ -196,10 +249,21 @@ export interface NoteUpdateInput {
     readonly status?: TaskStatus
     readonly run?: NoteRun
     readonly clear?: true
+    /**
+     * 执行目标：给值即覆盖；trim 后空串 = **清除**（回到宿主默认预设）；未给保留原值。
+     * 与 workspace 同一套「空串即清除」语义（wire 上 undefined 会被丢弃）。
+     */
+    readonly agentPreset?: string
+    /**
+     * 执行模型：给 null = **清除**（回到宿主默认模型，唯一清除信号）；未给保留原值；
+     * 给对象即整体替换。
+     */
+    readonly model?: NoteModelSelection | null
   }
   /**
-   * 任务执行工作区：给值即覆盖（trim 后空串 = **清除**该字段，回退设置默认值）；
-   * 未给（undefined）保留原值。空串是唯一清除信号（wire 上 undefined 会被丢弃）。
+   * 任务执行工作区：给值即覆盖（trim 后空串 = **清除**该字段，此后该任务执行会被
+   * 拒为 missing-workspace）；未给（undefined）保留原值。空串是唯一清除信号
+   * （wire 上 undefined 会被丢弃）。
    */
   readonly workspace?: string
   /**
@@ -214,11 +278,6 @@ export interface NoteUpdateInput {
 export interface NotesConfig {
   /** 新建便签的默认标题。 */
   readonly defaultTitle: string
-  /**
-   * 任务执行默认工作区（绝对目录路径）：任务便签未单独指定 workspace 时用它
-   * **新建执行会话**。空串 = 未配置（此时未指定工作区的任务拒绝执行）。
-   */
-  readonly defaultWorkspace: string
   /** WebDAV 备份配置（缺省 = 关闭，见 DEFAULT_WEBDAV_CONFIG）。 */
   readonly webdav?: NotesWebdavConfig
   /**
@@ -257,9 +316,9 @@ export interface NotesEntryConfig {
    */
   readonly sidebarPanelIcon: boolean
   /**
-   * 输入栏左侧的入口工具条（conversation.input.left）：记一笔 | 打开便签板 | 待办数。
-   * 工具条是**一个**槽位注册（含三项），所以开关也只有这一个 —— 合并入口就是为了
-   * 别再让同一件事在输入框左右各站一个按钮。
+   * 输入栏左侧的便签入口（conversation.input.left）：**一个**字形，点开是「新增便签
+   * / 便签板 / 任务泳道」三行菜单。三件事仍是**一个**槽位注册（含三行），所以开关也
+   * 只有这一个 —— 合并入口就是为了别再让同一件事在输入框左右各站一个按钮。
    */
   readonly inputToolbar: boolean
   /**
@@ -346,9 +405,6 @@ export interface NotesWebdavConfig {
   /** 远端保留的快照份数（超出删最旧）。 */
   readonly keep: number
 }
-
-/** 默认工作区缺省值（未配置；与 settings.ts schema base 保持一致）。 */
-export const DEFAULT_WORKSPACE = ''
 
 /** WebDAV 配置缺省值（与 settings.ts schema base 保持一致）。 */
 export const DEFAULT_WEBDAV_CONFIG: NotesWebdavConfig = {

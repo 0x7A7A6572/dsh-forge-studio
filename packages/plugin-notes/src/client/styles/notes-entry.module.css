@@ -41,39 +41,33 @@
   background: var(--dsw-alias-interactive-bg-active);
 }
 
-/* 输入栏图标的待办数：贴在图标右下角，只在 hover / 键盘聚焦时浮出来 —— 平时把
-   那格让给字形本身。依然只是计数提示，不接指针事件，免得 13px 的小签把图标
-   自己的点击面咬掉一块。 */
-.entryBadge {
+/* 菜单行（输入栏入口弹层）：「任务泳道」+ 行尾待办数。 */
+.menuRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+/* 行尾的待办数小签（M1-3：从入口字形挪到这里）。便签黄是便签纸语义，固定色值。 */
+.menuBadge {
   box-sizing: border-box;
-  position: absolute;
-  right: 0;
-  bottom: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 13px;
-  height: 13px;
-  padding: 0 3px;
-  /* 一角大圆角 + 对角小圆角：贴住按钮右下角的那块扇形切角。 */
-  border-top-left-radius: 21px;
-  border-top-right-radius: 0;
-  border-bottom-right-radius: 6px;
-  border-bottom-left-radius: 0;
+  flex: none;
+  margin-left: auto;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
   background: #e3b341;
   color: #2e2a22;
-  font-size: 9.5px;
+  font-size: 10.5px;
   font-weight: 700;
   line-height: 1;
   font-variant-numeric: tabular-nums;
   pointer-events: none;
-  opacity: 0;
-  transition: opacity 130ms ease;
-}
-/* 悬停或键盘聚焦到图标才显示；:focus-visible 与 .entryBtn 的焦点环同一触发条件。 */
-.entryBtn:hover .entryBadge,
-.entryBtn:focus-visible .entryBadge {
-  opacity: 1;
 }
 
 /* 输入栏入口：只剩一个字形，外框不再有底色与内边距 —— 输入框左下角本来就窄，

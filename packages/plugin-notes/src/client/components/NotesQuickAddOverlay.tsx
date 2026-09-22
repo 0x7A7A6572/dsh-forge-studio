@@ -24,6 +24,7 @@ export function NotesQuickAddOverlay(props: NotesQuickAddOverlayProps): JSX.Elem
       scope={props.scope}
       create={props.create}
       listWorkspaces={props.listWorkspaces}
+      listTaskTargets={props.listTaskTargets}
       onCreated={props.onCreated}
     />
   );

@@ -8,8 +8,9 @@
  *    是同一件事的两半，选中与渲染都交给 ui-layout，不再抢中间列的 DOM。字形里还挂着
  *    待办数与快捷新建 (＋)：侧栏只给一个字形位，这两件东西只能长在里面（见
  *    components/NotesPanelIcon 的取舍说明）。
- * 3. 注册会话/侧栏的**增量入口**：输入栏工具条（记一笔 | 打开便签板 | 待办数，
- *    **一个**注册含三项）、助手消息「存成便签」、全局快捷新建浮层。
+ * 3. 注册会话/侧栏的**增量入口**：输入栏那个字形（点开是「新增便签 / 便签板 /
+ *    任务泳道」三行菜单，**一个**注册含三项；待办数挂在「任务泳道」那一行）、助手
+ *    消息「存成便签」、全局快捷新建浮层。
  *    全部走 list 槽，纯叠加，不替换任何官方 UI。（轮次结尾那个入口已删除：一轮对话
  *    结尾再放一个按钮，与「存成便签」重复且位置更差。）
  * 4. 注册**右侧栏 tab 类型**（宿主可选能力）：notes 类型 + 一张导引卡片，导引页点一下
@@ -19,7 +20,7 @@
  * 结尾入口、侧栏底部图标入口都已删除（位置不合适或与别的入口重复）。清单与开关见
  * types.ts 的 NotesEntryConfig。
  *
- * 5. 注册 **dsh 设置 → 便签** 分区（settings.section）：默认标题/默认工作区/入口开关/
+ * 5. 注册 **dsh 设置 → 便签** 分区（settings.section）：默认标题/打开方式/入口开关/
  *    WebDAV 备份都在那里。板内不再有设置弹窗与齿轮入口 —— 设置入口本身也是入口，
  *    放在板内就会被「入口全关」锁在门外；dsh 设置是自己的入口，不受影响。
  *    （原「用方法直接打开 dsh 设置到指定条目」预研结论：宿主没有这个能力，见
@@ -84,7 +85,7 @@ export function apply(ctx: Context): void {
     // 第二层：命名空间就绪后再读 remote.notes（cordis 要求读服务必须声明在 inject 里）。
     ctx.inject(['remote.notes', 'remote', 'slots', 'settingsScope', 'layout'], (ctx) => {
       const notes = notesOf(ctx)
-      // 命名空间 scope：设置弹窗读写 defaultTitle / defaultWorkspace / entry 开关。
+      // 命名空间 scope：设置弹窗读写 defaultTitle / openMode / entry 开关。
       const scope = ctx.settingsScope.bind<NotesConfig>({ namespace: NOTES_NAMESPACE })
 
       /** 读一个入口开关（快照可能还没有值，按缺省表兜底）。 */
@@ -115,6 +116,14 @@ export function apply(ctx: Context): void {
           console.error('[plugin-notes] open board failed:', error)
         }
       }
+      /**
+       * 打开任务泳道：开板 + 把视图切到泳道页签。两步都要 —— 只切视图不保证板子在
+       * 前台（它可能被会话或别的面板盖着），只开板则停在用户上次看的那一屏。
+       */
+      const openTaskLanes = (): void => {
+        boardStore.setView('lanes')
+        openBoard()
+      }
       /** 关闭便签板：null = 回到会话。 */
       const closeBoard = (): void => {
         try {
@@ -129,6 +138,7 @@ export function apply(ctx: Context): void {
         notes,
         scope,
         openBoard,
+        openTaskLanes,
         // 可带预填草稿：助手消息「存成便签」把那条回答带进快捷新建浮层。
         capture: (draft) => {
           boardStore.showQuickAdd(draft)
@@ -141,6 +151,8 @@ export function apply(ctx: Context): void {
             color: input.color,
             ...(input.laneStatus !== undefined ? { laneStatus: input.laneStatus } : {}),
             ...(input.workspace !== undefined ? { workspace: input.workspace } : {}),
+            ...(input.agentPreset !== undefined ? { agentPreset: input.agentPreset } : {}),
+            ...(input.model !== undefined ? { model: input.model } : {}),
           })
           if (result.ok) return { ok: true }
           return { ok: false, error: (result as { error?: { message?: string } }).error }
@@ -149,6 +161,11 @@ export function apply(ctx: Context): void {
         listWorkspaces: async () => {
           const result = await notes.listWorkspaces()
           return result.ok ? result.value : []
+        },
+        // 任务执行目标目录（模型 / agent 预设下拉）：同样只读 + 失败即空目录。
+        listTaskTargets: async () => {
+          const result = await notes.taskTargets()
+          return result.ok ? result.value : { models: [], presets: [] }
         },
         onCreated: () => {
           void refreshNotesStats()
@@ -206,7 +223,7 @@ export function apply(ctx: Context): void {
 
       // ---- 会话区增量入口（全是 list 槽，纯叠加）----
 
-      // 输入框只留这一个注册：记一笔 | 打开便签板 | 待办数，三项在一条工具条里。
+      // 输入框只留这一个注册：一个字形 + 三行菜单（新增便签 / 便签板 / 任务泳道）。
       ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
         name: 'conversation.input.left',
         id: 'zzerx-notes-toolbar',

@@ -46,6 +46,8 @@ export const noteRecordSchema = z.object({
   // lane 可选（无默认、不回填）：存在即任务（进泳道），缺省 = 普通便签。
   // 旧记录天然无该字段，解析不炸；status 用五状态字面量枚举，run 帧
   // startedAt 必填、finishedAt/ok/summary 可选。
+  // agentPreset / model 是可选执行目标（M2）：缺省 = 宿主默认；同样 optional，
+  // 旧记录与新记录都能过。
   lane: z
     .object({
       status: z.enum(NOTE_TASK_STATUSES),
@@ -57,6 +59,14 @@ export const noteRecordSchema = z.object({
           summary: z.string().optional(),
           // 发起方（旧记录无 → optional，视同 'user'）；见 types.ts NoteRun。
           by: z.enum(['user', 'schedule']).optional(),
+        })
+        .optional(),
+      agentPreset: z.string().optional(),
+      model: z
+        .object({
+          provider: z.string(),
+          model: z.string(),
+          reasoningEffort: z.string().optional(),
         })
         .optional(),
     })
@@ -82,7 +92,7 @@ export const noteRecordSchema = z.object({
     })
     .optional(),
   // workspace 可选（无默认、不回填）：任务执行工作区（绝对目录路径）。旧记录
-  // 天然无该字段，解析不炸；缺省 = 执行时回退设置里的默认工作区。
+  // 天然无该字段，解析不炸；缺省 = 执行会被拒（任务必须有工作区，M1-4）。
   workspace: z.string().optional(),
   createdAt: z.number(),
   updatedAt: z.number(),

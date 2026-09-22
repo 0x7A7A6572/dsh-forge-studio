@@ -41,8 +41,11 @@ const INTERRUPT_AFTER_MS = 30 * 60 * 1000
 
 /**
  * 工作区展示名走共享辅助（core/workspace-path.ts）：窄列放不下完整路径，只显示
- * 末段目录名，完整路径进 title。未指定工作区（note.workspace 缺省）= 执行时用
- * 默认工作区，卡片不显示该行（避免每张卡都挂一条「用默认」，反而更难扫）。
+ * 末段目录名，完整路径进 title。
+ *
+ * 工作区对任务**是必填**（M1-4 起不再有「默认工作区」兜底）：没指定就是「跑不了」，
+ * 所以缺工作区的卡不再静默省掉这一行，而是显一行红字「未设工作区」并把「执行/重跑」
+ * 按钮禁掉 —— 一张永远跑不起来的卡，最不该长得跟正常卡一样。
  */
 
 export interface TaskLaneCardProps {
@@ -66,6 +69,8 @@ export function TaskLaneCard(props: TaskLaneCardProps): JSX.Element {
   const snippet = note.text ? mdSnippet(note.text, 100) : ''
   const [dragging, setDragging] = useState(false)
 
+  // 工作区是任务的必填项：缺了就没法跑（M1-4 去掉默认工作区兜底后的唯一真相）。
+  const hasWorkspace = note.workspace !== undefined && note.workspace.trim() !== ''
   const lane = note.lane
   const run = lane?.run
   // running = 状态进行中且 run 帧未收尾（与任务进行中判定一致）。
@@ -123,11 +128,16 @@ export function TaskLaneCard(props: TaskLaneCardProps): JSX.Element {
             {note.title || <span style={{ color: NOTE_INK_MUTED }}>（无标题）</span>}
           </span>
         </span>
-        {/* 执行工作区：有显式指定才显示（缺省 = 用设置默认值，见 lane 卡不刷噪声）。 */}
-        {note.workspace !== undefined && note.workspace.trim() !== '' && (
+        {/* 执行工作区：指定了显示末段目录名；没指定显红字并禁用执行（见文件头）。 */}
+        {hasWorkspace ? (
           <span style={cardWorkspace} title={`工作区：${note.workspace}`}>
             <Folder size={10} aria-hidden="true" />
-            <span style={cardWorkspaceText}>{folderNameOf(note.workspace)}</span>
+            <span style={cardWorkspaceText}>{folderNameOf(note.workspace ?? '')}</span>
+          </span>
+        ) : (
+          <span style={cardWorkspaceWarn} title="任务必须有工作区：打开这张便签，在「设置」里选一个再执行">
+            <Folder size={10} aria-hidden="true" />
+            <span style={cardWorkspaceText}>未设工作区</span>
           </span>
         )}
         {/* 定时日程：只挂一行「下次时刻 · 倒计时」（悬停看周期、上次结果、共跑次数、
@@ -198,7 +208,10 @@ export function TaskLaneCard(props: TaskLaneCardProps): JSX.Element {
                 <Undo2 size={12} />
               </button>
             ) : (
-              <button type="button" title={rerun ? '重跑' : '执行'} aria-label={rerun ? '重跑' : '执行'} disabled={props.busy}
+              <button type="button" aria-label={rerun ? '重跑' : '执行'} disabled={props.busy || !hasWorkspace}
+                title={hasWorkspace
+                  ? (rerun ? '重跑' : '执行')
+                  : '任务必须有工作区：打开这张便签，在「设置」里选一个再执行'}
                 onClick={(e) => { e.stopPropagation(); props.onExecute() }} style={actionBtn}>
                 {rerun ? <RefreshCw size={12} /> : <Play size={12} />}
               </button>
@@ -281,6 +294,16 @@ const cardWorkspace: React.CSSProperties = {
   lineHeight: 1.4,
   color: 'rgba(46, 42, 34, 0.5)',
 }
+/** 缺工作区的红字（与 cardWorkspace 同排版，只换色）。 */
+const cardWorkspaceWarn: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 3,
+  fontSize: 11,
+  lineHeight: 1.4,
+  color: t.danger,
+  minWidth: 0,
+};
 const cardWorkspaceText: React.CSSProperties = {
   minWidth: 0,
   overflow: 'hidden',

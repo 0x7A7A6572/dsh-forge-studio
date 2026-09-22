@@ -105,6 +105,16 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
     setTaskStatus,
     workspace,
     setWorkspace,
+    agentPreset,
+    setAgentPreset,
+    modelValue,
+    setModelValue,
+    modelOptionGroups,
+    presetOptions,
+    taskDetailOpen,
+    setTaskDetailOpen,
+    taskSummaryText,
+    taskWorkspaceMissing,
     schedule,
     setSchedule,
     scheduleConfirm,
@@ -115,7 +125,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
     scheduleNextText,
     scheduleSummaryTitle,
     workspaceOptions,
-    defaultWorkspaceOptionLabel,
+    workspacePlaceholder,
     workspaceSelectTitle,
     runningReadOnly,
     saving,
@@ -546,10 +556,14 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
         <EditorContent editor={editor} />
       </div>
 
-      {/* 任务状态区（合并版）：开关 + 状态选择 + 执行记录/摘要合成底部一块。
-          普通便签仅显示开关；已是任务（编辑态）时同块内给状态选择（running 只读
-          胶囊 + 提示）与 run 记录；新建任务（initialLaneStatus）只带开关与状态。 */}
-      <div style={taskAreaStyle} aria-label="任务状态">
+      {/* 任务区（M2-1「折纸」版）：便签纸上只留一行 —— [☑ 设为任务 | 摘要 | 设置]，
+          底下压一道虚线折痕，点开才把状态/工作区/模型/预设/定时/执行记录折出来。
+          折叠不等于把问题藏起来：缺工作区时摘要行直接变红字，保存也会被挡下。 */}
+      <div
+        style={taskAreaStyle}
+        aria-label="任务状态"
+        data-fold={taskOn && taskDetailOpen ? "open" : "closed"}
+      >
         <div style={taskHeadRow}>
           <label style={laneToggleLabel}>
             <input
@@ -557,7 +571,10 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
               checked={taskOn}
               disabled={saving || runningReadOnly}
               onChange={(e) => {
-                setTaskOn(e.target.checked);
+                const next = e.target.checked;
+                setTaskOn(next);
+                // 打开任务 = 接下来多半要配工作区/状态，顺手把折痕展开（少点一次）。
+                if (next) setTaskDetailOpen(true);
                 markDirty();
               }}
               style={{
@@ -567,300 +584,408 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
             />
             设为任务
           </label>
-          {taskOn && !runningReadOnly && (
-            <select
-              value={taskStatus}
-              disabled={saving}
-              onChange={(e) => {
-                setTaskStatus(e.target.value as TaskStatus);
-                markDirty();
-              }}
-              aria-label="任务状态"
-              style={laneSelect}
-            >
-              {TASK_LANES.map((lane) => (
-                <option key={lane.status} value={lane.status}>
-                  {lane.label}
-                </option>
-              ))}
-            </select>
-          )}
-          {taskOn && runningReadOnly && props.initialLane !== undefined && (
-            <span style={laneStatusPill} title="当前状态（执行中不可改）">
-              {laneLabel(props.initialLane.status)}
-            </span>
-          )}
-          {/* 工作区（任务专属）：与状态选择同行。执行时以该目录**新建会话**跑。
-              候选 = 最近会话用过的目录（不给手填新路径）；选项只显示文件夹名，
-              完整路径进 title 悬停可见。 */}
           {taskOn && (
-            <span style={workspaceField}>
-              <span style={workspaceLabel}>工作区</span>
-              <select
-                value={workspace}
-                disabled={saving}
-                onChange={(e) => {
-                  setWorkspace(e.target.value);
-                  markDirty();
-                }}
-                aria-label="任务执行工作区"
-                title={workspaceSelectTitle}
-                style={workspaceSelect}
-              >
-                <option value="">{defaultWorkspaceOptionLabel}</option>
-                {workspaceOptions.map((option) => (
-                  <option key={option.path} value={option.path} title={option.path}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+            <span
+              style={taskWorkspaceMissing ? taskSummaryWarn : taskSummary}
+              title={
+                workspace.trim() === ""
+                  ? "这张任务还没有工作区，执行不了"
+                  : `工作区：${workspace}`
+              }
+            >
+              {taskSummaryText}
             </span>
           )}
-          {runningReadOnly && (
+          {taskOn && runningReadOnly && (
             <span style={laneHint}>执行中：改状态请先在泳道重置</span>
           )}
+          {taskOn && (
+            <button
+              type="button"
+              className={styles.taskFoldToggle}
+              aria-expanded={taskDetailOpen}
+              title={taskDetailOpen ? "折起任务设置" : "展开任务设置"}
+              onClick={() => setTaskDetailOpen((v) => !v)}
+            >
+              {taskDetailOpen ? (
+                <ChevronUp size={13} aria-hidden="true" />
+              ) : (
+                <ChevronDown size={13} aria-hidden="true" />
+              )}
+              {taskDetailOpen ? "折起" : "设置"}
+            </button>
+          )}
         </div>
-        {/* 定时执行（任务专属）：到点由 host 调度器自动派发（等价点「执行」，同样新建
-            会话 + 投递 + 租约）。一次性 / 间隔 / 每天 / 每周 / 每月；nextAt 由 host 保存时
-            重算写回，这里只做编辑与预览（previewNextAt）。 */}
-        {taskOn && (
-          <div style={scheduleRow} aria-label="定时执行">
-            <label style={laneToggleLabel}>
-              <input
-                type="checkbox"
-                checked={schedule?.enabled === true}
-                disabled={saving}
-                onChange={(e) => {
-                  if (e.target.checked) {
-                    // 开启 = 授权无人值守执行：先弹行内确认，不确认就不落地。
-                    setScheduleConfirm(makeSchedule(schedule?.mode ?? "once", schedule));
-                  } else {
-                    setScheduleConfirm(undefined);
-                    if (schedule !== undefined) setSchedule({ ...schedule, enabled: false });
-                    markDirty();
-                  }
-                }}
-                style={{ accentColor: colorMeta.ring, cursor: saving ? "default" : "pointer" }}
-              />
-              定时
-            </label>
-            {schedule !== undefined && (
-              <>
-                <select
-                  value={schedule.mode}
-                  disabled={saving}
-                  aria-label="定时周期"
-                  title="定时周期"
-                  style={laneSelect}
-                  onChange={(e) => {
-                    setSchedule(makeSchedule(e.target.value as ScheduleMode, schedule));
-                    markDirty();
-                  }}
+        {/* 折痕与面板包一层：折叠时整块只剩那道虚线，不会在纸面上留一段空白 gap。 */}
+        <div className={styles.taskFoldWrap}>
+          {taskOn && <div className={styles.taskCrease} aria-hidden="true" />}
+          <div
+            className={`${styles.taskFold} ${
+              taskOn && taskDetailOpen ? styles.taskFoldOpen : styles.taskFoldClosed
+            }`}
+          >
+            <div className={styles.taskFoldBody}>
+            {taskOn && (
+              /* 规整表单：左列标签、右列字段 —— 标签列按最宽的那个标签取宽，所以每行
+                 字段的左右边缘都严格对齐（见 styles.taskForm）。 */
+              <div className={styles.taskForm} role="group" aria-label="任务设置">
+                <span className={styles.taskFormLabel}>状态</span>
+                <div className={styles.taskFormField}>
+                  {!runningReadOnly && (
+                    <select
+                      value={taskStatus}
+                      disabled={saving}
+                      onChange={(e) => {
+                        setTaskStatus(e.target.value as TaskStatus);
+                        markDirty();
+                      }}
+                      aria-label="任务状态"
+                      style={taskSelect}
+                    >
+                      {TASK_LANES.map((lane) => (
+                        <option key={lane.status} value={lane.status}>
+                          {lane.label}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {runningReadOnly && props.initialLane !== undefined && (
+                    <span style={laneStatusPill} title="当前状态（执行中不可改）">
+                      {laneLabel(props.initialLane.status)}
+                    </span>
+                  )}
+                </div>
+
+                {/* 工作区（任务专属，**必选**）：执行时以该目录新建会话跑。候选 =
+                    最近会话用过的目录（不给手填新路径）；选项只显示文件夹名，完整
+                    路径进 title。留空即「这张任务还不能执行」——保存会被挡下，红字
+                    提示就贴在字段正下方，不另占一行去挤别的字段。 */}
+                <span
+                  className={styles.taskFormLabel}
+                  style={taskWorkspaceMissing ? labelRequiredWarn : undefined}
                 >
-                  {SCHEDULE_MODES.map((mode) => (
-                    <option key={mode} value={mode}>
-                      {SCHEDULE_MODE_LABELS[mode]}
-                    </option>
-                  ))}
-                </select>
-                {/* 一次性：绝对时刻（datetime-local，本机时区）。 */}
-                {schedule.mode === "once" && (
-                  <input
-                    type="datetime-local"
-                    value={schedule.at !== undefined ? toLocalDateTimeInput(schedule.at) : ""}
+                  工作区
+                </span>
+                <div className={styles.taskFormField}>
+                  <select
+                    value={workspace}
                     disabled={saving}
-                    aria-label="一次性触发时刻"
-                    title="触发时刻"
-                    style={scheduleInput}
                     onChange={(e) => {
-                      const at = fromLocalDateTimeInput(e.target.value);
-                      if (at !== undefined) setSchedule({ ...schedule, at });
+                      setWorkspace(e.target.value);
                       markDirty();
                     }}
-                  />
-                )}
-                {/* 间隔：数量 + 单位（落库统一为分钟）。 */}
-                {schedule.mode === "interval" && (
-                  <>
+                    aria-label="任务执行工作区"
+                    title={workspaceSelectTitle}
+                    style={taskWorkspaceMissing ? taskSelectMissing : taskSelect}
+                  >
+                    <option value="">{workspacePlaceholder}</option>
+                    {workspaceOptions.map((option) => (
+                      <option key={option.path} value={option.path} title={option.path}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  {taskWorkspaceMissing && (
+                    <span style={taskFormHint}>任务必须选一个工作区才能执行</span>
+                  )}
+                </div>
+                {/* 执行目标（M2-2）：都缺省 = 宿主默认（不指定预设、不额外选模型）。
+                    列表来自宿主目录；宿主没装配对应能力时只剩「宿主默认」一项。 */}
+                <span className={styles.taskFormLabel}>模型</span>
+                <div className={styles.taskFormField}>
+                  <select
+                    value={modelValue}
+                    disabled={saving}
+                    onChange={(e) => {
+                      setModelValue(e.target.value);
+                      markDirty();
+                    }}
+                    aria-label="任务执行模型"
+                    title="执行会话用哪个模型（宿主默认 = 不指定，跑宿主自己的选择）"
+                    style={taskSelect}
+                  >
+                    <option value="">宿主默认</option>
+                    {modelOptionGroups.map((group) => (
+                      <optgroup key={group.id} label={group.label}>
+                        {group.options.map((option) => (
+                          <option key={option.key} value={option.key}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                </div>
+
+                <span className={styles.taskFormLabel}>agent 预设</span>
+                <div className={styles.taskFormField}>
+                  <select
+                    value={agentPreset}
+                    disabled={saving}
+                    onChange={(e) => {
+                      setAgentPreset(e.target.value);
+                      markDirty();
+                    }}
+                    aria-label="任务 agent 预设"
+                    title="执行会话按哪个 agent 预设装配（宿主默认 = 不指定）"
+                    style={taskSelect}
+                  >
+                    <option value="">宿主默认</option>
+                    {presetOptions.map((entry) => (
+                      <option key={entry.id} value={entry.id}>
+                        {entry.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {/* 定时执行（任务专属）：到点由 host 调度器自动派发（等价点「执行」，同样新建
+                    会话 + 投递 + 租约）。一次性 / 间隔 / 每天 / 每周 / 每月；nextAt 由 host 保存时
+                    重算写回，这里只做编辑与预览（previewNextAt）。 */}
+                <span className={styles.taskFormLabel}>定时</span>
+                <div style={scheduleRow} aria-label="定时执行">
+                  <label style={laneToggleLabel}>
                     <input
-                      type="number"
-                      min={1}
-                      max={intervalUnit === "hour" ? 168 : 1440}
-                      value={intervalAmount}
+                      type="checkbox"
+                      checked={schedule?.enabled === true}
                       disabled={saving}
-                      aria-label="间隔时长"
-                      title="间隔时长"
-                      style={scheduleNumber}
                       onChange={(e) => {
-                        const raw = Number(e.target.value);
-                        const amount = Number.isFinite(raw) ? Math.max(1, Math.round(raw)) : 1;
-                        setSchedule({ ...schedule, everyMin: intervalUnit === "hour" ? amount * 60 : amount });
-                        markDirty();
+                        if (e.target.checked) {
+                          // 开启 = 授权无人值守执行：先弹行内确认，不确认就不落地。
+                          setScheduleConfirm(makeSchedule(schedule?.mode ?? "once", schedule));
+                        } else {
+                          setScheduleConfirm(undefined);
+                          if (schedule !== undefined) setSchedule({ ...schedule, enabled: false });
+                          markDirty();
+                        }
                       }}
+                      style={{ accentColor: colorMeta.ring, cursor: saving ? "default" : "pointer" }}
                     />
-                    <select
-                      value={intervalUnit}
-                      disabled={saving}
-                      aria-label="间隔单位"
-                      title="间隔单位"
-                      style={laneSelect}
-                      onChange={(e) => {
-                        const next = e.target.value === "hour" ? "hour" : "min";
-                        const minutes = schedule.everyMin ?? 30;
-                        setIntervalUnit(next);
-                        setSchedule({
-                          ...schedule,
-                          everyMin: next === "hour" ? Math.max(1, Math.round(minutes / 60)) * 60 : minutes,
-                        });
-                        markDirty();
-                      }}
-                    >
-                      <option value="min">分钟</option>
-                      <option value="hour">小时</option>
-                    </select>
-                  </>
-                )}
-                {/* 每周：星期多选（至少一天；host 侧 sanitizeSchedule 同样拒绝空星期）。 */}
-                {schedule.mode === "weekly" && (
-                  <span style={scheduleChips}>
-                    {WEEKDAY_SHORT.map((label, day) => {
-                      const active = (schedule.weekdays ?? []).includes(day);
-                      return (
-                        <button
-                          key={day}
-                          type="button"
+                    自动执行
+                  </label>
+                  {schedule !== undefined && (
+                    <>
+                      <select
+                        value={schedule.mode}
+                        disabled={saving}
+                        aria-label="定时周期"
+                        title="定时周期"
+                        style={taskControl}
+                        onChange={(e) => {
+                          setSchedule(makeSchedule(e.target.value as ScheduleMode, schedule));
+                          markDirty();
+                        }}
+                      >
+                        {SCHEDULE_MODES.map((mode) => (
+                          <option key={mode} value={mode}>
+                            {SCHEDULE_MODE_LABELS[mode]}
+                          </option>
+                        ))}
+                      </select>
+                      {/* 一次性：绝对时刻（datetime-local，本机时区）。 */}
+                      {schedule.mode === "once" && (
+                        <input
+                          type="datetime-local"
+                          value={schedule.at !== undefined ? toLocalDateTimeInput(schedule.at) : ""}
                           disabled={saving}
-                          aria-pressed={active}
-                          aria-label={"周" + label}
-                          title={"周" + label}
-                          onClick={() => {
-                            const days = new Set(schedule.weekdays ?? []);
-                            if (active) days.delete(day);
-                            else days.add(day);
-                            if (days.size === 0) return;
-                            setSchedule({ ...schedule, weekdays: [...days].sort((a, b) => a - b) });
+                          aria-label="一次性触发时刻"
+                          title="触发时刻"
+                          style={scheduleInput}
+                          onChange={(e) => {
+                            const at = fromLocalDateTimeInput(e.target.value);
+                            if (at !== undefined) setSchedule({ ...schedule, at });
                             markDirty();
                           }}
-                          style={active ? { ...scheduleChip, ...scheduleChipActive } : scheduleChip}
+                        />
+                      )}
+                      {/* 间隔：数量 + 单位（落库统一为分钟）。 */}
+                      {schedule.mode === "interval" && (
+                        <>
+                          <input
+                            type="number"
+                            min={1}
+                            max={intervalUnit === "hour" ? 168 : 1440}
+                            value={intervalAmount}
+                            disabled={saving}
+                            aria-label="间隔时长"
+                            title="间隔时长"
+                            style={scheduleNumber}
+                            onChange={(e) => {
+                              const raw = Number(e.target.value);
+                              const amount = Number.isFinite(raw) ? Math.max(1, Math.round(raw)) : 1;
+                              setSchedule({ ...schedule, everyMin: intervalUnit === "hour" ? amount * 60 : amount });
+                              markDirty();
+                            }}
+                          />
+                          <select
+                            value={intervalUnit}
+                            disabled={saving}
+                            aria-label="间隔单位"
+                            title="间隔单位"
+                            style={taskControl}
+                            onChange={(e) => {
+                              const next = e.target.value === "hour" ? "hour" : "min";
+                              const minutes = schedule.everyMin ?? 30;
+                              setIntervalUnit(next);
+                              setSchedule({
+                                ...schedule,
+                                everyMin: next === "hour" ? Math.max(1, Math.round(minutes / 60)) * 60 : minutes,
+                              });
+                              markDirty();
+                            }}
+                          >
+                            <option value="min">分钟</option>
+                            <option value="hour">小时</option>
+                          </select>
+                        </>
+                      )}
+                      {/* 每周：星期多选（至少一天；host 侧 sanitizeSchedule 同样拒绝空星期）。 */}
+                      {schedule.mode === "weekly" && (
+                        <span style={scheduleChips}>
+                          {WEEKDAY_SHORT.map((label, day) => {
+                            const active = (schedule.weekdays ?? []).includes(day);
+                            return (
+                              <button
+                                key={day}
+                                type="button"
+                                disabled={saving}
+                                aria-pressed={active}
+                                aria-label={"周" + label}
+                                title={"周" + label}
+                                onClick={() => {
+                                  const days = new Set(schedule.weekdays ?? []);
+                                  if (active) days.delete(day);
+                                  else days.add(day);
+                                  if (days.size === 0) return;
+                                  setSchedule({ ...schedule, weekdays: [...days].sort((a, b) => a - b) });
+                                  markDirty();
+                                }}
+                                style={active ? { ...scheduleChip, ...scheduleChipActive } : scheduleChip}
+                              >
+                                {label}
+                              </button>
+                            );
+                          })}
+                        </span>
+                      )}
+                      {/* 每月：某日（1-31；当月不足时落在当月最后一天）。 */}
+                      {schedule.mode === "monthly" && (
+                        <input
+                          type="number"
+                          min={1}
+                          max={31}
+                          value={schedule.monthDay ?? 1}
+                          disabled={saving}
+                          aria-label="每月第几日"
+                          title="每月第几日"
+                          style={scheduleNumber}
+                          onChange={(e) => {
+                            const raw = Number(e.target.value);
+                            if (Number.isFinite(raw)) {
+                              setSchedule({ ...schedule, monthDay: Math.min(31, Math.max(1, Math.round(raw))) });
+                            }
+                            markDirty();
+                          }}
+                        />
+                      )}
+                      {/* 每天/每周/每月共用：当日时刻。 */}
+                      {schedule.mode !== "once" && schedule.mode !== "interval" && (
+                        <input
+                          type="time"
+                          value={schedule.time ?? "09:00"}
+                          disabled={saving}
+                          aria-label="触发时刻"
+                          title="触发时刻"
+                          style={scheduleInput}
+                          onChange={(e) => {
+                            if (e.target.value !== "") setSchedule({ ...schedule, time: e.target.value });
+                            markDirty();
+                          }}
+                        />
+                      )}
+                      {/* 定时摘要行：只回答「下次什么时候」。闸门徽章与失败红字仍露在这一行上
+                          （异常必须可见），上次结果 / 共跑次数 / 运行记录 / 说明收进「详情」。 */}
+                      <span style={scheduleMeta} title={scheduleSummaryTitle}>
+                        <Clock size={11} aria-hidden="true" />
+                        {scheduleNextText}
+                      </span>
+                      {schedule.enabled && scheduleBlockTextFor(taskStatus) !== undefined && (
+                        <span
+                          style={scheduleStatusChip}
+                          title={(scheduleBlockTextFor(taskStatus) ?? "") + "——拖回「待办」即恢复"}
                         >
-                          {label}
-                        </button>
-                      );
-                    })}
-                  </span>
-                )}
-                {/* 每月：某日（1-31；当月不足时落在当月最后一天）。 */}
-                {schedule.mode === "monthly" && (
-                  <input
-                    type="number"
-                    min={1}
-                    max={31}
-                    value={schedule.monthDay ?? 1}
-                    disabled={saving}
-                    aria-label="每月第几日"
-                    title="每月第几日"
-                    style={scheduleNumber}
-                    onChange={(e) => {
-                      const raw = Number(e.target.value);
-                      if (Number.isFinite(raw)) {
-                        setSchedule({ ...schedule, monthDay: Math.min(31, Math.max(1, Math.round(raw))) });
-                      }
-                      markDirty();
-                    }}
-                  />
-                )}
-                {/* 每天/每周/每月共用：当日时刻。 */}
-                {schedule.mode !== "once" && schedule.mode !== "interval" && (
-                  <input
-                    type="time"
-                    value={schedule.time ?? "09:00"}
-                    disabled={saving}
-                    aria-label="触发时刻"
-                    title="触发时刻"
-                    style={scheduleInput}
-                    onChange={(e) => {
-                      if (e.target.value !== "") setSchedule({ ...schedule, time: e.target.value });
-                      markDirty();
-                    }}
-                  />
-                )}
-                {/* 定时摘要行：只回答「下次什么时候」。闸门徽章与失败红字仍露在这一行上
-                    （异常必须可见），上次结果 / 共跑次数 / 运行记录 / 说明收进「详情」。 */}
-                <span style={scheduleMeta} title={scheduleSummaryTitle}>
-                  <Clock size={11} aria-hidden="true" />
-                  {scheduleNextText}
-                </span>
-                {schedule.enabled && scheduleBlockTextFor(taskStatus) !== undefined && (
-                  <span
-                    style={scheduleStatusChip}
-                    title={(scheduleBlockTextFor(taskStatus) ?? "") + "——拖回「待办」即恢复"}
-                  >
-                    {laneLabel(taskStatus)} · 不执行
-                  </span>
-                )}
-                {(schedule.failureStreak ?? 0) > 0 && (
-                  <span
-                    style={scheduleWarn}
-                    title={
-                      "连续失败 " + (schedule.failureStreak ?? 0) + " 次" +
-                      ((schedule.failureStreak ?? 0) >= SCHEDULE_MAX_FAILURES
-                        ? "（已达上限，日程已停用）"
-                        : `（满 ${SCHEDULE_MAX_FAILURES} 次自动停用）`)
-                    }
-                  >
-                    连续失败 {schedule.failureStreak ?? 0} 次
-                  </span>
-                )}
-                <button
-                  type="button"
-                  className={styles.runToggle}
-                  onClick={() => setScheduleDetailOpen((v) => !v)}
-                  aria-expanded={scheduleDetailOpen}
-                  title={scheduleDetailOpen ? "收起详情" : "展开详情"}
-                >
-                  {scheduleDetailOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                  详情
-                </button>
+                          {laneLabel(taskStatus)} · 不执行
+                        </span>
+                      )}
+                      {(schedule.failureStreak ?? 0) > 0 && (
+                        <span
+                          style={scheduleWarn}
+                          title={
+                            "连续失败 " + (schedule.failureStreak ?? 0) + " 次" +
+                            ((schedule.failureStreak ?? 0) >= SCHEDULE_MAX_FAILURES
+                              ? "（已达上限，日程已停用）"
+                              : `（满 ${SCHEDULE_MAX_FAILURES} 次自动停用）`)
+                          }
+                        >
+                          连续失败 {schedule.failureStreak ?? 0} 次
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        className={styles.runToggle}
+                        onClick={() => setScheduleDetailOpen((v) => !v)}
+                        aria-expanded={scheduleDetailOpen}
+                        title={scheduleDetailOpen ? "收起详情" : "展开详情"}
+                      >
+                        {scheduleDetailOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                        详情
+                      </button>
+                    </>
+                  )}
+                  {/* 详情（默认收起）：上次结果 / 共跑次数 / 运行记录 / 一句后果说明。 */}
+                  {schedule !== undefined && scheduleDetailOpen && (
+                    <div style={scheduleDetail}>
+                      <span style={scheduleDetailRow}>
+                        上次：{schedule.lastResult ?? "还没跑过"}
+                        {(schedule.runCount ?? 0) > 0 ? " · 共跑 " + schedule.runCount + " 次" : ""}
+                      </span>
+                      {props.initialLane?.run !== undefined && (
+                        <LaneRunBlock
+                          run={props.initialLane.run}
+                          expanded={runExpanded}
+                          onToggle={() => setRunExpanded((v) => !v)}
+                        />
+                      )}
+                      <span style={scheduleDetailNote}>
+                        到点自动帮你跑一次，跟你手动点「执行」一样；便签板关着也照跑。
+                        卡片停在『待规划 / 已完成 / 已失败』时不会跑，拖回『待办』就恢复。
+                      </span>
+                    </div>
+                  )}
+                </div>
+                {/* 执行记录：跑过的任务给一行「运行 起 → 止 · 耗时 · 结果」+ 可展开的
+                    agent 摘要，没跑过就写「尚未执行」——同一行标签让两种状态都成立。
+                    定时卡片的运行记录已经收在「定时 · 详情」里，这里不再重复占一行。 */}
+            {schedule === undefined && props.initialLane !== undefined && (
+              <>
+                <span className={styles.taskFormLabel}>执行记录</span>
+                <div className={styles.taskFormField}>
+                  {props.initialLane.run !== undefined ? (
+                    <LaneRunBlock
+                      run={props.initialLane.run}
+                      expanded={runExpanded}
+                      onToggle={() => setRunExpanded((v) => !v)}
+                    />
+                  ) : (
+                    <div style={laneRunMuted}>尚未执行</div>
+                  )}
+                </div>
               </>
             )}
-            {/* 详情（默认收起）：上次结果 / 共跑次数 / 运行记录 / 一句后果说明。 */}
-            {schedule !== undefined && scheduleDetailOpen && (
-              <div style={scheduleDetail}>
-                <span style={scheduleDetailRow}>
-                  上次：{schedule.lastResult ?? "还没跑过"}
-                  {(schedule.runCount ?? 0) > 0 ? " · 共跑 " + schedule.runCount + " 次" : ""}
-                </span>
-                {props.initialLane?.run !== undefined && (
-                  <LaneRunBlock
-                    run={props.initialLane.run}
-                    expanded={runExpanded}
-                    onToggle={() => setRunExpanded((v) => !v)}
-                  />
-                )}
-                <span style={scheduleDetailNote}>
-                  到点自动帮你跑一次，跟你手动点「执行」一样；便签板关着也照跑。
-                  卡片停在『待规划 / 已完成 / 已失败』时不会跑，拖回『待办』就恢复。
-                </span>
               </div>
             )}
+            </div>
           </div>
-        )}
-        {/* 非定时卡片：执行记录原地展示（定时卡片已收进上面的「详情」）。 */}
-        {taskOn &&
-          schedule === undefined &&
-          props.initialLane !== undefined &&
-          props.initialLane.run !== undefined && (
-            <LaneRunBlock
-              run={props.initialLane.run}
-              expanded={runExpanded}
-              onToggle={() => setRunExpanded((v) => !v)}
-            />
-          )}
-        {taskOn &&
-          props.initialLane !== undefined &&
-          props.initialLane.run === undefined && (
-            <div style={laneRunMuted}>尚未执行</div>
-          )}
+        </div>
       </div>
 
       {/* 便签纸色选（Win11 便签五色——紫色已随任务泳道分类收敛移除；选中色描边高亮）。 */}
@@ -957,7 +1082,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                 return next !== undefined ? `，下次 ${fmtDateTime(next)}` : "（保存后按当前时刻计算）";
               })()
             }`,
-            `工作区：${workspace.trim() !== "" ? workspace : defaultWorkspaceOptionLabel}`,
+            `工作区：${workspace.trim() !== "" ? workspace : "还没选（任务必须有工作区）"}`,
             "卡片停在『待规划 / 已完成 / 已失败』时不会跑，拖回『待办』就恢复",
             `连续失败 ${SCHEDULE_MAX_FAILURES} 次自动停用；单次执行超过 ${
               SCHEDULE_RUN_TIMEOUT_MS / 60_000
@@ -1112,6 +1237,9 @@ const laneToggleLabel: React.CSSProperties = {
 const laneStatusPill: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
+  /* 表单字段是纵向 flex（子元素默认拉伸），胶囊是「值展示」不是输入控件，
+     必须自己退出拉伸，否则会变成一条整宽的胶囊。 */
+  alignSelf: "flex-start",
   height: 20,
   padding: "0 8px",
   borderRadius: 10,
@@ -1120,16 +1248,42 @@ const laneStatusPill: React.CSSProperties = {
   color: NOTE_INK,
   background: PAPER_SOFT_FILL,
 };
-const laneSelect: React.CSSProperties = {
+/** 任务面板里所有控件共用的皮肤：浅纸底、无边框、7px 圆角。
+    原先状态/周期是透明底（laneSelect）、工作区/模型是浅纸底（workspaceSelect），
+    同一块面板两种长相 —— 收敛成这一个。 */
+const taskControl: React.CSSProperties = {
   height: 26,
   padding: "0 6px",
   fontSize: 12.5,
+  fontFamily: "inherit",
   color: "rgba(46, 42, 34, 0.85)",
-  background: "transparent",
+  background: PAPER_SOFT_FILL,
   border: "none",
   borderRadius: 7,
   outline: "none",
+  minWidth: 0,
+};
+/** 表单字段列里的下拉：撑满整列（同一列的控件左边缘与右边缘都对齐）。 */
+const taskSelect: React.CSSProperties = {
+  ...taskControl,
+  width: "100%",
   cursor: "pointer",
+};
+/** 必填未选时的字段描边。 */
+const taskSelectMissing: React.CSSProperties = {
+  ...taskSelect,
+  boxShadow: `inset 0 0 0 1px ${t.danger}`,
+};
+/** 字段正下方的必填/错误小字（贴在字段上，不另占一行去挤别的字段）。 */
+const taskFormHint: React.CSSProperties = {
+  fontSize: 11.5,
+  lineHeight: 1.4,
+  color: t.danger,
+};
+/** 必填未满足时的标签：同一位置、只变红加粗。 */
+const labelRequiredWarn: React.CSSProperties = {
+  color: t.danger,
+  fontWeight: 600,
 };
 /** 自动保存指示灯：页脚最左，弱化存在感（墨迹系灰）。 */
 const autoSaveHint: React.CSSProperties = {
@@ -1140,32 +1294,20 @@ const laneHint: React.CSSProperties = {
   fontSize: 12,
   color: "#b3261e",
 };
-/** 工作区控件（与状态选择同行）：标签 + 下拉，命中「自定义」时才展开手填输入。 */
-const workspaceField: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 5,
-  flex: "1 1 200px",
+/** 折起来那一行的摘要文字（状态 · 工作区 · 模型 · 预设 合成一句）。 */
+const taskSummary: React.CSSProperties = {
+  flex: "1 1 auto",
   minWidth: 0,
-};
-const workspaceLabel: React.CSSProperties = {
-  flex: "none",
-  fontSize: 12.5,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+  fontSize: 12,
   color: NOTE_INK_MUTED,
 };
-const workspaceSelect: React.CSSProperties = {
-  flex: "0 1 auto",
-  minWidth: 0,
-  maxWidth: "100%",
-  height: 26,
-  padding: "0 4px",
-  fontSize: 12.5,
-  color: "rgba(46, 42, 34, 0.85)",
-  background: PAPER_SOFT_FILL,
-  border: "none",
-  borderRadius: 7,
-  outline: "none",
-  cursor: "pointer",
+/** 缺工作区时的摘要：同一行、同一位置，只把字变红（问题必须一眼看得见）。 */
+const taskSummaryWarn: React.CSSProperties = {
+  ...taskSummary,
+  color: t.danger,
 };
 /** 定时行：独占一行（开关 + 周期 + 参数 + 下次/上次），窄弹窗内自动换行。 */
 const scheduleRow: React.CSSProperties = {
@@ -1210,18 +1352,9 @@ const scheduleWarn: React.CSSProperties = {
   fontSize: 11.5,
   color: t.danger,
 };
-/** 定时参数输入（datetime-local / time）：与工作区下拉同款墨迹系浅底填充。 */
-const scheduleInput: React.CSSProperties = {
-  height: 26,
-  padding: "0 4px",
-  fontSize: 12.5,
-  fontFamily: "inherit",
-  color: "rgba(46, 42, 34, 0.85)",
-  background: PAPER_SOFT_FILL,
-  border: "none",
-  borderRadius: 7,
-  outline: "none",
-};
+/** 定时参数输入（datetime-local / time）：与表单其它控件同一皮肤，只是不撑满整行
+    （它们和周期下拉同处一个换行集群）。 */
+const scheduleInput: React.CSSProperties = { ...taskControl, cursor: "text" };
 /** 数量输入（间隔时长 / 每月第几日）：窄，免得把整行撑开。 */
 const scheduleNumber: React.CSSProperties = { ...scheduleInput, width: 58 };
 /** 星期多选容器。 */

@@ -10,7 +10,13 @@
  * 全部为纯函数/常量（无副作用、不触 DOM/服务），便于单测。
  */
 
-import type { NoteLane, NoteRecord, TaskStatus } from '../../types.ts'
+import type {
+  NoteLane,
+  NoteModelSelection,
+  NoteRecord,
+  TaskModelGroup,
+  TaskStatus,
+} from '../../types.ts'
 
 // TaskStatus 已迁至 types.ts；此处转发导出以兼容旧 import（BoardMain/NotesBoard）。
 export type { TaskStatus } from '../../types.ts'
@@ -96,23 +102,149 @@ export function isRunOpen(lane: NoteLane): boolean {
 }
 
 /**
+ * 编辑器里的执行目标草稿：preset 空串 = 用宿主默认预设；model 缺省 = 用宿主默认模型。
+ * 保存时经 lanePatchForSave / taskTargetCreateInput 折算成落库入参。
+ */
+export interface TaskTargetDraft {
+  readonly agentPreset: string
+  readonly model?: NoteModelSelection
+}
+
+/** lane patch 的形状（与 types.ts 的 NoteUpdateInput.lane 对齐的子集）。 */
+export interface LanePatch {
+  readonly status?: TaskStatus
+  readonly agentPreset?: string
+  readonly model?: NoteModelSelection | null
+  /** 取消任务：删掉 lane 身份（与 status/agentPreset/model 互斥）。 */
+  readonly clear?: true
+}
+
+/** 两个模型选择是否等价（reasoningEffort 缺省与空串等价）。 */
+function sameModel(
+  left: NoteModelSelection | undefined,
+  right: NoteModelSelection | undefined,
+): boolean {
+  if (left === undefined || right === undefined) return left === right
+  return (
+    left.provider === right.provider &&
+    left.model === right.model &&
+    (left.reasoningEffort ?? '') === (right.reasoningEffort ?? '')
+  )
+}
+
+/**
  * 编辑器「设为任务」开关 → 保存时的 lane patch 决策（M2）：
- * - 开关开且状态相较既有 lane 已改 → `{ status }`（含「普通便签转任务」与「任务改状态」）；
- * - 开关开但状态未改 → undefined（不携带 lane，避免编辑器打开期间陈旧快照把宿主
- *   已 settle / 已执行的最新状态静默回滚；running 只读时也走此分支，正文保存不含 lane）；
+ * - 开关开且状态相较既有 lane 已改 → 带 status（含「普通便签转任务」与「任务改状态」）；
+ * - 开关开但状态未改 → 不带 status（避免编辑器打开期间陈旧快照把宿主已 settle /
+ *   已执行的最新状态静默回滚；running 只读时也走此分支，正文保存不含 lane）；
+ * - 开关开且执行目标变了 → 带 agentPreset（空串 = 清除）/ model（null = 清除）；
+ *   两处都是「未变即不带」，同样是为了不覆盖宿主已写回的值；
+ * - 开关开且三项都没变 → undefined（纯内容更新）；
  * - 开关关且原本是任务 → `{ clear: true }`（取消任务，删除 lane 身份）；
- * - 开关关且原本非任务 → undefined（纯内容更新，不改 lane）。
- * 纯函数，供 board-view.saveDraft 的编辑路径复用与单测。
+ * - 开关关且原本非任务 → undefined。
+ *
+ * 纯函数，供 board-view.saveDraft 的编辑路径复用与单测。`target` 缺省 = 不参与
+ * 决策（旧调用点语义原样保留）。
  */
 export function lanePatchForSave(
   on: boolean,
   status: TaskStatus,
   current: NoteLane | undefined,
-): { readonly status: TaskStatus } | { readonly clear: true } | undefined {
-  if (on) {
-    return current?.status === status ? undefined : { status }
+  target?: TaskTargetDraft,
+): LanePatch | undefined {
+  if (!on) return current !== undefined ? { clear: true } : undefined
+  const patch: {
+    status?: TaskStatus
+    agentPreset?: string
+    model?: NoteModelSelection | null
+  } = {}
+  if (current?.status !== status) patch.status = status
+  if (target !== undefined) {
+    const preset = target.agentPreset.trim()
+    if (preset !== (current?.agentPreset ?? '')) patch.agentPreset = preset
+    if (!sameModel(target.model, current?.model)) patch.model = target.model ?? null
   }
-  return current !== undefined ? { clear: true } : undefined
+  return Object.keys(patch).length === 0 ? undefined : patch
+}
+
+/* ---------- 模型下拉的取值编解码 + 选项投影 ---------- */
+
+/**
+ * select 的 value 分隔符：provider / model id 里不可能出现的控制字符。
+ * 下拉只承载「选哪个」，不需要人类可读，故不拼成 "provider/model"（model id 自带斜杠）。
+ */
+const MODEL_KEY_SEP = '\u0001'
+
+/** 模型选择 → 下拉 value（undefined = 宿主默认 = 空串）。 */
+export function modelKey(model: NoteModelSelection | undefined): string {
+  return model === undefined ? '' : model.provider + MODEL_KEY_SEP + model.model
+}
+
+/** 下拉 value → 模型选择（空串 / 形状不对 = undefined = 宿主默认）。 */
+export function parseModelKey(key: string): NoteModelSelection | undefined {
+  if (key === '') return undefined
+  const index = key.indexOf(MODEL_KEY_SEP)
+  if (index <= 0 || index === key.length - 1) return undefined
+  return { provider: key.slice(0, index), model: key.slice(index + 1) }
+}
+
+/** 模型下拉里的一个选项。 */
+export interface ModelOption {
+  readonly key: string
+  readonly label: string
+}
+
+/** 模型下拉的一组（provider）。 */
+export interface ModelOptionGroup {
+  readonly id: string
+  readonly label: string
+  readonly options: readonly ModelOption[]
+}
+
+/**
+ * 模型下拉的选项投影：目录分组原样搬过来；**当前值不在目录里时补进它所属的
+ * provider 组**（该 provider 整组都不在目录里就补一个独立组）——不补的话 select 会因为
+ * 没有匹配项而显示空白，用户一保存就把旧值静默抹掉（与工作区下拉同一条教训）。
+ */
+export function modelSelectGroups(
+  groups: readonly TaskModelGroup[],
+  current: NoteModelSelection | undefined,
+): readonly ModelOptionGroup[] {
+  const projected = groups.map((group) => ({
+    id: group.id,
+    label: group.name,
+    options: group.models.map((entry) => ({
+      key: modelKey({ provider: group.id, model: entry.id }),
+      label: entry.name,
+    })),
+  }))
+  if (current === undefined) return projected
+  const key = modelKey(current)
+  if (projected.some((group) => group.options.some((option) => option.key === key))) return projected
+  const label = current.model + '（不在当前目录）'
+  const host = projected.find((group) => group.id === current.provider)
+  if (host !== undefined) {
+    return projected.map((group) =>
+      group.id === current.provider
+        ? { ...group, options: [...group.options, { key, label }] }
+        : group,
+    )
+  }
+  return [...projected, { id: current.provider, label: current.provider, options: [{ key, label }] }]
+}
+
+/**
+ * 执行目标 → 新建任务的 create 入参（新建路径没有「未变」可言，一律显式给）：
+ * preset 空串不落字段（缺省即宿主默认）；model 缺省不落字段。
+ */
+export function taskTargetCreateInput(
+  target: TaskTargetDraft,
+): { readonly agentPreset?: string; readonly model?: NoteModelSelection } {
+  const preset = target.agentPreset.trim()
+  return {
+    ...(preset !== '' ? { agentPreset: preset } : {}),
+    ...(target.model !== undefined ? { model: target.model } : {}),
+  }
 }
 
 /**

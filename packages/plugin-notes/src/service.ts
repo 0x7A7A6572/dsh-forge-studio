@@ -24,10 +24,12 @@ import type {
   NoteCreateInput,
   NoteId,
   NoteLane,
+  NoteModelSelection,
   NoteRecord,
   NoteSchedule,
   NoteUpdateInput,
   TaskStatus,
+  TaskTargets,
 } from './types.ts'
 import { applyRunResult, armSchedule } from './schedule.ts'
 import type {
@@ -55,6 +57,23 @@ export type TaskExecuteResult =
 type NotesChangeListener = () => void
 
 /**
+ * 合成任务泳道身份：status 必有，可选执行目标（agentPreset / model）有才带 ——
+ * 空串 / undefined 都表示「用宿主默认」，不落空字段（缺省即默认）。
+ */
+function makeTaskLane(
+  status: TaskStatus,
+  agentPreset: string | undefined,
+  model: NoteModelSelection | undefined,
+): NoteLane {
+  const preset = agentPreset?.trim() ?? ''
+  return {
+    status,
+    ...(preset !== '' ? { agentPreset: preset } : {}),
+    ...(model !== undefined ? { model } : {}),
+  }
+}
+
+/**
  * 任务执行运行时（host 注入的窄接口；见 agent/task-dispatch.ts 实现）：
  * 任务执行 = **按工作区新建一个会话** → 在该新会话里投一次 prompt；便签板所在
  * 会话不再承载任务执行（执行会话可被用户单独打开/续聊）。
@@ -63,8 +82,22 @@ type NotesChangeListener = () => void
  * 不存在「prompt 已投出但租约未写」的竞态。
  */
 export interface NotesTaskRuntime {
-  /** 新建执行会话（cwd = workspace），返回新会话 id；失败抛错。 */
-  createSession(input: { readonly workspace: string }): Promise<string>
+  /**
+   * 新建执行会话（cwd = workspace），返回新会话 id；失败抛错。
+   * agentPreset 给了即按该预设装配会话（缺省 = 宿主默认预设）。
+   */
+  createSession(input: {
+    readonly workspace: string
+    readonly agentPreset?: string
+  }): Promise<string>
+  /**
+   * 给执行会话选模型（M2）：必须在投递 prompt **之前**调用，首个 turn 才用得上。
+   * 便签没指定模型时调用方直接跳过（不传 = 宿主默认模型）。失败抛错。
+   */
+  selectModel(input: {
+    readonly sessionId: string
+    readonly model: NoteModelSelection
+  }): Promise<void>
   /** 向执行会话投递任务 prompt（agent 由此开工）；失败抛错。 */
   prompt(input: {
     readonly noteId: NoteId
@@ -75,10 +108,10 @@ export interface NotesTaskRuntime {
   /** 工作区候选（最近会话用过的 cwd，供 UI 下拉）；失败/不可用返回空数组。 */
   listWorkspaces(): Promise<readonly string[]>
   /**
-   * 任务执行的默认工作区（三层兜底：设置值 → 最近会话目录 → 宿主进程目录）。
-   * 仅在极端情况（连宿主进程目录都取不到）才返回 undefined。
+   * 任务执行目标目录（模型 / agent 预设，供编辑器下拉）；宿主缺能力 / 查询失败
+   * 一律返回空目录（编辑器据此只显示「宿主默认」），绝不抛。
    */
-  defaultWorkspace(): Promise<string | undefined>
+  listTaskTargets(): Promise<TaskTargets>
 }
 
 export interface NotesServiceConfig {
@@ -205,10 +238,14 @@ export class NotesService extends TypertRemoteService {
       color: input.color ?? DEFAULT_NOTE_COLOR,
       // 来源：agent 工具层显式传 'agent'；UI/缺省落 'user'。
       origin: input.origin ?? 'user',
-      // 新建即任务：列头「＋新建任务」传 laneStatus → 落 lane: { status }；
+      // 新建即任务：列头「＋新建任务」传 laneStatus → 落 lane: { status }，并带上
+      // 可选执行目标（agentPreset / model；缺省即宿主默认，不落空字段）；
       // 缺省不落 lane（普通便签，不进泳道）。
-      ...(input.laneStatus !== undefined ? { lane: { status: input.laneStatus } } : {}),
-      // 任务执行工作区：trim 后非空才落字段（空串/缺省 = 未指定，执行时回退设置默认）。
+      ...(input.laneStatus !== undefined
+        ? { lane: makeTaskLane(input.laneStatus, input.agentPreset, input.model) }
+        : {}),
+      // 任务执行工作区：trim 后非空才落字段（空串/缺省 = 未指定；任务必须有工作区，
+      // 执行时会被拒为 missing-workspace）。
       ...(input.workspace !== undefined && input.workspace.trim() !== ''
         ? { workspace: input.workspace.trim() }
         : {}),
@@ -246,10 +283,22 @@ export class NotesService extends TypertRemoteService {
       if (status === undefined) {
         throw new Error('lane patch 缺 status：便签无 lane 时须同时提供 status，不能仅凭 run 造 lane')
       }
+      // 执行目标（M2）：给值即覆盖，agentPreset 空串 / model null 即清除（回到宿主
+      // 默认）。未给保留原值 —— 与 workspace / schedule 同一套「未给即保留」语义。
+      const agentPreset: string | undefined =
+        patch.lane.agentPreset === undefined
+          ? current.lane?.agentPreset
+          : patch.lane.agentPreset.trim() !== ''
+            ? patch.lane.agentPreset.trim()
+            : undefined
+      const model: NoteModelSelection | undefined =
+        patch.lane.model === undefined ? current.lane?.model : (patch.lane.model ?? undefined)
       lane = {
         ...current.lane,
         status,
         ...(patch.lane.run !== undefined ? { run: patch.lane.run } : {}),
+        ...(agentPreset !== undefined ? { agentPreset } : {}),
+        ...(model !== undefined ? { model } : {}),
       }
     }
     // M3 手动接管收尾：仅「改到不同状态」的接管路径、且当前 lane 有开着（未
@@ -448,16 +497,17 @@ export class NotesService extends TypertRemoteService {
   /**
    * 执行事务（按工作区新建会话，spec §7/§8）：
    * 1. 快照当前便签（回滚基准）；missing = 无此便签；busy = 归档 / 无 lane / 已有 lease。
-   * 2. 无 task 运行时 → no-dispatch（此步在任何状态变更之前，故无副作用、无需回滚）；
-   *    先于工作区解析判定——默认工作区本身来自运行时。
-   * 3. 解析工作区：便签 workspace 优先，缺省回退运行时默认工作区（设置值 → 最近会话
-   *    目录 → 宿主进程目录）；都拿不到才 missing-workspace（不新建会话、不改状态）。
-   * 4. task.createSession({ workspace }) 新建执行会话（cwd = 工作区）；抛错 → dispatch-failed
-   *    （此时尚未改状态，无回滚）。
-   * 5. grantTaskLease（置 running + 新 run 帧 + 写 lease，租约绑定**新会话 id**）；非
+   * 2. 无 task 运行时 → no-dispatch（此步在任何状态变更之前，故无副作用、无需回滚）。
+   * 3. 解析工作区：**只看便签自己的 workspace**（M1-4 起没有默认工作区兜底）；
+   *    空 → missing-workspace（不新建会话、不改状态）。
+   * 4. task.createSession({ workspace, agentPreset }) 新建执行会话（cwd = 工作区，
+   *    预设取 lane.agentPreset）；抛错 → dispatch-failed（此时尚未改状态，无回滚）。
+   * 5. 便签指定了模型 → task.selectModel({ sessionId, model })（必须在投递前，
+   *    首个 turn 才用得上）；抛错 → dispatch-failed（同样尚未改状态）。
+   * 6. grantTaskLease（置 running + 新 run 帧 + 写 lease，租约绑定**新会话 id**）；非
    *    granted 按对应 reason 返回。
-   * 6. task.prompt(...) 向新会话投递；抛错 → 回滚 → dispatch-failed。
-   * 7. 成功 → 返回投递后最新便签（running + run 帧）。
+   * 7. task.prompt(...) 向新会话投递；抛错 → 回滚 → dispatch-failed。
+   * 8. 成功 → 返回投递后最新便签（running + run 帧）。
    *
    * 回滚语义：grant 是「写 lease + 直写 running」两次独立 put（非原子），故回滚 =
    * revokeTaskLease（只删 lease 行）+ 直写恢复快照 lane——不经 update（update 的「手动
@@ -488,19 +538,32 @@ export class NotesService extends TypertRemoteService {
       return { ok: false, reason: 'busy' }
     }
     // 运行时缺省：任何状态变更之前返回，无副作用（无需回滚）。此判定先于工作区解析
-    // ——默认工作区本身来自运行时，没有运行时就无从解析，诊断上也该报 no-dispatch。
+    // ——没有运行时就无从谈起派发，诊断上该报 no-dispatch。
     if (this.task === undefined) return { ok: false, reason: 'no-dispatch' }
-    // 工作区解析：便签级 > 运行时默认（设置值 → 最近会话目录 → 宿主进程目录）；
-    // 都拿不到才拒绝执行（任务必须跑在明确的工作区）。
-    const workspace = (current.workspace ?? (await this.task.defaultWorkspace()) ?? '').trim()
+    // 工作区解析：**只认便签自己的 workspace**（M1-4：不再有默认工作区兜底）。
+    // 没有工作区 = 这张任务便签还没配好，拒绝执行（任务必须跑在明确的工作区）。
+    const workspace = (current.workspace ?? '').trim()
     if (workspace === '') return { ok: false, reason: 'missing-workspace' }
     const snapshot = current
 
     let sessionId: string
     try {
-      sessionId = await this.task.createSession({ workspace })
+      sessionId = await this.task.createSession({
+        workspace,
+        ...(current.lane.agentPreset !== undefined ? { agentPreset: current.lane.agentPreset } : {}),
+      })
     } catch {
       return { ok: false, reason: 'dispatch-failed' }
+    }
+
+    // 模型选择：必须在投递 prompt 之前 —— 选完才开工，第一个 turn 才是用户选的那个模型。
+    // 抛错同样按 dispatch-failed 处理（此时仍未有状态变更，无回滚；已建的空会话无副作用）。
+    if (current.lane.model !== undefined) {
+      try {
+        await this.task.selectModel({ sessionId, model: current.lane.model })
+      } catch {
+        return { ok: false, reason: 'dispatch-failed' }
+      }
     }
 
     const granted = await this.grantTaskLease(id, sessionId, by)
@@ -530,6 +593,20 @@ export class NotesService extends TypertRemoteService {
       return await this.task.listWorkspaces()
     } catch {
       return []
+    }
+  }
+
+  /**
+   * 任务执行目标目录（M2）：模型（按 provider 分组）+ agent 预设，供编辑器那两个
+   * 下拉。运行时缺省 / 宿主没装对应服务 / 查询抛错一律空目录 —— 编辑器看到空目录就
+   * 只显示「宿主默认」，不会因为拿不到目录而让整个编辑器打不开。
+   */
+  async taskTargets(): Promise<TaskTargets> {
+    if (this.task === undefined) return { models: [], presets: [] }
+    try {
+      return await this.task.listTaskTargets()
+    } catch {
+      return { models: [], presets: [] }
     }
   }
 
@@ -644,6 +721,7 @@ markRemoteMethods(NotesService.prototype, [
   { method: 'getAgentBridgeState' },
   { method: 'taskExecute' },
   { method: 'listWorkspaces' },
+  { method: 'taskTargets' },
   { method: 'taskReset' },
   { method: 'watch', mode: 'stream' },
   { method: 'webdavBackup' },

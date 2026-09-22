@@ -26,13 +26,16 @@
  * 调用时抛错 → taskExecute 回滚并返回 dispatch-failed（UI 侧给提示）。
  * 例外是 listWorkspaces：拿不到候选只是「没有候选」，一律降级空数组、不抛。
  *
- * 默认工作区（defaultWorkspace）三层兜底，保证「总有默认值」：
- * 1) 设置命名空间 `forge-studio-notes` 的 defaultWorkspace（用户显式配置）；
- * 2) 最近会话用过的目录（会话列表按活动序，取首条）；
- * 3) 宿主进程目录 process.cwd()（恒存在——纯 UI 宿主、零会话时也能执行）。
- * cordis 规则：`ctx.settings` 必须在声明了 inject(['settings']) 的上下文里读——这里在
- * 装配时派生一次带 settings 的上下文并缓存，读取时同步取值（改配置立即生效）；
- * settings 服务缺席/读取抛错都降级到下一层。
+ * 执行目标（M2）：便签上可选地挂着 agentPreset / model，都在**投递 prompt 之前**落到
+ * 新会话上 —— 预设走 create({ agentPreset })，模型走 selectModel({ sessionId, ... })。
+ * 两者缺省即「宿主默认」，不传就是宿主自己的选择。
+ *
+ * 工作区：**没有默认值**（M1-4 起取消了设置项与三层兜底）。任务必须有便签级
+ * workspace，缺了由 service 判 missing-workspace，本层不兜底。
+ *
+ * 目录投影（listTaskTargets）：模型目录取 hub 的 modelCatalog，agent 预设取
+ * agentPresets 服务的 list()（两者都是**可选**能力，缺席即空目录）。两个服务都按
+ * 结构化接口取（同 WorkspaceLookup 的姿态）：本插件不对它们建立依赖，宿主没有就降级。
  */
 
 import { randomUUID } from 'node:crypto'
@@ -40,14 +43,15 @@ import type { Context } from '@deepseek-ai/cordis'
 // 仅类型导入（build 时擦除，不进 bundle）：加载 cordis Context 增广（ctx.sessionController）
 // 与请求形状；SessionId 通过 SessionPromptRequest['sessionId'] 取型，免直接 import。
 import type {
+  ModelCatalog,
   SessionCreateRequest,
   SessionListRequest,
   SessionPromptRequest,
   SessionRequestId,
+  SessionSelectModelRequest,
 } from '@deepseek-ai/dsh-api-session-controller'
 import type { NotesTaskRuntime } from '../service.ts'
-import { NOTES_NAMESPACE } from '../types.ts'
-import type { NoteId, NotesConfig } from '../types.ts'
+import type { NoteId, TaskModelGroup, TaskTargets } from '../types.ts'
 
 /** 工作区候选上限：下拉不该无限长（会话列表按活动时间序，取最近若干）。 */
 export const WORKSPACE_CANDIDATE_LIMIT = 12
@@ -59,6 +63,19 @@ export const WORKSPACE_CANDIDATE_LIMIT = 12
  */
 interface WorkspaceLookup {
   resolveByPath(path: string): Promise<{ readonly id: string } | undefined>
+}
+
+/**
+ * agent 预设目录的结构面（`ctx.agentPresets`）：只要「列出可用的预设」这一个能力。
+ * 同样不 import @deepseek-ai/dsh-agent-presets —— 宿主没装预设服务时本插件照常可用，
+ * 只是编辑器那两个下拉里只剩「宿主默认」。
+ */
+interface PresetLookup {
+  list(): Promise<readonly {
+    readonly id: string
+    readonly name?: string
+    readonly broken?: string
+  }[]>
 }
 
 /** 派发消息首行标记：一眼认出「这是任务派发」，且几乎不占宽度。 */
@@ -92,23 +109,6 @@ export function installTaskRuntime(ctx: Context): NotesTaskRuntime {
       throw new Error('sessionController 不可用：宿主未装配会话控制器，任务执行无法新建会话')
     }
     return sessionController
-  }
-
-  /** 带 settings 的派生上下文（装配时声明 inject；缺席则保持 undefined → 无默认工作区）。 */
-  let settingsCtx: Context | undefined
-  void ctx.inject(['settings'], (injected) => {
-    settingsCtx = injected
-  })
-
-  /** 设置里的默认工作区（未配置/未注入 settings/读取异常一律 undefined）。 */
-  const configuredDefaultWorkspace = (): string | undefined => {
-    try {
-      const raw = settingsCtx?.settings.get(NOTES_NAMESPACE) as Partial<NotesConfig> | undefined
-      const value = raw?.defaultWorkspace?.trim()
-      return value !== undefined && value !== '' ? value : undefined
-    } catch {
-      return undefined
-    }
   }
 
   /**
@@ -161,12 +161,32 @@ export function installTaskRuntime(ctx: Context): NotesTaskRuntime {
      */
     async createSession(input) {
       const workspaceId = await resolveWorkspaceId(input.workspace)
-      const request: SessionCreateRequest =
-        workspaceId !== undefined
+      const request: SessionCreateRequest = {
+        ...(workspaceId !== undefined
           ? { workspaceId: workspaceId as NonNullable<SessionCreateRequest['workspaceId']> }
-          : { cwd: input.workspace }
+          : { cwd: input.workspace }),
+        // 预设：给了就按它装配（缺省 = 宿主默认预设）。宿主对未知 id 会拒绝 →
+        // 上层按 dispatch-failed 处理并提示，用户改回「宿主默认」即可。
+        ...(input.agentPreset !== undefined ? { agentPreset: input.agentPreset } : {}),
+      }
       const created = await controller().create(request)
       return String(created.sessionId)
+    },
+    /**
+     * 给执行会话选模型：**必须在 prompt 之前**调用 —— 选完才开工，第一个 turn 用的
+     * 就是便签上指定的模型。宿主对不可路由的 provider/model 会拒绝（抛错 → 上层
+     * dispatch-failed）。
+     */
+    async selectModel(input) {
+      const request: SessionSelectModelRequest = {
+        sessionId: input.sessionId as SessionSelectModelRequest['sessionId'],
+        provider: input.model.provider,
+        model: input.model.model,
+        ...(input.model.reasoningEffort !== undefined
+          ? { reasoningEffort: input.model.reasoningEffort }
+          : {}),
+      }
+      await controller().selectModel(request)
     },
     /** 向执行会话投递任务 prompt（queue 语义：不打断会话里正在跑的 turn）。 */
     async prompt(input) {
@@ -180,15 +200,46 @@ export function installTaskRuntime(ctx: Context): NotesTaskRuntime {
     },
     listWorkspaces,
     /**
-     * 任务执行的默认工作区（三层兜底，见文件头注释）：设置值 → 最近会话目录 →
-     * 宿主进程目录。除极端情况（process.cwd() 为空）外恒有值，故任务便签不再因
-     * 「没配工作区」被拒。
+     * 任务执行目标目录（模型 + agent 预设）：两个来源各自独立降级 —— 模型目录缺
+     * sessionController / 查询抛错 → 空模型列表；预设服务缺席 / 查询抛错 → 空预设
+     * 列表。编辑器据此只显示「宿主默认」，永远拿得到一份可用的（可能为空的）目录。
      */
-    async defaultWorkspace() {
-      const configured = configuredDefaultWorkspace()
-      if (configured !== undefined) return configured
-      const candidates = await listWorkspaces()
-      return candidates.length > 0 ? candidates[0] : process.cwd()
+    async listTaskTargets(): Promise<TaskTargets> {
+      const [models, presets] = await Promise.all([listModels(), listPresets()])
+      return { models, presets }
     },
+  }
+
+  /**
+   * 模型目录投影：宿主 ModelCatalog（provider 分组）→ 下拉用的精简形状。
+   * 不可路由的 provider 不在 groups 里（宿主已经按可服务性过滤），这里只做搬移。
+   */
+  async function listModels(): Promise<readonly TaskModelGroup[]> {
+    const sessionController = ctx.get('sessionController')
+    if (sessionController === undefined) return []
+    try {
+      const catalog: ModelCatalog = await sessionController.modelCatalog()
+      return catalog.groups.map((group) => ({
+        id: group.id,
+        name: group.name,
+        models: group.models.map((entry) => ({ id: entry.id, name: entry.name })),
+      }))
+    } catch {
+      return []
+    }
+  }
+
+  /** agent 预设投影：跳过「坏的」（宿主自己也不会让它们拼会话），name 缺省回落到 id。 */
+  async function listPresets(): Promise<readonly { readonly id: string; readonly name: string }[]> {
+    const presets = ctx.get('agentPresets') as PresetLookup | undefined
+    if (presets === undefined) return []
+    try {
+      const rows = await presets.list()
+      return rows
+        .filter((row) => row.broken === undefined)
+        .map((row) => ({ id: row.id, name: row.name ?? row.id }))
+    } catch {
+      return []
+    }
   }
 }

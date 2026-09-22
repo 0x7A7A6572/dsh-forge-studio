@@ -12,12 +12,18 @@ import { t } from '../../core/theme-tokens.ts'
 import { useQuickAddDialog } from '../../hooks/useQuickAddDialog.ts'
 import type { QuickCreateResult } from '../../hooks/useQuickAddDialog.ts'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
-import type { NoteColor, NotesConfig, TaskStatus } from '../../../types.ts'
+import type {
+  NoteColor,
+  NoteModelSelection,
+  NotesConfig,
+  TaskStatus,
+  TaskTargets,
+} from '../../../types.ts'
 
 export type { QuickCreateResult }
 
 export interface QuickAddDialogProps {
-  /** 设置命名空间 scope（读 defaultTitle / defaultWorkspace）。 */
+  /** 设置命名空间 scope（读 defaultTitle）。 */
   readonly scope: SettingsScope<NotesConfig>
   /** 实际落库调用（index.ts 注入 notes.create + 错误映射）。 */
   readonly create: (input: {
@@ -26,9 +32,13 @@ export interface QuickAddDialogProps {
     color?: NoteColor
     laneStatus?: TaskStatus
     workspace?: string
+    agentPreset?: string
+    model?: NoteModelSelection
   }) => Promise<QuickCreateResult>
   /** 工作区候选（最近会话用过的 cwd）：挂载即拉一次；缺省 = 无候选。 */
   readonly listWorkspaces?: () => Promise<readonly string[]>
+  /** 任务执行目标目录（模型 / agent 预设）：同样挂载即拉；缺省 = 空目录。 */
+  readonly listTaskTargets?: () => Promise<TaskTargets>
   /** 保存成功回调（补刷侧栏徽标等）。 */
   readonly onCreated: () => void
 }
@@ -41,8 +51,8 @@ export function QuickAddDialog(props: QuickAddDialogProps): JSX.Element {
     error,
     workspaces,
     workspacesReady,
+    taskTargets,
     defaultTitle,
-    defaultWorkspace,
     close,
     onSave,
   } = useQuickAddDialog(props)
@@ -54,9 +64,9 @@ export function QuickAddDialog(props: QuickAddDialogProps): JSX.Element {
       <EditorPageDialog
         target={{ mode: 'create', ...(draft === undefined ? {} : { draft }), nonce: seq }}
         defaultTitle={defaultTitle}
-        defaultWorkspace={defaultWorkspace}
         workspaceOptions={workspaces}
         workspaceReady={workspacesReady}
+        taskTargets={taskTargets}
         onCancel={close}
         onSave={onSave}
       />

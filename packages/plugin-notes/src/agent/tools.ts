@@ -173,6 +173,17 @@ const LANE_SCHEMA = {
         by: { type: 'string', enum: ['user', 'schedule'] },
       },
     },
+    // 执行目标（M2，均可选）：缺省 = 宿主默认预设 / 默认模型。
+    agentPreset: { type: 'string' },
+    model: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        provider: { type: 'string', required: true },
+        model: { type: 'string', required: true },
+        reasoningEffort: { type: 'string' },
+      },
+    },
   },
 } as const
 
@@ -222,7 +233,7 @@ const NOTE_OUTPUT_SCHEMA = {
     lane: LANE_SCHEMA,
     /** 任务定时日程（host 调度器写 nextAt/lastFiredAt/lastResult；缺省 = 不定时）。 */
     schedule: SCHEDULE_SCHEMA,
-    /** 任务执行工作区（绝对目录路径）；缺省 = 执行时回退默认工作区。 */
+    /** 任务执行工作区（绝对目录路径）；缺省 = 执行被拒（任务必须有工作区）。 */
     workspace: { type: 'string' },
   },
 } as const

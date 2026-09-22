@@ -43,9 +43,9 @@ export function NotesBoard(props: NotesBoardProps): JSX.Element {
     helpOpen,
     editing,
     defaultTitle,
-    effectiveDefaultWorkspace,
     workspaces,
     workspacesReady,
+    taskTargets,
     closeBoard,
     refresh,
     dismissError,
@@ -176,9 +176,9 @@ export function NotesBoard(props: NotesBoardProps): JSX.Element {
         <EditorPageDialog
           target={editing}
           defaultTitle={defaultTitle}
-          defaultWorkspace={effectiveDefaultWorkspace}
           workspaceOptions={workspaces}
           workspaceReady={workspacesReady}
+          taskTargets={taskTargets}
           onCancel={closeEditor}
           onSave={saveDraft}
         />

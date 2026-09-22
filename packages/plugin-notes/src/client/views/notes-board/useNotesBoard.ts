@@ -22,10 +22,11 @@ import type {
   NoteScheduleInput,
   NotesConfig,
   NoteUpdateInput,
+  TaskTargets,
 } from '../../../types.ts'
 import { scheduleSignature } from '../../../schedule.ts'
 import type { TaskStatus } from '../../core/task-lanes.ts'
-import { lanePatchForSave } from '../../core/task-lanes.ts'
+import { lanePatchForSave, taskTargetCreateInput } from '../../core/task-lanes.ts'
 import { boardStore } from '../../core/board-store.ts'
 import { announceNotesPanel, watchSiblingPanels } from '../../core/notes-panel.ts'
 import { notesChangeBus, notesStatsStore } from '../../core/notes-stats.ts'
@@ -37,7 +38,7 @@ import type { NoteSaveOptions, NoteTaskDraft } from '../../components/NoteEditor
 /** 面板注入面：由 client 入口在注册槽位时提供。 */
 export interface NotesBoardFace {
   readonly notes: NotesRemote
-  /** forge-studio-notes 命名空间 scope（默认标题/默认工作区；入口开关在 dsh 设置 → 便签）。 */
+  /** forge-studio-notes 命名空间 scope（默认标题 / 打开方式；入口开关在 dsh 设置 → 便签）。 */
   readonly scope: SettingsScope<NotesConfig>
   /** 关闭便签板：把主面板切回会话（ctx.layout.selectPanel(null)）。 */
   readonly closeBoard: () => void
@@ -61,9 +62,9 @@ function errText(error: unknown): string {
 /** 提示：执行需宿主可新建会话（no-dispatch / dispatch-failed 共用）。 */
 const EXECUTE_NEEDS_SESSION_HINT = '执行需要宿主能新建会话（会话控制器不可用或投递被拒）'
 
-/** 未指定工作区提示（便签级 + 设置默认都为空）：任务必须跑在明确的工作区。 */
+/** 未指定工作区提示：M1-4 起不再有默认工作区，任务必须自带一个。 */
 const EXECUTE_NEEDS_WORKSPACE_HINT =
-  '任务便签未指定工作区：请在该便签编辑器里填写，或到设置里配置「默认工作区」'
+  '这张任务便签还没指定工作区：打开它，在「设为任务」底下选一个工作区再执行'
 
 /** 任务执行事务失败 reason → 用户提示。 */
 function executeError(
@@ -92,9 +93,10 @@ export interface UseNotesBoardResult {
   readonly helpOpen: boolean
   readonly editing: EditorTarget | null
   readonly defaultTitle: string
-  readonly effectiveDefaultWorkspace: string
   readonly workspaces: readonly string[]
   readonly workspacesReady: boolean
+  /** 任务执行目标目录（模型 / agent 预设）；拿不到即空目录（只留「宿主默认」）。 */
+  readonly taskTargets: TaskTargets
   readonly closeBoard: () => void
   readonly refresh: () => void
   readonly dismissError: () => void
@@ -132,6 +134,8 @@ export function useNotesBoard(options: UseNotesBoardOptions): UseNotesBoardResul
    * 否则候选一到就会被真目录替换，用户看到的就是「提示一闪而过」。
    */
   const [workspacesReady, setWorkspacesReady] = useState(false)
+  /** 任务执行目标目录（模型 / agent 预设）：挂载即拉一次，失败即空目录。 */
+  const [taskTargets, setTaskTargets] = useState<TaskTargets>({ models: [], presets: [] })
   const [notes, setNotes] = useState<readonly NoteRecord[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | undefined>()
@@ -168,14 +172,6 @@ export function useNotesBoard(options: UseNotesBoardOptions): UseNotesBoardResul
   )
 
   const defaultTitle = snapshot.value?.defaultTitle ?? '新便签'
-  /** 设置里的默认工作区（任务便签未单独指定时用它新建执行会话）。 */
-  const defaultWorkspace = snapshot.value?.defaultWorkspace ?? ''
-  /**
-   * 生效默认工作区（只用于 UI 文案）：设置值 → 最近会话目录，与 host 侧
-   * defaultWorkspace() 的兜底一致，这样「用默认（xxx）」显示的就是真正会用的目录。
-   */
-  const effectiveDefaultWorkspace =
-    defaultWorkspace !== '' ? defaultWorkspace : (workspaces[0] ?? '')
 
   async function refresh(silent = false): Promise<void> {
     if (!silent) setLoading(true)
@@ -215,6 +211,22 @@ export function useNotesBoard(options: UseNotesBoardOptions): UseNotesBoardResul
       .finally(() => {
         if (alive) setWorkspacesReady(true)
       })
+    return () => {
+      alive = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // 任务执行目标目录（模型 / agent 预设）：同样挂载即拉 —— 编辑器一打开就要用，
+  // 等开编辑器才拉会让两个下拉先空一下再冒出来。只读端点，失败静默降级空目录。
+  useEffect(() => {
+    let alive = true
+    void face.notes
+      .taskTargets()
+      .then((result) => {
+        if (alive && result.ok) setTaskTargets(result.value)
+      })
+      .catch(() => {})
     return () => {
       alive = false
     }
@@ -295,14 +307,21 @@ export function useNotesBoard(options: UseNotesBoardOptions): UseNotesBoardResul
     const close = options?.close !== false
     const save = (action: () => Promise<unknown>): Promise<boolean> =>
       options?.silent === true ? quietRun(action) : run(action)
-    // 工作区一律 trim 后落库（空串 = 未指定，执行时回退设置默认值）。
+    // 工作区一律 trim 后落库（空串 = 未指定；M1-4 起任务必须有工作区，见 host 侧
+    // missing-workspace 与编辑器侧的必选闸门）。
     const workspace = taskPatch.workspace.trim()
+    // 执行目标（模型 / agent 预设）：只有任务便签才带（普通便签无 lane，host 忽略）。
+    const target = {
+      agentPreset: taskPatch.agentPreset,
+      ...(taskPatch.model !== undefined ? { model: taskPatch.model } : {}),
+    }
     if (current.mode === 'create') {
-      // 新建：开关开 → 以 laneStatus 落任务身份；关 → 普通便签（原路径不变）。
+      // 新建：开关开 → 以 laneStatus 落任务身份（并带上可选执行目标）；关 → 普通便签。
       // 列头「＋新建任务」的初始状态已由 EditorPageDialog 合成进编辑器初值，此处
       // 开关是唯一真相（用户可在弹窗内改状态/取消任务）。
       // 定时日程：只有任务便签才带（普通便签无 lane，host 侧同样会忽略）。
       const schedule = taskPatch.on ? taskPatch.schedule : undefined
+      const targets = taskPatch.on ? taskTargetCreateInput(target) : {}
       const ok = await save(() =>
         face.notes.create({
           title,
@@ -310,6 +329,7 @@ export function useNotesBoard(options: UseNotesBoardOptions): UseNotesBoardResul
           color,
           ...(taskPatch.on ? { laneStatus: taskPatch.status } : {}),
           ...(workspace !== '' ? { workspace } : {}),
+          ...targets,
           ...(schedule !== undefined ? { schedule } : {}),
         }),
       )
@@ -320,8 +340,8 @@ export function useNotesBoard(options: UseNotesBoardOptions): UseNotesBoardResul
       // / 已执行的最新状态回滚；开关关且原本是任务 → clear（取消任务）；关且非任务
       // → 纯内容更新。running 任务的开关在编辑器里只读（状态不可能改），故不会对
       // running lane 发任何 patch。
-      const laneForUpdate = lanePatchForSave(taskPatch.on, taskPatch.status, current.note.lane)
-      // workspace 只在真的改了才发（空串 = 清除该字段，回退设置默认值）；未改不发，
+      const laneForUpdate = lanePatchForSave(taskPatch.on, taskPatch.status, current.note.lane, target)
+      // workspace 只在真的改了才发（空串 = 清除该字段，此后执行会被拒）；未改不发，
       // 避免编辑器打开期间的无谓写入。
       const workspaceChanged = workspace !== (current.note.workspace ?? '')
       // 定时日程：编辑器草稿（任务态）→ 与便签上既有日程比「可写字段签名」。未改不发，
@@ -405,9 +425,9 @@ export function useNotesBoard(options: UseNotesBoardOptions): UseNotesBoardResul
     helpOpen,
     editing,
     defaultTitle,
-    effectiveDefaultWorkspace,
     workspaces,
     workspacesReady,
+    taskTargets,
     closeBoard,
     refresh: () => void refresh(),
     dismissError: () => setError(undefined),

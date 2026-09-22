@@ -7,7 +7,13 @@
  */
 
 import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client';
-import type { NoteColor, NotesConfig, TaskStatus } from '../../types.ts';
+import type {
+  NoteColor,
+  NoteModelSelection,
+  NotesConfig,
+  TaskStatus,
+  TaskTargets,
+} from '../../types.ts';
 import type { NotesRemote } from './notes-remote.ts';
 import type { NoteDraft } from './notes-nav.ts';
 
@@ -24,22 +30,29 @@ export interface NotesCreateInput {
   readonly color?: NoteColor;
   readonly laneStatus?: TaskStatus;
   readonly workspace?: string;
+  /** 执行目标（仅与 laneStatus 搭配有意义；缺省 = 宿主默认）。 */
+  readonly agentPreset?: string;
+  readonly model?: NoteModelSelection;
 }
 
 /** 入口组件可用的全部能力。 */
 export interface NotesUiFace {
-  /** 设置命名空间 scope（读 defaultTitle / defaultWorkspace / entry 开关）。 */
+  /** 设置命名空间 scope（读 defaultTitle / entry 开关 / openMode）。 */
   readonly scope: SettingsScope<NotesConfig>;
   /** notes 远程通道（列表/创建等）。 */
   readonly notes: NotesRemote;
   /** 打开便签板：ctx.layout.selectPanel(NOTES_PANEL_ID)。 */
   readonly openBoard: () => void;
+  /** 打开任务泳道：开板 + 把视图切到泳道页签（入口弹层里那一行用）。 */
+  readonly openTaskLanes: () => void;
   /** 记一笔：打开快捷新建浮层（可带预填草稿 —— 助手消息「存成便签」用）。 */
   readonly capture: (draft?: NoteDraft) => void;
   /** 落库调用（index.ts 注入 notes.create + 错误映射）。 */
   readonly create: (input: NotesCreateInput) => Promise<NotesCreateResult>;
   /** 工作区候选（最近会话用过的 cwd）。 */
   readonly listWorkspaces: () => Promise<readonly string[]>;
+  /** 任务执行目标目录（模型 / agent 预设）；宿主缺能力时返回空目录。 */
+  readonly listTaskTargets: () => Promise<TaskTargets>;
   /** 新建成功回调（补刷徽标）。 */
   readonly onCreated: () => void;
 }

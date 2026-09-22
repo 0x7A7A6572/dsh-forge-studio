@@ -1,6 +1,9 @@
 /**
  * plugin-notes 设置命名空间 `forge-studio.notes`：host 注册 schema + 组合 base，
  * client 的「dsh 设置 → 便签」分区经 settingsScope 绑定同一命名空间读写 defaultTitle。
+ *
+ * 曾经这里还有「默认工作区」（任务未指定工作区时的兜底目录）：M1-4 起取消 ——
+ * 任务必须有便签级工作区，host 侧也不再有任何兜底（见 service.runTaskExecute）。
  */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -10,7 +13,6 @@ import {
   DEFAULT_NOTE_OPEN_MODE,
   DEFAULT_NOTES_ENTRY_CONFIG,
   DEFAULT_WEBDAV_CONFIG,
-  DEFAULT_WORKSPACE,
   NOTES_NAMESPACE,
 } from './types.ts'
 import type { NotesConfig, NotesEntryConfig, NotesWebdavConfig } from './types.ts'
@@ -48,8 +50,6 @@ const openModeSchema = Schema.union([
 
 export const NotesConfigSchema = Schema.object({
   defaultTitle: Schema.string().default('新便签'),
-  // 任务执行默认工作区（绝对目录路径）：空串 = 未配置。
-  defaultWorkspace: Schema.string().default(DEFAULT_WORKSPACE),
   openMode: openModeSchema,
   entry: entrySchema,
   webdav: webdavSchema,
@@ -57,7 +57,6 @@ export const NotesConfigSchema = Schema.object({
 
 export const NOTES_CONFIG_BASE: NotesConfig = {
   defaultTitle: '新便签',
-  defaultWorkspace: DEFAULT_WORKSPACE,
   openMode: DEFAULT_NOTE_OPEN_MODE,
   entry: DEFAULT_NOTES_ENTRY_CONFIG,
   webdav: DEFAULT_WEBDAV_CONFIG,

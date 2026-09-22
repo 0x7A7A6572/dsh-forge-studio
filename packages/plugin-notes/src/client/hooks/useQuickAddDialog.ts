@@ -12,10 +12,11 @@
 
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
-import type { NoteColor, NotesConfig, TaskStatus } from '../../types.ts'
+import type { NoteColor, NoteModelSelection, NotesConfig, TaskStatus, TaskTargets } from '../../types.ts'
 import type { NoteDraft } from '../core/notes-nav.ts'
 import { boardStore } from '../core/board-store.ts'
-import type { NoteSaveOptions } from '../components/NoteEditor.tsx'
+import type { NoteSaveOptions, NoteTaskDraft } from '../components/NoteEditor.tsx'
+import { taskTargetCreateInput } from '../core/task-lanes.ts'
 
 /** create 收窄返回（host 侧 RemoteResult<NoteRecord> 的 ok 面；错误只取 message）。 */
 export interface QuickCreateResult {
@@ -24,7 +25,7 @@ export interface QuickCreateResult {
 }
 
 export interface UseQuickAddDialogOptions {
-  /** 设置命名空间 scope（读 defaultTitle / defaultWorkspace）。 */
+  /** 设置命名空间 scope（读 defaultTitle）。 */
   readonly scope: SettingsScope<NotesConfig>
   /** 实际落库调用（index.ts 注入 notes.create + 错误映射）。 */
   readonly create: (input: {
@@ -33,9 +34,13 @@ export interface UseQuickAddDialogOptions {
     color?: NoteColor
     laneStatus?: TaskStatus
     workspace?: string
+    agentPreset?: string
+    model?: NoteModelSelection
   }) => Promise<QuickCreateResult>
   /** 工作区候选（最近会话用过的 cwd）：挂载即拉一次；缺省 = 无候选。 */
   readonly listWorkspaces?: () => Promise<readonly string[]>
+  /** 任务执行目标目录（模型 / agent 预设）：同样挂载即拉；缺省 = 空目录。 */
+  readonly listTaskTargets?: () => Promise<TaskTargets>
   /** 保存成功回调（补刷侧栏徽标等）。 */
   readonly onCreated: () => void
 }
@@ -47,14 +52,14 @@ export interface UseQuickAddDialogResult {
   readonly error: string | undefined
   readonly workspaces: readonly string[]
   readonly workspacesReady: boolean
+  readonly taskTargets: TaskTargets
   readonly defaultTitle: string
-  readonly defaultWorkspace: string
   readonly close: () => void
   readonly onSave: (
     title: string,
     body: string,
     color: NoteColor,
-    taskPatch: { readonly on: boolean; readonly status: TaskStatus; readonly workspace: string },
+    taskPatch: NoteTaskDraft,
     options?: NoteSaveOptions,
   ) => Promise<void>
 }
@@ -68,8 +73,10 @@ export function useQuickAddDialog(options: UseQuickAddDialogOptions): UseQuickAd
   const [error, setError] = useState<string | undefined>(undefined)
   /** 工作区候选（最近会话用过的 cwd）：挂载即拉一次，失败静默降级空数组。 */
   const [workspaces, setWorkspaces] = useState<readonly string[]>([])
-  /** 候选是否已加载完成：未就绪时「用默认」文案不写「（未配置）」（避免闪一下）。 */
+  /** 候选是否已加载完成：未就绪时不写「（无候选）」（避免提示闪一下）。 */
   const [workspacesReady, setWorkspacesReady] = useState(false)
+  /** 任务执行目标目录（模型 / agent 预设）：挂载即拉，失败即空目录。 */
+  const [taskTargets, setTaskTargets] = useState<TaskTargets>({ models: [], presets: [] })
 
   // Esc 关闭浮层：capture 阶段拦截并停传播，避免板内全局 Esc（开板时）抢收。
   useEffect(() => {
@@ -92,8 +99,8 @@ export function useQuickAddDialog(options: UseQuickAddDialogOptions): UseQuickAd
     setError(undefined)
   }, [open])
 
-  // 工作区候选：挂载即拉（不等打开浮层）。等打开才拉的话，「用默认（目录）」会先渲染成
-  // 「未配置」、候选到达后再变成真目录——用户看到的就是「提示一闪而过」。
+  // 工作区候选 + 执行目标目录：挂载即拉（不等打开浮层）。等打开才拉的话，下拉会先
+  // 渲染成空、数据到达后再填上——用户看到的就是「提示一闪而过」。
   useEffect(() => {
     const load = options.listWorkspaces
     if (load === undefined) {
@@ -115,22 +122,44 @@ export function useQuickAddDialog(options: UseQuickAddDialogOptions): UseQuickAd
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  useEffect(() => {
+    const load = options.listTaskTargets
+    if (load === undefined) return
+    let alive = true
+    void load()
+      .then((targets) => {
+        if (alive) setTaskTargets(targets)
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const onSave = async (
     title: string,
     body: string,
     color: NoteColor,
-    taskPatch: { readonly on: boolean; readonly status: TaskStatus; readonly workspace: string },
+    taskPatch: NoteTaskDraft,
     // 快捷新建只有 create 语义（保存即创建并关闭），options 收下即忽略。
     _options?: NoteSaveOptions,
   ): Promise<void> => {
     setError(undefined)
     const workspace = taskPatch.workspace.trim()
+    const targets = taskPatch.on
+      ? taskTargetCreateInput({
+        agentPreset: taskPatch.agentPreset,
+        ...(taskPatch.model !== undefined ? { model: taskPatch.model } : {}),
+      })
+      : {}
     const result = await create({
       title,
       text: body,
       color,
       ...(taskPatch.on ? { laneStatus: taskPatch.status } : {}),
       ...(workspace !== '' ? { workspace } : {}),
+      ...targets,
     })
     if (result.ok) {
       onCreated()
@@ -147,8 +176,8 @@ export function useQuickAddDialog(options: UseQuickAddDialogOptions): UseQuickAd
     error,
     workspaces,
     workspacesReady,
+    taskTargets,
     defaultTitle: scope.getSnapshot().value?.defaultTitle ?? '新便签',
-    defaultWorkspace: scope.getSnapshot().value?.defaultWorkspace || workspaces[0] || '',
     close: () => boardStore.hideQuickAdd(),
     onSave,
   }

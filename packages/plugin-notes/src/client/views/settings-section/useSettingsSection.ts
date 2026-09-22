@@ -8,13 +8,12 @@
  * 传写口子、造出两个假边界（CONVENTIONS.md：分块的红线是有没有环）。
  */
 
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { NotesRemote } from '../../core/notes-remote.ts'
 import type { NoteOpenMode, NotesConfig, NotesEntryConfig, WebdavStatus } from '../../../types.ts'
 import { DEFAULT_NOTES_ENTRY_CONFIG, DEFAULT_WEBDAV_CONFIG, enabledEntryCount, notesOpenMode } from '../../../types.ts'
 import type { NotesWebdavConfig } from '../../../types.ts'
-import { workspaceLabels } from '../../core/workspace-path.ts'
 import { refreshNotesStats } from '../../core/notes-stats.ts'
 
 type Notice = { readonly kind: 'info' | 'error'; readonly text: string } | null
@@ -46,27 +45,6 @@ export function useSettingsSection(notes: NotesRemote, scope: SettingsScope<Note
   const [saving, setSaving] = useState(false)
   const dirty = draft.trim() !== current
 
-  const currentWorkspace = snapshot.value?.defaultWorkspace ?? ''
-  const workspaceOverridden =
-    snapshot.user !== undefined && 'defaultWorkspace' in (snapshot.user as object)
-  /** 候选目录（最近会话用过的 cwd；host 侧 notes/listWorkspaces 提供）。 */
-  const [wsCandidates, setWsCandidates] = useState<readonly string[]>([])
-  /** 选项集：候选 + 已配置但不在候选里的旧值（否则 select 会显示空白并把它抹掉）。 */
-  const wsOptions = useMemo(() => {
-    const list = [...wsCandidates]
-    if (currentWorkspace !== '' && !list.includes(currentWorkspace)) list.push(currentWorkspace)
-    return list
-  }, [wsCandidates, currentWorkspace])
-  /** 选项标签只给文件夹名，同名冲突才补父目录段。 */
-  const wsLabels = useMemo(() => workspaceLabels(wsOptions), [wsOptions])
-  /**
-   * 默认值：设置值优先；未配置则自动取最近会话用过的目录（与 host 侧兜底一致），
-   * 所以这个下拉一打开就有值可看/可存，而不是空框等用户填。
-   */
-  const effectiveWorkspace = currentWorkspace !== '' ? currentWorkspace : (wsCandidates[0] ?? '')
-  const [wsDraft, setWsDraft] = useState(effectiveWorkspace)
-  const [wsSaving, setWsSaving] = useState(false)
-  const wsDirty = wsDraft.trim() !== currentWorkspace
 
   // ---- 备份分区（WebDAV）状态 ----
   const [wd, setWd] = useState<NotesWebdavConfig>({
@@ -98,22 +76,6 @@ export function useSettingsSection(notes: NotesRemote, scope: SettingsScope<Note
 
   /** 已开启的入口数量：靠它守住「至少留一个」。 */
   const enabledCount = enabledEntryCount(entryDraft)
-
-  /** 工作区候选：读一次（只读端点，失败即「无候选」）。 */
-  useEffect(() => {
-    let alive = true
-    void (async () => {
-      try {
-        const result = await notes.listWorkspaces()
-        if (alive && result.ok) setWsCandidates(result.value)
-      } catch {
-        // 候选拿不到就只留「自动」一项，不打扰用户。
-      }
-    })()
-    return () => {
-      alive = false
-    }
-  }, [notes])
 
   /** 写一个入口开关：先本地生效，再落配置。 */
   async function setEntry(key: keyof NotesEntryConfig, value: boolean): Promise<void> {
@@ -180,22 +142,6 @@ export function useSettingsSection(notes: NotesRemote, scope: SettingsScope<Note
       setNotice({ kind: 'error', text: cause instanceof Error ? cause.message : String(cause) })
     } finally {
       setSaving(false)
-    }
-  }
-
-  /** 保存默认工作区：清空即 unset（回退「未配置」）。 */
-  async function saveDefaultWorkspace(): Promise<void> {
-    if (!writable || !wsDirty || wsSaving) return
-    setWsSaving(true)
-    try {
-      const trimmed = wsDraft.trim()
-      if (trimmed === '') await scope.unset('defaultWorkspace')
-      else await scope.set('defaultWorkspace', trimmed)
-      setNotice({ kind: 'info', text: '默认工作区已保存' })
-    } catch (cause) {
-      setNotice({ kind: 'error', text: cause instanceof Error ? cause.message : String(cause) })
-    } finally {
-      setWsSaving(false)
     }
   }
 
@@ -303,14 +249,6 @@ export function useSettingsSection(notes: NotesRemote, scope: SettingsScope<Note
     dirty,
     saveDefaultTitle,
     overridden,
-    workspaceOverridden,
-    wsDraft,
-    setWsDraft,
-    wsSaving,
-    wsDirty,
-    saveDefaultWorkspace,
-    wsOptions,
-    wsLabels,
     notice,
     entryDraft,
     enabledCount,

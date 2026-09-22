@@ -9,7 +9,7 @@
  * 新建/每条便签各一个编辑器实例由 key 保证（编辑器的初值即草稿内容）。
  */
 
-import type { NoteColor, NoteLane, TaskStatus } from '../../types.ts'
+import type { NoteColor, NoteLane, TaskStatus, TaskTargets } from '../../types.ts'
 import { NoteEditor } from './NoteEditor.tsx'
 import type { NoteSaveOptions, NoteTaskDraft } from './NoteEditor.tsx'
 import { noteColorMeta } from '../core/note-colors.ts'
@@ -23,12 +23,12 @@ export interface EditorPageDialogProps {
   readonly target: EditorTarget
   /** 标题留空时的默认标题（来自设置命名空间）。 */
   readonly defaultTitle: string
-  /** 生效的默认工作区（设置值，未配置则为最近会话目录；「用默认」项显示它）。 */
-  readonly defaultWorkspace?: string
   /** 工作区候选（最近会话用过的 cwd；下拉只选不手填，标签只给文件夹名）。 */
   readonly workspaceOptions?: readonly string[]
-  /** 工作区候选是否已加载完成（未就绪时「用默认」文案不写「未配置」，避免闪一下）。 */
+  /** 工作区候选是否已加载完成（未就绪时不写「未配置」，避免提示一闪而过）。 */
   readonly workspaceReady?: boolean
+  /** 任务执行目标目录（模型 / agent 预设）；空目录即只有「宿主默认」可选。 */
+  readonly taskTargets?: TaskTargets
   readonly onCancel: () => void
   readonly onSave: (
     title: string,
@@ -73,9 +73,9 @@ export function EditorPageDialog(props: EditorPageDialogProps): JSX.Element {
           initialWorkspace={editing?.workspace}
           initialSchedule={editing?.schedule}
           defaultTitle={props.defaultTitle}
-          defaultWorkspace={props.defaultWorkspace}
           workspaceOptions={props.workspaceOptions}
           workspaceReady={props.workspaceReady}
+          taskTargets={props.taskTargets}
           // 编辑既有便签才自动保存：新建态没有库记录（保存即创建），无从自动落盘。
           autoSave={props.target.mode === 'edit'}
           onColorChange={setPaper}

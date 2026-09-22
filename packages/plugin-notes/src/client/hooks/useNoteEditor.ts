@@ -11,10 +11,23 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { useEditor, useEditorState } from "@tiptap/react"
 import type { Editor } from "@tiptap/core"
 import { DEFAULT_NOTE_COLOR } from "../../types.ts"
-import type { NoteColor, NoteLane, NoteScheduleInput, TaskStatus } from "../../types.ts"
+import type {
+  NoteColor,
+  NoteLane,
+  NoteModelSelection,
+  NoteScheduleInput,
+  TaskStatus,
+  TaskTargets,
+} from "../../types.ts"
 import { previewNextAt } from "../../schedule.ts"
 import { noteColorMeta } from "../core/note-colors.ts"
-import { isRunOpen } from "../core/task-lanes.ts"
+import {
+  isRunOpen,
+  laneLabel,
+  modelKey,
+  modelSelectGroups,
+  parseModelKey,
+} from "../core/task-lanes.ts"
 import { createAutoSaver, type AutoSaver } from "../core/auto-save.ts"
 import { fmtCountdown, fmtDateTime, fmtShortDateTime } from "../core/time-text.ts"
 import { folderNameOf, workspaceSelectOptions } from "../core/workspace-path.ts"
@@ -36,13 +49,18 @@ export interface NoteSaveOptions {
 
 /**
  * 任务草稿 patch（编辑器 → 保存链路 → 便签板落库）：
- * `on` = 是否任务便签；`status` = 泳道状态；`workspace` = 执行工作区（空串 = 用默认）；
+ * `on` = 是否任务便签；`status` = 泳道状态；`workspace` = 执行工作区（空串 = 未指定，
+ * 而任务必须有工作区 —— 编辑器侧挡在保存按钮上，host 侧挡成 missing-workspace）；
+ * `agentPreset` = 执行会话的 agent 预设（空串 = 宿主默认）；
+ * `model` = 执行模型（undefined = 宿主默认）；
  * `schedule` = 定时日程草稿（undefined = 不定时；已停用的日程仍带 enabled:false 对象）。
  */
 export interface NoteTaskDraft {
   readonly on: boolean;
   readonly status: TaskStatus;
   readonly workspace: string;
+  readonly agentPreset: string;
+  readonly model?: NoteModelSelection;
   readonly schedule?: NoteScheduleInput;
 }
 
@@ -64,7 +82,8 @@ export interface NoteEditorProps {
   readonly initialLaneStatus?: TaskStatus;
   /**
    * 既有便签的执行工作区（编辑态带出，新建态 undefined）：任务是「在某个工作区
-   * 里跑的事」，执行时以该目录新建会话；留空即回退设置里的默认工作区。
+   * 里跑的事」，执行时以该目录新建会话。**必填** —— M1-4 起不再有默认工作区，
+   * 任务没工作区就执行不了，编辑器也不允许这样保存。
    */
   readonly initialWorkspace?: string;
   /**
@@ -79,15 +98,18 @@ export interface NoteEditorProps {
   readonly onColorChange?: (color: NoteColor) => void;
   /** 标题留空时使用的默认标题（来自设置）。 */
   readonly defaultTitle: string;
-  /** 设置里的默认工作区（占位提示：留空即用它新建执行会话）。 */
-  readonly defaultWorkspace?: string;
   /** 工作区候选（最近会话用过的 cwd；下拉只选不手填，选项标签只给文件夹名）。 */
   readonly workspaceOptions?: readonly string[];
   /**
-   * 工作区候选是否已加载完成。未就绪时「用默认」文案不写「（未配置）」——那个中间态
-   * 会在候选到达后立刻变成真目录，用户看到的就是「提示一闪而过」（见 board-view）。
+   * 工作区候选是否已加载完成。未就绪时占位项不写「（无候选）」——那是「还没数据」，
+   * 不是「没有候选」，写了它就会在候选到达的一瞬间被替换（提示一闪而过）。
    */
   readonly workspaceReady?: boolean;
+  /**
+   * 任务执行目标目录（模型 / agent 预设，M2）：空目录 = 只有「宿主默认」可选
+   * （宿主没装会话控制器 / 预设服务时就是这情形）。
+   */
+  readonly taskTargets?: TaskTargets;
   /** 编辑既有便签时开启：停顿后自动保存（不关弹窗）。新建态恒 false。 */
   readonly autoSave?: boolean;
   readonly onCancel: () => void;
@@ -117,10 +139,48 @@ export function useNoteEditor(props: NoteEditorProps) {
     props.initialLane?.status ?? props.initialLaneStatus ?? "todo",
   );
   /**
-   * 任务执行工作区：编辑态带出便签值，新建态留空。留空 = 不落字段，执行时回退
-   * 运行时默认工作区（设置值 → 最近会话目录 → 宿主进程目录）。
+   * 任务执行工作区：编辑态带出便签值，新建态留空。留空 = 不落字段，且**执行会被拒**
+   * （M1-4：没有默认工作区兜底）—— 所以留空时不允许把便签设成/存成任务。
    */
   const [workspace, setWorkspace] = useState(props.initialWorkspace ?? "");
+  /**
+   * 任务执行目标（M2）：agent 预设（空串 = 宿主默认）与模型（'' = 宿主默认）。
+   * 存的是 select 的 value（模型用 modelKey 编码），落库前经 parseModelKey 还原。
+   */
+  const [agentPreset, setAgentPreset] = useState(props.initialLane?.agentPreset ?? "");
+  const [modelValue, setModelValue] = useState(() => modelKey(props.initialLane?.model));
+  const selectedModel = parseModelKey(modelValue);
+  /**
+   * 模型下拉的分组选项：目录 + 「当前值不在目录里」的兜底项（见 modelSelectGroups）。
+   * 依赖 modelValue 而不只是目录：用户换选后旧值不必继续占位。
+   */
+  const modelOptionGroups = useMemo(
+    () => modelSelectGroups(props.taskTargets?.models ?? [], selectedModel),
+    [props.taskTargets, modelValue],
+  );
+  /**
+   * agent 预设下拉选项：同样给「当前值不在目录里」兜底，免得旧预设被静默抹掉。
+   */
+  const presetOptions = useMemo(() => {
+    const list = [...(props.taskTargets?.presets ?? [])];
+    const chosen = agentPreset.trim();
+    if (chosen !== "" && !list.some((entry) => entry.id === chosen)) {
+      list.push({ id: chosen, name: chosen + "（不在当前目录）" });
+    }
+    return list;
+  }, [props.taskTargets, agentPreset]);
+  /**
+   * 任务详情（折纸面板）是否展开：M2-1 起便签纸里默认只留一行摘要，点开才折出
+   * 工作区/状态/定时/模型/预设/执行记录。两种入口默认展开：
+   * - 列头「＋新建任务」（initialLaneStatus）：来的目的就是配任务，不该再让用户多点一次；
+   * - 已有执行记录的任务（done/failed）：折起来的是**设置**，执行结果是内容 ——
+   *   打开一张已完成的任务却要先点一下才看得到 AI 写了什么，那是把内容也藏了。
+   */
+  const [taskDetailOpen, setTaskDetailOpen] = useState(
+    props.initialLaneStatus !== undefined
+    || props.initialLane?.status === "done"
+    || props.initialLane?.status === "failed",
+  );
   /**
    * 定时日程草稿（编辑态带出便签既有 schedule；新建/未定时 undefined）。nextAt 由 host
    * 保存时重算并写回，这里的值只用于编辑与预览（previewNextAt）。
@@ -175,23 +235,38 @@ export function useNoteEditor(props: NoteEditorProps) {
     () => workspaceSelectOptions(props.workspaceOptions ?? [], workspace),
     [props.workspaceOptions, workspace],
   );
+  /** 空选择项的占位文案（候选未就绪时不说「无候选」，那是「还没数据」）。 */
+  const workspacePlaceholder = props.workspaceReady === false ? "选择工作区…" : "选择工作区（无候选）";
+  const workspaceSelectTitle = workspace !== "" ? `工作区：${workspace}` : "尚未指定工作区";
   /**
-   * 「用默认」项文案：候选还没拉回来时**不写「（未配置）」**——那是「还没数据」，不是
-   * 「没配置」。写了它就会在候选到达的一瞬间被真目录替换，看起来正是「提示一闪而过」。
+   * 任务缺工作区：任务便签却没有工作区 → 不合法。挡两处：保存按钮禁用 + 摘要行红字，
+   * 折叠着就自动展开（问题必须可见，不能藏在折下来的纸里）。
    */
-  const defaultWorkspaceOptionLabel = props.defaultWorkspace
-    ? `用默认（${folderNameOf(props.defaultWorkspace)}）`
-    : props.workspaceReady === false
-      ? "用默认工作区"
-      : "用默认工作区（未配置）";
-  const workspaceSelectTitle =
-    workspace !== ""
-      ? `工作区：${workspace}`
-      : props.defaultWorkspace
-        ? `默认工作区：${props.defaultWorkspace}`
-        : props.workspaceReady === false
-          ? "默认工作区：自动选择"
-          : "未指定工作区";
+  const taskWorkspaceMissing = taskOn && workspace.trim() === "";
+  /** 模型下拉里当前值的显示名（找不到就退回 model id）。 */
+  const modelLabel = useMemo(() => {
+    for (const group of modelOptionGroups) {
+      const hit = group.options.find((option) => option.key === modelValue);
+      if (hit !== undefined) return hit.label;
+    }
+    return selectedModel?.model ?? "";
+  }, [modelOptionGroups, modelValue, selectedModel]);
+  /** 预设下拉里当前值的显示名（找不到就退回 id）。 */
+  const presetLabel =
+    agentPreset.trim() === ""
+      ? ""
+      : (presetOptions.find((entry) => entry.id === agentPreset.trim())?.name ?? agentPreset.trim());
+  /**
+   * 折起来那一行摘要：[状态 · 工作区 · 模型 · 预设]，缺的项直接省略（只写「宿主默认」
+   * 反而占地方）。工作区缺失时写红字提示 —— 折叠不等于把问题藏起来。
+   */
+  const taskSummaryParts = [
+    laneLabel(taskStatus),
+    workspace.trim() === "" ? "未选工作区" : folderNameOf(workspace),
+    modelLabel === "" ? "" : modelLabel,
+    presetLabel === "" ? "" : "预设 " + presetLabel,
+  ].filter((part) => part !== "");
+  const taskSummaryText = taskSummaryParts.join(" · ");
   /** 编辑 running 任务（isRunOpen）：开关与状态只读（改状态请先在泳道重置）。 */
   const runningReadOnly =
     props.initialLane !== undefined && isRunOpen(props.initialLane);
@@ -247,6 +322,12 @@ export function useNoteEditor(props: NoteEditorProps) {
       props.onCancel();
       return;
     }
+    // 任务必须有工作区（M1-4）：没选就落不了库，直接展开折纸面板把问题摆到眼前，
+    // 不要「点了保存却什么都没发生」。
+    if (taskWorkspaceMissing) {
+      setTaskDetailOpen(true);
+      return;
+    }
     setSaving(true);
     try {
       await props.onSave(
@@ -257,6 +338,8 @@ export function useNoteEditor(props: NoteEditorProps) {
           on: taskOn,
           status: taskStatus,
           workspace,
+          agentPreset,
+          ...(selectedModel !== undefined ? { model: selectedModel } : {}),
           ...(schedule !== undefined ? { schedule } : {}),
         },
         options,
@@ -282,9 +365,9 @@ export function useNoteEditor(props: NoteEditorProps) {
    * 最新草稿镜像（标题/纸色/任务开关/状态/工作区）：自动保存回调异步执行，闭包里
    * 的 state 是排定时那一刻的旧值，故用 ref 取「保存时」的真值。
    */
-  const draftRef = useRef({ title, color, taskOn, taskStatus, workspace, schedule });
+  const draftRef = useRef({ title, color, taskOn, taskStatus, workspace, agentPreset, modelValue, schedule });
   useEffect(() => {
-    draftRef.current = { title, color, taskOn, taskStatus, workspace, schedule };
+    draftRef.current = { title, color, taskOn, taskStatus, workspace, agentPreset, modelValue, schedule };
   });
 
   /**
@@ -302,6 +385,12 @@ export function useNoteEditor(props: NoteEditorProps) {
       nextTitle = props.defaultTitle;
       setTitle(nextTitle);
     }
+    // 任务缺工作区时不落盘：把半配好的任务写进库，用户回头只会看到一张执行不了的
+    // 便签。指示灯留在原地（摘要行已有红字），工作区一选好 markDirty 会重新排。
+    if (draft.taskOn && draft.workspace.trim() === "") {
+      setAutoSaveState("idle");
+      return;
+    }
     const body = editorMarkdown(editor, props.initialBody);
     const signature = JSON.stringify([
       nextTitle,
@@ -310,6 +399,8 @@ export function useNoteEditor(props: NoteEditorProps) {
       draft.taskOn,
       draft.taskStatus,
       draft.workspace,
+      draft.agentPreset,
+      draft.modelValue,
       draft.schedule ?? null,
     ]);
     if (signature === savedSignature.current) {
@@ -327,6 +418,10 @@ export function useNoteEditor(props: NoteEditorProps) {
           on: draft.taskOn,
           status: draft.taskStatus,
           workspace: draft.workspace,
+          agentPreset: draft.agentPreset,
+          ...(parseModelKey(draft.modelValue) !== undefined
+            ? { model: parseModelKey(draft.modelValue) as NoteModelSelection }
+            : {}),
           ...(draft.schedule !== undefined ? { schedule: draft.schedule } : {}),
         },
         { close: false, silent: true },
@@ -567,6 +662,16 @@ export function useNoteEditor(props: NoteEditorProps) {
     setTaskStatus,
     workspace,
     setWorkspace,
+    agentPreset,
+    setAgentPreset,
+    modelValue,
+    setModelValue,
+    modelOptionGroups,
+    presetOptions,
+    taskDetailOpen,
+    setTaskDetailOpen,
+    taskSummaryText,
+    taskWorkspaceMissing,
     schedule,
     setSchedule,
     scheduleConfirm,
@@ -577,7 +682,7 @@ export function useNoteEditor(props: NoteEditorProps) {
     scheduleNextText,
     scheduleSummaryTitle,
     workspaceOptions,
-    defaultWorkspaceOptionLabel,
+    workspacePlaceholder,
     workspaceSelectTitle,
     runningReadOnly,
     saving,
