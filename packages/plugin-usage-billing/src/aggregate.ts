@@ -15,11 +15,13 @@
 
 import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
+import type { LedgerWriter } from './ledger-store.ts'
 import { recordDiagnostic, trimDiagnostics } from './diag.ts'
 import { foldEvents } from './fold.ts'
 import { resolveSnapshotAt } from './pricing/snapshot.ts'
+import { sameRow } from './shard-merge.ts'
 import { foldKey } from './storage-key.ts'
-import type { Diagnostic, FoldState, LedgerRow, ModelAlias, PriceSnapshot } from './types.ts'
+import type { Diagnostic, FoldState, ModelAlias, PriceSnapshot } from './types.ts'
 
 export interface SessionSource {
   /**
@@ -38,7 +40,8 @@ export interface SessionSource {
 
 export interface AggregateDeps {
   source: SessionSource
-  ledger: KvTable<string, LedgerRow>
+  /** 只读一行 / 写一行：分片容器由 LedgerStore 兜住，聚合对容器粒度无感。 */
+  ledger: LedgerWriter
   folds: KvTable<string, FoldState>
   diag: KvTable<string, Diagnostic>
   aliases: KvTable<string, ModelAlias>
@@ -72,7 +75,7 @@ export function resetAggregateCache(): void { lastRun = undefined }
 
 export async function aggregateOnce(
   deps: AggregateDeps,
-  opts: { force?: boolean } = {},
+  opts: { force?: boolean; rebuild?: boolean } = {},
 ): Promise<AggregateStats> {
   const now = deps.now ?? (() => Date.now())
   const ttl = deps.ttlMs ?? 5_000
@@ -92,7 +95,8 @@ export async function aggregateOnce(
     try {
       const wm = deps.folds.get(foldKey(header.id))
       // 戳相同 = 这份日志自上次折叠以来没变过；headerCreatedAt 只是 id 复用时的兜底。
-      if (wm !== undefined && stamp !== null && wm.stamp === stamp && wm.headerCreatedAt === header.createdAt) {
+      // `rebuild` 那一趟**故意不看水位**：账本换容器后水位对应的是旧容器，必须整语料重折一遍。
+      if (!opts.rebuild && wm !== undefined && stamp !== null && wm.stamp === stamp && wm.headerCreatedAt === header.createdAt) {
         skipped += 1
         continue
       }
@@ -103,13 +107,13 @@ export async function aggregateOnce(
         aliases: aliasMap,
         resolvePrice: (at) => resolveSnapshotAt(at, snapshots),
       })
-      for (const row of result.rows) {
-        // 只有内容真的变了才落盘：正在写的会话每轮都会被重折，但绝大多数行是上一轮的旧行，
-        // 逐行无脑重写等于每轮白写几千个小文件。
+      // 一个会话一轮只写一次：它的行落在同一片（跨天最多两片）上，逐行写会把整片重写几十遍。
+      // 只有内容真的变了才落盘：正在写的会话每轮都会被重折，绝大多数行是上一轮的旧行。
+      const changed = result.rows.filter((row) => {
         const previous = deps.ledger.get(row.id)
-        if (previous !== undefined && unchangedRow(previous, row)) continue
-        await deps.ledger.put(row.id, row)
-      }
+        return previous === undefined || !sameRow(previous, row)
+      })
+      await deps.ledger.putMany(changed)
       await deps.folds.put(foldKey(header.id), {
         sessionId: header.id,
         // 戳为 null 时不写这个字段：下一轮继续整会话重读，等后端能给出戳为止。
@@ -152,12 +156,3 @@ export async function aggregateOnce(
   return stats
 }
 
-/** 逐字段比较两行账本（值都是原始类型，`!==` 即可；键集合不同即视为变了）。 */
-function unchangedRow(a: LedgerRow, b: LedgerRow): boolean {
-  const left = a as unknown as Record<string, unknown>
-  const right = b as unknown as Record<string, unknown>
-  const keys = Object.keys(left)
-  if (keys.length !== Object.keys(right).length) return false
-  for (const key of keys) if (left[key] !== right[key]) return false
-  return true
-}

@@ -109,6 +109,19 @@ export function ledgerKey(sessionId: string, seq: number): string {
 }
 
 /**
+ * 账本分片键：`<sessionId>__<day>` —— 一个 (会话, 天) 的全部账本行放进同一条记录。
+ *
+ * 为什么要有这层容器：per-record 布局一行一文件，20,833 行 = 20,833 次文件打开，
+ * 冷启动实测 35.7s（温 1.6s）；会话×天分片后 373 个文件实测 0.68s / 0.12s。
+ * 为什么不把天并进行 id：行 id 是**数据身份**（`<sessionId>__<seq>`，已落在两万条记录里），
+ * 改它就得动历史数据；分片键只是容器，换容器不动行。
+ * `day` 是 'YYYY-MM-DD'，其中的 `-` 在编码规则里原样保留，键保持可读。
+ */
+export function ledgerShardKey(sessionId: string, day: string): string {
+  return storageKey(sessionId, day)
+}
+
+/**
  * 折叠水位键：就是会话 id 的编码（单分片，不含分隔符）。
  * 典型的 `session-<uuid>`（小写十六进制）原样保留 —— 已落盘的水位记录键不变，不会丢水位重折。
  */

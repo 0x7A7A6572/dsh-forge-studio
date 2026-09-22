@@ -14,6 +14,7 @@ import type { usageBillingDomain } from './domain.ts'
 import { aggregateOnce, resetAggregateCache } from './aggregate.ts'
 import type { AggregateStats, SessionSource } from './aggregate.ts'
 import { latestDiagnostic } from './diag.ts'
+import { LedgerStore } from './ledger-store.ts'
 import { aliasId, priceKeyCandidates } from './model-key.ts'
 import { DEFAULT_USD_TO_CNY, priceKey } from './pricing/catalog.ts'
 import { priceUsage } from './pricing/cost.ts'
@@ -55,7 +56,8 @@ export interface UsageBillingServiceConfig {
 }
 
 export class UsageBillingService extends TypertRemoteService {
-  private readonly ledger: KvTable<string, LedgerRow>
+  /** 账本读写一律经它：行落在「会话×天」分片里，聚合与视图都不必知道容器粒度。 */
+  private readonly ledger: LedgerStore
   private readonly folds: KvTable<string, FoldState>
   private readonly snapshots: KvTable<string, PriceSnapshot>
   private readonly aliases: KvTable<string, ModelAlias>
@@ -80,10 +82,19 @@ export class UsageBillingService extends TypertRemoteService {
    */
   private pass: Promise<AggregateStats> | undefined
 
+  /**
+   * 正在跑的那趟「账本分片重建」（见 {@link rebuildLedger}）。
+   *
+   * 为什么读端点要看得见它：重建是分钟级的整语料重折，期间账本从空开始逐步补齐；
+   * 读路径若还照旧「表是空的就等这一趟」，面板会静默卡几分钟 —— 所以空账本 + 重建中
+   * 时立刻返回空快照，由界面按「重建中」呈现（就绪度见 `status().rebuild`）。
+   */
+  private rebuilding = false
+
   constructor(ctx: Context, config: UsageBillingServiceConfig) {
     super(ctx, 'usageBilling')
     this.config = config
-    this.ledger = config.domain.table('ledger')
+    this.ledger = new LedgerStore(config.domain.table('ledger_shards'))
     this.folds = config.domain.table('folds')
     this.snapshots = config.domain.table('snapshots')
     this.aliases = config.domain.table('aliases')
@@ -125,15 +136,16 @@ export class UsageBillingService extends TypertRemoteService {
    * host 入口的预热与所有读端点共用这一条通道，因此"预热还没完时用户点开面板"不会
    * 再起第二趟扫描。
    */
-  private aggregatePass(): Promise<AggregateStats> {
+  private aggregatePass(rebuild = false): Promise<AggregateStats> {
     if (this.pass !== undefined) return this.pass
     const run = aggregateOnce({
       source: this.config.source,
       ledger: this.ledger, folds: this.folds, diag: this.diag,
       aliases: this.aliases, snapshots: this.snapshots,
-      installAt: this.config.installAt,
+      // 重建要复现历史行的 `backfilled`：它按**首次安装时刻**算，不是本次宿主加载时刻。
+      installAt: rebuild ? this.installSnapshotAt() : this.config.installAt,
       now: this.config.now,
-    })
+    }, rebuild ? { force: true, rebuild: true } : {})
     const tracked = run.finally(() => { if (this.pass === tracked) this.pass = undefined })
     this.pass = tracked
     return tracked
@@ -141,6 +153,38 @@ export class UsageBillingService extends TypertRemoteService {
 
   /** host 入口的预热入口：与读端点共用同一趟合并通道。 */
   warmup(): Promise<AggregateStats> { return this.aggregatePass() }
+
+  /** 首次安装时刻：由 `reason: 'install'` 的那条快照留存（配置里的 installAt 每次加载都变）。 */
+  private installSnapshotAt(): number {
+    const install = [...this.snapshots.entries()].find(([, snapshot]) => snapshot.reason === 'install')
+    return install === undefined ? this.config.installAt : install[1].at
+  }
+
+  /**
+   * 一次性重建账本分片：忽略水位，把全部会话重折一遍写进分片容器，成功后落「已重建」标记。
+   *
+   * 为什么是重折而不是搬旧表：旧表（一行一文件）的读取路径在超过 8191 个记录文件时会静默丢掉
+   * 后面的记录 —— storage-json 用**无上限** Promise.all 读每个文件，超限的 EMFILE 被当成
+   * 「记录不存在」。真实账本 20,842 行只装进 7,918 行（丢 62%），搬它等于把缺失固化下来；
+   * 而账本本来就是会话日志的派生数据，重折得到的是完整状态。旧 `ledger/` 目录一个字节都不动。
+   *
+   * 失败可退：有会话失败就不落标记，下次启动整趟重来（失败的会话水位没被推进，不会被跳过）；
+   * 重建本身逐会话幂等，中断后重跑不会重复计费。
+   */
+  async rebuildLedger(): Promise<AggregateStats> {
+    this.rebuilding = true
+    try {
+      const stats = await this.aggregatePass(true)
+      if (stats.failures === 0) {
+        await this.config.domain.global.set({
+          rebuiltAt: this.now(), rebuiltRows: this.ledger.size, rebuiltShards: this.ledger.shardCount,
+        })
+      }
+      return stats
+    } finally {
+      this.rebuilding = false
+    }
+  }
 
   /**
    * 读账本快照 —— **不在读路径上等整趟聚合**。
@@ -152,9 +196,10 @@ export class UsageBillingService extends TypertRemoteService {
    */
   private async rows(): Promise<LedgerRow[]> {
     const pass = this.aggregatePass()
-    if (this.ledger.size === 0) await pass.catch((error: unknown) => this.reportBackgroundFailure(error))
+    // 重建期间即使一行都还没有也不等：那是一趟分钟级重折，等它等于让面板静默卡住。
+    if (this.ledger.size === 0 && !this.rebuilding) await pass.catch((error: unknown) => this.reportBackgroundFailure(error))
     else void pass.catch((error: unknown) => this.reportBackgroundFailure(error))
-    return [...this.ledger.entries()].map(([, r]) => r)
+    return this.ledger.all()
   }
 
   /** 后台失败的唯一出口：吞掉会变成 unhandled rejection，抛出去会打断读端点。 */
@@ -173,10 +218,19 @@ export class UsageBillingService extends TypertRemoteService {
 
   /* ---------------- Remote 端点 ---------------- */
 
-  async status(): Promise<{ installAt: number; rows: number; sessions: number; snapshots: number; lastDiag?: Diagnostic }> {
+  async status(): Promise<{
+    installAt: number; rows: number; sessions: number; snapshots: number
+    /** 冷启动要打开的分片文件数（验收口径：重建前两万多，重建后几百）。 */
+    shards: number
+    /** 账本还没就绪：正在从会话日志重建，界面不要把这些数字当成最终值。 */
+    rebuild: { active: boolean }
+    lastDiag?: Diagnostic
+  }> {
     const base = {
       installAt: this.config.installAt, rows: this.ledger.size,
       sessions: [...this.folds.entries()].length, snapshots: this.snapshots.size,
+      shards: this.ledger.shardCount,
+      rebuild: { active: this.rebuilding },
     }
     // 单遍取最新一条：旧实现每次调用都把整张 diag 表排序（历史上曾积累 3014 条）。
     const latest = latestDiagnostic(this.diag)
@@ -329,7 +383,8 @@ export class UsageBillingService extends TypertRemoteService {
     const all = [...this.snapshots.entries()].map(([, s]) => s)
     const aliases = new Map(this.listAliases().map((a) => [a.id, a]))
     let changed = 0
-    for (const [, row] of this.ledger.entries()) {
+    const patched: LedgerRow[] = []
+    for (const row of this.ledger.all()) {
       if (row.priced) continue
       const table = resolveSnapshotAt(row.time, all)
       const alias = aliases.get(aliasId(row.provider, row.model))
@@ -338,9 +393,11 @@ export class UsageBillingService extends TypertRemoteService {
         table.entries, priceKeyCandidates(row.provider, row.model, alias), table.usdToCny,
       )
       if (!result.priced) continue
-      await this.ledger.put(row.id, { ...row, costCny: result.costCny, currency: result.currency, priced: true, snapshotId: table.snapshotId })
+      patched.push({ ...row, costCny: result.costCny, currency: result.currency, priced: true, snapshotId: table.snapshotId })
       changed += 1
     }
+    // 成批落盘（同一片一次写）：一次改价可能命中几千行，逐行写会把整片反复重写。
+    await this.ledger.putMany(patched)
     resetAggregateCache()
     return { changed }
   }

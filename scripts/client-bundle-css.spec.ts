@@ -80,7 +80,8 @@ describe('client bundle CSS Modules', () => {
       output => {
         expect(output).toContain('data-plugin-css')
         const css = injectedCss(output)
-        expect(css).toMatch(/\.\w+_root\{color:red\}/)
+        // 哈希是 base64url 字母表，可能含 -；写成 \w+ 会随临时目录随机偶发红。
+        expect(css).toMatch(/\.\w[\w-]*_root\{color:red\}/)
         expect(css).toContain('.ProseMirror{outline:none}')
         expect(classMap(output).root).toMatch(/_root$/)
         expect(classMap(output).ProseMirror).toBeUndefined()

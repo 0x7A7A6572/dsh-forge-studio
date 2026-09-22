@@ -297,6 +297,10 @@
 .table .cellMain {
   font-weight: 500;
 }
+/* 短注解列被压窄就折成两行：宁可让整表横向滚动，也不挤字。 */
+.table .nowrap {
+  white-space: nowrap;
+}
 .tableEmpty {
   padding: 24px;
   text-align: center;

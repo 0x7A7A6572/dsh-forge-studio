@@ -47,6 +47,7 @@ const MODEL_COLUMNS: ReadonlyArray<TableColumn<ModelRow>> = [
   {
     key: 'note',
     header: '备注',
+    nowrap: true,
     // 三段都是本单元格的直接文本节点：getByText 才读得到完整备注。
     render: (m) => (!m.priced ? '未收录 · ' : '')
       + (m.mixedRate ? '混合单价 · ' : '')

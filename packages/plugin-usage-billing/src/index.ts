@@ -107,7 +107,20 @@ export async function apply(ctx: Context): Promise<void> {
     // 全部显示「未收录」）。repricing 是 spec §5.7 的唯一例外通道，只碰 unpriced 行，
     // 已锁定的行绝不改写；它不在读路径上，失败只记日志。稳态下这一趟找不到任何
     // 可重算的行，等于一次空扫。
-    void service.warmup()
+    // 首启（或上次重建没收尾）先重建账本分片：账本换容器后旧水位对应的是旧容器，
+    // 必须整语料重折一遍才有完整数据；否则水面之下会一直是空的。
+    const preheat = domain.global.get().rebuiltAt === undefined
+      ? service.rebuildLedger().then((stats) => {
+        if (stats.failures > 0) {
+          // 不落标记：下次启动整趟重来（失败会话的水位没被推进，不会被跳过）。
+          ctx.logger.warn(`[plugin-usage-billing] 账本分片重建有 ${stats.failures} 个会话失败，下次启动重来`)
+        } else {
+          ctx.logger.info(`[plugin-usage-billing] 账本分片重建完成：${stats.rows} 行 / ${domain.table('ledger_shards').size} 个分片`)
+        }
+      })
+      : service.warmup()
+
+    void preheat
       .then(() => service.repricing())
       .then((result) => {
         if (result.changed > 0) {

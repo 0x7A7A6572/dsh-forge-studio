@@ -58,6 +58,21 @@ export interface LedgerRow {
   backfilled: boolean
 }
 
+/**
+ * 账本分片：一个 (会话, 天) 的全部账本行（键 = `ledgerShardKey(sessionId, day)`）。
+ *
+ * 行身份仍是 `LedgerRow.id`，分片只是容器 —— 因此「重复折叠不重复计费」由
+ * 「分片内 id 唯一」保证，不再由存储键唯一保证（见 `shard-merge.ts`）。
+ */
+export interface LedgerShard {
+  /** 分片记录自身的格式版本（与 domain 的 version 无关）；将来加字段时用它区分。 */
+  v: number
+  sessionId: string
+  /** 'YYYY-MM-DD'，与 `LedgerRow.day` 同源。 */
+  day: string
+  rows: LedgerRow[]
+}
+
 /** 每会话折叠水位。 */
 export interface FoldState {
   sessionId: string
@@ -130,6 +145,20 @@ export interface AliasInput {
   provider: string
   rawModel: string
   canonicalModel: string | null
+}
+
+/**
+ * 域的全局标记（per-record 布局里的 `global.json`，随域打开一起读出）。
+ *
+ * 为什么用全局槽而不是另开一个域：账本要不要重建，必须在**打开域之前**就有答案；
+ * 全局槽本来就跟本次 open 一起读，省掉第二个域的开关次序与竞态。
+ */
+export interface DomainMeta {
+  /** 账本分片重建完成的时刻；缺省 = 从未重建过（下次启动会从头来一趟）。 */
+  rebuiltAt?: number
+  /** 重建后的行数 / 分片数；只做诊断与验收，不参与判定。 */
+  rebuiltRows?: number
+  rebuiltShards?: number
 }
 
 /** 设置命名空间名。 */

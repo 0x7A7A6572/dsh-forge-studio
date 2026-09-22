@@ -92,7 +92,13 @@ export interface UsageBillingRemote {
   setAlias(input: AliasInput): Promise<RemoteResult<{ ok: true }>>
   aliasList(): Promise<RemoteResult<{ aliases: Array<{ provider: string; rawModel: string; canonicalModel: string }> }>>
   repricing(): Promise<RemoteResult<{ changed: number }>>
-  status(): Promise<RemoteResult<{ installAt: number; rows: number; sessions: number; snapshots: number }>>
+  status(): Promise<RemoteResult<{
+    installAt: number; rows: number; sessions: number; snapshots: number
+    /** 账本摊成的分片记录数（冷启动要打开的条数）；只做诊断，不进界面。 */
+    shards: number
+    /** 正在从会话日志重建：数字还没到终值，界面必须说明而不是把中间值当结果。 */
+    rebuild: { active: boolean }
+  }>>
 }
 
 declare module '@deepseek-ai/dsh-typert-protocol' {

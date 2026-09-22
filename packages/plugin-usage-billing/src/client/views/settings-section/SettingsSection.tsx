@@ -167,6 +167,10 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
         </div>
         {/* 状态区在 status 未到 / 取数失败时停在 0 行：这是占位，不是「账本是空的」。 */}
         <div className={styles.sub}>账本 {status?.rows ?? 0} 行 · 已折叠 {status?.sessions ?? 0} 个会话</div>
+        {/* 重建期间行数会一直长：必须说明，否则中间值看起来就是「数不全」。 */}
+        {status?.rebuild.active === true ? (
+          <div className={styles.sub}>正在重建账本，数字会逐步补齐。</div>
+        ) : null}
       </Card>
 
       {/* status 未到（或取数失败）时传 null：说明段渲染占位，绝不把「不知道」印成 1970。

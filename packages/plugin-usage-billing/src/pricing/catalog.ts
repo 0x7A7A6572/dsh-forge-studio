@@ -23,10 +23,13 @@ const entry = (e: PriceEntry): PriceEntry => Object.freeze({ ...e })
 /** 内置价表：DeepSeek 官方全系 + 少量常用对照项。 */
 export const BUILTIN_CATALOG: Readonly<Record<string, PriceEntry>> = Object.freeze({
   // —— DeepSeek 官方（CNY / 百万 token）——
-  'deepseek/deepseek-v4-flash': entry({ input: 0.5, cacheRead: 0.1, cacheWrite: 0.5, output: 2, currency: 'CNY' }),
-  'deepseek/deepseek-v4-pro': entry({ input: 2, cacheRead: 0.5, cacheWrite: 2, output: 8, currency: 'CNY' }),
-  'deepseek/deepseek-chat': entry({ input: 2, cacheRead: 0.5, cacheWrite: 2, output: 8, currency: 'CNY' }),
-  'deepseek/deepseek-reasoner': entry({ input: 4, cacheRead: 1, cacheWrite: 4, output: 16, currency: 'CNY' }),
+  // 官网只列高峰价，空闲时段减半；分时计价落地前一律按高峰算，不低估。
+  // 官网口径：flash 2 / 0.04 / 8，pro 9 / 0.30 / 27。
+  'deepseek/deepseek-flash': entry({ input: 2, cacheRead: 0.04, cacheWrite: 2, output: 8, currency: 'CNY' }),
+  'deepseek/deepseek-v4-pro': entry({ input: 9, cacheRead: 0.3, cacheWrite: 9, output: 27, currency: 'CNY' }),
+  // 同族旧 id：官网现在只认 deepseek-flash，历史配置可能这么写，同价兜住。
+  'deepseek/deepseek-v4-flash': entry({ input: 2, cacheRead: 0.04, cacheWrite: 2, output: 8, currency: 'CNY' }),
+  // deepseek-chat / deepseek-reasoner 已下架，不再兜底：未收录会显著标注。
   // —— 国外厂商对照（USD / 百万 token）——
   'openai/gpt-4o-mini': entry({ input: 0.15, cacheRead: 0.075, cacheWrite: 0.15, output: 0.6, currency: 'USD' }),
   'openai/gpt-4o': entry({ input: 2.5, cacheRead: 1.25, cacheWrite: 2.5, output: 10, currency: 'USD' }),

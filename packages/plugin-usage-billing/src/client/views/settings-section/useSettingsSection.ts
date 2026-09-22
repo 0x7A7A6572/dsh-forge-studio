@@ -41,6 +41,10 @@ export interface LedgerStatus {
   rows: number
   sessions: number
   snapshots: number
+  /** 账本摊成的分片记录数；只做诊断，界面不展示。 */
+  shards: number
+  /** 正在从会话日志重建：数字还在长，界面要说明而不是把它当结果。 */
+  rebuild: { active: boolean }
 }
 
 /** 跨档提醒（tier 是 1..3 的档位序号，pct 是当月已用比例）。 */
@@ -76,18 +80,27 @@ export function useSettingsSection(props: SettingsSectionProps) {
     // 远程面首帧可能未挂载：缺席即早退，等 billing 变化后 effect 重跑。
     if (billing === undefined) return
     let alive = true
-    void Promise.all([billing.status(), billing.pricing()]).then(([s, p]) => {
-      if (!alive) return
-      if (s.ok) setStatus(s.value)
-      // 取不到不是「0 行」：状态区停在占位（账本 0 行 / 快照 —）并留日志。
-      else console.warn('[usage-billing] 账本状态取数失败', s.error)
-      if (p.ok) setSnapshotId(p.value.snapshotId)
-      else console.warn('[usage-billing] 价表快照取数失败', p.error)
-    }).catch((error: unknown) => {
-      // wire 层 reject 同理：状态区停在占位，绝不伪造行数或快照 id。
-      console.warn('[usage-billing] 设置页取数通道异常', error)
-    })
-    return () => { alive = false }
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const load = (): void => {
+      void Promise.all([billing.status(), billing.pricing()]).then(([s, p]) => {
+        if (!alive) return
+        if (s.ok) {
+          setStatus(s.value)
+          // 重建是分钟级的：还在重建就隔几秒再看一眼，否则状态区会一直停在旧数字上，
+          // 而用户看到的正是「数字不全」。重建落定后自然不再排下一拍。
+          if (s.value.rebuild.active) timer = setTimeout(load, 3000)
+        }
+        // 取不到不是「0 行」：状态区停在占位（账本 0 行 / 快照 —）并留日志。
+        else console.warn('[usage-billing] 账本状态取数失败', s.error)
+        if (p.ok) setSnapshotId(p.value.snapshotId)
+        else console.warn('[usage-billing] 价表快照取数失败', p.error)
+      }).catch((error: unknown) => {
+        // wire 层 reject 同理：状态区停在占位，绝不伪造行数或快照 id。
+        console.warn('[usage-billing] 设置页取数通道异常', error)
+      })
+    }
+    load()
+    return () => { alive = false; if (timer !== undefined) clearTimeout(timer) }
   }, [billing])
 
   // 快照一变就把输入交还给快照：写成功、写失败、或被别处改掉，显示的都是宿主真值。

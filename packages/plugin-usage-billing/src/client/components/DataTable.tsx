@@ -23,6 +23,8 @@ export interface TableColumn<T> {
   align?: 'left' | 'right'
   /** 主列：这一行「是什么」，字重更重。 */
   main?: boolean
+  /** 短注解列不许折行：压窄就折成两行，读起来像两段。 */
+  nowrap?: boolean
   /** 给出来就代表这一列可排序（点击表头循环 升 → 降 → 原始）。 */
   sortValue?: (row: T) => number | string
   render: (row: T) => ReactNode
@@ -55,7 +57,8 @@ export function DataTable<T>(props: {
   })
 
   const cellClass = (column: TableColumn<T>): string =>
-    [column.align === 'right' ? styles.num : '', column.main === true ? styles.cellMain : '']
+    [column.align === 'right' ? styles.num : '', column.main === true ? styles.cellMain : '',
+      column.nowrap === true ? styles.nowrap : '']
       .filter((part) => part !== '').join(' ')
 
   return (

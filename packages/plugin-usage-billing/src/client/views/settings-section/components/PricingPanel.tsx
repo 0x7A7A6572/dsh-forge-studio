@@ -96,7 +96,7 @@ export function PricingPanel(props: PricingPanelProps): JSX.Element {
 
       <Card
         title="自定义单价"
-        desc="每百万 token。保存后立即追加一条价表快照，只影响此后的新账；不写 ¥0 就不能把「没配价」伪装成免费。"
+        desc="每百万 token。保存后立即追加一条价表快照，只影响此后的新账"
         extra={(
           <Button
             variant="outline" size="sm" disabled={busy} icon={<Plus size={14} />}
