@@ -1,6 +1,6 @@
 {
   "name": "@zzerx/dsh-plugin-daily-log",
-  "version": "0.2.1",
+  "version": "0.3.1",
   "description": "每日工作日志：聚合 Git 提交与本地 agent 对话（deepseek/claude/codex），按自定义模板生成日报/周报/月报；agent 工具按需注入，默认只挂一个 daily_log 派发器。",
   "keywords": [
     "dsh",
