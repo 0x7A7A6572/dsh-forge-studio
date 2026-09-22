@@ -82,12 +82,16 @@ function entryFor(table: Readonly<Record<string, PriceEntry>>, key: string): Pri
   return hit === undefined ? undefined : table[hit]
 }
 
-/** 按 keys 顺序查价并计价（首段为 `*` 的候选 = 同名兜底，见 `priceKeyCandidates`）。 */
+/**
+ * 按 keys 顺序查价并计价（首段为 `*` 的候选 = 同名兜底，见 `priceKeyCandidates`）。
+ * @param priceFactor - 档位系数：空闲档传规则倍率（官方 0.5），高峰档省略。
+ */
 export function priceUsage(
   usage: TokenUsage,
   table: Readonly<Record<string, PriceEntry>>,
   keys: readonly string[],
   usdToCny: number,
+  priceFactor = 1,
 ): PriceResult {
   for (let rank = 0; rank < keys.length; rank++) {
     const key = keys[rank]!
@@ -100,7 +104,7 @@ export function priceUsage(
     }
     const s = splitUsage(usage)
     const native = (s.input * entry.input + s.cacheRead * entry.cacheRead
-      + s.cacheWrite * entry.cacheWrite + s.output * entry.output) / 1_000_000
+      + s.cacheWrite * entry.cacheWrite + s.output * entry.output) / 1_000_000 * priceFactor
     const costCny = entry.currency === 'USD' ? native * usdToCny : native
     return {
       costCny: Math.max(0, costCny),

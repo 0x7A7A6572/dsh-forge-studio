@@ -4,6 +4,8 @@
  * client 必须 value-import（见 client/index.ts —— 从 settings.ts 取值会把 host 实现拖进浏览器产物）。
  */
 
+import type { Tier } from './pricing/tiers.ts'
+
 /** 计价所用单价的原生币种。 */
 export type Currency = 'CNY' | 'USD'
 
@@ -20,6 +22,16 @@ export interface PriceEntry {
   cacheWrite: number
   output: number
   currency: Currency
+}
+
+/** 峰谷状态（宿主算好下发；客户端不引节假日库）。 */
+export interface TierStatus {
+  /** 此刻档位；null = 分时价尚未启用。 */
+  current: Tier | null
+  /** 下次档位切换时刻；null = 近期不变。 */
+  nextSwitchAt: number | null
+  /** 有节假日数据的最后一年（界面据此提示）。 */
+  holidayDataThrough: number
 }
 
 /** 时间范围：闭区间毫秒时间戳；null 表示不限。 */
@@ -54,6 +66,8 @@ export interface LedgerRow {
   priced: boolean
   /** 计价所用的价表快照 id（可追溯）。 */
   snapshotId: string
+  /** 计费档位；峰谷上线之前写下的行没有这个字段（= 单档）。 */
+  tier?: Tier
   /** time < installAt。 */
   backfilled: boolean
 }

@@ -7,7 +7,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import type { UsageBillingRemote } from '../../core/remote.ts'
-import type { Currency, CustomPriceInput, PriceEntry } from '../../../types.ts'
+import type { Currency, CustomPriceInput, PriceEntry, TierStatus } from '../../../types.ts'
 
 export interface Draft {
   key: string
@@ -86,6 +86,8 @@ export function usePricingPanel(props: PricingPanelProps) {
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT)
   const [aliasDraft, setAliasDraft] = useState<AliasDraft>({ key: '', canonical: '' })
   const [aliases, setAliases] = useState<AliasRow[]>([])
+  /** 峰谷状态：旧宿主不发这个字段，缺省当「没有」处理。 */
+  const [tier, setTier] = useState<TierStatus | null>(null)
 
   const reload = useCallback(async () => {
     if (billing === undefined) return
@@ -96,6 +98,7 @@ export function usePricingPanel(props: PricingPanelProps) {
       setUsdToCny(r.value.usdToCny)
       // 宽松 codec 透传：旧 host 的响应可能没有这个字段，缺省按「没有自定义价」处理。
       setCustomKeys(r.value.customKeys ?? [])
+      setTier(r.value.tier ?? null)
     }
   }, [billing])
 
@@ -109,6 +112,7 @@ export function usePricingPanel(props: PricingPanelProps) {
       setSource(r.value.usdToCnySource)
       setUsdToCny(r.value.usdToCny)
       setCustomKeys(r.value.customKeys ?? [])
+      setTier(r.value.tier ?? null)
     })().catch(() => {
       // wire 层 reject：价表留在「正在读取价表…」，不制造 unhandled rejection。
     })
@@ -248,7 +252,7 @@ export function usePricingPanel(props: PricingPanelProps) {
   }))
 
   return {
-    entries, rows, source, usdToCny, busy, msg, draft, setDraft, aliasDraft, setAliasDraft, aliases,
+    entries, rows, source, usdToCny, busy, msg, draft, setDraft, aliasDraft, setAliasDraft, aliases, tier,
     save, remove, bindAlias, unbindAlias, refreshPricing, repricing,
   }
 }

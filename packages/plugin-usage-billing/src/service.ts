@@ -18,6 +18,9 @@ import { LedgerStore } from './ledger-store.ts'
 import { aliasId, priceKeyCandidates } from './model-key.ts'
 import { DEFAULT_USD_TO_CNY, priceKey } from './pricing/catalog.ts'
 import { priceUsage } from './pricing/cost.ts'
+import { holidayDataCovers, isCnHoliday, lastHolidayDataYear } from './pricing/holidays.ts'
+import { nextTierSwitchAt, tierAndFactorAt } from './pricing/tiers.ts'
+import type { TierStatus } from './types.ts'
 import { CATALOG_REASONS, activeOverridesAt, diffEntries, planSnapshot, resolveLayerAt, resolveSnapshotAt } from './pricing/snapshot.ts'
 import { USAGE_BILLING_REMOTE_METHODS, USAGE_BILLING_METHOD_NAMES } from './remote-methods.ts'
 import type { UsageBillingSettingsAccess } from './settings.ts'
@@ -273,12 +276,21 @@ export class UsageBillingService extends TypertRemoteService {
     snapshotId: string
     /** 当前**仍然生效**的自定义单价 key（设置-计费据此显示「自定义」与逐行删除）。 */
     customKeys: string[]
+    /** 峰谷状态：未生效规则时 current 为 null（客户端不必知道规则细节）。 */
+    tier: TierStatus
   }> {
     const all = [...this.snapshots.entries()].map(([, s]) => s)
     const now = this.now()
+    const { tier } = tierAndFactorAt(now, isCnHoliday)
     return {
       ...resolveSnapshotAt(now, all),
       customKeys: Object.keys(activeOverridesAt(now, all)).sort(),
+      tier: {
+        current: tier,
+        nextSwitchAt: tier === null ? null : nextTierSwitchAt(now, isCnHoliday),
+        holidayDataThrough: holidayDataCovers(now) ? lastHolidayDataYear(now) : lastHolidayDataYear(now),
+
+      },
     }
   }
 
@@ -388,12 +400,21 @@ export class UsageBillingService extends TypertRemoteService {
       if (row.priced) continue
       const table = resolveSnapshotAt(row.time, all)
       const alias = aliases.get(aliasId(row.provider, row.model))
+      // 档位必须按行自己的时刻判，绝不能用 now —— 否则重算会把历史行算错。
+      const { tier, factor } = tierAndFactorAt(row.time, isCnHoliday)
       const result = priceUsage(
         { inputTokens: row.input, outputTokens: row.output, cacheReadTokens: row.cacheRead, cacheWriteTokens: row.cacheWrite },
-        table.entries, priceKeyCandidates(row.provider, row.model, alias), table.usdToCny,
+        table.entries, priceKeyCandidates(row.provider, row.model, alias), table.usdToCny, factor,
       )
       if (!result.priced) continue
-      patched.push({ ...row, costCny: result.costCny, currency: result.currency, priced: true, snapshotId: table.snapshotId })
+      patched.push({
+        ...row,
+        costCny: result.costCny,
+        currency: result.currency,
+        priced: true,
+        snapshotId: table.snapshotId,
+        ...(tier === null ? {} : { tier }),
+      })
       changed += 1
     }
     // 成批落盘（同一片一次写）：一次改价可能命中几千行，逐行写会把整片反复重写。

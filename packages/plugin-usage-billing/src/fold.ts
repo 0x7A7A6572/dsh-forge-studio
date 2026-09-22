@@ -11,6 +11,8 @@
 import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import { aliasId, priceKeyCandidates } from './model-key.ts'
 import { priceUsage } from './pricing/cost.ts'
+import { isCnHoliday } from './pricing/holidays.ts'
+import { tierAndFactorAt } from './pricing/tiers.ts'
 import type { ResolvedTable } from './pricing/snapshot.ts'
 import { ledgerKey } from './storage-key.ts'
 import { dayKey } from './time.ts'
@@ -76,7 +78,8 @@ export function foldEvents(events: readonly SessionEvent[], ctx: FoldContext): F
     const alias = ctx.aliases.get(aliasId(who.provider, who.model))
     const table = ctx.resolvePrice(event.time)
     const keys = priceKeyCandidates(who.provider, who.model, alias)
-    const priced = priceUsage(usage, table.entries, keys, table.usdToCny)
+    const { tier, factor } = tierAndFactorAt(event.time, isCnHoliday)
+    const priced = priceUsage(usage, table.entries, keys, table.usdToCny, factor)
     const modelLabel = `${who.provider}/${who.model}`
     if (!priced.priced) unpricedModels.add(modelLabel)
 
@@ -100,6 +103,7 @@ export function foldEvents(events: readonly SessionEvent[], ctx: FoldContext): F
       currency: priced.currency,
       priced: priced.priced,
       snapshotId: table.snapshotId,
+      ...(tier === null ? {} : { tier }),
       backfilled: event.time < ctx.installAt,
     })
   }

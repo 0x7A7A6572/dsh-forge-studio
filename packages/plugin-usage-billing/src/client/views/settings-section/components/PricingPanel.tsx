@@ -17,6 +17,7 @@ import { AliasDialog } from './AliasDialog.tsx'
 import { CustomPriceDialog } from './CustomPriceDialog.tsx'
 import { priceSearch, usePricingPanel } from '../usePricingPanel.ts'
 import type { PriceRow, PricingPanelProps } from '../usePricingPanel.ts'
+import type { TierStatus } from '../../../../types.ts'
 import styles from '../../../styles/settings-section.module.css'
 
 /** 价目表列：`busy` 决定删除按钮能不能点，`remove` 是唯一的删除通道。 */
@@ -55,9 +56,19 @@ function priceColumns(busy: boolean, remove: (key: string) => void): ReadonlyArr
   ]
 }
 
+/** 档位文案：只说此刻贵不贵、什么时候变。 */
+function tierLabel(tier: TierStatus): string {
+  if (tier.current === null) return '分时价尚未启用'
+  const who = tier.current === 'peak' ? '高峰时段' : '空闲时段（按半价计）'
+  if (tier.nextSwitchAt === null) return who
+  const at = new Date(tier.nextSwitchAt)
+  const hm = `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`
+  return `${who} · 下次 ${at.getMonth() + 1}/${at.getDate()} ${hm}`
+}
+
 export function PricingPanel(props: PricingPanelProps): JSX.Element {
   const {
-    entries, rows, source, usdToCny, busy, msg, draft, setDraft, aliasDraft, setAliasDraft, aliases,
+    entries, rows, source, usdToCny, busy, msg, draft, setDraft, aliasDraft, setAliasDraft, aliases, tier,
     save, remove, bindAlias, unbindAlias, refreshPricing, repricing,
   } = usePricingPanel(props)
   /** 两个弹窗的开合：纯界面状态，留在视图层（hook 只管数据与动作）。 */
@@ -90,6 +101,12 @@ export function PricingPanel(props: PricingPanelProps): JSX.Element {
         <div className={styles.head}>
           <Tag tone={source === 'live' ? 'success' : 'warning'}>{source === 'live' ? '实时价' : '内置价'}</Tag>
           <span className={styles.sub}>USD → CNY {usdToCny.toFixed(4)}</span>
+          {tier === null ? null : (
+            <>
+              <span className={styles.sub} data-dsh-ub-tier>{tierLabel(tier)}</span>
+              <span className={styles.sub}>节假日数据到 {tier.holidayDataThrough} 年</span>
+            </>
+          )}
         </div>
         {msg === '' ? null : <div className={styles.notice} data-kind="info" role="status">{msg}</div>}
       </Card>

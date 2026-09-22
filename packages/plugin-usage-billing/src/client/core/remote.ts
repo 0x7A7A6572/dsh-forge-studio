@@ -83,6 +83,8 @@ export interface UsageBillingRemote {
   pricing(): Promise<RemoteResult<{
     entries: Record<string, PriceEntry>; usdToCny: number; usdToCnySource: 'live' | 'default'
     snapshotId: string; customKeys: string[]
+    /** 峰谷状态；旧宿主可能没有这个字段。 */
+    tier?: { current: 'peak' | 'offPeak' | null; nextSwitchAt: number | null; holidayDataThrough: number }
   }>>
   setCustomPrice(entry: CustomPriceInput): Promise<RemoteResult<{ ok: true }>>
   removeCustomPrice(key: string): Promise<RemoteResult<{ ok: boolean }>>
