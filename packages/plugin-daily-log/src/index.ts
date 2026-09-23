@@ -14,7 +14,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { dailyLogDomain } from './domain.ts'
 import { DailyLogService } from './service.ts'
-import { installDailyLogSettings } from './settings.ts'
+import { configureDailyLogSettingsPage, dailyLogConfigOf, installDailyLogSettings, type Config } from './settings.ts'
 import type { DailyLogSettingsAccess } from './settings.ts'
 import { builtinChannels } from './sources/index.ts'
 import { buildDailyLogTools, installDailyLogTools } from './agent/tools.ts'
@@ -25,6 +25,8 @@ import { installReportCommand } from './agent/command-report.ts'
 
 export const name = '@zzerx/dsh-plugin-daily-log'
 export const inject = ['storageDomain']
+/** 插件配置 schema（settings 分区的命名空间就是本条目 id，见 settings.ts）。 */
+export { Config } from './settings.ts'
 
 /** workspaceRegistry（dsh-workspace）的最小视图，仅取候选发现所需字段。 */
 interface WorkspaceRegistryLike {
@@ -50,7 +52,7 @@ async function readWorkspaceProjects(
   }
 }
 
-export async function apply(ctx: Context): Promise<void> {
+export async function apply(ctx: Context, config: Config): Promise<void> {
   const domain = await ctx.storageDomain.open(dailyLogDomain)
   try {
     ctx.effect(() => () => { void domain.close() })
@@ -61,10 +63,14 @@ export async function apply(ctx: Context): Promise<void> {
       channels: builtinChannels,
       // 数据源页「DSH 工作区」组的候选来源（含每项目的 sessionIds，供 dsh 会话渠道）。
       workspaceProjects: () => readWorkspaceProjects(ctx),
+      // 配置每次现取（volatile 引用值随设置热更新，不重挂插件）。
+      readPreferences: () => dailyLogConfigOf(config),
     })
     // settings 句柄要交给 /report 指令（开关联动其注册与否），不再丢弃返回值。
-    const settings = installDailyLogSettings(ctx)
+    const settings = installDailyLogSettings(ctx, config)
     installDailyLogAgentBridgeWhenReady(ctx, settings)
+    // 本插件自带设置页面（settings.section），关掉宿主按 schema 自建页面的策略。
+    configureDailyLogSettingsPage(ctx)
   } catch (error) {
     void domain.close()
     throw error

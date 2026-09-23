@@ -18,7 +18,7 @@ export interface ComposerEntryProps extends EntryDataProps {
 }
 
 export function ComposerEntry(props: ComposerEntryProps): JSX.Element | null {
-  const { load, sessionText, budgetBar, unpricedText, totalSegments, todaySegments, popoverBudget, seat, ...rest } =
+  const { load, sessionText, budgetBar, unpricedText, totalSegments, todaySegments, tierDay, popoverBudget, seat, ...rest } =
     useEntryCard(props)
   const visible = useEntryVisible(props.scope, 'composer')
   // 关掉「输入框下方」这个入口时本组件不渲染：槽位留空，不占那一行的位置。
@@ -46,6 +46,7 @@ export function ComposerEntry(props: ComposerEntryProps): JSX.Element | null {
         totalSegments={totalSegments}
         todaySegments={todaySegments}
         unpricedText={unpricedText}
+        tierDay={tierDay}
         budget={popoverBudget}
       />
     </span>

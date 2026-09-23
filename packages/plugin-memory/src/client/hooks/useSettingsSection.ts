@@ -3,7 +3,7 @@ import { errText, memoryLinkCounts, entityMentionCounts, SCOPE_LABELS } from '..
 import { IMPORT_PROMPT_TEXT } from '../../types.ts'
 import type { Feedback, FeedbackTone, GraphLocateTarget, MemoryTab } from '../core/memory-section-types.ts'
 import { graphNodeId } from '../core/graph-option.ts'
-import type { MemoryAuditEntry, MemoryConfig, MemoryConflict, MemoryEdge, MemoryEntity, MemoryProjectSummary, MemoryRawDocument, MemoryRawId, MemoryRecord, MemoryScope, MemoryStats } from '../../types.ts'
+import type { MemoryAuditEntry, MemoryConfig, MemoryConflict, MemoryEdge, MemoryEntity, MemoryModelGroup, MemoryProjectSummary, MemoryRawDocument, MemoryRawId, MemoryRecord, MemoryScope, MemoryStats } from '../../types.ts'
 import type { MemoryRemote } from '../core/remote.ts'
 import { bundleFileName, downloadText, peekBundle, readTextFile } from '../core/bundle-file.ts'
 import type { BundlePeek } from '../core/bundle-file.ts'
@@ -38,6 +38,8 @@ export function useSettingsSection(memory: MemoryRemote) {
   /** 展开过的原文全文（按留档 id 缓存，列表本身不带全文）。 */
   const [rawText, setRawText] = useState<Record<string, string>>({})
   const [conflicts, setConflicts] = useState<readonly MemoryConflict[]>([])
+  /** 后台模型目录（面板「后台模型」下拉的候选；空 = 列不出，只留「跟随会话默认」）。 */
+  const [modelGroups, setModelGroups] = useState<readonly MemoryModelGroup[]>([])
   /** wiki 图层：实体目录 + 全量边（关联数、被提及数都在内存里聚合）。 */
   const [entities, setEntities] = useState<readonly MemoryEntity[]>([])
   const [edges, setEdges] = useState<readonly MemoryEdge[]>([])
@@ -73,12 +75,15 @@ export function useSettingsSection(memory: MemoryRemote) {
   const dismissFeedback = useCallback(() => { setFeedback(null) }, [])
 
   const refreshOverview = useCallback(async () => {
-    const [c, s, p, k] = await Promise.all([
+    const [c, s, p, k, m] = await Promise.all([
       memory.getConfig(),
       memory.stats(),
       memory.projects(),
       memory.getConflicts(),
+      memory.models(),
     ])
+    // 模型目录只影响下拉的可选项：拿不到就退回「跟随会话默认」，不弹错误打断设置页。
+    setModelGroups(m.ok ? m.value : [])
     if (c.ok) setConfig(c.value)
     else setError(errText(c.error))
     if (s.ok) setStats(s.value)
@@ -500,6 +505,7 @@ export function useSettingsSection(memory: MemoryRemote) {
     setRawText,
     conflicts,
     setConflicts,
+    modelGroups,
     entities,
     setEntities,
     edges,

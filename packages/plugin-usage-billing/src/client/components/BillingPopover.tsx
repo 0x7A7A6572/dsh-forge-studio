@@ -18,10 +18,12 @@
  */
 import { createPortal } from 'react-dom'
 import { ProgressBar } from './ProgressBar.tsx'
+import { TierCurve } from './TierCurve.tsx'
 import { TodayStackBar } from './TodayStackBar.tsx'
 import { MEASURE_STYLE } from '../hooks/usePopoverSeat.ts'
 import type { PopoverSeat } from '../hooks/usePopoverSeat.ts'
 import type { PopoverSegment } from '../hooks/useEntryCard.ts'
+import type { TierDayProfile } from '../../pricing/tiers.ts'
 import styles from '../styles/settings-section.module.css'
 
 export interface BillingPopoverProps {
@@ -36,6 +38,8 @@ export interface BillingPopoverProps {
   todaySegments: readonly PopoverSegment[]
   /** 未收录提醒；没有未收录模型时为 null。 */
   unpricedText: string | null
+  /** 今日费率形状（峰谷曲线的数据源）；旧宿主 / 分时价未启用时为 null —— 整段不画。 */
+  tierDay: TierDayProfile | null
 }
 
 export function BillingPopover(props: BillingPopoverProps): JSX.Element | null {
@@ -59,6 +63,9 @@ export function BillingPopover(props: BillingPopoverProps): JSX.Element | null {
         <span className={styles.popoverValue}>{props.headlineText}</span>
       </div>
       <div className={styles.popoverRule} />
+
+      {/* 紧跟标题：先说「此刻多少钱」，再给一张「此刻是什么档」的费率形状。 */}
+      {props.tierDay === null ? null : <TierCurve profile={props.tierDay} />}
 
       {props.budget === null ? (
         <dl className={styles.popoverDetails}>

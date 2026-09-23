@@ -10,13 +10,15 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import { usageBillingDomain } from './domain.ts'
 import { UsageBillingService } from './service.ts'
-import { installUsageBillingSettings } from './settings.ts'
+import { installUsageBillingSettings, configureUsageBillingSettingsPage, type Config } from './settings.ts'
 import type { SessionSource } from './aggregate.ts'
 import { BUILTIN_CATALOG, DEFAULT_USD_TO_CNY } from './pricing/catalog.ts'
 import { fetchPricingFromNetwork } from './pricing/fetch.ts'
 
 export const name = '@zzerx/dsh-plugin-usage-billing'
 export const inject = ['storageDomain']
+/** 插件配置 schema（settings 分区的命名空间就是本条目 id，见 settings.ts）。 */
+export { Config } from './settings.ts'
 
 const REFRESH_CHECK_MS = 60_000
 
@@ -38,7 +40,7 @@ interface SessionPersistenceLike {
   list(options?: { signal?: AbortSignal }): Promise<readonly { header: SessionHeader; revision: string }[]>
 }
 
-export async function apply(ctx: Context): Promise<void> {
+export async function apply(ctx: Context, config: Config): Promise<void> {
   const domainService = ctx.get('storageDomain')
   if (domainService === undefined) {
     ctx.logger.warn('[plugin-usage-billing] storageDomain 未装配，计费聚合不可用（插件已降级）')
@@ -48,7 +50,9 @@ export async function apply(ctx: Context): Promise<void> {
   const domain = await domainService.open(usageBillingDomain)
   ctx.effect(() => () => { void domain.close() })
 
-  const settings = installUsageBillingSettings(ctx)
+  const settings = installUsageBillingSettings(ctx, config)
+  // 本插件自带设置页面（settings.section），关掉宿主按 schema 自建页面的策略。
+  configureUsageBillingSettingsPage(ctx)
   /**
    * 估算起点的时刻：**每次 apply 现取**，即「本次宿主加载该服务」的时间，不持久化。
    * 它只用于 `ensureBaseSnapshot` 那一刻的落盘（此后由 ledger 里 `reason: 'install'` 的

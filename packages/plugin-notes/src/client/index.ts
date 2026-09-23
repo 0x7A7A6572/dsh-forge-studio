@@ -66,8 +66,8 @@ import { NotesGuideIcon } from './components/NotesGuideIcon.tsx'
 import { SettingsSection } from './views/settings-section/SettingsSection.tsx'
 
 export const name = '@zzerx/dsh-plugin-notes/client'
-/** \`layout\` 必须声明：读服务（ctx.layout）在 cordis 里要求先 inject。 */
-export const inject = ['slots', 'settingsScope', 'remote', 'typert', 'layout']
+/** `layout` 必须声明：读服务（ctx.layout）在 cordis 里要求先 inject。 */
+export const inject = ['slots', 'configForms', 'remote', 'typert', 'layout']
 
 /** 各入口在宿主列表里的排序：统一排在多数官方条目之后，靠后展示。 */
 const ORDER = 60
@@ -80,13 +80,15 @@ const NOTES_TAB_KIND = 'notes'
 
 export function apply(ctx: Context): void {
   // 第一层：先挂载 notes 远程命名空间（self-mount，不走会话）。
-  ctx.inject(['slots', 'settingsScope', 'remote', 'typert', 'layout'], async (ctx) => {
+  ctx.inject(['slots', 'configForms', 'remote', 'typert', 'layout'], async (ctx) => {
     await mountNotesRemote(ctx)
     // 第二层：命名空间就绪后再读 remote.notes（cordis 要求读服务必须声明在 inject 里）。
-    ctx.inject(['remote.notes', 'remote', 'slots', 'settingsScope', 'layout'], (ctx) => {
+    ctx.inject(['remote.notes', 'remote', 'slots', 'configForms', 'layout'], (ctx) => {
       const notes = notesOf(ctx)
-      // 命名空间 scope：设置弹窗读写 defaultTitle / openMode / entry 开关。
-      const scope = ctx.settingsScope.bind<NotesConfig>({ namespace: NOTES_NAMESPACE })
+      // 配置表单：设置分区读写 defaultTitle / openMode / entry 开关。
+      // 命名空间 = host 侧 profile 条目 id（NOTES_NAMESPACE），值来自插件 Config 的
+      // volatile 字段（dsh 0.1.7 起没有自取命名空间的 register 面）。
+      const scope = ctx.configForms.get<NotesConfig>(NOTES_NAMESPACE)
 
       /** 读一个入口开关（快照可能还没有值，按缺省表兜底）。 */
       const readEntry = (key: keyof NotesEntryConfig): boolean =>

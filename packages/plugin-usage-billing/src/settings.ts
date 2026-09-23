@@ -1,18 +1,25 @@
 /**
- * 设置命名空间 `forge-studio-usage-billing`：host 注册 schema + 组合 base，
- * 并导出可订阅访问句柄（照抄 plugin-daily-log/src/settings.ts 的已验证模式）。
- * 预算 / 显示偏好 / 刷新策略 / 提示条状态都在这里（安装时刻**不**在这里：它由 host 装配时
- * 决定并经 `status()` 端点读取，设置命名空间里既没有写入路径、也不需要一份可能过期的副本）。
+ * plugin-usage-billing 插件配置（dsh 0.1.7 的 settings 表单模型）。
+ *
+ * 命名空间 = profile 条目 id（bundle patch 的 `id: usage-billing-zzerx`，见
+ * cordis.patch.yml）。预算 / 显示偏好 / 刷新策略 / 提示条状态都在这里
+ * （安装时刻**不**在这里：它由 host 装配时决定并经 `status()` 端点读取，配置里既没有
+ * 写入路径、也不需要一份可能过期的副本）。
+ *
+ * 四个容器各自整段 volatile：面板写入时就是整对象替换（`form.set('display', next)`），
+ * 容器内字段不再逐个 volatile（schemastery 禁止 volatile 里套 volatile）。
+ * 旧模型（`ctx.settings.register(ns, schema, { base, applies: 'live' })`，0.1.7 已移除）
+ * 改由 loader 装配本 Config，热更新经 `loader/volatile-update` 通知（见 install…）。
  */
 
-import type { Context } from '@deepseek-ai/cordis'
-import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
+import type { Context, Volatile } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/cordis-plugin-loader'
+import type {} from '@deepseek-ai/dsh-settings'
 import Schema from '@deepseek-ai/schemastery'
 import { USAGE_BILLING_NAMESPACE } from './types.ts'
 import type { EntryPosition } from './types.ts'
 
 export { USAGE_BILLING_NAMESPACE }
-export type { SettingsProvider }
 
 export interface UsageBillingConfig {
   budget: { enabled: boolean; monthlyCny: number }
@@ -40,11 +47,20 @@ export const USAGE_BILLING_CONFIG_BASE: UsageBillingConfig = {
   notices: { backfillDismissed: false, budgetNotified: {} },
 }
 
-export const UsageBillingConfigSchema = Schema.object({
+/** host 侧配置面：四个容器各是一个 volatile 引用，`.get()` 取当前值。 */
+export interface Config {
+  readonly budget: Volatile<UsageBillingConfig['budget']>
+  readonly display: Volatile<UsageBillingConfig['display']>
+  readonly pricing: Volatile<UsageBillingConfig['pricing']>
+  readonly notices: Volatile<UsageBillingConfig['notices']>
+}
+
+/** 插件 Config schema（settings 分区的表单由此投影）。 */
+export const Config = Schema.object({
   budget: Schema.object({
     enabled: Schema.boolean().default(USAGE_BILLING_CONFIG_BASE.budget.enabled),
     monthlyCny: Schema.number().default(USAGE_BILLING_CONFIG_BASE.budget.monthlyCny),
-  }),
+  }).default(USAGE_BILLING_CONFIG_BASE.budget).volatile(),
   display: Schema.object({
     showUnpricedWarning: Schema.boolean().default(USAGE_BILLING_CONFIG_BASE.display.showUnpricedWarning),
     includeSubagents: Schema.boolean().default(USAGE_BILLING_CONFIG_BASE.display.includeSubagents),
@@ -58,11 +74,11 @@ export const UsageBillingConfigSchema = Schema.object({
       Schema.const('sidebar'),
       Schema.const('composer'),
     ]).default(USAGE_BILLING_CONFIG_BASE.display.entryPosition),
-  }),
+  }).default(USAGE_BILLING_CONFIG_BASE.display).volatile(),
   pricing: Schema.object({
     autoRefresh: Schema.boolean().default(USAGE_BILLING_CONFIG_BASE.pricing.autoRefresh),
     refreshHours: Schema.number().default(USAGE_BILLING_CONFIG_BASE.pricing.refreshHours),
-  }),
+  }).default(USAGE_BILLING_CONFIG_BASE.pricing).volatile(),
   notices: Schema.object({
     backfillDismissed: Schema.boolean().default(false),
     // Schema.dict 的返回类型引用 @deepseek-ai/cosmokit 的 Dict（schemastery 的传递依赖，pnpm 严格隔离下
@@ -71,8 +87,18 @@ export const UsageBillingConfigSchema = Schema.object({
     //   src/settings.ts(32,14): error TS2742: The inferred type of 'UsageBillingConfigSchema' cannot be named
     //   without a reference to '.pnpm/@deepseek-ai+cosmokit@1.8.3/node_modules/@deepseek-ai/cosmokit'.
     budgetNotified: Schema.object({}).default({}) as unknown as Schema<Record<string, string>>,
-  }),
+  }).default(USAGE_BILLING_CONFIG_BASE.notices).volatile(),
 })
+
+/** 当前配置快照（host 内部读取点的唯一入口；容器缺字段时按 base 补齐）。 */
+export function usageBillingConfigOf(config: Config): UsageBillingConfig {
+  return {
+    budget: { ...USAGE_BILLING_CONFIG_BASE.budget, ...config.budget.get() },
+    display: { ...USAGE_BILLING_CONFIG_BASE.display, ...config.display.get() },
+    pricing: { ...USAGE_BILLING_CONFIG_BASE.pricing, ...config.pricing.get() },
+    notices: { ...USAGE_BILLING_CONFIG_BASE.notices, ...config.notices.get() },
+  }
+}
 
 export interface UsageBillingSettingsAccess {
   get(): UsageBillingConfig
@@ -81,8 +107,9 @@ export interface UsageBillingSettingsAccess {
 }
 
 /**
- * 已注册命名空间的作用域（`SettingsProvider.register` 返回值的窄视图）：
- * 只取本插件用到的读取与订阅能力，watch 回调忽略第二个 prev 参数。
+ * 配置源（settings 服务作用域的窄视图）：只取本插件用到的读取与订阅能力，
+ * watch 回调忽略第二个 prev 参数。dsh 0.1.7 起由 Config 的 volatile 引用驱动
+ * （见 installUsageBillingSettings），旧版由 settings.register 返回的 scope 驱动。
  */
 interface SettingsScopeLike {
   get(): UsageBillingConfig
@@ -130,14 +157,28 @@ export function createUsageBillingSettingsAccess(): BindableUsageBillingSettings
   }
 }
 
-export function installUsageBillingSettings(ctx: Context): UsageBillingSettingsAccess {
+/**
+ * 把配置访问句柄接到插件 Config 的 volatile 引用上：
+ * - get 现取（`config.x.get()`，引用不变、值随热更新变化）；
+ * - watch 订阅本插件 fiber 的 `loader/volatile-update`（只发给所属 fiber，无需过滤），
+ *   每次变化重读全量快照并广播（等值变化 loader 不会通知）。
+ */
+export function installUsageBillingSettings(ctx: Context, config: Config): UsageBillingSettingsAccess {
   const access = createUsageBillingSettingsAccess()
-  ctx.inject(['settings'], (settingsCtx) => {
-    access.bind(settingsCtx.settings.register(USAGE_BILLING_NAMESPACE, UsageBillingConfigSchema, {
-      base: USAGE_BILLING_CONFIG_BASE,
-      applies: 'live',
-    }))
+  access.bind({
+    get: () => usageBillingConfigOf(config),
+    watch: (callback) => ctx.on('loader/volatile-update', () => { callback(usageBillingConfigOf(config)) }),
   })
   ctx.effect(() => () => access.dispose())
   return access
+}
+
+/**
+ * 本插件自带设置页面（settings.section），据此关掉宿主按 schema 自建页面的策略：
+ * 可选增强 —— settings 服务缺席（纯 UI 宿主）时本插件照常工作。
+ */
+export function configureUsageBillingSettingsPage(ctx: Context): void {
+  ctx.inject(['settings'], (settingsCtx) => {
+    settingsCtx.effect(() => settingsCtx.settings.configure({ auto: false }, ctx.fiber))
+  })
 }

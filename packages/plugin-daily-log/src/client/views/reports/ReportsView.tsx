@@ -1,7 +1,7 @@
 /**
  * 工作报告 · 报告页：卡片栅格，展开的那张横跨整行读正文（栅格列宽读长文太窄）。
  */
-import { IconBrowseOutline16, IconDownloadOutline16, IconTrashOutline16, MarkdownText, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconBrowseOutlineRegular, IconDownloadOutlineRegular, IconTrashOutlineRegular, MarkdownText, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
 import { formatDateRange, formatTime } from '../../core/format.ts'
 import { IconAction } from '../../components/IconAction.tsx'
 import { useReportsView } from './useReportsView.ts'
@@ -53,20 +53,20 @@ export function ReportsView(props: ReportsViewProps): JSX.Element {
               <div className={styles.cardFoot}>
                 <IconAction
                   label={open ? '收起正文' : '查看正文'}
-                  icon={<IconBrowseOutline16 size={16} />}
+                  icon={<IconBrowseOutlineRegular size={16} />}
                   onClick={() => { toggleOpen(r.id) }}
                 />
                 <IconAction
                   label="导出 Markdown"
                   disabled={props.busy}
-                  icon={<IconDownloadOutline16 size={16} />}
+                  icon={<IconDownloadOutlineRegular size={16} />}
                   onClick={() => { exportReport(r.id) }}
                 />
                 <IconAction
                   label="删除报告"
                   danger
                   disabled={props.busy}
-                  icon={<IconTrashOutline16 size={16} />}
+                  icon={<IconTrashOutlineRegular size={16} />}
                   onClick={() => { removeReport(r.id) }}
                 />
               </div>

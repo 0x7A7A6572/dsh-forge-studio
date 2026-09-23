@@ -6,7 +6,7 @@
  * 放在 core/ 是为了让 components/ 与 client/index.ts 共用同一个定义。
  */
 
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client';
+import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client';
 import type {
   NoteColor,
   NoteModelSelection,
@@ -37,8 +37,8 @@ export interface NotesCreateInput {
 
 /** 入口组件可用的全部能力。 */
 export interface NotesUiFace {
-  /** 设置命名空间 scope（读 defaultTitle / entry 开关 / openMode）。 */
-  readonly scope: SettingsScope<NotesConfig>;
+  /** 本插件配置表单（读 defaultTitle / entry 开关 / openMode）。 */
+  readonly scope: ConfigForm<NotesConfig>;
   /** notes 远程通道（列表/创建等）。 */
   readonly notes: NotesRemote;
   /** 打开便签板：ctx.layout.selectPanel(NOTES_PANEL_ID)。 */

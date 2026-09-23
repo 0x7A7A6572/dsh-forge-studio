@@ -22,7 +22,8 @@ import type {
 import type {
   MemoryAuditEntry, MemoryAuditQuery, MemoryConfig, MemoryConflict, MemoryEdge, MemoryEdgeQuery,
   MemoryEntity, MemoryEntityInput, MemoryEntityQuery, MemoryId, MemoryImportInput,
-  MemoryImportResult, MemoryIngestInput, MemoryIngestResult, MemoryLinkInput, MemoryNeighborhood,
+  MemoryImportResult, MemoryIngestInput, MemoryIngestResult, MemoryLinkInput, MemoryModelGroup,
+  MemoryNeighborhood,
   MemoryPatch, MemoryProjectSummary, MemoryQuery, MemoryRawDocument, MemoryRawId, MemoryRawQuery,
   MemoryBundle, MemoryBundleImportInput, MemoryBundleImportResult,
   MemoryRecord, MemorySaveInput, MemoryScope, MemoryStats,
@@ -121,7 +122,8 @@ export const memoryRemoteContribution: TypertRemoteContribution = {
     descriptor('list', [{ name: 'query', wire: 'query', source: 'json', codec: loose<MemoryQuery>('MemoryQuery') }]),
     descriptor('getConfig', []),
     descriptor('setConfig', [{ name: 'patch', wire: 'patch', source: 'json', codec: loose<Partial<MemoryConfig>>('MemoryConfigPatch') }]),
-  descriptor('getConflicts', []),
+    descriptor('models', []),
+    descriptor('getConflicts', []),
     descriptor('stats', []),
     descriptor('projects', []),
     descriptor('exportText', scopeTargetParams),
@@ -166,7 +168,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'memory/list': (query: MemoryQuery) => Promise<RemoteResult<readonly MemoryRecord[]>>
     'memory/getConfig': () => Promise<RemoteResult<MemoryConfig>>
     'memory/setConfig': (patch: Partial<MemoryConfig>) => Promise<RemoteResult<MemoryConfig>>
-  'memory/getConflicts': () => Promise<RemoteResult<MemoryConflict[]>>
+    'memory/models': () => Promise<RemoteResult<readonly MemoryModelGroup[]>>
+    'memory/getConflicts': () => Promise<RemoteResult<MemoryConflict[]>>
     'memory/stats': () => Promise<RemoteResult<MemoryStats>>
     'memory/projects': () => Promise<RemoteResult<readonly MemoryProjectSummary[]>>
     'memory/exportText': (scope: MemoryScope, projectPath?: string) => Promise<RemoteResult<string>>
@@ -204,6 +207,8 @@ export interface MemoryRemote {
   list(query: MemoryQuery): Promise<RemoteResult<readonly MemoryRecord[]>>
   getConfig(): Promise<RemoteResult<MemoryConfig>>
   setConfig(patch: Partial<MemoryConfig>): Promise<RemoteResult<MemoryConfig>>
+  /** 后台模型目录（面板「后台模型」下拉的候选，按 provider 分组；空数组 = 列不出，只留默认项）。 */
+  models(): Promise<RemoteResult<readonly MemoryModelGroup[]>>
   /** 与其它记忆插件的重名冲突（空数组 = 无冲突）。 */
   getConflicts(): Promise<RemoteResult<MemoryConflict[]>>
   stats(): Promise<RemoteResult<MemoryStats>>

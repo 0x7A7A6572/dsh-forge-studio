@@ -8,7 +8,7 @@
  * 像「能跑的任务」。
  *
  * 备份分区（WebDAV）：
- * - 表单读写 forge-studio-notes 命名空间的 webdav 对象；
+ * - 表单读写本插件配置（命名空间 = profile 条目 id `zzerx-notes`）的 webdav 对象；
  * - 「保存并立即备份」：写配置成功后调 notes/webdavBackup （验证连通 +
  *   落首份快照），结果与最近状态就地回显（host 引擎执行，浏览器不直连 WebDAV）；
  * - 「恢复」：列远端快照 → 选一份 → 两步确认（会整体覆盖当前便签，引擎会先自动
@@ -16,7 +16,7 @@
  */
 
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { NotesRemote } from '../../core/notes-remote.ts'
 import type { NoteOpenMode, NotesConfig, NotesEntryConfig } from '../../../types.ts'
 import { Input, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -31,8 +31,8 @@ import { useSettingsSection, type SettingsGroup } from './useSettingsSection.ts'
 export interface NotesSettingsSectionInjected {
   /** notes 远程通道（WebDAV 备份/列表/恢复/状态端点）。 */
   readonly notes: NotesRemote
-  /** forge-studio-notes 命名空间 scope（读写 defaultTitle / entry / openMode / webdav）。 */
-  readonly scope: SettingsScope<NotesConfig>
+  /** 本插件配置表单（读写 defaultTitle / entry / openMode / webdav）。 */
+  readonly scope: ConfigForm<NotesConfig>
 }
 
 /** 分区组件完整 props：设置外壳 owner props + 插件注入面。 */

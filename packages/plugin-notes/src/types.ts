@@ -274,7 +274,7 @@ export interface NoteUpdateInput {
   readonly schedule?: NoteScheduleInput | null
 }
 
-/** plugin-notes 设置（forge-studio-notes 命名空间；host schema 见 settings.ts）。 */
+/** plugin-notes 设置（命名空间 = profile 条目 id `zzerx-notes`；host schema 见 settings.ts）。 */
 export interface NotesConfig {
   /** 新建便签的默认标题。 */
   readonly defaultTitle: string
@@ -445,8 +445,9 @@ export interface WebdavStatus {
 }
 
 /**
- * 设置命名空间：host 注册 schema 与 client 卡片共用（client-safe 常量）。
- * 命名规则只允许小写字母/数字/连字符（无点），见 dsh-settings 的
- * SettingsNamespaceInput 约束。
+ * 设置命名空间：dsh 0.1.7 起 = 本插件在 profile 里的**条目 id**（bundle patch 的
+ * `id: zzerx-notes`，见 cordis.patch.yml），不再是自取的字符串命名空间。
+ * host（loader 装配的 Config）与 client 卡片共用这个常量（client-safe）。
+ * `plugin-*` 与 `forge-studio-*` 前缀只保留在 client 侧槽位 id 上（那是另一套命名空间）。
  */
-export const NOTES_NAMESPACE = 'forge-studio-notes'
+export const NOTES_NAMESPACE = 'zzerx-notes'

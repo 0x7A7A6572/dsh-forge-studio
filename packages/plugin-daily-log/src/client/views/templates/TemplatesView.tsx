@@ -3,7 +3,7 @@
  * 末尾虚线「新增模板」；弹窗（编辑 / 预览两段式模板）走宿主 Modal 原语。
  */
 import {
-  IconCheckOutline14, IconEditOutline16, IconPlusOutline16, IconTrashOutline16, Pill,
+  IconCheckOutlineRegular, IconEditOutlineRegular, IconPlusOutlineRegular, IconTrashOutlineRegular, Pill,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { templateSummary } from '../../core/template-summary.ts'
 import { AddButton } from '../../components/AddButton.tsx'
@@ -41,14 +41,14 @@ export function TemplatesView(props: TemplatesViewProps): JSX.Element {
                     <div className={styles.cardFoot}>
                       <IconAction
                         label="编辑模板"
-                        icon={<IconEditOutline16 size={16} />}
+                        icon={<IconEditOutlineRegular size={16} />}
                         onClick={() => { openEdit(t) }}
                       />
                       {!t.isDefault && (
                         <IconAction
                           label="设为默认"
                           disabled={props.busy}
-                          icon={<IconCheckOutline14 size={16} />}
+                          icon={<IconCheckOutlineRegular size={16} />}
                           onClick={() => { setDefault(t.id) }}
                         />
                       )}
@@ -56,7 +56,7 @@ export function TemplatesView(props: TemplatesViewProps): JSX.Element {
                         label="删除模板"
                         danger
                         disabled={props.busy}
-                        icon={<IconTrashOutline16 size={16} />}
+                        icon={<IconTrashOutlineRegular size={16} />}
                         onClick={() => { removeTemplate(t.id) }}
                       />
                     </div>
@@ -68,7 +68,7 @@ export function TemplatesView(props: TemplatesViewProps): JSX.Element {
         )}
       <AddButton
         label="新增模板"
-        icon={<IconPlusOutline16 size={16} />}
+        icon={<IconPlusOutlineRegular size={16} />}
         disabled={props.busy}
         onClick={openCreate}
       />

@@ -1,8 +1,8 @@
 /**
  * 自动生成对话记忆 —— 面板开关「生成对话记忆」= settings.autoCapture。
  *
- * 每个 turn/end 用会话自己的模型（或 agentDefaultModel 的当前选择）提炼这一次对话里
- * 值得长期记住的内容，写进记忆库。全程 fail-safe：拿不到模型路由、流失败、JSON 非法、
+ * 每个 turn/end 用面板指定的「后台模型」提炼这一次对话里值得长期记住的内容，写进
+ * 记忆库；没指定时仍是会话自己的模型（或 agentDefaultModel 的当前选择）。全程 fail-safe：拿不到模型路由、流失败、JSON 非法、
  * 单条字段不合法，都只降级为「这次没记」，绝不干扰对话本身。
  *
  * 提炼结果是 JSON 数组，每项 {title, content, kind, scope}；scope 由模型判定，
@@ -10,7 +10,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { MEMORY_KINDS, type MemoryKind, type MemoryRawId, type MemoryScope } from '../types.ts'
+import { MEMORY_KINDS, type MemoryConfig, type MemoryKind, type MemoryRawId, type MemoryScope } from '../types.ts'
 import { MEMORY_RAW_LIMIT, type MemoryService } from '../service.ts'
 import type { MemorySettingsAccess } from '../settings.ts'
 
@@ -260,8 +260,32 @@ export function serviceOf<T>(ctx: Context, name: string): T | undefined {
   return undefined
 }
 
-/** 当前可用的模型路由；拿不到返回 undefined（本次不提炼 / 不判定）。 */
-export function resolveRoute(ctx: Context, session: unknown): { provider: string; model: string } | undefined {
+/**
+ * 面板指定的后台模型（设置里的 llmProvider / llmModel）。
+ * 两个字段都非空才算指定 —— 只有一个字段是半截配置（多半是手工改过设置），
+ * 当作没配，退回默认路由，而不是拿它的残缺值去发一次注定失败的调用。
+ */
+export function configuredRoute(
+  config: Pick<MemoryConfig, 'llmProvider' | 'llmModel'>,
+): { provider: string; model: string } | undefined {
+  const provider = (config.llmProvider ?? '').trim()
+  const model = (config.llmModel ?? '').trim()
+  return provider !== '' && model !== '' ? { provider, model } : undefined
+}
+
+/**
+ * 当前可用的模型路由；拿不到返回 undefined（本次不提炼 / 不判定）。
+ *
+ * 优先级：面板指定的后台模型 > 会话自身模型 > agentDefaultModel 的当前选择。
+ * 指定值不做启动期校验：模型被删/不可路由时调用失败仍是 fail-safe
+ * （提炼记一条失败审计，判定退化成新建），比「配置了但悄悄不用」更好查。
+ */
+export function resolveRoute(
+  ctx: Context,
+  session: unknown,
+  preferred?: { provider: string; model: string },
+): { provider: string; model: string } | undefined {
+  if (preferred !== undefined && preferred.provider !== '' && preferred.model !== '') return preferred
   try {
     const header = (session as { requestHeader?: () => unknown } | undefined)?.requestHeader?.()
     const config = asRecord(asRecord(header)?.config)
@@ -300,6 +324,8 @@ export interface CaptureOptions {
   readonly maxTurns?: number
   readonly maxChars?: number
   readonly includeAssistant?: boolean
+  /** 面板指定的后台模型；缺省 = 跟随会话自身 / agentDefaultModel。 */
+  readonly route?: { readonly provider: string; readonly model: string }
 }
 
 /**
@@ -351,7 +377,7 @@ export async function captureOne(
 
   // 2) 模型抽取。拿不到路由 / 没有 llm 服务时到此为止（转录已留档），但**留一条
   //    失败审计**：静默跳过会让「模型觉得不值得记」和「这一步坏了」长得一模一样。
-  const route = resolveRoute(ctx, session)
+  const route = resolveRoute(ctx, session, options.route)
   const llm = serviceOf<{ stream?: (options: unknown) => AsyncIterable<unknown> }>(ctx, 'llm')
   if (route === undefined || llm?.stream === undefined) {
     const reason = route === undefined ? '拿不到模型路由，本次未提炼' : 'llm 服务不可用，本次未提炼'
@@ -523,10 +549,12 @@ export function installMemoryCapture(
       const id = (session as { id?: unknown } | undefined)?.id
       if (typeof id !== 'string' || id === '' || inFlight.has(id)) return
       inFlight.add(id)
+      const route = configuredRoute(config)
       void captureOne(ctx, service, session, {
         maxTurns: config.captureMaxTurns,
         maxChars: config.captureMaxChars,
         includeAssistant: config.captureIncludeAssistant,
+        ...(route !== undefined ? { route } : {}),
       })
         .catch((error: unknown) => { ctx.logger?.warn?.('[plugin-memory] capture failed: ' + String(error)) })
         .finally(() => { inFlight.delete(id) })

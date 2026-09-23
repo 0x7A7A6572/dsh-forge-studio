@@ -16,6 +16,7 @@ import type {
 } from '../../types.ts'
 import type { DailyPoint, LedgerMarkers, ModelRow, Overview, WorkspaceRow } from '../../view.ts'
 import type { PriceEntry } from '../../types.ts'
+import type { TierDayProfile } from '../../pricing/tiers.ts'
 import type { RangeKind } from '../../time.ts'
 
 export const USAGE_BILLING_REMOTE_PACKAGE = '@zzerx/dsh-plugin-usage-billing'
@@ -75,7 +76,11 @@ export type UsageBillingAugmentedRemoteMap = {
 }
 
 export interface UsageBillingRemote {
-  overview(rangeKind: RangeKind, includeSubagents: boolean): Promise<RemoteResult<{ overview: Overview; todayKey: string; budget: { enabled: boolean; monthlyCny: number } }>>
+  overview(rangeKind: RangeKind, includeSubagents: boolean): Promise<RemoteResult<{
+    overview: Overview; todayKey: string; budget: { enabled: boolean; monthlyCny: number }
+    /** 今日费率形状（峰谷曲线的数据源）；旧宿主没有这个字段，缺省当「没有分时价」。 */
+    tierDay?: TierDayProfile | null
+  }>>
   /** 金额与披露标记**同源**：`hasBackfilled` / `unpricedModels` 随 days 一起返回，不再二次取数。 */
   daily(rangeKind: RangeKind, includeSubagents: boolean): Promise<RemoteResult<{ days: DailyPoint[] } & LedgerMarkers>>
   byModel(rangeKind: RangeKind, includeSubagents: boolean): Promise<RemoteResult<{ models: ModelRow[] } & LedgerMarkers>>
@@ -83,8 +88,11 @@ export interface UsageBillingRemote {
   pricing(): Promise<RemoteResult<{
     entries: Record<string, PriceEntry>; usdToCny: number; usdToCnySource: 'live' | 'default'
     snapshotId: string; customKeys: string[]
-    /** 峰谷状态；旧宿主可能没有这个字段。 */
-    tier?: { current: 'peak' | 'offPeak' | null; nextSwitchAt: number | null; holidayDataThrough: number }
+    /** 峰谷状态；旧宿主可能没有这个字段（含 day —— 曲线的形状）。 */
+    tier?: {
+      current: 'peak' | 'offPeak' | null; nextSwitchAt: number | null; holidayDataThrough: number
+      day?: TierDayProfile | null
+    }
   }>>
   setCustomPrice(entry: CustomPriceInput): Promise<RemoteResult<{ ok: true }>>
   removeCustomPrice(key: string): Promise<RemoteResult<{ ok: boolean }>>

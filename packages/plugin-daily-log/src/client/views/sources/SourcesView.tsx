@@ -5,7 +5,7 @@
  * 与会话库导入入口——新增位在卡片之后，读作「之后会长出东西的位置」。
  * 两个弹窗走宿主 Modal 原语（body portal），内容包 DialogRoot 以命中分区样式。
  */
-import { IconPlusOutline16, IconTrashOutline16, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconPlusOutlineRegular, IconTrashOutlineRegular, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
 import { SOURCE_TYPE_LABELS } from '../../../types.ts'
 import { AddButton } from '../../components/AddButton.tsx'
 import { IconAction } from '../../components/IconAction.tsx'
@@ -25,7 +25,7 @@ export function SourcesView(props: SourcesViewProps): JSX.Element {
     <div className={styles.pane}>
       <AddButton
         label="新增数据源"
-        icon={<IconPlusOutline16 size={16} />}
+        icon={<IconPlusOutlineRegular size={16} />}
         disabled={props.busy}
         onClick={openAdd}
       />
@@ -63,7 +63,7 @@ export function SourcesView(props: SourcesViewProps): JSX.Element {
                       label="删除数据源"
                       danger
                       disabled={props.busy}
-                      icon={<IconTrashOutline16 size={16} />}
+                      icon={<IconTrashOutlineRegular size={16} />}
                       onClick={() => { removeSource(s.id) }}
                     />
                   </div>

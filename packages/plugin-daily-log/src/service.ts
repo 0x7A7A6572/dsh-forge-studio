@@ -22,7 +22,7 @@ import type { dailyLogDomain } from './domain.ts'
 import type { ChannelProvider } from './sources/provider.ts'
 import { detectProjectType } from './sources/detect.ts'
 import { discoverSessionProjects } from './sources/discover.ts'
-import { BUILTIN_TEMPLATE, DAILY_LOG_NAMESPACE } from './types.ts'
+import { BUILTIN_TEMPLATE } from './types.ts'
 import type {
   ActivityEntry, DateRange, ProjectCandidate, ProjectChannels, ReportCreateInput,
   ReportId, ReportPrepareInput, ReportPrepareResult, ReportRecord,
@@ -40,6 +40,12 @@ export interface DailyLogServiceConfig {
    * 返回用户添加的项目目录（path/title/sessionIds）；未装配时缺省 []（候选组为空）。
    */
   readonly workspaceProjects?: () => Promise<Array<{ path: string; title?: string; sessionIds: readonly string[] }>>
+  /**
+   * 读插件配置里与扫描/导出相关的偏好（outputDir / authorEmail）。
+   * dsh 0.1.7 起配置是插件 Config 的 volatile 引用（settings 分区写它），由 index.ts
+   * 注入这个读取点；未装配时按「未配置」处理。
+   */
+  readonly readPreferences?: () => { readonly outputDir?: string; readonly authorEmail?: string }
 }
 
 /** 路径归一化 key（去尾斜杠 + 小写；用于路径唯一 / 候选 added / cwd 对比）。 */
@@ -361,21 +367,21 @@ export class DailyLogService extends TypertRemoteService {
     return filePath
   }
 
-  /** 已配置导出目录（设置 forge-studio-daily-log.outputDir）；未配置或不可用时为空串。 */
+  /** 已配置导出目录（插件配置的 outputDir）；未配置或不可用时为空串。 */
   private configuredOutputDir(): string {
     try {
-      const value = this.ctx.settings?.get(DAILY_LOG_NAMESPACE) as { outputDir?: unknown } | undefined
-      return typeof value?.outputDir === 'string' ? value.outputDir.trim() : ''
+      const value = this.config.readPreferences?.()?.outputDir
+      return typeof value === 'string' ? value.trim() : ''
     } catch {
       return ''
     }
   }
 
-  /** 已配置的 git 作者过滤邮箱（设置 forge-studio-daily-log.authorEmail）；未配置或不可用时为空串。 */
+  /** 已配置的 git 作者过滤邮箱（插件配置的 authorEmail）；未配置或不可用时为空串。 */
   private configuredAuthorEmail(): string {
     try {
-      const value = this.ctx.settings?.get(DAILY_LOG_NAMESPACE) as { authorEmail?: unknown } | undefined
-      return typeof value?.authorEmail === 'string' ? value.authorEmail.trim() : ''
+      const value = this.config.readPreferences?.()?.authorEmail
+      return typeof value === 'string' ? value.trim() : ''
     } catch {
       return ''
     }

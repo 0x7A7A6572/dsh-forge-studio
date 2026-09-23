@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { NotesRemote } from '../../core/notes-remote.ts'
 import type { NoteOpenMode, NotesConfig, NotesEntryConfig, WebdavStatus } from '../../../types.ts'
 import { DEFAULT_NOTES_ENTRY_CONFIG, DEFAULT_WEBDAV_CONFIG, enabledEntryCount, notesOpenMode } from '../../../types.ts'
@@ -30,8 +30,22 @@ function transportReason(result: { readonly ok?: boolean; readonly error?: { rea
   return message !== undefined && message !== '' ? message : fallback
 }
 
-export function useSettingsSection(notes: NotesRemote, scope: SettingsScope<NotesConfig>) {
-  // 订阅命名空间 scope：写完之后当前值与「已覆盖」标记要立刻跟上，不等重新打开设置。
+/**
+ * 写一次配置，返回失败原因（成功 = null）。
+ *
+ * dsh 0.1.7 起表单写入面（set/unset/mutate）**拒绝时 resolve false**（旧版
+ * SettingsScope 的写入是抛异常），传输层错误才 reject —— 两种都要当写失败处理。
+ */
+async function writeConfig(action: () => Promise<boolean>, fallback: string): Promise<string | null> {
+  try {
+    return (await action()) ? null : fallback
+  } catch (cause) {
+    return cause instanceof Error ? cause.message : String(cause)
+  }
+}
+
+export function useSettingsSection(notes: NotesRemote, scope: ConfigForm<NotesConfig>) {
+  // 订阅本插件配置表单：写完之后当前值与「已覆盖」标记要立刻跟上，不等重新打开设置。
   const snapshot = useSyncExternalStore(
     (cb) => scope.subscribe(cb),
     () => scope.getSnapshot(),
@@ -86,11 +100,10 @@ export function useSettingsSection(notes: NotesRemote, scope: SettingsScope<Note
     const previous = entryDraft
     const next = { ...entryDraft, [key]: value }
     setEntryDraft(next)
-    try {
-      await scope.set('entry', next)
-    } catch (cause) {
+    const failure = await writeConfig(() => scope.set('entry', next), '配置写入被拒绝（当前没有写权限）')
+    if (failure !== null) {
       setEntryDraft(previous)
-      setNotice({ kind: 'error', text: cause instanceof Error ? cause.message : String(cause) })
+      setNotice({ kind: 'error', text: failure })
     }
   }
 
@@ -99,11 +112,10 @@ export function useSettingsSection(notes: NotesRemote, scope: SettingsScope<Note
     if (!writable) return
     const previous = openMode
     setOpenModeDraft(next)
-    try {
-      await scope.set('openMode', next)
-    } catch (cause) {
+    const failure = await writeConfig(() => scope.set('openMode', next), '配置写入被拒绝（当前没有写权限）')
+    if (failure !== null) {
       setOpenModeDraft(previous)
-      setNotice({ kind: 'error', text: cause instanceof Error ? cause.message : String(cause) })
+      setNotice({ kind: 'error', text: failure })
     }
   }
 
@@ -133,16 +145,13 @@ export function useSettingsSection(notes: NotesRemote, scope: SettingsScope<Note
   async function saveDefaultTitle(): Promise<void> {
     if (!writable || !dirty || saving) return
     setSaving(true)
-    try {
-      const trimmed = draft.trim()
-      if (trimmed === '') await scope.unset('defaultTitle')
-      else await scope.set('defaultTitle', trimmed)
-      setNotice({ kind: 'info', text: '默认标题已保存' })
-    } catch (cause) {
-      setNotice({ kind: 'error', text: cause instanceof Error ? cause.message : String(cause) })
-    } finally {
-      setSaving(false)
-    }
+    const trimmed = draft.trim()
+    const failure = trimmed === ''
+      ? await writeConfig(() => scope.unset('defaultTitle'), '配置写入被拒绝（当前没有写权限）')
+      : await writeConfig(() => scope.set('defaultTitle', trimmed), '配置写入被拒绝（当前没有写权限）')
+    if (failure === null) setNotice({ kind: 'info', text: '默认标题已保存' })
+    else setNotice({ kind: 'error', text: failure })
+    setSaving(false)
   }
 
   /** 保存 WebDAV 配置；enabled 时随即试跑一次备份（验证连通 + 落首份）。 */
@@ -158,8 +167,13 @@ export function useSettingsSection(notes: NotesRemote, scope: SettingsScope<Note
     }
     setBusy(true)
     setNotice(null)
+    const failure = await writeConfig(() => scope.set('webdav', next), '配置写入被拒绝（当前没有写权限）')
+    if (failure !== null) {
+      setNotice({ kind: 'error', text: failure })
+      setBusy(false)
+      return
+    }
     try {
-      await scope.set('webdav', next)
       setWd(next)
       setWdDirty(false)
       if (andBackup && next.enabled) {

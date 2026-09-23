@@ -110,11 +110,28 @@ export function renderJudgeInput(request: {
 /**
  * 造一个判定钩子。调用时现取路由与 llm 服务；任何一环拿不到就返回 undefined
  * （服务端视作「没有判定」，退回阈值判定 + 疑似提示，且不记审计）。
+ *
+ * 路由优先级同提炼：面板指定的后台模型 > agentDefaultModel 的当前选择。
+ * 判定钩子是最先需要「用便宜模型跑后台活」的场景 —— 它每次写入都可能触发。
  */
-export function createMemoryJudge(ctx: Context, options?: { readonly timeoutMs?: number }): MemoryJudge {
+export function createMemoryJudge(
+  ctx: Context,
+  options?: {
+    readonly timeoutMs?: number
+    /** 面板指定的后台模型取值器（每次判定现取，改设置即时生效）。 */
+    readonly route?: () => { readonly provider: string; readonly model: string } | undefined
+  },
+): MemoryJudge {
   const timeoutMs = options?.timeoutMs ?? JUDGE_TIMEOUT_MS
+  const preferredRoute = options?.route
   return async (request) => {
-    const route = resolveRoute(ctx, undefined)
+    let preferred: { provider: string; model: string } | undefined
+    try {
+      preferred = preferredRoute?.()
+    } catch {
+      preferred = undefined
+    }
+    const route = resolveRoute(ctx, undefined, preferred)
     const llm = serviceOf<{ stream?: (options: unknown) => AsyncIterable<unknown> }>(ctx, 'llm')
     if (route === undefined || llm?.stream === undefined) return undefined
     const payload = renderJudgeInput(request)

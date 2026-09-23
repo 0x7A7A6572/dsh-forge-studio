@@ -2,9 +2,13 @@
  * 设置页的全部状态与动作：预算、显示偏好、价表刷新、用量视图（概览 / 趋势 / 明细）、
  * 预算跨档提醒与回填提示条。
  *
- * 设置快照走宿主真实的 `ctx.settingsScope.bind<T>({ namespace })` 面
- * （`getSnapshot` / `subscribe`，与 plugin-daily-log / plugin-memory 同一姿态）——
+ * 设置快照走宿主真实的 `ctx.configForms.get<BillingConfigLike>(条目 id)` 面
+ * （`getSnapshot` / `subscribe`，与 plugin-notes / plugin-daily-log 同一姿态）——
  * 本地再声明一个 `{ get, watch }` 影子契约在宿主里根本不存在。
+ *
+ * dsh 0.1.7 起写入面（set/unset/mutate）**拒绝时 resolve false**（旧版抛异常），
+ * 传输层错误才 reject：`writeConfig` 两条都只记日志 —— 快照始终是 host 的真值，
+ * 不回弹也不猜。
  *
  * 计费弹窗取消后，原来挂在弹窗上的两件事（跨档提醒、回填提示条）搬到这里：判定时机从
  * 「面板真的打开」变成「这一页真的被看到」，语义没变（没被看到的提醒不该被记成已提醒）。
@@ -34,6 +38,18 @@ export interface SettingsSectionProps {
   query: QueryCache
   /** 自动重取心跳（按 fiber 创建，见 core/revalidate.ts）。 */
   revalidate: Revalidator
+}
+
+/**
+ * 写一次配置：拒绝（resolve false）与传输异常都只记日志。
+ * 调用方一律不回弹本地状态 —— 快照仍由 host 真值驱动。
+ */
+function writeConfig(run: () => Promise<boolean>): void {
+  void run().then((ok) => {
+    if (!ok) console.warn('[usage-billing] 配置写入被拒绝（当前没有写权限）')
+  }).catch((error: unknown) => {
+    console.warn('[usage-billing] 配置写入失败', error)
+  })
 }
 
 export interface LedgerStatus {
@@ -117,8 +133,11 @@ export function useSettingsSection(props: SettingsSectionProps) {
     // 队列自身必须被吞掉失败，否则一次写失败会让整条链变成 rejected，后续写入再也排不上。
     const run = noticesQueue.current.catch(() => undefined).then(() => {
       const notices = scope.getSnapshot().value?.notices ?? { backfillDismissed: false, budgetNotified: {} }
-      return scope.set('notices', { ...notices, ...patch }).catch(() => {
-        /* 写失败时不本地妥协：快照仍是 host 的真值 */
+      return scope.set('notices', { ...notices, ...patch }).then((ok) => {
+        // 拒绝不算「已关」：快照没变，提示条下次进这一页还会出现（另记一条日志）。
+        if (!ok) console.warn('[usage-billing] notices 写入被拒绝（当前没有写权限）')
+      }).catch((error: unknown) => {
+        console.warn('[usage-billing] notices 写入失败', error)
       })
     })
     noticesQueue.current = run
@@ -157,14 +176,12 @@ export function useSettingsSection(props: SettingsSectionProps) {
 
   /** 写整段 pricing（与 plugin-notes 写 webdav 同姿态）：schema 会用 base 补上未写的字段。 */
   const writeAutoRefresh = useCallback((next: boolean) => {
-    void scope.set('pricing', { ...(cfg?.pricing ?? {}), autoRefresh: next })
-      .catch(() => { /* 写失败时不回弹：快照仍是 host 的真值 */ })
+    writeConfig(() => scope.set('pricing', { ...(cfg?.pricing ?? {}), autoRefresh: next }))
   }, [scope, cfg])
 
   /** 预算开关：写宿主设置（`budget.enabled`），入口的进度条下一帧跟随快照变化。 */
   const writeBudgetEnabled = useCallback((next: boolean) => {
-    void scope.set('budget', { ...(cfg?.budget ?? {}), enabled: next })
-      .catch(() => { /* 同上 */ })
+    writeConfig(() => scope.set('budget', { ...(cfg?.budget ?? {}), enabled: next }))
   }, [scope, cfg])
 
   /**
@@ -173,8 +190,7 @@ export function useSettingsSection(props: SettingsSectionProps) {
    */
   const writeIncludeSubagents = useCallback((next: boolean) => {
     store.setIncludeSubagents(next)
-    void scope.set('display', { ...(cfg?.display ?? {}), includeSubagents: next })
-      .catch(() => { /* 同上 */ })
+    writeConfig(() => scope.set('display', { ...(cfg?.display ?? {}), includeSubagents: next }))
   }, [scope, store, cfg])
 
   /**
@@ -184,11 +200,11 @@ export function useSettingsSection(props: SettingsSectionProps) {
    */
   const writeEntry = useCallback((key: EntryKey, next: boolean) => {
     const flags = entryFlagsOf(cfg)
-    void scope.set('display', {
+    writeConfig(() => scope.set('display', {
       ...(cfg?.display ?? {}),
       entrySidebar: key === 'sidebar' ? next : flags.sidebar,
       entryComposer: key === 'composer' ? next : flags.composer,
-    }).catch(() => { /* 同上 */ })
+    }))
   }, [scope, cfg])
 
   const writeSidebarEntry = useCallback((next: boolean) => { writeEntry('sidebar', next) }, [writeEntry])
@@ -207,8 +223,13 @@ export function useSettingsSection(props: SettingsSectionProps) {
     if (parsed === cfg?.budget?.monthlyCny) { setBudgetDraft(null); return }
     // 先显示已提交值，等宿主快照回来再交还控制权：否则写往返期间会闪回旧金额。
     setBudgetDraft(String(parsed))
+    // 提交被拒（或传输失败）时把草稿交还给快照真值，否则输入框会一直显示一个没落盘的数字。
     void scope.set('budget', { ...(cfg?.budget ?? {}), monthlyCny: parsed })
-      .catch(() => { setBudgetDraft(null) })
+      .then((ok) => { if (!ok) setBudgetDraft(null) })
+      .catch((error: unknown) => {
+        console.warn('[usage-billing] 预算写入失败', error)
+        setBudgetDraft(null)
+      })
   }, [scope, cfg, budgetDraft])
 
   /** 回车提交；**不顺手 blur** —— blur 会再触发一次提交，同一拍里读到的还是旧 prop，会写两遍。 */

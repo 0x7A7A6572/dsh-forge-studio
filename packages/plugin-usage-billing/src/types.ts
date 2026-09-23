@@ -4,7 +4,7 @@
  * client 必须 value-import（见 client/index.ts —— 从 settings.ts 取值会把 host 实现拖进浏览器产物）。
  */
 
-import type { Tier } from './pricing/tiers.ts'
+import type { Tier, TierDayProfile } from './pricing/tiers.ts'
 
 /** 计价所用单价的原生币种。 */
 export type Currency = 'CNY' | 'USD'
@@ -32,6 +32,8 @@ export interface TierStatus {
   nextSwitchAt: number | null
   /** 有节假日数据的最后一年（界面据此提示）。 */
   holidayDataThrough: number
+  /** 今日费率形状（曲线的数据源）；旧宿主没有这个字段、规则未生效时为 null → 都不画曲线。 */
+  day?: TierDayProfile | null
 }
 
 /** 时间范围：闭区间毫秒时间戳；null 表示不限。 */
@@ -175,5 +177,8 @@ export interface DomainMeta {
   rebuiltShards?: number
 }
 
-/** 设置命名空间名。 */
-export const USAGE_BILLING_NAMESPACE = 'forge-studio-usage-billing'
+/**
+ * 设置命名空间名：dsh 0.1.7 起 = 本插件在 profile 里的条目 id（cordis.patch.yml 的
+ * `id: usage-billing-zzerx`），不再是自取的字符串命名空间。
+ */
+export const USAGE_BILLING_NAMESPACE = 'usage-billing-zzerx'

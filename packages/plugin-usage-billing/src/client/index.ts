@@ -30,7 +30,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // 槽位契约为全局 `SlotMap` 的类型增广，声明方在本包之外：
-// - `@deepseek-ai/dsh-client-ui-settings/client`：`settings.section` 槽 + `ctx.settingsScope`
+// - `@deepseek-ai/dsh-client-ui-settings/client`：`settings.section` 槽 + `ctx.configForms`
 // - `@deepseek-ai/dsh-client-ui-sidebar/client`：`sidebar.footer.action` 槽
 // - `@deepseek-ai/dsh-client-ui-layout/client`：`shell.overlay` 槽
 // 全部 type-only（无运行时依赖、构建后不残留 import）。三者都要写在 devDependencies 里，
@@ -51,7 +51,7 @@ import { SettingsSection } from './views/settings-section/SettingsSection.tsx'
 import { USAGE_BILLING_NAMESPACE } from '../types.ts'
 
 export const name = '@zzerx/dsh-plugin-usage-billing/client'
-export const inject = ['slots', 'remote', 'settingsScope']
+export const inject = ['slots', 'remote', 'configForms']
 
 // 所有 client 侧槽位 id 一律带 `zzerx-` 前缀：槽位 id 是全局的，无前缀的 `usage-billing`
 // 已被同时挂载的参考插件 `@kenz1117/dsh-ui-usage-billing` 占用，复用会顶掉它。
@@ -73,7 +73,7 @@ export function apply(ctx: Context): void {
   // 第一层：只挂载远程命名空间。注册**不能**留在这一层 —— 本层只声明了 `remote`，
   // 读 `c.remote.usageBilling` 会抛 `cannot get property "remote.usageBilling"
   // without inject`（槽位注册成功、渲染即崩的那个 bug）。
-  ctx.inject(['slots', 'remote', 'settingsScope'], (c) => {
+  ctx.inject(['slots', 'remote', 'configForms'], (c) => {
     // 这里刻意**不 await** `mountUsageBillingRemote`：本层要同步把第二层 inject 登记上，
     // 由 cordis 在面出现（`$mount` 解析）时激活第二层并同步跑注册 —— 依赖顺序交给
     // Cordis，而不是靠 await 排队。把 await 提到注册之前则会把三个注册推到微任务之后，
@@ -84,11 +84,11 @@ export function apply(ctx: Context): void {
     // 第二层：**先声明 `remote.usageBilling` 再读面**（cordis 的硬要求，与 plugin-notes /
     // plugin-memory / plugin-daily-log 同一姿态）。面没出现前本层不会激活，所以三个注册
     // 也不会落在读不到面的 ctx 上；`d` 就是那个声明过面的 ctx，下面一律用它。
-    c.inject(['remote.usageBilling', 'remote', 'slots', 'settingsScope'], (d) => {
+    c.inject(['remote.usageBilling', 'remote', 'slots', 'configForms'], (d) => {
       // 视图状态按 fiber 创建：模块级单例会在 fiber stop 后把上一轮的
       // range/metric/口径带进下一次 apply（重新挂载的插件不该继承旧视图状态）。
       const store = createBillingStore()
-      const scope = d.settingsScope.bind<BillingConfigLike>({ namespace: USAGE_BILLING_NAMESPACE })
+      const scope = d.configForms.get<BillingConfigLike>(USAGE_BILLING_NAMESPACE)
       // 请求合并与重取心跳同样按 fiber 创建：模块级单例会把上一轮的定时器与在飞请求
       // 带进下一次 apply（store 当初也是这个理由）。
       const query = createQueryCache()

@@ -21,7 +21,7 @@ import { useMemo } from 'react'
 // type-only：把 sidebar.right.* 座位声明带进 SlotMap（运行时零依赖）。
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { NotesConfig } from '../../../types.ts'
 import type { NotesRemote } from '../../core/notes-remote.ts'
 import { NotesBoard } from '../notes-board/NotesBoard.tsx'
@@ -30,8 +30,8 @@ import styles from '../../styles/notes-entry.module.css'
 export type NotesSidebarBodyProps = PropsRuntime<'sidebar.right.pane.tab'> & {
   /** notes 远程通道（注册处闭包注入）。 */
   readonly notes: NotesRemote
-  /** forge-studio-notes 命名空间 scope（注册处闭包注入）。 */
-  readonly scope: SettingsScope<NotesConfig>
+  /** 本插件配置表单（注册处闭包注入）。 */
+  readonly scope: ConfigForm<NotesConfig>
 }
 
 /** @returns 右侧栏 tab 里的便签板（与中间列主面板同一个组件）。 */

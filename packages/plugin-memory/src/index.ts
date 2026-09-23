@@ -14,15 +14,18 @@
 import { Context } from '@deepseek-ai/cordis'
 import { memoryDomain } from './domain.ts'
 import { MemoryService } from './service.ts'
-import { installMemorySettings } from './settings.ts'
+import { configureMemorySettingsPage, installMemorySettings, type Config } from './settings.ts'
 import { installMemoryTools } from './agent/tools.ts'
 import { describeConflicts } from './conflicts.ts'
 import { installMemoryPrompt } from './agent/prompt.ts'
-import { installMemoryCapture } from './agent/capture.ts'
+import { configuredRoute, installMemoryCapture } from './agent/capture.ts'
+import { listModelGroups } from './agent/models.ts'
 import { createMemoryJudge } from './agent/judge.ts'
 
 export const name = '@zzerx/dsh-plugin-memory'
 export const inject = ['storageDomain']
+/** 插件配置 schema（settings 分区的命名空间就是本条目 id，见 settings.ts）。 */
+export { Config } from './settings.ts'
 
 /** workspaceRegistry（dsh-workspace）的最小视图，只取面板候选需要的 path。 */
 interface WorkspaceRegistryLike {
@@ -43,13 +46,13 @@ async function readKnownWorkspaces(ctx: Context): Promise<readonly string[]> {
   }
 }
 
-export async function apply(ctx: Context): Promise<void> {
+export async function apply(ctx: Context, config: Config): Promise<void> {
   // storageDomain 已在静态 inject 声明，apply 时已就绪，无需再包一层 ctx.inject。
   const domain = await ctx.storageDomain.open(memoryDomain)
   try {
     // 域由本 fiber 负责 close。
     ctx.effect(() => () => { void domain.close() })
-    const settings = installMemorySettings(ctx)
+    const settings = installMemorySettings(ctx, config)
     // 用 new（而非 ctx.plugin）：把 memory 服务 provide 在本 apply 的 fiber 上，
     // 后续 ctx.inject(['tools'], ...) 子 fiber 才能沿祖先链读到 ctx.memory。
     const service = new MemoryService(ctx, {
@@ -58,8 +61,13 @@ export async function apply(ctx: Context): Promise<void> {
       knownWorkspaces: () => readKnownWorkspaces(ctx),
     })
     // 写入判定（方案 C）：路由与 llm 都在调用时才取，所以这里装配不影响启动顺序。
-    service.setJudge(createMemoryJudge(ctx))
+    // 后台模型走面板配置（设置里的 llmProvider / llmModel，空 = 跟随默认）。
+    service.setJudge(createMemoryJudge(ctx, { route: () => configuredRoute(settings.get()) }))
+    // 面板「后台模型」下拉的候选：dsh 已配置且可路由的模型目录（读取失败退化成空目录）。
+    service.setModelCatalog(() => listModelGroups(ctx))
     installMemoryAgentBridgeWhenReady(ctx, service, settings)
+    // 本插件自带设置页面（settings.section），关掉宿主按 schema 自建页面的策略。
+    configureMemorySettingsPage(ctx)
   } catch (error) {
     void domain.close()
     throw error

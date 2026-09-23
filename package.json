@@ -13,7 +13,7 @@
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh": "0.1.5-rc.2",
+    "@deepseek-ai/dsh": "0.1.7-alpha.2",
     "cross-env": "7.0.3",
     "lightningcss": "^1.33.0",
     "oxlint": "^1.83.0",

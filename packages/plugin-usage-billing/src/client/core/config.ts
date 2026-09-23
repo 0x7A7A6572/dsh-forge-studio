@@ -2,11 +2,12 @@
  * 设置分区的 client 侧类型面。
  *
  * 放在 core 而不是 `client/index.ts`：`index.ts` 是入口（引用所有视图），视图反过来引
- * 入口就会成环。`BillingConfigLike` 是 client 真正读到的配置片，`BillingScope` 是宿主
- * `settingsScope.bind<BillingConfigLike>` 返回的真实面（`getSnapshot` / `subscribe` / `set`）。
+ * 入口就会成环。`BillingConfigLike` 是 client 真正读到的配置片，`BillingScope` 是
+ * `ctx.configForms.get<BillingConfigLike>(条目 id)` 返回的真实面
+ * （`getSnapshot` / `subscribe` / `set`；dsh 0.1.7 起写入拒绝时 resolve false）。
  */
 
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { EntryKey, EntryPosition } from '../../types.ts'
 
 /** `UsageBillingConfig` 的 client 窄视图：只列本插件读写的字段。 */
@@ -24,9 +25,9 @@ export interface BillingConfigLike {
   notices: { backfillDismissed: boolean; budgetNotified: Record<string, string> }
 }
 
-export type BillingScope = SettingsScope<BillingConfigLike>
+export type BillingScope = ConfigForm<BillingConfigLike>
 
-/** `SettingsScopeSnapshot.value` 在首帧可能是 undefined：视图统一按「未就绪」处理。 */
+/** `ConfigFormSnapshot.value` 在首帧可能是 undefined：视图统一按「未就绪」处理。 */
 export type BillingConfig = BillingConfigLike | undefined
 
 /** 两个入口的开关状态：各自独立，可只开一处、也可两处都关。 */

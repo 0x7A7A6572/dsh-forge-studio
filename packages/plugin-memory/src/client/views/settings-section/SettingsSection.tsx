@@ -10,9 +10,9 @@
  * 读写全部走 Typert remote（ctx.remote.memory.*）；开关写的是设置命名空间的用户层，
  * 与插件设置卡片同源，改完即时生效。
  */
-import { SCOPE_LABELS, SCOPE_OPTIONS, MEMORY_TABS, TAB_LABELS, timeText, durationText, ORIGIN_LABELS, AUDIT_KIND_LABELS, sourceLabel, entityKindClass, linkedMemoryIds, NODE_KIND_OPTIONS, RELATION_OPTIONS, IMPORTANCE_STEPS, CAPTURE_EVERY_STEPS, CAPTURE_TURNS_STEPS, CAPTURE_CHARS_STEPS, importanceLevelAt, importanceStep, IMPORT_MODE_OPTIONS, BUNDLE_MODE_OPTIONS } from '../../core/memory-model.ts'
+import { SCOPE_LABELS, SCOPE_OPTIONS, MEMORY_TABS, TAB_LABELS, timeText, durationText, ORIGIN_LABELS, AUDIT_KIND_LABELS, sourceLabel, entityKindClass, linkedMemoryIds, NODE_KIND_OPTIONS, RELATION_OPTIONS, IMPORTANCE_STEPS, CAPTURE_EVERY_STEPS, CAPTURE_TURNS_STEPS, CAPTURE_CHARS_STEPS, importanceLevelAt, importanceStep, IMPORT_MODE_OPTIONS, BUNDLE_MODE_OPTIONS, modelKey, parseModelKey, modelSelectGroups } from '../../core/memory-model.ts'
 import type { MemoryRecord, MemoryEdgeRelation } from '../../../types.ts'
-import { Button, IconBranchOutline16, IconArchiveOutline20, IconChecklistOutline14, IconCopyOutline16, IconDownloadOutline16, IconEditOutline16, IconEllipsisOutline16, IconFolderOpenOutline16, IconListPenOutline16, IconPlusOutline16, IconRefreshOutline16, IconShareOutline16, IconTrashOutline16, Input, Menu, Modal, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconBranchOutlineRegular, IconArchiveOutlineRegular, IconChecklistOutlineRegular, IconCopyOutlineRegular, IconDownloadOutlineRegular, IconEditOutlineRegular, IconEllipsisOutlineRegular, IconFolderOpenOutlineRegular, IconListPenOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, IconShareOutlineRegular, IconTrashOutlineRegular, Input, Menu, Modal, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ChevronDown } from 'lucide-react'
 import type { SettingsSectionProps } from '../../core/memory-section-types.ts'
@@ -128,6 +128,7 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
     mentionCounts,
     onMoreSelect,
     counts,
+    modelGroups,
     patchConfig,
     copyImportPrompt,
     bundleImportOpen, setBundleImportOpen,
@@ -169,16 +170,16 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
               {record.pinned ? '已置顶' : '置顶'}
             </Button>
             <Button
-              variant="ghost" size="sm" icon={<IconArchiveOutline20 size={14} />}
+              variant="ghost" size="sm" icon={<IconArchiveOutlineRegular size={14} />}
               title={record.archived ? '恢复' : '归档'}
               onClick={() => { void toggleFlag(record, { archived: !record.archived }) }}
             />
             <Button
-              variant="ghost" size="sm" icon={<IconEditOutline16 size={14} />} title="编辑"
+              variant="ghost" size="sm" icon={<IconEditOutlineRegular size={14} />} title="编辑"
               onClick={() => { startEdit(record) }}
             />
             <Button
-              variant="ghost" size="sm" icon={<IconTrashOutline16 size={14} />} title="删除"
+              variant="ghost" size="sm" icon={<IconTrashOutlineRegular size={14} />} title="删除"
               onClick={() => { void removeRecord(record) }}
             />
           </div>
@@ -212,7 +213,7 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
           <span className={styles.headTitle}>实体目录</span>
           <div className={styles.toolbar}>
             <Button
-              variant="ghost" size="sm" icon={<IconPlusOutline16 size={14} />}
+              variant="ghost" size="sm" icon={<IconPlusOutlineRegular size={14} />}
               disabled={locked} onClick={startCreateEntity}
             >
               新建实体
@@ -241,11 +242,11 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
                 <span className={styles.rawMeta}>{'被提及 ' + (mentionCounts.get(entity.id) ?? 0) + ' 条'}</span>
                 <div className={styles.itemActions}>
                   <Button
-                    variant="ghost" size="sm" icon={<IconEditOutline16 size={14} />} title="编辑"
+                    variant="ghost" size="sm" icon={<IconEditOutlineRegular size={14} />} title="编辑"
                     onClick={() => { startEditEntity(entity) }}
                   />
                   <Button
-                    variant="ghost" size="sm" icon={<IconTrashOutline16 size={14} />} title="删除"
+                    variant="ghost" size="sm" icon={<IconTrashOutlineRegular size={14} />} title="删除"
                     onClick={() => { void removeEntity(entity) }}
                   />
                 </div>
@@ -290,6 +291,14 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
   // 高级 · 自动提炼 里的参数一律不生效 —— 界面同步置灰，免得调了没反应。
   const captureOff = !locked && config !== null && !(config.autoCapture ?? false)
 
+  // 后台模型（提炼 + 写入判定共用）：当前值 → 下拉 value；候选来自 dsh 的模型目录。
+  // 判定不受「生成对话记忆」开关影响，所以这一行不跟着 captureOff 走。
+  const currentModel = config !== null && config.llmProvider !== '' && config.llmModel !== ''
+    ? { provider: config.llmProvider, model: config.llmModel }
+    : undefined
+  const modelValue = modelKey(currentModel)
+  const modelOptions = modelSelectGroups(modelGroups, currentModel)
+
   /**
    * 「更多」下拉的条目。禁用条件与它们还是独立按钮时逐条对齐：
    * 实体页签没有记忆条目可整理 / 复制 / 重置 / 导入，重建关联对两个页签都成立。
@@ -299,50 +308,50 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
     {
       id: 'graph',
       label: '记忆图谱',
-      icon: <IconShareOutline16 size={14} />,
+      icon: <IconShareOutlineRegular size={14} />,
       disabled: locked,
     },
     {
       id: 'export-file',
       label: '导出为文件（全库备份）',
-      icon: <IconDownloadOutline16 size={14} />,
+      icon: <IconDownloadOutlineRegular size={14} />,
       disabled: locked,
     },
     {
       id: 'import-file',
       label: '从文件导入…',
-      icon: <IconFolderOpenOutline16 size={14} />,
+      icon: <IconFolderOpenOutlineRegular size={14} />,
       disabled: locked,
     },
     {
       id: 'tidy',
       label: '整理（合并重复）',
-      icon: <IconChecklistOutline14 size={14} />,
+      icon: <IconChecklistOutlineRegular size={14} />,
       disabled: busy || locked || tab === 'entity',
     },
     {
       id: 'rebuild',
       label: '重建关联',
-      icon: <IconRefreshOutline16 size={14} />,
+      icon: <IconRefreshOutlineRegular size={14} />,
       disabled: busy || locked,
     },
     {
       id: 'copy',
       label: '复制导出',
-      icon: <IconCopyOutline16 size={14} />,
+      icon: <IconCopyOutlineRegular size={14} />,
       disabled: busy || locked || tab === 'entity',
     },
     {
       id: 'import',
       label: '导入（粘贴文本）',
-      icon: <IconListPenOutline16 size={14} />,
+      icon: <IconListPenOutlineRegular size={14} />,
       disabled: locked || tab === 'entity',
     },
     { type: 'separator', id: 'mem-more-separator' },
     {
       id: 'reset',
       label: '重置当前页签',
-      icon: <IconTrashOutline16 size={14} />,
+      icon: <IconTrashOutlineRegular size={14} />,
       danger: true,
       disabled: locked || tab === 'entity',
     },
@@ -427,47 +436,78 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
         </div>
         <details className={styles.advanced}>
           <summary>
-            <span>高级 · 自动提炼</span>
+            <span>高级 · 后台模型与自动提炼</span>
             <ChevronDown className={styles.advancedChevron} size={14} aria-hidden="true" />
           </summary>
-          {captureOff && (
-            <p className={styles.advancedHint}>「生成对话记忆」已关闭，以下参数暂不生效。</p>
-          )}
-          <div className={captureOff ? `${styles.advancedBody} ${styles.advancedOff}` : styles.advancedBody}>
-            <ScaleSlider
-              label="提炼间隔"
-              value={config?.captureEveryTurns ?? MEMORY_CONFIG_BASE.captureEveryTurns}
-              steps={CAPTURE_EVERY_STEPS}
-              disabled={busy || config === null || locked || captureOff}
-              describe={(value) => (value === 1 ? '每个回合都提炼一次' : '每 ' + value + ' 个回合提炼一次')}
-              valueText={(value) => value + ' 个回合一次'}
-              onChange={(captureEveryTurns) => { patchConfig({ captureEveryTurns }) }}
-            />
-            <ScaleSlider
-              label="转录轮数"
-              value={config?.captureMaxTurns ?? MEMORY_CONFIG_BASE.captureMaxTurns}
-              steps={CAPTURE_TURNS_STEPS}
-              disabled={busy || config === null || locked || captureOff}
-              describe={(value) => '只把最近 ' + value + ' 轮对话送去提炼'}
-              valueText={(value) => value + ' 轮'}
-              onChange={(captureMaxTurns) => { patchConfig({ captureMaxTurns }) }}
-            />
-            <ScaleSlider
-              label="转录字符上限"
-              value={config?.captureMaxChars ?? MEMORY_CONFIG_BASE.captureMaxChars}
-              steps={CAPTURE_CHARS_STEPS}
-              disabled={busy || config === null || locked || captureOff}
-              describe={(value) => value + ' 字，超出保留尾部'}
-              valueText={(value) => value + ' 字'}
-              onChange={(captureMaxChars) => { patchConfig({ captureMaxChars }) }}
-            />
-            <SwitchRow
-              title="助手回复也作为提炼素材"
-              desc="默认关闭：结论类记忆由 agent 主动写入，避免每轮顺手把排查过程也记下来。"
-              checked={config?.captureIncludeAssistant ?? false}
-              disabled={busy || config === null || locked || captureOff}
-              onChange={(next) => { patchConfig({ captureIncludeAssistant: next }) }}
-            />
+          <div className={styles.advancedBody}>
+            {/* 后台模型：对话提炼与写入判定共用；留空 = 跟随会话默认，行为与从前一致。
+                这一行不随 captureOff 置灰 —— 判定是写入时的默认行为，与提炼开关无关。 */}
+            <div className={styles.segRow}>
+              <span className={styles.segLabel}>后台模型</span>
+              <select
+                value={modelValue}
+                disabled={busy || config === null || locked}
+                aria-label="后台模型"
+                title="提炼与写入判定用哪个模型（跟随会话默认 = 不指定，跑当前会话 / 宿主自己的选择）"
+                onChange={(event) => {
+                  const next = parseModelKey(event.currentTarget.value)
+                  patchConfig(next === undefined
+                    ? { llmProvider: '', llmModel: '' }
+                    : { llmProvider: next.provider, llmModel: next.model })
+                }}
+              >
+                <option value="">跟随会话默认</option>
+                {modelOptions.map((group) => (
+                  <optgroup key={group.id} label={group.label}>
+                    {group.options.map((option) => (
+                      <option key={option.key} value={option.key}>{option.label}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </div>
+            {modelGroups.length === 0 && (
+              <p className={styles.advancedHint}>读不到 dsh 的模型目录（或没有可路由的模型），只能跟随会话默认。</p>
+            )}
+            {captureOff && (
+              <p className={styles.advancedHint}>「生成对话记忆」已关闭，以下参数暂不生效。</p>
+            )}
+            <div className={captureOff ? `${styles.advancedBody} ${styles.advancedOff}` : styles.advancedBody}>
+              <ScaleSlider
+                label="提炼间隔"
+                value={config?.captureEveryTurns ?? MEMORY_CONFIG_BASE.captureEveryTurns}
+                steps={CAPTURE_EVERY_STEPS}
+                disabled={busy || config === null || locked || captureOff}
+                describe={(value) => (value === 1 ? '每个回合都提炼一次' : '每 ' + value + ' 个回合提炼一次')}
+                valueText={(value) => value + ' 个回合一次'}
+                onChange={(captureEveryTurns) => { patchConfig({ captureEveryTurns }) }}
+              />
+              <ScaleSlider
+                label="转录轮数"
+                value={config?.captureMaxTurns ?? MEMORY_CONFIG_BASE.captureMaxTurns}
+                steps={CAPTURE_TURNS_STEPS}
+                disabled={busy || config === null || locked || captureOff}
+                describe={(value) => '只把最近 ' + value + ' 轮对话送去提炼'}
+                valueText={(value) => value + ' 轮'}
+                onChange={(captureMaxTurns) => { patchConfig({ captureMaxTurns }) }}
+              />
+              <ScaleSlider
+                label="转录字符上限"
+                value={config?.captureMaxChars ?? MEMORY_CONFIG_BASE.captureMaxChars}
+                steps={CAPTURE_CHARS_STEPS}
+                disabled={busy || config === null || locked || captureOff}
+                describe={(value) => value + ' 字，超出保留尾部'}
+                valueText={(value) => value + ' 字'}
+                onChange={(captureMaxChars) => { patchConfig({ captureMaxChars }) }}
+              />
+              <SwitchRow
+                title="助手回复也作为提炼素材"
+                desc="默认关闭：结论类记忆由 agent 主动写入，避免每轮顺手把排查过程也记下来。"
+                checked={config?.captureIncludeAssistant ?? false}
+                disabled={busy || config === null || locked || captureOff}
+                onChange={(next) => { patchConfig({ captureIncludeAssistant: next }) }}
+              />
+            </div>
           </div>
         </details>
       </div>
@@ -475,14 +515,14 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
       <div className={styles.head}>
         <span className={styles.headTitle}>管理记忆</span>
         <div className={styles.toolbar}>
-          <Button variant="ghost" size="sm" icon={<IconPlusOutline16 size={14} />} disabled={locked || tab === 'entity'} onClick={startCreate}>新增</Button>
-          <Button variant="ghost" size="sm" icon={<IconListPenOutline16 size={14} />} disabled={locked} onClick={openLedger}>沉淀</Button>
+          <Button variant="ghost" size="sm" icon={<IconPlusOutlineRegular size={14} />} disabled={locked || tab === 'entity'} onClick={startCreate}>新增</Button>
+          <Button variant="ghost" size="sm" icon={<IconListPenOutlineRegular size={14} />} disabled={locked} onClick={openLedger}>沉淀</Button>
           <Menu
             anchor={(
               <Button
                 variant="ghost"
                 size="sm"
-                icon={<IconEllipsisOutline16 size={14} />}
+                icon={<IconEllipsisOutlineRegular size={14} />}
                 disabled={locked}
                 aria-haspopup="menu"
                 aria-expanded={moreOpen}
@@ -589,7 +629,7 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
           <div className={styles.prompt}>{IMPORT_PROMPT_TEXT}</div>
           <div className={styles.itemActions}>
             <Button
-              variant="outline" size="sm" icon={<IconCopyOutline16 size={14} />}
+              variant="outline" size="sm" icon={<IconCopyOutlineRegular size={14} />}
               onClick={() => { void copyImportPrompt() }}
             >
               复制提示词
@@ -640,7 +680,7 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
             }}
           />
           <div className={styles.fieldRow}>
-            <Button variant="outline" size="sm" icon={<IconDownloadOutline16 size={14} />} onClick={() => { bundleInputRef.current?.click() }}>
+            <Button variant="outline" size="sm" icon={<IconDownloadOutlineRegular size={14} />} onClick={() => { bundleInputRef.current?.click() }}>
               选择备份文件
             </Button>
             <span className={styles.rowDesc}>{bundleName === '' ? '尚未选择文件' : bundleName}</span>
@@ -783,7 +823,7 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
                   <span className={styles.rowTitle}>{'关联（' + (neighborhood?.edges.length ?? 0) + '）'}</span>
                   <Button
                     variant="ghost" size="sm"
-                    icon={<IconBranchOutline16 size={14} />}
+                    icon={<IconBranchOutlineRegular size={14} />}
                     title="在图谱里定位本条记忆"
                     onClick={() => {
                       locateGraphNode({
@@ -815,7 +855,7 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
                 {linkDraft === null ? (
                   <div className={styles.itemActions}>
                     <Button
-                      variant="outline" size="sm" icon={<IconPlusOutline16 size={14} />}
+                      variant="outline" size="sm" icon={<IconPlusOutlineRegular size={14} />}
                       disabled={busy || locked}
                       onClick={() => { setLinkDraft({ toKind: 'memory', toId: '', relation: 'related', note: '' }) }}
                     >
@@ -931,7 +971,7 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
                       重抽
                     </Button>
                     <Button
-                      variant="ghost" size="sm" icon={<IconTrashOutline16 size={14} />}
+                      variant="ghost" size="sm" icon={<IconTrashOutlineRegular size={14} />}
                       disabled={busy || locked} title="删除留档（不动已抽出的条目）"
                       onClick={() => { void removeRaw(raw.id, raw.title) }}
                     />

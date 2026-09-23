@@ -21,6 +21,23 @@ export interface TierRule {
   offPeakRatio: number
 }
 
+/**
+ * 今日费率形状 —— popup 那条 M 型峰谷曲线的唯一数据源。
+ *
+ * 画的就是**判档用的同一份窗口**（不是另抄一份时段），所以厂商改窗口时曲线跟着变；
+ * 客户端只做几何，时区与节假日判断全留在这里。
+ */
+export interface TierDayProfile {
+  /** 今日是否整日高峰日历日（工作日且非节假日）；false 时 peakWindows 为空、曲线压平。 */
+  workday: boolean
+  /** 高峰窗口，规则时区当日分钟、左闭右开；非工作日为空数组。 */
+  peakWindows: readonly (readonly [number, number])[]
+  /** 谷底高度 = 空闲档倍率（官方 0.5）。 */
+  offPeakRatio: number
+  /** 规则时区相对 UTC 的分钟偏移（北京 480）：曲线的横轴就是这个时区的自然日。 */
+  utcOffsetMinutes: number
+}
+
 const PEAK_WINDOWS = [[540, 720], [840, 1080]] as const
 
 /**
@@ -39,6 +56,9 @@ export const TIER_RULES: readonly TierRule[] = [
 
 const DAY_MS = 86_400_000
 const CN_OFFSET_MS = 8 * 3_600_000
+
+/** 规则时区相对 UTC 的分钟偏移（北京 480）：客户端靠它把本机时钟换算到曲线的横轴上。 */
+export const RULE_UTC_OFFSET_MINUTES = CN_OFFSET_MS / 60_000
 
 /** 北京时间当日已过分钟数。 */
 function beijingMinuteOfDay(timeMs: number): number {
@@ -90,17 +110,45 @@ export function tierAndFactorAt(
 }
 
 /**
+ * 这一天是否整日空闲（周末 / 法定节假日）。
+ * 判档与「今日费率形状」共用这一处，两边的「今天算不算工作日」不可能分叉。
+ */
+function offDay(rule: TierRule, timeMs: number, isHoliday: (timeMs: number) => boolean): boolean {
+  if (rule.weekdaysOnly) {
+    const dow = beijingWeekday(timeMs)
+    if (dow === 0 || dow === 6) return true
+  }
+  return rule.holidays === 'CN' && isHoliday(timeMs)
+}
+
+/**
  * 判档。无生效规则 / 查不出节假日时一律按高峰 —— 宁可高估，不低估。
  */
 export function tierAt(timeMs: number, isHoliday: (timeMs: number) => boolean): Tier {
   const rule = tierRuleAt(timeMs)
   if (rule === null) return 'peak'
-  if (rule.weekdaysOnly) {
-    const dow = beijingWeekday(timeMs)
-    if (dow === 0 || dow === 6) return 'offPeak'
-  }
-  if (rule.holidays === 'CN' && isHoliday(timeMs)) return 'offPeak'
+  if (offDay(rule, timeMs, isHoliday)) return 'offPeak'
   const minute = beijingMinuteOfDay(timeMs)
   for (const [from, to] of rule.peakWindows) if (minute >= from && minute < to) return 'peak'
   return 'offPeak'
+}
+
+/**
+ * 今日费率形状。
+ * @returns 规则未生效（单档年代）时为 null —— 没有峰谷就没有形状可画。
+ */
+export function tierDayProfileAt(
+  now: number,
+  isHoliday: (timeMs: number) => boolean,
+): TierDayProfile | null {
+  const rule = tierRuleAt(now)
+  if (rule === null) return null
+  const workday = !offDay(rule, now, isHoliday)
+  return {
+    workday,
+    // 非工作日全天空闲：窗口直接给空数组，客户端不必再判一次「今天算不算工作日」。
+    peakWindows: workday ? rule.peakWindows : [],
+    offPeakRatio: rule.offPeakRatio,
+    utcOffsetMinutes: RULE_UTC_OFFSET_MINUTES,
+  }
 }

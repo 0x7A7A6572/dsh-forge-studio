@@ -11,7 +11,7 @@
  */
 
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { NoteColor, NoteModelSelection, NotesConfig, TaskStatus, TaskTargets } from '../../types.ts'
 import type { NoteDraft } from '../core/notes-nav.ts'
 import { boardStore } from '../core/board-store.ts'
@@ -25,8 +25,8 @@ export interface QuickCreateResult {
 }
 
 export interface UseQuickAddDialogOptions {
-  /** 设置命名空间 scope（读 defaultTitle）。 */
-  readonly scope: SettingsScope<NotesConfig>
+  /** 配置表单（读 defaultTitle）。 */
+  readonly scope: ConfigForm<NotesConfig>
   /** 实际落库调用（index.ts 注入 notes.create + 错误映射）。 */
   readonly create: (input: {
     title?: string

@@ -34,6 +34,7 @@ export function EntryCard(props: EntryCardProps): JSX.Element | null {
     segments,
     totalSegments,
     todaySegments,
+    tierDay,
     popoverBudget,
     seat,
     ...rest
@@ -118,6 +119,7 @@ export function EntryCard(props: EntryCardProps): JSX.Element | null {
         totalSegments={totalSegments}
         todaySegments={todaySegments}
         unpricedText={unpricedText}
+        tierDay={tierDay}
         budget={popoverBudget}
       />
     </span>

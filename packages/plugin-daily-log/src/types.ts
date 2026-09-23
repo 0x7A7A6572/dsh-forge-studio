@@ -158,7 +158,7 @@ export interface ScanResult {
   readonly truncatedHint?: string
 }
 
-/** plugin-daily-log 设置（forge-studio-daily-log 命名空间）。 */
+/** plugin-daily-log 设置（dsh 0.1.7 起命名空间 = profile 条目 id `zzerx-daily-log`）。 */
 export interface DailyLogConfig {
   /** 报告署名作者名。 */
   readonly authorName: string
@@ -172,8 +172,12 @@ export interface DailyLogConfig {
   readonly enableReportCommand: boolean
 }
 
-/** 设置命名空间（host schema 与 client 卡片共用，client-safe 常量）。 */
-export const DAILY_LOG_NAMESPACE = 'forge-studio-daily-log'
+/**
+ * 设置命名空间：dsh 0.1.7 起 = 本插件在 profile 里的条目 id（cordis.patch.yml 的
+ * `id: zzerx-daily-log`），不再是自取的字符串命名空间。host 与 client 卡片共用
+ * （client-safe 常量）。
+ */
+export const DAILY_LOG_NAMESPACE = 'zzerx-daily-log'
 
 /** 生成准备入参（只解析模板引导，不扫描）。 */
 export interface ReportPrepareInput {

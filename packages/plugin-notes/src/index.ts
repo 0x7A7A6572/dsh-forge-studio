@@ -28,7 +28,7 @@ import { webdavMetaDomain } from './webdav-domain.ts'
 import { createWebdavEngine } from './webdav-backup.ts'
 import { NotesService } from './service.ts'
 import type { NotesServiceConfig } from './service.ts'
-import { installNotesSettings } from './settings.ts'
+import { configureNotesSettingsPage, webdavConfigOf, type Config } from './settings.ts'
 import { installNotesTools } from './agent/tools.ts'
 import { installTaskRuntime } from './agent/task-dispatch.ts'
 import { installNotesScheduler } from './scheduler.ts'
@@ -36,8 +36,10 @@ import { bridgeErrorMessage, bridgeFailed, bridgeInstalled, type NotesAgentBridg
 
 export const name = '@zzerx/dsh-plugin-notes'
 export const inject = ['storageDomain']
+/** 插件配置 schema（settings 表单的命名空间就是本条目 id，见 settings.ts）。 */
+export { Config } from './settings.ts'
 
-export async function apply(ctx: Context): Promise<void> {
+export async function apply(ctx: Context, config: Config): Promise<void> {
   // storageDomain 已在静态 inject 声明，apply 时可用，无需再包一层 ctx.inject。
   const domain = await ctx.storageDomain.open(notesDomain)
   const metaDomain = await ctx.storageDomain.open(webdavMetaDomain)
@@ -55,6 +57,8 @@ export async function apply(ctx: Context): Promise<void> {
         await notesService.replaceAll(notes)
       },
       metaTable: metaDomain.table('meta'),
+      // 配置每次现取（volatile 引用值随设置热更新，不重挂插件）。
+      readConfig: () => webdavConfigOf(config),
     })
     // 任务执行运行时（泳道卡执行 → 按工作区新建会话 + prompt）为可选增强：装配失败只
     // 降级（task 缺省 → taskExecute 返回 no-dispatch），绝不拖垮 NotesService 注册。
@@ -63,8 +67,8 @@ export async function apply(ctx: Context): Promise<void> {
     // 的子 fiber 才能沿祖先链读到 `ctx.notes`（`ctx.plugin` 会把 notes 挂到兄弟
     // fiber，祖先链读不到 → "cannot get property notes without inject"，工具装不上）。
     notesService = new NotesService(ctx, { domain, task: installTaskRuntimeSafely(ctx), webdav })
-    // 设置命名空间（client 设置卡片读写）。
-    installNotesSettings(ctx)
+    // 设置页面策略：本插件自带 settings.section 页面（client 侧注册）。
+    configureNotesSettingsPage(ctx)
     // 定时自动检查：每 60s 读配置判断「到期 + 确有变更」才上推；enabled=false、
     // 失败都静默跳过（错误已记入 meta 状态），不炸 host。
     const timer = setInterval(() => {

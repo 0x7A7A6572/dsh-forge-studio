@@ -2,7 +2,7 @@
  * 工作报告分区的全部状态与动作。视图只读返回值，自己永远不碰 remote 与 scope。
  */
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { DailyLogRemote } from '../../core/remote.ts'
 import type { RunAction } from '../../core/run-action.ts'
 import { errText } from '../../core/format.ts'
@@ -26,8 +26,8 @@ export const REPORT_COMMAND_SWITCH_HINT = ''
 /** 注册侧注入的业务面（见 src/client/index.ts）。 */
 export interface SettingsSectionInjected {
   dailyLog: DailyLogRemote
-  /** 设置命名空间 scope（enableReportCommand 开关的读写通道）。 */
-  scope: SettingsScope<DailyLogConfig>
+  /** 本插件配置表单（enableReportCommand 开关的读写通道）。 */
+  scope: ConfigForm<DailyLogConfig>
 }
 
 /** 工作报告分区。 */
@@ -81,7 +81,8 @@ export function useSettingsSection(props: SettingsSectionInjected) {
   const toggleReportCommand = useCallback(async (next: boolean): Promise<void> => {
     setError('')
     try {
-      await scope.set('enableReportCommand', next)
+      // dsh 0.1.7 起表单写入**拒绝时 resolve false**（旧版抛异常），两种都当失败。
+      if (!await scope.set('enableReportCommand', next)) setError('配置写入被拒绝（当前没有写权限）')
     } catch (e) {
       setError(errText(e))
     }

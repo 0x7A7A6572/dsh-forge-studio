@@ -4,7 +4,7 @@
  * 背景（已核实，非推测）：
  * 侧边栏每个分区的图标来自 @deepseek-ai/dsh-client-ui-settings-general 里的一个
  * **硬编码 id 映射** —— 只有 models / agent-presets / plugins 有专属图标，其余一律
- * 吃默认齿轮 IconSettingsOutline16。settings.section 槽位**没有图标入口**（options
+ * 吃默认齿轮 IconSettingsOutlineRegular。settings.section 槽位**没有图标入口**（options
  * 只有 id/order/label，owner props 只有 close），导航按钮上也没有 id/data 属性，
  * 所以只能按标签文本认行。
  *
@@ -17,7 +17,7 @@
 
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
-import { IconLightOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconLightOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 
 /** 认行依据：分区注册时的 label（见 src/client/index.ts）。 */
 const SECTION_LABELS = ['记忆', 'Memory']
@@ -30,7 +30,7 @@ function iconTemplate(): Element | null {
   if (template !== null) return template
   const host = document.createElement('span')
   flushSync(() => {
-    createRoot(host).render(<IconLightOutline16 size={16} />)
+    createRoot(host).render(<IconLightOutlineRegular size={16} />)
   })
   const rendered = host.firstElementChild
   if (rendered === null) return null

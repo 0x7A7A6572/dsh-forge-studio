@@ -6,12 +6,12 @@
  * 数据读写仍走 Typert remote（ctx.remote.dailyLog.*）；报告正文由宿主聊天 agent 经
  * daily_log_* 工具生成，这里只负责查看、导出与配置。
  *
- * 顶部开关「注册 /report 指令」读写 ctx.settingsScope 绑定的设置命名空间
+ * 顶部开关「注册 /report 指令」读写 ctx.configForms.get(条目 id) 拿到的配置表单
  * （enableReportCommand，与 host 侧同一份）。它只管指令是否注册，工具按需注入
  * 走的是 host 侧 gate，与开关无关。
  */
 
-import { Button, IconSendOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconSendOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { pluginVersion } from '../../../version.ts'
 import {
@@ -76,7 +76,7 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
           <Button
             variant="outline"
             size="sm"
-            icon={<IconSendOutline14 size={14} />}
+            icon={<IconSendOutlineRegular size={14} />}
             onClick={() => { props.close() }}
           >
             去对话生成

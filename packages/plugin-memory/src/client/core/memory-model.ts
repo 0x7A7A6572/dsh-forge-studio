@@ -7,7 +7,7 @@
 
 import type { MemoryTab } from './memory-section-types.ts'
 import { MEMORY_EDGE_RELATION_LABELS, MEMORY_EDGE_RELATIONS, MEMORY_ENTITY_KINDS, MEMORY_ENTITY_KIND_LABELS, MEMORY_IMPORTANCE_LABELS, MEMORY_KINDS, MEMORY_KIND_LABELS, MEMORY_SCOPES } from '../../types.ts'
-import type { MemoryEdge, MemoryEntityKind, MemoryGraphNode, MemoryKind, MemoryNodeKind, MemoryScope } from '../../types.ts'
+import type { MemoryEdge, MemoryEntityKind, MemoryGraphNode, MemoryKind, MemoryModelGroup, MemoryNodeKind, MemoryScope } from '../../types.ts'
 
 /** 页签顺序（记忆两个作用域在前，实体在后）。 */
 export const MEMORY_TABS: readonly MemoryTab[] = ['global', 'project', 'entity']
@@ -191,6 +191,72 @@ export const CAPTURE_CHARS_STEPS = [1000, 2000, 4000, 6000, 8000, 12000] as cons
 /** 第 N 档的重要性等级（越界回落到「普通」）。 */
 export function importanceLevelAt(value: number) {
   return IMPORTANCE_LEVELS[value - 1] ?? IMPORTANCE_LEVELS[2]
+}
+
+/* ---------- 后台模型下拉：取值编解码 + 选项投影 ---------- */
+
+/**
+ * select 的 value 分隔符：provider / model id 里不可能出现的控制字符。
+ * 不拼成 "provider/model" —— model id 自带斜杠（如 deepseek/deepseek-chat），拆不回来。
+ */
+export const MODEL_KEY_SEP = '\u0001'
+
+/** 后台模型选择 → 下拉 value（undefined = 跟随会话默认 = 空串）。 */
+export function modelKey(model: { readonly provider: string; readonly model: string } | undefined): string {
+  return model === undefined ? '' : model.provider + MODEL_KEY_SEP + model.model
+}
+
+/** 下拉 value → 后台模型选择（空串 / 形状不对 = undefined = 跟随会话默认）。 */
+export function parseModelKey(key: string): { provider: string; model: string } | undefined {
+  if (key === '') return undefined
+  const index = key.indexOf(MODEL_KEY_SEP)
+  if (index <= 0 || index === key.length - 1) return undefined
+  return { provider: key.slice(0, index), model: key.slice(index + 1) }
+}
+
+/** 后台模型下拉里的一个选项。 */
+export interface ModelOption {
+  readonly key: string
+  readonly label: string
+}
+
+/** 后台模型下拉的一组（provider）。 */
+export interface ModelOptionGroup {
+  readonly id: string
+  readonly label: string
+  readonly options: readonly ModelOption[]
+}
+
+/**
+ * 后台模型下拉的选项投影：目录分组原样搬过来；**当前值不在目录里时补进它所属的
+ * provider 组**（该 provider 整组都不在目录里就补一个独立组）。
+ * 不补的话 select 没有匹配项会显示空白，用户一改别的设置就把旧值一起抹掉。
+ */
+export function modelSelectGroups(
+  groups: readonly MemoryModelGroup[],
+  current: { readonly provider: string; readonly model: string } | undefined,
+): readonly ModelOptionGroup[] {
+  const projected: ModelOptionGroup[] = groups.map((group) => ({
+    id: group.id,
+    label: group.name,
+    options: group.models.map((entry) => ({
+      key: modelKey({ provider: group.id, model: entry.id }),
+      label: entry.name,
+    })),
+  }))
+  if (current === undefined) return projected
+  const key = modelKey(current)
+  if (projected.some((group) => group.options.some((option) => option.key === key))) return projected
+  const label = current.model + '（不在当前目录）'
+  const host = projected.find((group) => group.id === current.provider)
+  if (host !== undefined) {
+    return projected.map((group) =>
+      group.id === current.provider
+        ? { ...group, options: [...group.options, { key, label }] }
+        : group,
+    )
+  }
+  return [...projected, { id: current.provider, label: current.provider, options: [{ key, label }] }]
 }
 
 export const IMPORT_MODE_OPTIONS = [

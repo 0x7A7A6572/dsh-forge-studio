@@ -1,6 +1,6 @@
 {
   "name": "@zzerx/dsh-plugin-home-studio",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "dsh 工作台插件：聚合日常功能入口的骨架包，待填充 UI。图标统一使用 lucide-react。",
   "type": "module",
   "main": "./lib/index.js",
@@ -32,10 +32,10 @@
     "access": "public"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "4.0.2"
+    "@deepseek-ai/cordis": "^4.0.4"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "4.0.2",
+    "@deepseek-ai/cordis": "4.0.4",
     "@types/node": "^24.0.0",
     "esbuild": "0.28.2",
     "lucide-react": "1.39.0",

@@ -3,7 +3,7 @@
  * 直连 WebDAV（避开 CORS），只经 notes/webdav* remote 端点触发与查询。
  *
  * 职责：
- * - 配置读取（ctx.settings 命名空间，缺省合并）与有效性检查；
+ * - 配置读取（插件 Config 的 volatile 引用，由注入的读取点现取；缺省已合并）与有效性检查；
  * - 上推：整域序列化为带 schema 版本的 JSON → PUT 到 {url}{path}notes-*.json，
  *   HTTP Basic + HTTPS；成功后按 keep 清理最旧快照；
  * - watermark：meta 记已传最大 updatedAt，自动检查只在「到期且确有变更」时上传
@@ -17,9 +17,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
-import { NOTES_NAMESPACE } from './types.ts'
-import { DEFAULT_WEBDAV_CONFIG } from './types.ts'
-import type { NotesConfig, NotesWebdavConfig } from './types.ts'
+import type { NotesWebdavConfig } from './types.ts'
 import type {
   WebdavBackupResult,
   WebdavListResult,
@@ -53,6 +51,12 @@ export interface WebdavEngineOptions {
   readonly replaceAll: (notes: readonly NoteRecord[]) => Promise<void>
   /** notes_webdav 域 meta 表。 */
   readonly metaTable: KvTable<string, WebdavMeta>
+  /**
+   * 读当前 WebDAV 配置（缺省已合并）。dsh 0.1.7 起配置是插件 Config 的 volatile
+   * 引用（settings 表单写它），由 index.ts 注入本读取点 —— 每次现取即最新值，
+   * 改配置立即生效；读取抛错时调用方按「配置不可用」降级。
+   */
+  readonly readConfig: () => NotesWebdavConfig
 }
 
 /** host 侧引擎给 NotesService remote 端点用的窄接口。 */
@@ -77,33 +81,16 @@ function normalizeBase(url: string): string {
 
 export function createWebdavEngine(ctx: Context, options: WebdavEngineOptions): WebdavRunner {
   /**
-   * 读取 WebDAV 配置。cordis 规则：ctx.settings 必须在声明了 inject(['settings'])
-   * 的上下文里读取——service 执行上下文没声明时直接 ctx.settings 会抛
-   * "cannot get property \"settings\" without inject"。这里每次经
-   * ctx.inject(['settings']) 派生带 settings 的上下文取当前值（改配置立即生效）；
-   * settings 服务缺席/5s 内不可用返回 null（各操作自行降级，不悬死）。
+   * 读当前 WebDAV 配置。配置是插件 Config 的 volatile 引用（由 index.ts 注入读取点），
+   * 同步可得、无需等服务；读取抛错时返回 null，各操作自行降级。
    */
-  const currentConfig = (): Promise<NotesWebdavConfig | null> =>
-    new Promise((resolve) => {
-      let settled = false
-      const timer = setTimeout(() => {
-        if (!settled) {
-          settled = true
-          resolve(null)
-        }
-      }, 5000)
-      void ctx.inject(['settings'], (settingsCtx) => {
-        if (settled) return
-        settled = true
-        clearTimeout(timer)
-        try {
-          const raw = settingsCtx.settings.get(NOTES_NAMESPACE) as Partial<NotesConfig> | undefined
-          resolve({ ...DEFAULT_WEBDAV_CONFIG, ...(raw?.webdav ?? {}) })
-        } catch {
-          resolve(null)
-        }
-      })
-    })
+  const currentConfig = async (): Promise<NotesWebdavConfig | null> => {
+    try {
+      return options.readConfig()
+    } catch {
+      return null
+    }
+  }
 
   const metaGet = async (): Promise<WebdavMeta> => {
     return options.metaTable.get(WEBDAV_META_KEY) ?? emptyWebdavMeta()

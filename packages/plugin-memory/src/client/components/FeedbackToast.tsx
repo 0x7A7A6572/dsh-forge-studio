@@ -4,7 +4,7 @@
  * 反馈不能写在分区正文里：弹窗是 body portal，盖在正文之上，弹窗里
  * （新增记忆 / 新建实体 / 新增关联）的失败写在正文就是「点了没反应」。
  */
-import { IconWarningOutline16, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconWarningOutlineRegular, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { Feedback } from '../core/memory-section-types.ts'
 
 /** 停留时长跟字数走：短提示 3 秒够看，导入结果那种长句要多留一会儿。 */
@@ -20,7 +20,7 @@ export function FeedbackToast(props: { feedback: Feedback | null; onDone: () => 
       key={props.feedback.seq}
       text={props.feedback.text}
       holdMs={holdMsFor(props.feedback.text)}
-      icon={props.feedback.tone === 'error' ? <IconWarningOutline16 size={14} /> : undefined}
+      icon={props.feedback.tone === 'error' ? <IconWarningOutlineRegular size={14} /> : undefined}
       onDone={props.onDone}
     />
   )

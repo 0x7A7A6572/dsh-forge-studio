@@ -8,17 +8,17 @@
  */
 
 import { useSyncExternalStore } from 'react';
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client';
+import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client';
 import { DEFAULT_NOTES_ENTRY_CONFIG } from '../../types.ts';
 import type { NotesConfig, NotesEntryConfig } from '../../types.ts';
 
 /**
- * @param scope - forge-studio-notes 命名空间 scope。
+ * @param scope - 本插件配置表单（NOTES_NAMESPACE，= profile 条目 id `zzerx-notes`）。
  * @param key - 入口开关字段名。
  * @returns 该入口是否启用（旧配置缺字段时回退缺省值）。
  */
 export function useNotesEntryEnabled(
-  scope: SettingsScope<NotesConfig>,
+  scope: ConfigForm<NotesConfig>,
   key: keyof NotesEntryConfig,
 ): boolean {
   return useSyncExternalStore(

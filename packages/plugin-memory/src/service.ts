@@ -25,8 +25,8 @@ import type {
   MemoryAuditEntry, MemoryAuditInput, MemoryAuditQuery, MemoryConfig, MemoryEdge,
   MemoryEdgeQuery, MemoryEdgeRelation, MemoryEntity, MemoryEntityId, MemoryEntityInput,
   MemoryEntityKind, MemoryEntityQuery, MemoryEntityRef, MemoryGraphNode, MemoryId, MemoryImportInput,
-  MemoryImportResult, MemoryIngestInput, MemoryIngestResult, MemoryKind, MemoryLinkInput, MemoryNeighborhood,
-  MemoryPatch, MemoryConflict, MemoryNodeRef,
+  MemoryImportResult, MemoryIngestInput, MemoryIngestResult, MemoryKind, MemoryLinkInput, MemoryModelGroup,
+  MemoryNeighborhood, MemoryPatch, MemoryConflict, MemoryNodeRef,
   MemoryProjectSummary, MemoryQuery, MemoryRawDocument, MemoryRawId, MemoryRawInput, MemoryRawQuery,
   MemoryRecord, MemorySaveInput, MemoryScope, MemoryStats,
 } from './types.ts'
@@ -482,6 +482,8 @@ export class MemoryService extends TypertRemoteService {
   private conflicts: MemoryConflict[] = []
   /** 写入判定钩子（agent 层注入）：没有就只走阈值判定 + 疑似提示。 */
   private judge: MemoryJudge | undefined
+  /** 后台模型目录来源（agent 层注入）：拿不到就只剩「跟随会话默认」一项。 */
+  private modelCatalog: (() => Promise<readonly MemoryModelGroup[]>) | undefined
 
   constructor(ctx: Context, config: MemoryServiceConfig) {
     super(ctx, 'memory')
@@ -605,6 +607,8 @@ export class MemoryService extends TypertRemoteService {
       captureMaxTurns: 4,
       captureMaxChars: 4000,
       captureIncludeAssistant: false,
+      llmProvider: '',
+      llmModel: '',
     }
   }
 
@@ -616,6 +620,29 @@ export class MemoryService extends TypertRemoteService {
     if (this.config.settings === undefined) throw new Error('配置服务尚未就绪，请稍后再试')
     await this.config.settings.update(patch)
     return this.config.settings.get()
+  }
+
+  /* ---------------- 后台模型目录 ---------------- */
+
+  /**
+   * 读后台模型目录（面板「后台模型」下拉的数据源）。
+   *
+   * 目录来自 dsh 自己的 LLM 注册表（见 agent/models.ts），装配时由 host 注入；
+   * 没注入、注册表没就绪、读取抛错一律返回空数组 —— 面板据此只显示「跟随会话默认」，
+   * 不因为「列不出模型」而让整块设置报错。
+   */
+  async models(): Promise<readonly MemoryModelGroup[]> {
+    if (this.modelCatalog === undefined) return []
+    try {
+      return await this.modelCatalog()
+    } catch {
+      return []
+    }
+  }
+
+  /** 装配后台模型目录来源（host 内部调用，非远程方法）。 */
+  setModelCatalog(source: (() => Promise<readonly MemoryModelGroup[]>) | undefined): void {
+    this.modelCatalog = source
   }
 
   /* ---------------- 冲突 ---------------- */
@@ -1809,6 +1836,7 @@ markRemoteMethods(MemoryService.prototype, [
   'list',
   'getConfig',
   'setConfig',
+  'models',
   'getConflicts',
   'stats',
   'projects',

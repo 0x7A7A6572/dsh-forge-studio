@@ -5,7 +5,9 @@
  * 窗口两端、周末、节假日、生效时间分段全部钉在这里，先红后绿。
  */
 import { describe, expect, it } from 'vitest'
-import { TIER_RULES, nextTierSwitchAt, tierAt, tierRuleAt } from '../packages/plugin-usage-billing/src/pricing/tiers.ts'
+import {
+  RULE_UTC_OFFSET_MINUTES, TIER_RULES, nextTierSwitchAt, tierAt, tierDayProfileAt, tierRuleAt,
+} from '../packages/plugin-usage-billing/src/pricing/tiers.ts'
 import { hasHolidayData, holidayStateAt } from '../packages/plugin-usage-billing/src/pricing/holidays.ts'
 import { priceUsage } from '../packages/plugin-usage-billing/src/pricing/cost.ts'
 import { foldEvents } from '../packages/plugin-usage-billing/src/fold.ts'
@@ -180,5 +182,42 @@ describe('规则常量按官方口径', () => {
     expect(rule.weekdaysOnly).toBe(true)
     expect(rule.offPeakRatio).toBe(0.5)
     expect(rule.holidays).toBe('CN')
+  })
+})
+
+
+describe('今日费率形状（曲线的唯一数据源）', () => {
+  it('工作日：窗口与倍率照规则给，横轴时区固定 +08:00', () => {
+    const profile = tierDayProfileAt(bj(2026, 9, 21, 10, 0), noHoliday)!
+    expect(profile.workday).toBe(true)
+    expect(profile.peakWindows).toEqual([[540, 720], [840, 1080]])
+    expect(profile.offPeakRatio).toBe(0.5)
+    expect(profile.utcOffsetMinutes).toBe(480)
+    expect(RULE_UTC_OFFSET_MINUTES).toBe(480)
+  })
+  it('周末：窗口为空（曲线压平），倍率照给（谷底还是半价）', () => {
+    const profile = tierDayProfileAt(bj(2026, 9, 26, 10, 0), noHoliday)!
+    expect(profile.workday).toBe(false)
+    expect(profile.peakWindows).toEqual([])
+    expect(profile.offPeakRatio).toBe(0.5)
+  })
+  it('法定节假日：窗口同样为空（含窗口内的周四 10:00）', () => {
+    const profile = tierDayProfileAt(bj(2026, 10, 1, 10, 0), () => true)!
+    expect(profile.workday).toBe(false)
+    expect(profile.peakWindows).toEqual([])
+  })
+  it('规则生效之前没有形状可画（单档年代）', () => {
+    expect(tierDayProfileAt(bj(2026, 1, 5, 10, 0), noHoliday)).toBeNull()
+  })
+  it('形状与判档同源：窗口为空 ⇔ 此刻判为空闲', () => {
+    for (const [time, isHoliday] of [
+      [bj(2026, 9, 26, 10, 0), noHoliday],   // 周六窗口内
+      [bj(2026, 10, 1, 10, 0), () => true],  // 国庆窗口内
+      [bj(2026, 9, 21, 10, 0), noHoliday],   // 工作日窗口内
+    ] as const) {
+      const profile = tierDayProfileAt(time, isHoliday)!
+      const flat = profile.peakWindows.length === 0
+      expect(flat).toBe(tierAt(time, isHoliday) === 'offPeak')
+    }
   })
 })

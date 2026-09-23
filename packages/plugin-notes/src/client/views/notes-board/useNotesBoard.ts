@@ -14,7 +14,7 @@
  */
 
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {
   NoteColor,
   NoteId,
@@ -38,8 +38,8 @@ import type { NoteSaveOptions, NoteTaskDraft } from '../../components/NoteEditor
 /** 面板注入面：由 client 入口在注册槽位时提供。 */
 export interface NotesBoardFace {
   readonly notes: NotesRemote
-  /** forge-studio-notes 命名空间 scope（默认标题 / 打开方式；入口开关在 dsh 设置 → 便签）。 */
-  readonly scope: SettingsScope<NotesConfig>
+  /** 本插件配置表单（默认标题 / 打开方式；入口开关在 dsh 设置 → 便签）。 */
+  readonly scope: ConfigForm<NotesConfig>
   /** 关闭便签板：把主面板切回会话（ctx.layout.selectPanel(null)）。 */
   readonly closeBoard: () => void
 }

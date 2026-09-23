@@ -1,6 +1,6 @@
 /** 本页面专属零件：某条记忆的关联列表（关系 + 另一端 + 来源 + 备注 + 断开）。 */
 
-import { Button, IconBranchOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconBranchOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import { nodeKindLabel, entityKindClass } from '../../../core/memory-model.ts'
 import type { GraphLocateTarget } from '../../../core/memory-section-types.ts'
 import { MEMORY_EDGE_ORIGIN_LABELS, MEMORY_EDGE_RELATION_LABELS } from '../../../../types.ts'
@@ -49,7 +49,7 @@ export function EdgeList(props: {
             <Button
               variant="ghost" size="sm"
               disabled={props.disabled === true || node === undefined}
-              icon={<IconBranchOutline16 size={14} />}
+              icon={<IconBranchOutlineRegular size={14} />}
               title="在图谱里定位"
               onClick={() => {
                 if (node === undefined) return

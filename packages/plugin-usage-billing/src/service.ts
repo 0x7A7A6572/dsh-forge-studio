@@ -19,7 +19,7 @@ import { aliasId, priceKeyCandidates } from './model-key.ts'
 import { DEFAULT_USD_TO_CNY, priceKey } from './pricing/catalog.ts'
 import { priceUsage } from './pricing/cost.ts'
 import { holidayDataCovers, isCnHoliday, lastHolidayDataYear } from './pricing/holidays.ts'
-import { nextTierSwitchAt, tierAndFactorAt } from './pricing/tiers.ts'
+import { nextTierSwitchAt, tierAndFactorAt, tierDayProfileAt } from './pricing/tiers.ts'
 import type { TierStatus } from './types.ts'
 import { CATALOG_REASONS, activeOverridesAt, diffEntries, planSnapshot, resolveLayerAt, resolveSnapshotAt } from './pricing/snapshot.ts'
 import { USAGE_BILLING_REMOTE_METHODS, USAGE_BILLING_METHOD_NAMES } from './remote-methods.ts'
@@ -247,7 +247,14 @@ export class UsageBillingService extends TypertRemoteService {
     const weekDays = daysInRange(rangeToSpec('7d', now), now)
     const view = buildOverview(rows, { todayKey, weekDays })
     const cfg = this.config.settings.get()
-    return { overview: view, todayKey, budget: { enabled: cfg.budget.enabled, monthlyCny: cfg.budget.monthlyCny } }
+    // 今日费率形状搭这趟车回客户端：入口卡每一拍本来就在取 overview，为一个小形状再挂一条
+    // wire 方法等于多一次往返 + 多一份参数契约（参数个数是硬契约，见 remote-methods.ts）。
+    // 它和 todayKey 一样与窗口无关 —— 只是「今天」的上下文，不是被 rangeKind 过滤的数字。
+    return {
+      overview: view, todayKey,
+      budget: { enabled: cfg.budget.enabled, monthlyCny: cfg.budget.monthlyCny },
+      tierDay: tierDayProfileAt(now, isCnHoliday),
+    }
   }
 
   async daily(rangeKind: RangeKind, includeSubagents: boolean) {
@@ -289,7 +296,7 @@ export class UsageBillingService extends TypertRemoteService {
         current: tier,
         nextSwitchAt: tier === null ? null : nextTierSwitchAt(now, isCnHoliday),
         holidayDataThrough: holidayDataCovers(now) ? lastHolidayDataYear(now) : lastHolidayDataYear(now),
-
+        day: tierDayProfileAt(now, isCnHoliday),
       },
     }
   }

@@ -11,7 +11,7 @@ import { EditorPageDialog } from '../../components/EditorPageDialog.tsx'
 import { t } from '../../core/theme-tokens.ts'
 import { useQuickAddDialog } from '../../hooks/useQuickAddDialog.ts'
 import type { QuickCreateResult } from '../../hooks/useQuickAddDialog.ts'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {
   NoteColor,
   NoteModelSelection,
@@ -23,8 +23,8 @@ import type {
 export type { QuickCreateResult }
 
 export interface QuickAddDialogProps {
-  /** 设置命名空间 scope（读 defaultTitle）。 */
-  readonly scope: SettingsScope<NotesConfig>
+  /** 配置表单（读 defaultTitle）。 */
+  readonly scope: ConfigForm<NotesConfig>
   /** 实际落库调用（index.ts 注入 notes.create + 错误映射）。 */
   readonly create: (input: {
     title?: string

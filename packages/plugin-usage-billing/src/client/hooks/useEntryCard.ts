@@ -22,6 +22,7 @@ import type { SessionRow, WorkspaceRow } from '../../view.ts'
 import { formatCny, formatPct, isUnpricedTotal } from '../core/format.ts'
 import { evaluateBudget } from '../../budget.ts'
 import type { Overview } from '../../view.ts'
+import type { TierDayProfile } from '../../pricing/tiers.ts'
 import { usePopoverSeat } from './usePopoverSeat.ts'
 import { useRevision } from './useRevision.ts'
 
@@ -135,6 +136,8 @@ export function useEntryCard(props: EntryDataProps) {
   const [overview, setOverview] = useState<Overview | null>(null)
   const [budget, setBudget] = useState<{ enabled: boolean; monthlyCny: number } | null>(null)
   const [figures, setFigures] = useState<Figures | null>(null)
+  /** 今日费率形状：与 overview 同一次响应回来，缺省（旧宿主）当「没有分时价」处理。 */
+  const [tierDay, setTierDay] = useState<TierDayProfile | null>(null)
   const [load, setLoad] = useState<LoadState>('loading')
 
   useEffect(() => {
@@ -161,6 +164,8 @@ export function useEntryCard(props: EntryDataProps) {
       if (o.ok) {
         setOverview(o.value.overview)
         setBudget(o.value.budget)
+        // 曲线只在拿到形状时才画：旧宿主不发这个字段，写死一个工作日模板等于撒谎。
+        setTierDay(o.value.tierDay ?? null)
         hasData.current = true
       }
       if (w.ok) {
@@ -293,6 +298,7 @@ export function useEntryCard(props: EntryDataProps) {
     totalSegments,
     todaySegments,
     unpricedText,
+    tierDay,
     budgetBar: budgetView,
     popoverBudget,
     seat,

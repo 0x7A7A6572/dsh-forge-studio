@@ -704,6 +704,10 @@
   --ub-session: var(--dsw-static-blue-600);
   --ub-workspace: var(--dsw-alias-state-success-primary);
   --ub-today: var(--dsw-alias-state-warn-primary);
+  /* 峰 / 谷：暖冷两极。与上面几个点状色标同族但不同层 —— 那些是 8px 圆点，这是一整条面，
+     同屏不会读串；分时价上线后，这条曲线的颜色就是「此刻贵不贵」的第一眼答案。 */
+  --ub-peak: var(--dsw-alias-state-warn-primary);
+  --ub-valley: var(--dsw-alias-state-business-primary);
 }
 .popoverTitle {
   display: flex;
@@ -893,6 +897,111 @@
   border-top: 0.5px solid var(--dsw-alias-border-l2);
   color: var(--dsw-alias-state-warn-primary);
   font-size: 11.5px;
+}
+
+/* ---------- 今日费率带（M 型峰谷曲线） ---------- */
+/*
+ * 长方形带状图：横轴 0→24 点（规则时区的自然日），纵轴只有峰 / 谷两级。
+ * 曲线用 preserveAspectRatio="none" 拉到弹窗宽度，所以：描边交给 vector-effect 恒定
+ * （否则会被横向拉粗），文字与指针一律走 HTML（SVG 里的文字会被拉扁）。
+ * 高度在 TSX 里由 CURVE_PLOT_HEIGHT 给（viewBox 与容器 1:1，指针的 y 才能直接写 px）。
+ */
+.tierCurve {
+  margin-bottom: 10px;
+}
+.tierCurveHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.tierCurveTitle {
+  color: var(--dsw-alias-label-tertiary);
+}
+/* 数字等宽：指针每跳一分钟，「10:32」的字宽不能抖。 */
+.tierCurveNow {
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-secondary);
+  text-align: right;
+}
+/* 文字与指针同色：读色就知道此刻是峰还是谷（曲线本身也是这个色）。 */
+.tierCurveNow[data-tier="peak"] {
+  color: var(--ub-peak);
+}
+.tierCurveNow[data-tier="valley"] {
+  color: var(--ub-valley);
+}
+.tierCurvePlot {
+  position: relative;
+}
+.tierCurveCanvas {
+  display: block;
+  width: 100%;
+}
+/* 色带的每一站：偏移由 JS 按窗口算出（见 core/tier-curve.ts），颜色只在这里定。 */
+.tierCurveStop[data-tone="peak"] {
+  stop-color: var(--ub-peak);
+}
+.tierCurveStop[data-tone="valley"] {
+  stop-color: var(--ub-valley);
+}
+/* 面积只是衬底：读数靠曲线本身，所以压到两成并向下淡出（mask 在 TSX 里）。 */
+.tierCurveArea {
+  opacity: 0.2;
+}
+.tierCurveLine {
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+/* 竖线给「现在」一个可读的横向位置：曲线没有网格，没有它就只能靠刻度目测。 */
+.tierCurveGuide {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  background: currentColor;
+  opacity: 0.3;
+}
+/* 指针：定位值定的是圆心（8px 的负半宽），所以 left/top 就是曲线上的那个点。 */
+.tierCurveDot {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 50%;
+  background: currentColor;
+  /* 与曲线交界处断开一圈：亮/暗主题下都压得住。 */
+  box-shadow: 0 0 0 2px var(--dsw-specific-menu);
+}
+.tierCurveDot[data-tier="peak"],
+.tierCurveGuide[data-tier="peak"] {
+  color: var(--ub-peak);
+}
+.tierCurveDot[data-tier="valley"],
+.tierCurveGuide[data-tier="valley"] {
+  color: var(--ub-valley);
+}
+.tierCurveAxis {
+  position: relative;
+  height: 14px;
+  margin-top: 2px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 14px;
+}
+.tierCurveTick {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-variant-numeric: tabular-nums;
+}
+/* 两端的刻度贴边：居中会让 0 与 24 跑到图形外面（弹窗没有多余留白）。 */
+.tierCurveTick[data-edge="from"] {
+  transform: none;
+}
+.tierCurveTick[data-edge="to"] {
+  transform: translateX(-100%);
 }
 
 /* ---------- 价面（设置-计费分区） ---------- */

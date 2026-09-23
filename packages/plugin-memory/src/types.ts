@@ -13,8 +13,12 @@ import type { Branded } from '@deepseek-ai/dsh-brand'
 /** 记忆条目 id。 */
 export type MemoryId = Branded<'MemoryId'>
 
-/** 设置命名空间：client 经 settingsScope 绑定同一命名空间读写开关。 */
-export const MEMORY_NAMESPACE = 'forge-studio-memory'
+/**
+ * 设置命名空间：dsh 0.1.7 起 = 本插件在 profile 里的条目 id（cordis.patch.yml 的
+ * `id: zzerx-memory`）。host 写入经 ctx.settings.update(条目 id)（见 src/settings.ts），
+ * client 面板经 Typert remote 读写同一份。
+ */
+export const MEMORY_NAMESPACE = 'zzerx-memory'
 
 /**
  * 记忆分类（人工可读的 6 类，对齐导入提示词的分类口径）：
@@ -538,6 +542,22 @@ export interface MemoryConflict {
   readonly description: string
 }
 
+/**
+ * 后台流程（对话提炼 / 写入判定）可选模型：面板「后台模型」下拉的一个选项。
+ * 精简投影 —— 只留下拉要用的两个字段。
+ */
+export interface MemoryModelOption {
+  readonly id: string
+  readonly name: string
+}
+
+/** 一个 provider 及其可选模型（下拉里按 provider 分组）。 */
+export interface MemoryModelGroup {
+  readonly id: string
+  readonly name: string
+  readonly models: readonly MemoryModelOption[]
+}
+
 /** 设置命名空间字段。 */
 export interface MemoryConfig {
   /** 生成对话记忆：会话回合结束时自动从对话里提炼值得记住的内容。 */
@@ -556,6 +576,13 @@ export interface MemoryConfig {
   captureMaxChars: number
   /** 把助手回复也作为提炼素材（默认关：结论类记忆由 agent 主动写）。 */
   captureIncludeAssistant: boolean
+  /**
+   * 后台流程（对话提炼 / 写入判定）用的模型 provider / model，来自 dsh 已配置且可路由的
+   * 模型目录。两个字段都非空才算指定；任一为空 = 不指定，沿用原来的回退链
+   * （提炼走会话自身模型 → agentDefaultModel，判定走 agentDefaultModel）。
+   */
+  llmProvider: string
+  llmModel: string
 }
 
 export const MEMORY_CONFIG_BASE: MemoryConfig = {
@@ -567,6 +594,8 @@ export const MEMORY_CONFIG_BASE: MemoryConfig = {
   captureMaxTurns: 4,
   captureMaxChars: 4000,
   captureIncludeAssistant: false,
+  llmProvider: '',
+  llmModel: '',
 }
 
 /**
