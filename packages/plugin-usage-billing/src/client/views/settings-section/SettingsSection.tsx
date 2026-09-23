@@ -39,7 +39,8 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
     cfg, status, snapshotId, budgetDraft, setBudgetDraft, budgetText, locked, writable, entries,
     view, setView, budgetNotice, dismissBudgetNotice, dismissBackfill, backfillDismissed,
     commitBudget, onBudgetKeyDown,
-    writeAutoRefresh, writeBudgetEnabled, writeIncludeSubagents, writeSidebarEntry, writeComposerEntry,
+    writeAutoRefresh, writeBudgetEnabled, writeIncludeSubagents, writeShowTierCurve,
+    writeSidebarEntry, writeComposerEntry,
   } = useSettingsSection(props)
 
   return (
@@ -96,6 +97,14 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
           checked={cfg?.display?.includeSubagents ?? false}
           disabled={locked}
           onChange={writeIncludeSubagents}
+        />
+        {/* 峰谷时段图只是画法：关掉不影响判档与计价，两个入口的弹窗一起跟着关。 */}
+        <SwitchRow
+          title="显示峰谷时段图"
+          desc="在计费弹窗顶部画出今日的峰谷费率曲线；分时价未启用时本来就不会出现。"
+          checked={cfg?.display?.showTierCurve ?? true}
+          disabled={locked}
+          onChange={writeShowTierCurve}
         />
         {/* 「未收录模型提醒」开关已按需求下线：未收录的计数与徽标是事实，口径不可关，
             这条解释性文案因此常驻（display.showUnpricedWarning 仍留在配置里，

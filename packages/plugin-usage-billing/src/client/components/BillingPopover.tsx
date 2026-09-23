@@ -40,15 +40,28 @@ export interface BillingPopoverProps {
   unpricedText: string | null
   /** 今日费率形状（峰谷曲线的数据源）；旧宿主 / 分时价未启用时为 null —— 整段不画。 */
   tierDay: TierDayProfile | null
+  /**
+   * 是否画峰谷时段图（设置里的 `display.showTierCurve`，默认开）。
+   * **与 `tierDay` 是两件事**：这个是用户的显示偏好，那个是「有没有形状数据」——
+   * 关掉开关不等于旧宿主。判据分开传，只在渲染处合并。
+   */
+  showTierCurve: boolean
 }
 
 export function BillingPopover(props: BillingPopoverProps): JSX.Element | null {
   const seat = props.seat
+  /**
+   * 真正要画的形状：**显示偏好关掉**（设置里的 `display.showTierCurve`）与**没有形状数据**
+   * （旧宿主 / 分时价未启用）都收敛成 null。判据只写这一处，渲染与面板宽度（CSS
+   * `.popover[data-tier-curve="off"]` 的回退）都只认这一个值。
+   */
+  const curve = props.tierDay !== null && props.showTierCurve ? props.tierDay : null
   if (!seat.open) return null
   return createPortal(
     <div
       className={styles.popover + ' ' + styles.palette}
       data-dsh-ub-popover
+      data-tier-curve={curve === null ? 'off' : 'on'}
       ref={seat.panelRef}
       // 未测量时先隐藏参与布局：位置要等面板真实尺寸出来才夹得准。
       style={seat.pos ?? MEASURE_STYLE}
@@ -64,8 +77,8 @@ export function BillingPopover(props: BillingPopoverProps): JSX.Element | null {
       </div>
       <div className={styles.popoverRule} />
 
-      {/* 紧跟标题：先说「此刻多少钱」，再给一张「此刻是什么档」的费率形状。 */}
-      {props.tierDay === null ? null : <TierCurve profile={props.tierDay} />}
+      {/* 紧跟标题：先说「此刻多少钱」，再给一张「此刻是什么档」的费率形状（设置里可关）。 */}
+      {curve === null ? null : <TierCurve profile={curve} />}
 
       {props.budget === null ? (
         <dl className={styles.popoverDetails}>

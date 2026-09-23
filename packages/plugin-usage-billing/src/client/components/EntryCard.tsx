@@ -9,7 +9,7 @@
  */
 import { useEntryCard } from "../hooks/useEntryCard.ts";
 import type { EntryDataProps } from "../hooks/useEntryCard.ts";
-import { useEntryVisible } from "../hooks/useEntryFlags.ts";
+import { useEntryVisible, useShowTierCurve } from "../hooks/useEntryFlags.ts";
 import type { BillingScope } from "../core/config.ts";
 import { BillingPopover } from "./BillingPopover.tsx";
 import { BudgetStackBar } from "./BudgetStackBar.tsx";
@@ -40,6 +40,8 @@ export function EntryCard(props: EntryCardProps): JSX.Element | null {
     ...rest
   } = useEntryCard(props);
   const visible = useEntryVisible(props.scope, "sidebar");
+  // 峰谷时段图是显示偏好（默认开）：曲线数据在 tierDay 里，画不画由开关定。
+  const showTierCurve = useShowTierCurve(props.scope);
   if (!visible) return null;
 
   return (
@@ -120,6 +122,7 @@ export function EntryCard(props: EntryCardProps): JSX.Element | null {
         todaySegments={todaySegments}
         unpricedText={unpricedText}
         tierDay={tierDay}
+        showTierCurve={showTierCurve}
         budget={popoverBudget}
       />
     </span>

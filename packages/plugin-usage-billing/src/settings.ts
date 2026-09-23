@@ -25,6 +25,8 @@ export interface UsageBillingConfig {
   budget: { enabled: boolean; monthlyCny: number }
   display: {
     showUnpricedWarning: boolean
+    /** 计费弹窗顶部画今日峰谷时段图（首装默认开）。 */
+    showTierCurve: boolean
     includeSubagents: boolean
     /** 旧配置的落点：已无写入口，只在两个开关都缺席时被读侧翻译。 */
     entryPosition: EntryPosition
@@ -40,7 +42,7 @@ export interface UsageBillingConfig {
 export const USAGE_BILLING_CONFIG_BASE: UsageBillingConfig = {
   budget: { enabled: false, monthlyCny: 100 },
   display: {
-    showUnpricedWarning: true, includeSubagents: true,
+    showUnpricedWarning: true, showTierCurve: true, includeSubagents: true,
     entrySidebar: true, entryComposer: false, entryPosition: 'sidebar',
   },
   pricing: { autoRefresh: true, refreshHours: 6 },
@@ -63,6 +65,7 @@ export const Config = Schema.object({
   }).default(USAGE_BILLING_CONFIG_BASE.budget).volatile(),
   display: Schema.object({
     showUnpricedWarning: Schema.boolean().default(USAGE_BILLING_CONFIG_BASE.display.showUnpricedWarning),
+    showTierCurve: Schema.boolean().default(USAGE_BILLING_CONFIG_BASE.display.showTierCurve),
     includeSubagents: Schema.boolean().default(USAGE_BILLING_CONFIG_BASE.display.includeSubagents),
     // 首装默认 = 只开侧栏（旧落点 base 的 sidebar）；旧配置的 entryPosition 仍在下方，
     // 但校验后字段一律补齐，所以旧值只对「还没写开关的旧 host」有翻译价值。

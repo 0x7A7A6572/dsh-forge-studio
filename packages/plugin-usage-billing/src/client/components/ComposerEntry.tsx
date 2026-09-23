@@ -7,7 +7,7 @@
  */
 import { useEntryCard } from '../hooks/useEntryCard.ts'
 import type { EntryDataProps } from '../hooks/useEntryCard.ts'
-import { useEntryVisible } from '../hooks/useEntryFlags.ts'
+import { useEntryVisible, useShowTierCurve } from '../hooks/useEntryFlags.ts'
 import type { BillingScope } from '../core/config.ts'
 import { BillingPopover } from './BillingPopover.tsx'
 import { PieBadge } from './PieBadge.tsx'
@@ -21,6 +21,8 @@ export function ComposerEntry(props: ComposerEntryProps): JSX.Element | null {
   const { load, sessionText, budgetBar, unpricedText, totalSegments, todaySegments, tierDay, popoverBudget, seat, ...rest } =
     useEntryCard(props)
   const visible = useEntryVisible(props.scope, 'composer')
+  // 峰谷时段图是显示偏好（默认开）：与侧栏那个入口读同一个开关，两处弹窗表现一致。
+  const showTierCurve = useShowTierCurve(props.scope)
   // 关掉「输入框下方」这个入口时本组件不渲染：槽位留空，不占那一行的位置。
   if (!visible) return null
 
@@ -47,6 +49,7 @@ export function ComposerEntry(props: ComposerEntryProps): JSX.Element | null {
         todaySegments={todaySegments}
         unpricedText={unpricedText}
         tierDay={tierDay}
+        showTierCurve={showTierCurve}
         budget={popoverBudget}
       />
     </span>

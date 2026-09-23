@@ -194,6 +194,14 @@ export function useSettingsSection(props: SettingsSectionProps) {
   }, [scope, store, cfg])
 
   /**
+   * 峰谷时段图开关：写宿主设置（持久）。两个入口的弹窗读同一份快照（hooks/useEntryFlags.ts
+   * 的 useShowTierCurve），所以这里只负责写，画不画由弹窗那一侧判。
+   */
+  const writeShowTierCurve = useCallback((next: boolean) => {
+    writeConfig(() => scope.set('display', { ...(cfg?.display ?? {}), showTierCurve: next }))
+  }, [scope, cfg])
+
+  /**
    * 入口开关：写宿主设置（持久）。两个开关各自独立，两个入口组件订阅同一份快照，
    * 谁渲染由 `entryFlagsOf` 收敛 —— 这里只负责写，且每次都把两个开关一起落盘，
    * 让「旧落点」那一路彻底让位（只写一个会出现「开关半个在位」的中间态）。
@@ -258,6 +266,7 @@ export function useSettingsSection(props: SettingsSectionProps) {
     writeAutoRefresh,
     writeBudgetEnabled,
     writeIncludeSubagents,
+    writeShowTierCurve,
     writeSidebarEntry,
     writeComposerEntry,
   }
