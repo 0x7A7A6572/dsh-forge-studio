@@ -81,12 +81,21 @@ export const Config = Schema.object({
   }).default(USAGE_BILLING_CONFIG_BASE.pricing).volatile(),
   notices: Schema.object({
     backfillDismissed: Schema.boolean().default(false),
-    // Schema.dict 的返回类型引用 @deepseek-ai/cosmokit 的 Dict（schemastery 的传递依赖，pnpm 严格隔离下
-    // 本包不可解析），导出常量的声明推断会 TS2742 —— 链接 dsh-settings 后复测仍然如此，
-    // 故保留 brief Step 4 允许的兜底写法并记录诊断（见 task-11-report.md）：
-    //   src/settings.ts(32,14): error TS2742: The inferred type of 'UsageBillingConfigSchema' cannot be named
-    //   without a reference to '.pnpm/@deepseek-ai+cosmokit@1.8.3/node_modules/@deepseek-ai/cosmokit'.
-    budgetNotified: Schema.object({}).default({}) as unknown as Schema<Record<string, string>>,
+    /*
+     * **必须是 dict，不能是 `Schema.object({})`。** dsh 把设置值下发到浏览器时是**按 schema
+     * 声明字段投影**的（harness `packages/settings/settings/src/schema.ts#projectForm`：object
+     * 类型只保留 `schema.dict` 里声明过的键），而空 object 的 `dict` 是空的 —— 于是
+     * `budgetNotified: {"2026-09": "1"}` 被裁成 `{}`：宿主落盘是对的，客户端却永远读不到
+     * 「本月该档已提醒」，60s 心跳每重判一次就重弹一次跨档提醒（现象：点「知道了」后同一页
+     * 待一会儿又自己冒出来）。投影对 dict 类型原样放行，所以这里用真字典。
+     *
+     * 末尾的 cast 只解决类型：`Schema.dict` 的返回类型引用 @deepseek-ai/cosmokit 的 Dict
+     * （schemastery 的传递依赖，pnpm 严格隔离下本包不可解析），导出常量的声明推断会 TS2742
+     * （诊断留在 task-11-report.md：src/settings.ts(32,14) cannot be named without a reference to
+     * '.pnpm/@deepseek-ai+cosmokit@1.8.3/node_modules/@deepseek-ai/cosmokit'）。运行时仍是左边
+     * 这个真正的 dict schema，与 `UsageBillingConfig['notices']['budgetNotified']` 一致。
+     */
+    budgetNotified: Schema.dict(Schema.string()).default({}) as unknown as Schema<Record<string, string>>,
   }).default(USAGE_BILLING_CONFIG_BASE.notices).volatile(),
 })
 

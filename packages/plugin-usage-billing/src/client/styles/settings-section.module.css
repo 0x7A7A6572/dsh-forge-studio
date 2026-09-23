@@ -445,6 +445,9 @@
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 10px;
   color: var(--dsw-alias-label-secondary);
+  /* 底色分两层写：不支持 color-mix 时整条声明在 computed-value 阶段失效，
+     退回这一行的模块底色（浅色/深色主题各自解析），提示条不会变成透明。 */
+  background: var(--dsw-alias-bg-module-platform);
 }
 .noticeFoot {
   display: flex;
@@ -456,15 +459,34 @@
   color: var(--dsw-alias-state-warn-primary);
 }
 
-/* 检测到跨档/回填这类需要「看一眼」的提示：左侧一道色条，比整块染色克制。 */
+/* 检测到跨档/回填这类需要「看一眼」的提示：左侧一道色条 + 一层同色系极淡底色。
+   底色按 data-kind 的语义色兑（三种 kind 各自不同，不是按预算档位分色），比整块染色克制，
+   又能在卡片里一眼看出这条提示是「警告 / 出错 / 说明」。
+   注意：未定义的 var() 会让整条声明在 computed-value 阶段失效（连上一行的兜底也回不来），
+   所以 state-* 一律带字面色兜底。 */
 .notice[data-kind="warn"] {
   border-left: 3px solid var(--dsw-alias-state-warn-primary);
+  background: color-mix(
+    in srgb,
+    var(--dsw-alias-state-warn-primary, #c98a00) 10%,
+    var(--dsw-alias-bg-module-platform)
+  );
 }
 .notice[data-kind="error"] {
   border-left: 3px solid var(--dsw-alias-state-error-primary);
+  background: color-mix(
+    in srgb,
+    var(--dsw-alias-state-error-primary, #d64545) 10%,
+    var(--dsw-alias-bg-module-platform)
+  );
 }
 .notice[data-kind="info"] {
   border-left: 3px solid var(--dsw-alias-state-business-primary);
+  background: color-mix(
+    in srgb,
+    var(--dsw-alias-state-business-primary, #4d6bfe) 10%,
+    var(--dsw-alias-bg-module-platform)
+  );
 }
 
 .empty {
