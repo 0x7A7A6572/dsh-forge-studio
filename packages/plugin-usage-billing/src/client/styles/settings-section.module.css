@@ -674,18 +674,34 @@
  * elevation-prominent，分节标题左名右值 + 0.5px 细线 + 两列右对齐。
  * 它是 position:fixed 的 —— 位置必须自己夹在视口内（侧栏底部那个锚点离下沿很近），
  * 所以宽度也自己给上下限，不靠父级布局约束。
+ *
+ * 宽度是**由今日费率带那条曲线定**的，不是由内容撑出来的：带子固定 --ub-curve-width 宽，
+ * 面板只是加上左右内边距。反过来让面板自己撑宽，带子就会跟着拉长 —— 而这条曲线的可读
+ * 长度有上限（200% 系统缩放下 240 CSS px ≈ 屏幕上的 480px），太长了深夜压扁的那两段就白压了。
  */
 .popover {
   position: fixed;
   z-index: 1100;
   box-sizing: border-box;
+  /* 曲线带自己的宽度（.tierCurve 继承它）；面板 = 带子 + 左右各 16px 内边距。 */
+  --ub-curve-width: 240px;
+  --ub-panel-width: calc(var(--ub-curve-width) + 32px);
   width: max-content;
   min-width: min(260px, calc(100vw - 24px));
-  max-width: min(420px, calc(100vw - 24px));
+  max-width: min(var(--ub-panel-width), calc(100vw - 24px));
   padding: 14px 16px;
   border: 0;
   border-radius: 12px;
-  background: var(--dsw-specific-menu);
+  /*
+   * 面板底**必须是不透明**的。宿主的 --dsw-specific-menu 是半透明菜单色
+   * （浅色 rgba(248,249,250,.58) / 深色 rgba(48,49,54,.5)），它自己靠 backdrop-filter 兜底；
+   * 本面板 portal 到 body，一旦 backdrop-filter 不生效（宿主那套在 macOS 透明窗口下就是），
+   * 半透明填充就直接透出底下的正文。所以把菜单色压在一层实色上：颜色还是宿主菜单的样子，
+   * 但合成结果的 alpha 是 1，透不出任何东西。
+   */
+  --ub-panel-base: var(--dsw-alias-bg-base);
+  background-color: var(--ub-panel-base);
+  background-image: linear-gradient(var(--dsw-specific-menu), var(--dsw-specific-menu));
   --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
   box-shadow: var(--dsw-elevation-prominent);
   font-size: 12px;
@@ -901,37 +917,19 @@
 
 /* ---------- 今日费率带（M 型峰谷曲线） ---------- */
 /*
- * 长方形带状图：横轴 0→24 点（规则时区的自然日），纵轴只有峰 / 谷两级。
- * 曲线用 preserveAspectRatio="none" 拉到弹窗宽度，所以：描边交给 vector-effect 恒定
- * （否则会被横向拉粗），文字与指针一律走 HTML（SVG 里的文字会被拉扁）。
+ * 长方形带状图：横轴 0→24 点（规则时区的自然日），但**不是等分轴** —— 峰窗之外的深夜
+ * 被压扁（见 core/tier-curve.ts 的注意力轴），整条线才是 `_M_` 而不是 `___M____`；
+ * 纵轴只有峰 / 谷两级，过渡坡是圆肩（宽度按窗口长度取比例），所以整条线是一道平滑的 `m`。
+ * 带子上**不写任何常驻文字**（刻度 / 标题 / 时刻都不画，文字挂 hover tooltip），
+ * 曲线用 preserveAspectRatio="none" 拉到带子宽度，所以描边交给 vector-effect 恒定
+ * （否则会被横向拉粗），指针位置一律 HTML（SVG 里的文字会被拉扁）。
  * 高度在 TSX 里由 CURVE_PLOT_HEIGHT 给（viewBox 与容器 1:1，指针的 y 才能直接写 px）。
+ * 宽度自己拿 --ub-curve-width（由 .popover 给）：它是弹窗宽度的**因**，不是果。
  */
 .tierCurve {
+  width: var(--ub-curve-width);
+  max-width: 100%;
   margin-bottom: 10px;
-}
-.tierCurveHead {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 4px;
-}
-.tierCurveTitle {
-  color: var(--dsw-alias-label-tertiary);
-}
-/* 数字等宽：指针每跳一分钟，「10:32」的字宽不能抖。 */
-.tierCurveNow {
-  min-width: 0;
-  font-variant-numeric: tabular-nums;
-  color: var(--dsw-alias-label-secondary);
-  text-align: right;
-}
-/* 文字与指针同色：读色就知道此刻是峰还是谷（曲线本身也是这个色）。 */
-.tierCurveNow[data-tier="peak"] {
-  color: var(--ub-peak);
-}
-.tierCurveNow[data-tier="valley"] {
-  color: var(--ub-valley);
 }
 .tierCurvePlot {
   position: relative;
@@ -955,7 +953,7 @@
   stroke-width: 1.5;
   stroke-linejoin: round;
 }
-/* 竖线给「现在」一个可读的横向位置：曲线没有网格，没有它就只能靠刻度目测。 */
+/* 竖线给「现在」一个可读的横向位置：曲线没有网格，没有它就只能靠曲线本身目测。 */
 .tierCurveGuide {
   position: absolute;
   top: 0;
@@ -971,8 +969,9 @@
   margin: -4px 0 0 -4px;
   border-radius: 50%;
   background: currentColor;
-  /* 与曲线交界处断开一圈：亮/暗主题下都压得住。 */
-  box-shadow: 0 0 0 2px var(--dsw-specific-menu);
+  /* 与曲线交界处断开一圈：亮/暗主题下都压得住。色取面板的实色底（.popover 给的变量），
+     不是那块半透明的菜单色 —— 否则环自己也半透明。 */
+  box-shadow: 0 0 0 2px var(--ub-panel-base);
 }
 .tierCurveDot[data-tier="peak"],
 .tierCurveGuide[data-tier="peak"] {
@@ -981,27 +980,6 @@
 .tierCurveDot[data-tier="valley"],
 .tierCurveGuide[data-tier="valley"] {
   color: var(--ub-valley);
-}
-.tierCurveAxis {
-  position: relative;
-  height: 14px;
-  margin-top: 2px;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
-  line-height: 14px;
-}
-.tierCurveTick {
-  position: absolute;
-  top: 0;
-  transform: translateX(-50%);
-  font-variant-numeric: tabular-nums;
-}
-/* 两端的刻度贴边：居中会让 0 与 24 跑到图形外面（弹窗没有多余留白）。 */
-.tierCurveTick[data-edge="from"] {
-  transform: none;
-}
-.tierCurveTick[data-edge="to"] {
-  transform: translateX(-100%);
 }
 
 /* ---------- 价面（设置-计费分区） ---------- */
