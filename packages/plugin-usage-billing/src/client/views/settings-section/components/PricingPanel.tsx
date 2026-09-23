@@ -137,7 +137,7 @@ export function PricingPanel(props: PricingPanelProps): JSX.Element {
 
       <Card
         title="手工别名"
-        desc="把未收录 / 疑似改名的原始 id 绑到 canonical 模型；只在同一 provider 内合并展示，账本不动。"
+        desc="把改名的模型并到同一个模型上：显示并成一行、计价也按它算；每个渠道各绑一次，账本不动。"
         extra={(
           <Button
             variant="outline" size="sm" disabled={busy} icon={<Plus size={14} />}
@@ -185,6 +185,7 @@ export function PricingPanel(props: PricingPanelProps): JSX.Element {
         <AliasDialog
           draft={aliasDraft}
           setDraft={setAliasDraft}
+          options={rows.map((row) => ({ key: row.key, custom: row.custom }))}
           busy={busy}
           onClose={() => { setAliasOpen(false) }}
           onSubmit={async () => {
