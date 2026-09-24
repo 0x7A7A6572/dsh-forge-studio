@@ -1,11 +1,13 @@
 /**
- * 价面（设置-计费分区）：当前生效价表 + 来源徽标 + 自定义单价 + 手工别名。
+ * 「价表」页签：当前生效价表 + 来源徽标 + 自定义单价 + 生效中的价目。
  *
- * 版式：四块（价表来源 / 自定义单价 / 生效中的价目 / 手工别名）各一张卡片，价表走
- * DataTable —— 不手写 `<table>` 与内联 style 的裸 `<input>`。
- * 两条写入表单不常驻：卡片上只留一个入口按钮，点开才在弹窗里录入（对应 *Dialog）。
- * 根节点是 Fragment（不是包一层 div）：四张卡片要和外层设置分区的卡片一起排，
- * 分节线靠 `.card + .card`，中间夹一层容器会把链子断掉。
+ * 版式：三张卡片，价目走 DataTable —— 不手写 `<table>` 与内联 style 的裸 `<input>`。
+ * 录入表单不常驻：卡片上只留一个入口按钮，点开才在弹窗里录入（CustomPriceDialog）。
+ * 根节点是 Fragment（不是包一层 div）：三张卡片要和页签面板里的分节线一起排，
+ * 中间夹一层容器会把 `.card + .card` 的链子断掉。
+ *
+ * 状态不在这里：`usePricingPanel` 由 SettingsSection 调一次（另一个页签的别名弹窗要用
+ * 同一份价表做候选），本组件只画。
  */
 import { useState } from 'react'
 import { Calculator, Plus, RefreshCw } from 'lucide-react'
@@ -13,10 +15,9 @@ import { Button, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import { Card } from '../../../components/Card.tsx'
 import { DataTable } from '../../../components/DataTable.tsx'
 import type { TableColumn } from '../../../components/DataTable.tsx'
-import { AliasDialog } from './AliasDialog.tsx'
 import { CustomPriceDialog } from './CustomPriceDialog.tsx'
-import { priceSearch, usePricingPanel } from '../usePricingPanel.ts'
-import type { PriceRow, PricingPanelProps } from '../usePricingPanel.ts'
+import { priceSearch } from '../usePricingPanel.ts'
+import type { PriceRow, PricingState } from '../usePricingPanel.ts'
 import type { TierStatus } from '../../../../types.ts'
 import styles from '../../../styles/settings-section.module.css'
 
@@ -66,14 +67,15 @@ function tierLabel(tier: TierStatus): string {
   return `${who} · 下次 ${at.getMonth() + 1}/${at.getDate()} ${hm}`
 }
 
-export function PricingPanel(props: PricingPanelProps): JSX.Element {
+export function PricingPanel(props: { state: PricingState }): JSX.Element {
   const {
-    entries, rows, source, usdToCny, busy, msg, draft, setDraft, aliasDraft, setAliasDraft, aliases, tier,
-    save, remove, bindAlias, unbindAlias, refreshPricing, repricing,
-  } = usePricingPanel(props)
-  /** 两个弹窗的开合：纯界面状态，留在视图层（hook 只管数据与动作）。 */
+    entries, rows, source, usdToCny, busy, msg, draft, setDraft, tier,
+    save, remove, refreshPricing, repricing,
+  } = props.state
+  /** 单价录入弹窗的开合：纯界面状态，留在视图层（hook 只管数据与动作）。 */
   const [priceOpen, setPriceOpen] = useState(false)
-  const [aliasOpen, setAliasOpen] = useState(false)
+  /** 价目表是本页签的主内容，默认摊开，只是允许折起来。 */
+  const [tableOpen, setTableOpen] = useState(true)
 
   if (entries === null) return <div className={styles.empty} data-dsh-ub-empty>正在读取价表…</div>
 
@@ -124,7 +126,13 @@ export function PricingPanel(props: PricingPanelProps): JSX.Element {
         )}
       />
 
-      <Card title="生效中的价目" desc="「立即刷新」与「重算」都以那一刻的账本与价表为准。">
+      <Card
+        title="生效中的价目"
+        desc="「立即刷新」与「重算」都以那一刻的账本与价表为准。"
+        collapsible
+        open={tableOpen}
+        onToggle={() => { setTableOpen((previous) => !previous) }}
+      >
         <DataTable
           columns={priceColumns(busy, (key) => { void remove(key) })}
           rows={rows}
@@ -135,39 +143,7 @@ export function PricingPanel(props: PricingPanelProps): JSX.Element {
         />
       </Card>
 
-      <Card
-        title="手工别名"
-        desc="把改名的模型并到同一个模型上：显示并成一行、计价也按它算；每个渠道各绑一次，账本不动。"
-        extra={(
-          <Button
-            variant="outline" size="sm" disabled={busy} icon={<Plus size={14} />}
-            onClick={() => { setAliasOpen(true) }}
-          >
-            添加别名
-          </Button>
-        )}
-      >
-        {aliases.length === 0 ? <p className={styles.sub}>还没有手工别名。</p> : (
-          <div className={styles.list}>
-            {aliases.map((a) => (
-              <div className={styles.aliasRow} key={`${a.provider}\u0000${a.rawModel}`}>
-                <span className={styles.aliasText}>
-                  {a.provider} / {a.rawModel} → {a.canonicalModel}
-                </span>
-                <Button
-                  variant="ghost" size="sm" disabled={busy}
-                  aria-label={`解绑 ${a.provider}/${a.rawModel}`}
-                  onClick={() => { void unbindAlias(a.provider, a.rawModel) }}
-                >
-                  解绑
-                </Button>
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
-
-      {/* 两个弹窗都 portal 到 body，摆在 Fragment 里不会切断 `.card + .card` 的分节线。 */}
+      {/* 弹窗 portal 到 body，摆在 Fragment 里不会切断 `.card + .card` 的分节线。 */}
       {priceOpen ? (
         <CustomPriceDialog
           draft={draft}
@@ -177,20 +153,6 @@ export function PricingPanel(props: PricingPanelProps): JSX.Element {
           onSubmit={async () => {
             const outcome = await save()
             if (outcome.ok) setPriceOpen(false)
-            return outcome
-          }}
-        />
-      ) : null}
-      {aliasOpen ? (
-        <AliasDialog
-          draft={aliasDraft}
-          setDraft={setAliasDraft}
-          options={rows.map((row) => ({ key: row.key, custom: row.custom }))}
-          busy={busy}
-          onClose={() => { setAliasOpen(false) }}
-          onSubmit={async () => {
-            const outcome = await bindAlias()
-            if (outcome.ok) setAliasOpen(false)
             return outcome
           }}
         />

@@ -10,7 +10,8 @@ import { Button, Input, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import { FieldRow } from '../../../components/FieldRow.tsx'
 import { ModelPicker } from './ModelPicker.tsx'
 import { isKnownModelName, type ModelOption } from '../model-search.ts'
-import type { AliasDraft, SubmitOutcome } from '../usePricingPanel.ts'
+import type { AliasDraft } from '../useAliasPanel.ts'
+import type { SubmitOutcome } from '../usePricingPanel.ts'
 import styles from '../../../styles/settings-section.module.css'
 
 export interface AliasDialogProps {

@@ -42,6 +42,19 @@ export interface TabOverviewProps {
   revalidate: Revalidator
 }
 
+/**
+ * 概览里两张长卡（最近活跃度 / 分模型消耗）的开合。
+ *
+ * 状态**不在这里**：概览 / 趋势 / 明细是条件渲染，切走即卸载，状态留在本 hook 里会被
+ * 重新挂载抹掉 —— 由设置分区（useSettingsSection）持有，从这里传进来。
+ */
+export interface OverviewDisclosure {
+  activityOpen: boolean
+  modelsOpen: boolean
+  onToggleActivity: () => void
+  onToggleModels: () => void
+}
+
 export function useTabOverview(props: TabOverviewProps) {
   const { billing, store, scope, query, revalidate } = props
   // 心跳一拍换一个 revision，下面的取数 effect 依赖它重跑。

@@ -1,5 +1,6 @@
 /**
- * 概览：单列堆叠四张卡 —— 累计 Token 消耗 / 今日 Token 消耗 / 最近活跃度 / 分模型消耗。
+ * 概览：单列堆叠 —— Hero 两张（累计 / 今日）+ 两张**默认收起**的长卡
+ * （最近活跃度 / 分模型消耗）：一眼要的信息在 Hero 上，长表长图按需展开。
  */
 import {
   NON_FINITE_PLACEHOLDER,
@@ -30,7 +31,7 @@ import { HeatLegend } from "../../components/HeatLegend.tsx";
 import { SegmentedControl } from "../../components/SegmentedControl.tsx";
 import type { SegmentedOption } from "../../components/SegmentedControl.tsx";
 import { useTabOverview } from "./useTabOverview.ts";
-import type { TabOverviewProps } from "./useTabOverview.ts";
+import type { OverviewDisclosure, TabOverviewProps } from "./useTabOverview.ts";
 import type { DailyPoint, ModelRow } from "../../../view.ts";
 import styles from "../../styles/settings-section.module.css";
 
@@ -134,7 +135,7 @@ function cells(
   ];
 }
 
-export function TabOverview(props: TabOverviewProps): JSX.Element {
+export function TabOverview(props: TabOverviewProps & OverviewDisclosure): JSX.Element {
   const { data, weeks, setWeeks, showUnpricedWarning } = useTabOverview(props);
 
   if (data === null)
@@ -205,6 +206,9 @@ export function TabOverview(props: TabOverviewProps): JSX.Element {
 
       <Card
         title="最近活跃度"
+        collapsible
+        open={props.activityOpen}
+        onToggle={props.onToggleActivity}
         extra={
           <SegmentedControl
             label="活跃度时间窗"
@@ -225,7 +229,12 @@ export function TabOverview(props: TabOverviewProps): JSX.Element {
         </div>
       </Card>
 
-      <Card title="分模型消耗">
+      <Card
+        title="分模型消耗"
+        collapsible
+        open={props.modelsOpen}
+        onToggle={props.onToggleModels}
+      >
         <DataTable
           columns={MODEL_COLUMNS}
           rows={models}

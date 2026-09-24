@@ -71,6 +71,64 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* ---------- 设置页签（配置 / 价表 / 其他配置） ---------- */
+/*
+ * 下划线页签，对齐宿主「内置插件」页自己的那一条（宿主那一页没走 SegmentedTabs 的
+ * 等宽胶囊轨道）：13px、tertiary → primary、选中项下面一道 2px 指示条。
+ * 顶部的「用量」模块不在这里 —— 它是常驻主区，三张视图由卡头右侧的分段控件切。
+ */
+.tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 22px;
+  min-width: 0;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+}
+.tab {
+  position: relative;
+  border: 0;
+  padding: 7px 1px 9px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tab:hover,
+.tab[data-active="true"] {
+  color: var(--dsw-alias-label-primary);
+}
+.tab[data-active="true"]::after,
+.tab:focus-visible::after {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--dsw-alias-label-primary);
+  content: "";
+}
+.tab:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+  border-radius: 2px;
+  color: var(--dsw-alias-label-primary);
+}
+/* 面板自己排卡片的竖向节奏（`.card + .card` 的分节线因此在面板内部照旧成立）。 */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+/* 必须显式关掉：`hidden` 属性靠 UA 的 display:none，压不过上面那条 display:flex。 */
+.panel[hidden] {
+  display: none;
+}
+
 .head {
   display: flex;
   align-items: center;
@@ -109,6 +167,41 @@
   align-items: center;
   gap: 6px;
   margin-left: auto;
+}
+/*
+ * 可折卡片的卡头：整行是按钮（标题左侧一个 chevron），右侧的 extra 仍是普通节点 ——
+ * 点标题区开合，点 extra 里的按钮不会顺带把卡片折上（它不在按钮里）。
+ */
+.cardToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.cardToggle:hover .cardTitle {
+  color: var(--dsw-alias-label-primary);
+}
+.cardToggle:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+/* 收起时右指、展开时下指：与明细页的「展开到会话」同一个符号语言。 */
+.chevron {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  transition: transform 120ms ease;
+}
+.chevron[data-open="true"] {
+  transform: rotate(90deg);
 }
 
 /* 开关行 / 说明行：左文案右控件。 */

@@ -1,5 +1,6 @@
 /**
  * 设置页的全部状态与动作：预算、显示偏好、价表刷新、用量视图（概览 / 趋势 / 明细）、
+ * 页签（配置 / 价表 / 其他配置，含「访问过就留着」的挂载集合）、概览长卡的折叠、
  * 预算跨档提醒与回填提示条。
  *
  * 设置快照走宿主真实的 `ctx.configForms.get<BillingConfigLike>(条目 id)` 面
@@ -39,6 +40,16 @@ export interface SettingsSectionProps {
   /** 自动重取心跳（按 fiber 创建，见 core/revalidate.ts）。 */
   revalidate: Revalidator
 }
+
+/** 页签 id：用量模块常驻在页签**之上**，所以这里只剩配置类的内容。 */
+export type SettingsTabId = 'config' | 'pricing' | 'other'
+
+/** 三个页签：模块级常量（身份稳定，渲染时不重建）。 */
+export const SETTINGS_TABS: ReadonlyArray<{ id: SettingsTabId; label: string }> = [
+  { id: 'config', label: '配置' },
+  { id: 'pricing', label: '价表' },
+  { id: 'other', label: '其他配置' },
+]
 
 /**
  * 写一次配置：拒绝（resolve false）与传输异常都只记日志。
@@ -86,6 +97,21 @@ export function useSettingsSection(props: SettingsSectionProps) {
   const [snapshotId, setSnapshotId] = useState(NON_FINITE_PLACEHOLDER)
   /** 页内用量视图：弹窗没了，概览 / 趋势 / 明细现在是这一页的三选一。 */
   const [view, setView] = useState<TabId>('overview')
+  /** 当前页签：默认「配置」。 */
+  const [tab, setTab] = useState<SettingsTabId>('config')
+  /**
+   * 访问过的页签：与宿主「内置插件」页同一姿态 —— 首次选中才挂载，之后一直挂着只隐藏，
+   * 于是别名卡片的开合、价目表的排序与过滤在来回切页签时不丢。
+   */
+  const [visitedTabs, setVisitedTabs] = useState<ReadonlySet<SettingsTabId>>(
+    () => new Set<SettingsTabId>(['config']),
+  )
+  /**
+   * 概览里那两张长卡的折叠：状态放在这里而不是 TabOverview 里 —— 概览 / 趋势 / 明细
+   * 是条件渲染（切走即卸载），状态留在视图里会被重新挂载抹掉。
+   */
+  const [activityOpen, setActivityOpen] = useState(false)
+  const [modelsOpen, setModelsOpen] = useState(false)
   /** 本次跨档的提醒（本地态：落盘后 `shouldNotify` 就变 null 了，提醒本身要留在屏幕上）。 */
   const [budgetNotice, setBudgetNotice] = useState<BudgetNoticeState | null>(null)
   /** 预算金额草稿：`null` = 没在编辑，输入框直接显示快照真值。 */
@@ -121,6 +147,11 @@ export function useSettingsSection(props: SettingsSectionProps) {
 
   // 快照一变就把输入交还给快照：写成功、写失败、或被别处改掉，显示的都是宿主真值。
   useEffect(() => { setBudgetDraft(null) }, [budgetText])
+
+  // 首次选中才记进「访问过」：已访问的集合只增不减（引用不变就不触发重渲染）。
+  useEffect(() => {
+    setVisitedTabs((previous) => (previous.has(tab) ? previous : new Set([...previous, tab])))
+  }, [tab])
 
   /**
    * `notices` 的唯一写缝（回填提示条关闭 / 预算跨档标记共用它）。基数必须在**写入时刻**
@@ -173,6 +204,10 @@ export function useSettingsSection(props: SettingsSectionProps) {
   }, [billing, includeSubagents, scope, cfg, writeNotices, revision, query])
 
   const dismissBudgetNotice = useCallback(() => { setBudgetNotice(null) }, [])
+
+  /** 概览两张长卡的开合：回调身份稳定（Card 的折叠按钮不吃重渲染）。 */
+  const toggleActivity = useCallback(() => { setActivityOpen((previous) => !previous) }, [])
+  const toggleModels = useCallback(() => { setModelsOpen((previous) => !previous) }, [])
 
   /** 写整段 pricing（与 plugin-notes 写 webdav 同姿态）：schema 会用 base 补上未写的字段。 */
   const writeAutoRefresh = useCallback((next: boolean) => {
@@ -257,6 +292,13 @@ export function useSettingsSection(props: SettingsSectionProps) {
     entries: entryFlagsOf(cfg),
     view,
     setView,
+    tab,
+    setTab,
+    visitedTabs,
+    activityOpen,
+    modelsOpen,
+    toggleActivity,
+    toggleModels,
     budgetNotice,
     dismissBudgetNotice,
     dismissBackfill,

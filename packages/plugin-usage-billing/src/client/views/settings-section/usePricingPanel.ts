@@ -1,9 +1,14 @@
 /**
- * 设置-计费分区里价面（价表来源 / 自定义单价 / 手工别名）的状态与动作：当前生效价表 + 来源徽标 + **自定义单价录入/删除** + 未计价历史重算 + 手工别名。
+ * 「价表」页签的状态与动作：当前生效价表 + 来源徽标 + **自定义单价录入/删除** +
+ * 未计价历史重算 + 刷新。
  *
  * 录入走既有的 `setCustomPrice` / `removeCustomPrice` 远程方法（宿主侧的价表写入链），
  * 保存/删除后重新拉一次 `pricing()`，表格与「自定义」标记都来自同一次响应里的
  * `customKeys`（那正是「此刻仍然生效的自定义价」，不是本地记忆）。
+ *
+ * 手工别名**不在这个 hook 里**：它搬去了「其他配置」页签（见 useAliasPanel.ts）。两个
+ * 页签各自的 busy / msg 因此也只落在自己那张卡上 —— 以前共用一份时，别名操作的反馈会
+ * 印在另一个页签的「价表来源」卡里，切过去才看得见。
  */
 import { useCallback, useEffect, useState } from 'react'
 import type { UsageBillingRemote } from '../../core/remote.ts'
@@ -23,19 +28,6 @@ export interface PriceRow {
   key: string
   entry: PriceEntry
   custom: boolean
-}
-
-/** 别名行（展示层合并用）。 */
-export interface AliasRow {
-  provider: string
-  rawModel: string
-  canonicalModel: string
-}
-
-/** 手工别名草稿（`<provider>/<原始 model>` + canonical）。 */
-export interface AliasDraft {
-  key: string
-  canonical: string
 }
 
 /** 提交结果：弹窗据此决定关窗，还是把原因留在弹窗里。 */
@@ -71,11 +63,14 @@ export function validateDraft(draft: Draft): { ok: true; entry: CustomPriceInput
   return { ok: true, entry: { provider, model, currency: draft.currency, input, cacheRead, cacheWrite, output } }
 }
 
-export interface PricingPanelProps {
+export interface PricingHookProps {
   billing: UsageBillingRemote | undefined
 }
 
-export function usePricingPanel(props: PricingPanelProps) {
+/** hook 的返回值：面板拿的是它，`PricingPanel` 因此不自己持状态（见 SettingsSection 的调用处）。 */
+export type PricingState = ReturnType<typeof usePricingPanel>
+
+export function usePricingPanel(props: PricingHookProps) {
   const { billing } = props
   const [entries, setEntries] = useState<Record<string, PriceEntry> | null>(null)
   const [customKeys, setCustomKeys] = useState<string[]>([])
@@ -84,8 +79,6 @@ export function usePricingPanel(props: PricingPanelProps) {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT)
-  const [aliasDraft, setAliasDraft] = useState<AliasDraft>({ key: '', canonical: '' })
-  const [aliases, setAliases] = useState<AliasRow[]>([])
   /** 峰谷状态：旧宿主不发这个字段，缺省当「没有」处理。 */
   const [tier, setTier] = useState<TierStatus | null>(null)
 
@@ -161,67 +154,6 @@ export function usePricingPanel(props: PricingPanelProps) {
     }
   }, [billing, reload])
 
-  /** 手工别名列表（host 侧实现并已测：`setAlias` / `aliasList`）。只影响展示层合并。 */
-  const reloadAliases = useCallback(async () => {
-    if (billing === undefined) return
-    const r = await billing.aliasList()
-    if (r.ok) setAliases(r.value.aliases)
-  }, [billing])
-
-  useEffect(() => {
-    if (billing === undefined) return
-    let alive = true
-    void billing.aliasList().then((r) => {
-      if (alive && r.ok) setAliases(r.value.aliases)
-    }).catch(() => {
-      // 别名表取不到就留空：它只影响展示层合并，不该把整张价表拖成错误态。
-    })
-    return () => { alive = false }
-  }, [billing])
-
-  /** 绑定：只按第一个 '/' 切（model id 自身可能带 '/'），三段都非空才发远程调用。 */
-  const bindAlias = useCallback(async (): Promise<SubmitOutcome> => {
-    if (billing === undefined) return { ok: false, reason: '绑定失败' }
-    const slash = aliasDraft.key.indexOf('/')
-    const provider = slash < 0 ? '' : aliasDraft.key.slice(0, slash).trim()
-    const rawModel = slash < 0 ? '' : aliasDraft.key.slice(slash + 1).trim()
-    const canonicalModel = aliasDraft.canonical.trim()
-    if (provider === '' || rawModel === '' || canonicalModel === '') {
-      const reason = '别名要写「<provider>/<原始 model id>」与 canonical 模型名，两段都不能空'
-      setMsg(reason)
-      return { ok: false, reason }
-    }
-    setBusy(true)
-    try {
-      const r = await billing.setAlias({ provider, rawModel, canonicalModel })
-      setMsg(r.ok ? `已绑定 ${provider}/${rawModel} → ${canonicalModel}` : '绑定失败')
-      if (r.ok) setAliasDraft({ key: '', canonical: '' })
-      return r.ok ? { ok: true } : { ok: false, reason: '绑定失败' }
-    } catch {
-      const reason = '绑定失败：远程通道不可用'
-      setMsg(reason)
-      return { ok: false, reason }
-    } finally {
-      await reloadAliases().catch(() => { /* 保留上一次的列表 */ })
-      setBusy(false)
-    }
-  }, [billing, aliasDraft, reloadAliases])
-
-  /** 解绑：`canonicalModel: null`，之后该原始 id 恢复独立成行。 */
-  const unbindAlias = useCallback(async (provider: string, rawModel: string) => {
-    if (billing === undefined) return
-    setBusy(true)
-    try {
-      const r = await billing.setAlias({ provider, rawModel, canonicalModel: null })
-      setMsg(r.ok ? `已解绑 ${provider}/${rawModel}` : '解绑失败')
-    } catch {
-      setMsg('解绑失败：远程通道不可用')
-    } finally {
-      await reloadAliases().catch(() => { /* 同上 */ })
-      setBusy(false)
-    }
-  }, [billing, reloadAliases])
-
   /** 「刷新失败」的两种来源：wire 层失败（error.message）与拉取层失败（value.ok=false + reason）。 */
   const refreshPricing = useCallback(async () => {
     if (billing === undefined) return
@@ -252,7 +184,7 @@ export function usePricingPanel(props: PricingPanelProps) {
   }))
 
   return {
-    entries, rows, source, usdToCny, busy, msg, draft, setDraft, aliasDraft, setAliasDraft, aliases, tier,
-    save, remove, bindAlias, unbindAlias, refreshPricing, repricing,
+    entries, rows, source, usdToCny, busy, msg, draft, setDraft, tier,
+    save, remove, refreshPricing, repricing,
   }
 }
