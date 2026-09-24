@@ -409,12 +409,13 @@ body[data-ds-dark-theme] .select {
   white-space: nowrap;
 }
 
+/* 正文按 markdown 渲染（MarkdownText），故不再 pre-wrap：排版由渲染器自己的块级
+   间距负责，容器只留字号 / 行高 / 颜色，避免把源文的缩进带进每行。 */
 [data-dsh-memory-ui] .itemBody {
   margin: 0;
   font-size: 12.5px;
   line-height: 1.6;
   color: var(--dsw-alias-label-secondary, var(--dsw-alias-label-primary));
-  white-space: pre-wrap;
   word-break: break-word;
 }
 
@@ -768,6 +769,7 @@ body > div:has(> [role="dialog"].modalWide) {
   word-break: break-all;
 }
 
+/* 详情正文同样是 markdown 富文本（MarkdownText）：滚动盒与尺寸照旧，只去掉 pre-wrap。 */
 [data-dsh-memory-ui] .detailBody {
   margin: 0;
   padding: 10px 12px;
@@ -780,7 +782,6 @@ body > div:has(> [role="dialog"].modalWide) {
   font-size: 12px;
   line-height: 1.7;
   color: var(--dsw-alias-label-primary);
-  white-space: pre-wrap;
   word-break: break-word;
 }
 

@@ -12,7 +12,7 @@
  */
 import { SCOPE_LABELS, SCOPE_OPTIONS, MEMORY_TABS, TAB_LABELS, timeText, durationText, ORIGIN_LABELS, AUDIT_KIND_LABELS, sourceLabel, entityKindClass, linkedMemoryIds, NODE_KIND_OPTIONS, RELATION_OPTIONS, IMPORTANCE_STEPS, CAPTURE_EVERY_STEPS, CAPTURE_TURNS_STEPS, CAPTURE_CHARS_STEPS, importanceLevelAt, importanceStep, IMPORT_MODE_OPTIONS, BUNDLE_MODE_OPTIONS, modelKey, parseModelKey, modelSelectGroups } from '../../core/memory-model.ts'
 import type { MemoryRecord, MemoryEdgeRelation } from '../../../types.ts'
-import { Button, IconBranchOutlineRegular, IconArchiveOutlineRegular, IconChecklistOutlineRegular, IconCopyOutlineRegular, IconDownloadOutlineRegular, IconEditOutlineRegular, IconEllipsisOutlineRegular, IconFolderOpenOutlineRegular, IconListPenOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, IconShareOutlineRegular, IconTrashOutlineRegular, Input, Menu, Modal, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconBranchOutlineRegular, IconArchiveOutlineRegular, IconChecklistOutlineRegular, IconCopyOutlineRegular, IconDownloadOutlineRegular, IconEditOutlineRegular, IconEllipsisOutlineRegular, IconFolderOpenOutlineRegular, IconListPenOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, IconShareOutlineRegular, IconTrashOutlineRegular, Input, MarkdownText, Menu, Modal, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ChevronDown } from 'lucide-react'
 import type { SettingsSectionProps } from '../../core/memory-section-types.ts'
@@ -41,6 +41,15 @@ import styles from '../../styles/settings-section.module.css'
  * 读写全部走 Typert remote（ctx.remote.memory.*）；开关写的是设置命名空间的用户层，
  * 与插件设置卡片同源，改完即时生效。
  */
+
+/**
+ * MarkdownText 本地化文案（引用稳定常量）：正文是 markdown，列表与详情都按富文本渲染。
+ * 常量置顶是硬要求 —— 每次渲染新建一个 labels 对象会让渲染缓存整段失效。
+ */
+const MD_LABELS = {
+  code: { copyLabel: '复制', copiedLabel: '已复制' },
+  footnotes: '脚注',
+}
 
 /** 记忆分区。 */
 export function SettingsSection(props: SettingsSectionProps): JSX.Element {
@@ -191,7 +200,9 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
             <span className={styles.itemAlias}>{record.aliases.join(' / ')}</span>
           </div>
         )}
-        <p className={styles.itemBody}>{record.content}</p>
+        <div className={styles.itemBody}>
+          <MarkdownText text={record.content} labels={MD_LABELS} variant="compact" />
+        </div>
         {record.archived && <span className={styles.notice}>已归档（不参与注入，可随时恢复）</span>}
         <div className={styles.itemFooter}>
           {renderImportanceDot(record.importance)}
@@ -816,7 +827,9 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
                   </>
                 )}
               </div>
-              <pre className={styles.detailBody}>{detail.content}</pre>
+              <div className={styles.detailBody}>
+                <MarkdownText text={detail.content} labels={MD_LABELS} />
+              </div>
 
               <div className={styles.edgeBlock}>
                 <div className={styles.edgeBlockHead}>
