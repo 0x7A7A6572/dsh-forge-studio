@@ -877,6 +877,21 @@
   min-width: 0;
 }
 
+.usageView {
+  background: var(--dsw-alias-bg-layer-3);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.settingsEntry {
+  display: flex;
+  flex-direction: column;
+  background: var(--dsw-alias-bg-layer-3);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+
 /* 预算条的多色段：三段颜色只定义一次（色标与段共用同一个变量）。 */
 /*
  * 三层嵌套：整条（本月总量 / 预算）→ 已用段（本月已用）→ 三条指标。
