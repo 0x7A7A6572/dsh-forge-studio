@@ -7,10 +7,12 @@
 | 包 | 说明 | 版本 | 状态 |
 |---|---|---|---|
 | [`@zzerx/dsh-plugin-notes`](packages/plugin-notes) | 便签板：侧栏 / 输入栏 / 回复下方三处入口记一笔，纸卡墙 · 行式列表 · 任务泳道三视图；便签能变任务交给 AI 在指定工作区执行，或按日程定时跑；Markdown、贴图、WebDAV 备份 | 0.4.1 | ✅ 已发布 |
-| [`@zzerx/dsh-plugin-daily-log`](packages/plugin-daily-log) | 工作日志：把 Git 提交与本地 agent 对话（DeepSeek / Claude / Codex）汇总成日报 · 周报 · 月报；agent 工具按需注入，默认只挂 1 个 `daily_log` 派发器 | 0.3.1 | ✅ 已发布 |
-| [`@zzerx/dsh-plugin-memory`](packages/plugin-memory) | 记忆与进化：跨会话记住偏好、身份与项目决策（全局 / 项目双作用域），开场自动注入，实体与边的记忆图谱；入口是设置面板一级「记忆」分区 | 0.3.3 | ✅ 已发布 |
-| [`@zzerx/dsh-plugin-usage-billing`](packages/plugin-usage-billing) | 用量与计费：从既有会话日志聚合真实 token 用量，按事件发生时刻的价格写时锁定费用；侧栏 / 输入框下方两个入口 + 点击弹层 + 设置页用量视图 | 1.0.1 | ✅ 已发布 |
-| [`@zzerx/dsh-plugin-home-studio`](packages/plugin-home-studio) | 工作台：聚合日常功能入口的骨架包，host / client 均为空占位，UI 待填充 | 0.1.0 | 🚧 骨架，未发布、未接入本地 profile |
+| [`@zzerx/dsh-plugin-daily-log`](packages/plugin-daily-log) | 工作日志：把 Git 提交与本地 agent 对话（DeepSeek / Claude / Codex）汇总成日报 · 周报 · 月报；agent 工具按需注入，默认只挂 1 个 `daily_log` 派发器 | 0.4.0 | ✅ 已发布 |
+| [`@zzerx/dsh-plugin-memory`](packages/plugin-memory) | 记忆与进化：跨会话记住偏好、身份与项目决策（全局 / 项目双作用域），开场自动注入，实体与边的记忆图谱；入口是设置面板一级「记忆」分区 | 0.4.1 | ✅ 已发布 |
+| [`@zzerx/dsh-plugin-usage-billing`](packages/plugin-usage-billing) | 用量与计费：从既有会话日志聚合真实 token 用量，按事件发生时刻的价格写时锁定费用；侧栏 / 输入框下方两个入口 + 点击弹层 + 设置页用量视图 | 1.1.0 | ✅ 已发布 |
+| [`@zzerx/dsh-plugin-home-studio`](packages/plugin-home-studio) | 工作台：聚合日常功能入口的骨架包，host / client 均为空占位，UI 待填充 | 0.2.0 | 🚧 骨架，未发布、未接入本地 profile |
+
+> 版本列 = 本仓库该包 `package.json` 的版本（含尚未发布的那一版）；`状态` 列说的是有没有上 npm。
 
 ## 安装
 
