@@ -9,7 +9,8 @@
  * 视口，且仍在同一层叠上下文里，能把编辑器整层压住。
  *
  * 键盘与鼠标：Esc = 取消（捕获阶段吃掉，避免连带把外层编辑器弹窗也关掉）；
- * 点遮罩 = 取消；主按钮自动聚焦，回车即确认。
+ * 点遮罩 = 取消；主按钮自动聚焦，回车即确认（所以「默认动作」= 主按钮，三选一时
+ * 拿 extraLabel 补中间那个出口，别把主按钮让给次要动作）。
  */
 
 import { useEffect } from 'react'
@@ -27,6 +28,14 @@ export interface ConfirmDialogProps {
   readonly confirmLabel: string
   /** 次按钮文案，缺省「取消」。 */
   readonly cancelLabel?: string
+  /**
+   * 第三个动作（可选）：在「取消」与主按钮之间再给一个出口。有些操作是**三选一**
+   * —— 关闭一张有改动的便签就是（保存并关闭 / 放弃改动 / 继续编辑），只有两个按钮时
+   * 只能牺牲其中一个：要么「放弃」藏在「取消」里（用户以为取消了其实改了），
+   * 要么干脆没法保存。给了 extraLabel 就必须给 onExtra（少一个按钮会渲染不出来）。
+   */
+  readonly extraLabel?: string
+  readonly onExtra?: () => void
   /** 左侧强调色（便签纸色环）：把弹窗和它所属的那张便签认在一起。 */
   readonly accent?: string
   readonly onConfirm: () => void
@@ -75,6 +84,11 @@ export function ConfirmDialog(props: ConfirmDialogProps): JSX.Element {
           <button type="button" style={btnGhost} onClick={onCancel}>
             {props.cancelLabel ?? '取消'}
           </button>
+          {props.extraLabel !== undefined && props.onExtra !== undefined && (
+            <button type="button" style={btnGhost} onClick={props.onExtra}>
+              {props.extraLabel}
+            </button>
+          )}
           <button type="button" style={btnPrimary} autoFocus onClick={props.onConfirm}>
             {props.confirmLabel}
           </button>

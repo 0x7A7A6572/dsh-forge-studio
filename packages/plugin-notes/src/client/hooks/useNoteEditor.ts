@@ -5,9 +5,15 @@
  * 不碰自动保存调度、不注册任何 window 监听 —— 想知道「Ctrl+S 会发生什么」，看这里。
  *
  * 与视图的接口就一个平铺对象：视图同名解构，JSX 与拆分前一字不差。
+ *
+ * 关闭只有一道闸：所有关闭入口（X / 「取消」/ Esc / 点遮罩）都汇到 requestClose（Esc
+ * 与遮罩先走 requestEscapeClose 收弹层，再落到同一条闸）—— 有改动先问「保存并关闭 /
+ * 放弃改动 / 继续编辑」，没改动直接关。少接一条路径，用户刚写的内容就会被静默丢掉
+ * （新建便签尤其致命：它没有库记录）。
  */
 
 import { useEffect, useMemo, useRef, useState } from "react"
+import type { MutableRefObject } from "react"
 import { useEditor, useEditorState } from "@tiptap/react"
 import type { Editor } from "@tiptap/core"
 import { DEFAULT_NOTE_COLOR } from "../../types.ts"
@@ -29,6 +35,11 @@ import {
   parseModelKey,
 } from "../core/task-lanes.ts"
 import { createAutoSaver, type AutoSaver } from "../core/auto-save.ts"
+import {
+  isNoteDraftDirty,
+  noteDraftSignature,
+  type NoteDraftFields,
+} from "../core/note-draft-diff.ts"
 import { fmtCountdown, fmtDateTime, fmtShortDateTime } from "../core/time-text.ts"
 import { folderNameOf, workspaceSelectOptions } from "../core/workspace-path.ts"
 import { buildNoteRichTextExtensions } from "../core/note-richtext.ts"
@@ -112,6 +123,14 @@ export interface NoteEditorProps {
   readonly taskTargets?: TaskTargets;
   /** 编辑既有便签时开启：停顿后自动保存（不关弹窗）。新建态恒 false。 */
   readonly autoSave?: boolean;
+  /**
+   * 关闭请求出口：编辑器自己的关闭入口（X / 「取消」/ Esc）走内部关闭闸（有改动先问一句）。
+   * 但遮罩点击属于 EditorPageDialog 的 DOM、快捷浮层与板子的兜底 Esc 更是连 DOM 都不在
+   * 编辑器里，那几条路也得走同一道闸，否则「点外面 / 按 Esc」就能绕过确认直接丢改动 ——
+   * 所以由它们把这个 ref 交下来，编辑器每次渲染把最新的关闭闸填进去；卸下时清空，
+   * 外层拿不到时退回它自己的直接关。
+   */
+  readonly requestCloseRef?: MutableRefObject<(() => void) | null>;
   readonly onCancel: () => void;
   readonly onSave: (
     title: string,
@@ -359,7 +378,11 @@ export function useNoteEditor(props: NoteEditorProps) {
   const autoSaver = useRef<AutoSaver | null>(null);
   /** 在途标记：Ctrl+S 与调度器撞上时不并发（撞上就跳过，等在途那次落盘）。 */
   const autoSaving = useRef(false);
-  /** 上次落盘的草稿签名：没变就不重复写库/广播。 */
+  /**
+   * 上次落盘（编辑态）或刚打开时（新建态）的草稿签名 —— 两处共用：
+   * - 自动保存：草稿没变就不重复写库/广播；
+   * - 关闭前：判「有没有改动」，决定关之前要不要问一句（见 core/note-draft-diff.ts）。
+   */
   const savedSignature = useRef<string | null>(null);
   /**
    * 最新草稿镜像（标题/纸色/任务开关/状态/工作区）：自动保存回调异步执行，闭包里
@@ -369,6 +392,36 @@ export function useNoteEditor(props: NoteEditorProps) {
   useEffect(() => {
     draftRef.current = { title, color, taskOn, taskStatus, workspace, agentPreset, modelValue, schedule };
   });
+
+  /**
+   * 当前草稿字段（存库字段的全集）：正文从编辑器现取，其余取草稿镜像。
+   * 自动保存与「改动判定」共用同一份字段表 —— 两边各写一份，早晚会漏字段。
+   */
+  function draftFields(overrides?: { title?: string; body?: string }): NoteDraftFields {
+    const draft = draftRef.current;
+    return {
+      title: overrides?.title ?? draft.title,
+      body: overrides?.body ?? editorMarkdown(editor, props.initialBody),
+      color: draft.color,
+      taskOn: draft.taskOn,
+      taskStatus: draft.taskStatus,
+      workspace: draft.workspace,
+      agentPreset: draft.agentPreset,
+      modelValue: draft.modelValue,
+      schedule: draft.schedule,
+    };
+  }
+
+  /**
+   * 基线只取一次，且**编辑器就绪后从编辑器里读**（不是拿 props 拼）：
+   * Markdown → 编辑器文档 → Markdown 的往返会做规范化（列表缩进、表格对齐…），
+   * 用 props.initialBody 当基线的话，一打开就被判成「有改动」，关闭时白弹一次。
+   */
+  useEffect(() => {
+    if (!editor || savedSignature.current !== null) return;
+    savedSignature.current = noteDraftSignature(draftFields());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor]);
 
   /**
    * 落盘一次：不关弹窗、不置 saving（标题框一 disabled 就丢焦点）。
@@ -392,17 +445,9 @@ export function useNoteEditor(props: NoteEditorProps) {
       return;
     }
     const body = editorMarkdown(editor, props.initialBody);
-    const signature = JSON.stringify([
-      nextTitle,
-      body,
-      draft.color,
-      draft.taskOn,
-      draft.taskStatus,
-      draft.workspace,
-      draft.agentPreset,
-      draft.modelValue,
-      draft.schedule ?? null,
-    ]);
+    // 签名与「改动判定」共用一份字段表（core/note-draft-diff.ts）：自动保存跳过重复写入
+    // 的判据，和关闭前问不问的判据必须是同一个，否则会出现「关了不提示但其实没存」。
+    const signature = noteDraftSignature(draftFields({ title: nextTitle, body }));
     if (signature === savedSignature.current) {
       setAutoSaveState("saved");
       return;
@@ -486,6 +531,69 @@ export function useNoteEditor(props: NoteEditorProps) {
           : autoSaveState === "saved"
             ? "已自动保存"
             : "自动保存";
+
+  /* ---------- 关闭闸：有改动先问一句 ---------- */
+
+  /**
+   * 「便签有改动」确认弹窗是否打开。关闭是不可逆的丢弃动作，所以先落到弹窗上，
+   * 由用户明确选「保存并关闭 / 放弃改动 / 继续编辑」。
+   */
+  const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
+
+  /**
+   * 关闭请求（X / 「取消」）：有改动 → 弹确认；没改动 → 直接关。
+   * 全部关闭入口都必须走这里 —— 少一条，那条路就成了静默丢内容的暗门。
+   */
+  function requestClose(): void {
+    if (saving) return;
+    if (!isNoteDraftDirty(savedSignature.current, draftFields())) {
+      props.onCancel();
+      return;
+    }
+    setCloseConfirmOpen(true);
+  }
+
+  /**
+   * Esc 的关闭请求：弹层（链接 / 表格）开着就先收弹层 —— Esc 的层级是「弹层 → 关闭闸」，
+   * 别让一次 Esc 把弹层和整张便签一起问。
+   * 编辑器、遮罩点击、快捷浮层的 Esc、板子的兜底 Esc 都走这条，层级才不会各按各的。
+   */
+  function requestEscapeClose(): void {
+    if (popup !== null) {
+      closePopup();
+      return;
+    }
+    requestClose();
+  }
+
+  /** 确认弹窗「保存并关闭」：交给显式保存（空草稿/缺工作区的拦截与关弹窗都在 save 里）。 */
+  function saveAndClose(): void {
+    setCloseConfirmOpen(false);
+    void save();
+  }
+
+  /** 确认弹窗「放弃改动」：明确授权的丢弃，不动库，直接关（新建态即不创建）。 */
+  function discardAndClose(): void {
+    setCloseConfirmOpen(false);
+    props.onCancel();
+  }
+
+  /** 确认弹窗「继续编辑」：只收起确认层，回到编辑器（Esc / 点遮罩也是它）。 */
+  function keepEditing(): void {
+    setCloseConfirmOpen(false);
+  }
+
+  // 遮罩点击（弹窗 DOM 属于 EditorPageDialog）也要走同一条闸：每次渲染把最新的
+  // requestEscapeClose 填进它交下来的 ref，卸载时清空（清空后遮罩点击退回直接关）。
+  // 填 Esc 那条而不是按钮那条：遮罩点击与 Esc 同属「离开编辑器」的隐式动作，都要先收弹层。
+  useEffect(() => {
+    const target = props.requestCloseRef;
+    if (!target) return;
+    target.current = requestEscapeClose;
+    return () => {
+      target.current = null;
+    };
+  });
 
   function run(fn: (e: Editor) => void): void {
     if (editor) fn(editor);
@@ -701,6 +809,12 @@ export function useNoteEditor(props: NoteEditorProps) {
     autoSaver,
     markDirty,
     autoSaveHintText,
+    closeConfirmOpen,
+    requestClose,
+    requestEscapeClose,
+    saveAndClose,
+    discardAndClose,
+    keepEditing,
     run,
     closePopup,
     openLinkPopup,

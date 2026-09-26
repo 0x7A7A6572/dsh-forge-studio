@@ -53,6 +53,7 @@ export function QuickAddDialog(props: QuickAddDialogProps): JSX.Element {
     workspacesReady,
     taskTargets,
     defaultTitle,
+    requestCloseRef,
     close,
     onSave,
   } = useQuickAddDialog(props)
@@ -67,6 +68,8 @@ export function QuickAddDialog(props: QuickAddDialogProps): JSX.Element {
         workspaceOptions={workspaces}
         workspaceReady={workspacesReady}
         taskTargets={taskTargets}
+        // 浮层的 Esc（在 useQuickAddDialog 里）要拿到这道闸才走得进「有改动先问一句」。
+        requestCloseRef={requestCloseRef}
         onCancel={close}
         onSave={onSave}
       />

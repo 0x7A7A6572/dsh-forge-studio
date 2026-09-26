@@ -13,7 +13,8 @@
  * 右侧栏 surface 不参与（见 UseNotesBoardOptions.surface）。
  */
 
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import type { MutableRefObject } from 'react'
 import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {
   NoteColor,
@@ -105,6 +106,11 @@ export interface UseNotesBoardResult {
   readonly openEditor: (note: NoteRecord) => void
   readonly createNote: () => void
   readonly closeEditor: () => void
+  /**
+   * 编辑器填进来的关闭闸（转交给 EditorPageDialog）：焦点不在编辑器里时（点了纸卡留白），
+   * 编辑器自己的 Esc 收不到，会落到板子这条兜底 Esc 上 —— 也得走同一道闸。
+   */
+  readonly editorRequestCloseRef: MutableRefObject<(() => void) | null>
   readonly saveDraft: (
     title: string,
     body: string,
@@ -163,6 +169,8 @@ export function useNotesBoard(options: UseNotesBoardOptions): UseNotesBoardResul
   // 弹窗层：编辑器（目标）与使用说明开关都由导航 store 决定（跨开关浮层保留）。
   const editing = useSyncExternalStore(notesNav.subscribe, () => notesNav.editing)
   const helpOpen = useSyncExternalStore(notesNav.subscribe, () => notesNav.helpOpen)
+  /** 编辑器填进来的关闭闸（有改动先确认）；没填（首帧/卸载）时退回直接关编辑器。 */
+  const editorRequestCloseRef = useRef<(() => void) | null>(null)
 
   // 订阅命名空间 scope：默认标题在设置里改完实时生效（新建便签/弹窗展示）。
   const scope = face.scope
@@ -234,13 +242,18 @@ export function useNotesBoard(options: UseNotesBoardOptions): UseNotesBoardResul
   }, [])
 
   // Esc：按弹窗层级收 —— 使用说明 → 编辑器弹窗 → 整个面板
-  // （编辑器内的 Esc 由 NoteEditor 处理并 stopPropagation，不会走到这里）。
+  // （编辑器内的 Esc 由 NoteEditor 处理并 stopPropagation，不会走到这里；走到这里的
+  // 是「焦点不在编辑器里」那种，所以也不能在这儿直接关 —— 得走编辑器自己的关闭闸，
+  // 否则「点一下纸卡留白再按 Esc」就是一条静默丢内容的暗门）。
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape') return
       if (helpOpen) notesNav.setHelpOpen(false)
-      else if (editing) notesNav.closeEditor()
-      else closeBoard()
+      else if (editing) {
+        const requestClose = editorRequestCloseRef.current
+        if (requestClose) requestClose()
+        else notesNav.closeEditor()
+      } else closeBoard()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -436,6 +449,7 @@ export function useNotesBoard(options: UseNotesBoardOptions): UseNotesBoardResul
     openEditor: (note) => notesNav.openEditor({ mode: 'edit', note }),
     createNote: () => notesNav.openEditor({ mode: 'create' }),
     closeEditor: () => notesNav.closeEditor(),
+    editorRequestCloseRef,
     saveDraft,
     togglePin: (note) => void run(() => face.notes.setPinned(note.id, !note.pinned)),
     toggleArchive: (note) => void run(() => face.notes.update(note.id, { archived: !note.archived })),

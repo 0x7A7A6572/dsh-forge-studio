@@ -5,12 +5,14 @@
  * 是本浮层的本地状态。视图只读返回值。
  *
  * 交互契约：
- * - Esc / 取消 / 点遮罩 → 只关浮层（close）；
+ * - Esc / 取消 / 点遮罩 → 走编辑器的关闭闸（关了才算关）：有未保存改动先弹「便签有改动」，
+ *   没改动才真的关掉浮层（close）；
  * - 保存成功 → onCreated()（补刷侧栏徽标）后自动关闭；
  * - 保存失败 → 返回 error，视图负责画错误条，弹窗保持打开可重试。
  */
 
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import type { MutableRefObject } from 'react'
 import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { NoteColor, NoteModelSelection, NotesConfig, TaskStatus, TaskTargets } from '../../types.ts'
 import type { NoteDraft } from '../core/notes-nav.ts'
@@ -54,6 +56,8 @@ export interface UseQuickAddDialogResult {
   readonly workspacesReady: boolean
   readonly taskTargets: TaskTargets
   readonly defaultTitle: string
+  /** 编辑器填进来的关闭闸（Esc 也走它，见下）；转交给 EditorPageDialog。 */
+  readonly requestCloseRef: MutableRefObject<(() => void) | null>
   readonly close: () => void
   readonly onSave: (
     title: string,
@@ -77,14 +81,20 @@ export function useQuickAddDialog(options: UseQuickAddDialogOptions): UseQuickAd
   const [workspacesReady, setWorkspacesReady] = useState(false)
   /** 任务执行目标目录（模型 / agent 预设）：挂载即拉，失败即空目录。 */
   const [taskTargets, setTaskTargets] = useState<TaskTargets>({ models: [], presets: [] })
+  /** EditorPageDialog 填进来的关闭闸（有改动先确认）；还没填时退回直接关浮层。 */
+  const requestCloseRef = useRef<(() => void) | null>(null)
 
   // Esc 关闭浮层：capture 阶段拦截并停传播，避免板内全局 Esc（开板时）抢收。
+  // 但「关」要走编辑器那道闸 —— Esc 和 X / 「取消」/ 点遮罩是同一条关闭路，绕过它就
+  // 成了「按一下 Esc 草稿全没」的暗门（本浮层全是新建，丢了连库记录都没有）。
   useEffect(() => {
     if (!open) return
     const onKey = (event: KeyboardEvent): void => {
       if (event.key !== 'Escape') return
       event.stopPropagation()
-      boardStore.hideQuickAdd()
+      const requestClose = requestCloseRef.current
+      if (requestClose) requestClose()
+      else boardStore.hideQuickAdd()
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
@@ -178,6 +188,7 @@ export function useQuickAddDialog(options: UseQuickAddDialogOptions): UseQuickAd
     workspacesReady,
     taskTargets,
     defaultTitle: scope.getSnapshot().value?.defaultTitle ?? '新便签',
+    requestCloseRef,
     close: () => boardStore.hideQuickAdd(),
     onSave,
   }
