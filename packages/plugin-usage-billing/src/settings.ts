@@ -25,7 +25,7 @@ export interface UsageBillingConfig {
   budget: { enabled: boolean; monthlyCny: number }
   display: {
     showUnpricedWarning: boolean
-    /** 计费弹窗顶部画今日峰谷时段图（首装默认开）。 */
+    /** 计费弹窗顶部与侧栏入口卡左侧画今日峰谷时段图（首装默认开）。 */
     showTierCurve: boolean
     includeSubagents: boolean
     /** 旧配置的落点：已无写入口，只在两个开关都缺席时被读侧翻译。 */

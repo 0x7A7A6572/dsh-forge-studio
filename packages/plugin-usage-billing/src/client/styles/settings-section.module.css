@@ -1120,6 +1120,59 @@
   color: var(--ub-valley);
 }
 
+/* ---------- mini 峰谷图（侧栏计费入口卡的左侧） ---------- */
+/*
+ * 形状问 core/tier-curve.ts 的 miniCurve 要（完全平滑的 M：峰窗不做平顶、只在窗口中点取一次顶，
+ * 谷分两级深浅 —— 午间的鞍浅、夜线的低点深；角落就是全天最低点，夜线从那里往上爬，
+ * 既不上翘也不是平底）。色带与面积两个类与大图直接复用，这里只换画布：**死尺寸 75×35 CSS px** ——
+ * 用户按屏幕上的像素报的是 150×70，他的机器 200% 缩放，写进 CSS 就是一半。
+ * 宽度是常量、不跟容器走：侧栏在 264–420px 之间变宽（宿主 ui-layout 的 clamp），
+ * 曲线不该跟着被拉长 —— 那边变的是金额那一侧。
+ *
+ * 纵向不是 1:1（viewBox 高 30 单位 → 35px），所以：
+ * - 指针的 left/top 一律百分比（TSX 里算），px 会按 30 单位偏掉；
+ * - 描边交给 vector-effect（preserveAspectRatio="none" 会把它横向拉粗），
+ *   粗细与大图同为 1.5（试过 2.5，75px 宽看着太笨，去掉了）。
+ * 指针只有一颗点、**没有竖线**（6px 点 + 1px 环，大图是 8 + 2）：竖线在 75px 宽的图里
+ * 比曲线本身还抢眼；点要比大图那颗相对更重，1/3 宽的画布里才一眼看得见「现在」在哪。
+ * 环不能省 —— 点压在同色的线上，没有那圈底色等于没画；
+ * 底色取 --ub-panel-base 的**兜底**：那个变量只有弹窗给（这里在侧栏里，没有那个祖先），
+ * 兜底再落到侧栏自己的填充色 --dsw-specific-sidebar-fill。
+ */
+.miniCurve {
+  flex: none;
+  display: block;
+  width: 75px;
+  height: 35px;
+}
+.miniCurvePlot {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.miniCurveCanvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.miniCurveDot {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  /* 定位值定的是圆心（6px 的负半宽），所以 left/top 就是曲线上的那个点。 */
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 1px var(--ub-panel-base, var(--dsw-specific-sidebar-fill, var(--dsw-alias-bg-base)));
+}
+.miniCurveDot[data-tier="peak"] {
+  color: var(--ub-peak);
+}
+.miniCurveDot[data-tier="valley"] {
+  color: var(--ub-valley);
+}
+
 /* ---------- 价面（设置-计费分区） ---------- */
 .aliasRow {
   display: flex;
@@ -1234,6 +1287,23 @@
 }
 
 /* ---------- 入口座位：popup 的锚点就是它（portal 出去的面板要按它的 rect 定位） ---------- */
+/*
+ * 宽态这一行是「mini 峰谷图 + 计费卡」：图 flex: none 吃死自己的 75px，卡吃掉剩下的。
+ * 侧栏最窄 264px 时留给卡约 175px，去掉内边距还有 ~160px 放「本月 + 今日」两段数字与预算条
+ * —— 再窄就该砍图（或等侧栏放宽），而不是让金额换行。
+ */
+.entryRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+/* 卡从「占满整行」改成「吃掉图之外的部分」：width:100% 在 flex 行里会连图一起挤出去。 */
+.entryRow > .entrySeat {
+  flex: 1 1 auto;
+  width: auto;
+}
 .entrySeat {
   display: flex;
   width: 100%;

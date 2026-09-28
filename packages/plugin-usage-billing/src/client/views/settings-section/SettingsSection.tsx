@@ -264,10 +264,11 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
                     disabled={locked}
                     onChange={writeIncludeSubagents}
                   />
-                  {/* 峰谷时段图只是画法：关掉不影响判档与计价，两个入口的弹窗一起跟着关。 */}
+                  {/* 峰谷时段图只是画法：关掉不影响判档与计价，两个入口的弹窗与侧栏卡左侧的
+                      mini 图一起跟着关。 */}
                   <SwitchRow
                     title="显示峰谷时段图"
-                    desc="在计费弹窗顶部画出今日的峰谷费率曲线；分时价未启用时本来就不会出现。"
+                    desc="在计费弹窗顶部与侧栏入口卡左侧画出今日的峰谷费率曲线；分时价未启用时本来就不会出现。"
                     checked={cfg?.display?.showTierCurve ?? true}
                     disabled={locked}
                     onChange={writeShowTierCurve}

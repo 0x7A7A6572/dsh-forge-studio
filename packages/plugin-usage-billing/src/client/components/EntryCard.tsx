@@ -2,6 +2,10 @@
  * 侧栏入口卡（slot: sidebar.footer.action）—— 两个色块指标（月 / 今）+ 预算叠加条；
  * 收起成 36px rail 时文字与条都藏起来，只留一个预算饼图。
  *
+ * 宽态时左侧还并着 mini 峰谷图（components/TierCurveMini.tsx，75×35）：图是常量宽、
+ * 卡吃剩下的宽度，所以侧栏从 264 拉到 420px 变的是数字那一侧，曲线不会被拉变形。
+ * 图只在宽态画 —— rail 是 36px 的方块，塞不下 75px 的图，而收起态本来就不显示数字。
+ *
  * 版式保留原样（这一条要的是「本月花了多少」），明细在点击后弹出的 popup 里
  * （components/BillingPopover.tsx）。卡上那条是叠加条，与 popup 里那两条不是同一件：
  * 档位只由 `evaluateBudget` 决定（ok / warn / over）。
@@ -14,6 +18,7 @@ import type { BillingScope } from "../core/config.ts";
 import { BillingPopover } from "./BillingPopover.tsx";
 import { BudgetStackBar } from "./BudgetStackBar.tsx";
 import { PieBadge } from "./PieBadge.tsx";
+import { TierCurveMini } from "./TierCurveMini.tsx";
 import styles from "../styles/settings-section.module.css";
 
 export interface EntryCardProps extends EntryDataProps {
@@ -43,88 +48,92 @@ export function EntryCard(props: EntryCardProps): JSX.Element | null {
   // 峰谷时段图是显示偏好（默认开）：曲线数据在 tierDay 里，画不画由开关定。
   const showTierCurve = useShowTierCurve(props.scope);
   if (!visible) return null;
+  // 开关关掉 / 没有分时价形状 / 收起成 rail —— 三者在这里合成一次，组件里不再判第二遍
+  // （与 BillingPopover 里那个 curve 是同一个口径）。
+  const miniProfile = props.wide && showTierCurve ? tierDay : null;
 
   return (
-    <span
-      className={styles.entrySeat + " " + styles.palette}
-      ref={seat.anchorRef}
-    >
-      <button
-        type="button"
-        data-dsh-usage-billing
-        data-dsh-ub-entry
-        data-wide={String(props.wide)}
-        data-dsh-ub-state={load}
-        className={styles.entry}
-        title={failed ? "计费：数据读取失败（点击重试）" : "计费"}
-        aria-label={rest.ariaLabel}
-        aria-expanded={seat.open}
-        onClick={seat.toggle}
-      >
-        {props.wide ? null : (
-          // 收起来（36px）时只留饼图：宽态有文字，不需要再放一个纯装饰的图标。
-          <span
-            className={styles.entryIcon}
-            data-dsh-ub-icon
-            aria-hidden="true"
-          >
-            <PieBadge
-              ratio={budgetBar?.ratio ?? null}
-              level={budgetBar?.level ?? "ok"}
-              size={18}
-            />
-          </span>
-        )}
-        <span className={styles.entryText} data-dsh-ub-entry-text>
-          <span className={styles.entryLine}>
-            <span className={styles.entryAmount} data-dsh-ub-amount>
-              <span
-                className={styles.dot}
-                title="本月已用"
-                data-kind="used"
-                aria-hidden="true"
-              ></span>
-              {`${amountText}`}
-            </span>
-            <span className={styles.entryToday} data-dsh-ub-today>
-              <span
-                className={styles.dot}
-                title="今日已用"
-                data-kind="today"
-                aria-hidden="true"
-              ></span>
-              {`${todayText}`}
-            </span>
-          </span>
-          {budgetBar === null ? null : (
-            // 条在按钮里是纯装饰：它的口径已经在按钮的 aria-label 里说全了，
-            // 单独给它一个 role 只会让屏幕阅读器在按钮内部再念一遍。
-            <span className={styles.entryBudget} aria-hidden="true">
-              <BudgetStackBar
-                level={budgetBar.level}
-                ratio={budgetBar.ratio}
-                spentValue={budgetBar.spentValue}
-                segments={segments}
+    // 色板挂在行上而不是座位上：mini 图在座位（popup 的锚点）之外，它也要 --ub-peak / --ub-valley。
+    <span className={styles.entryRow + " " + styles.palette}>
+      {miniProfile === null ? null : <TierCurveMini profile={miniProfile} />}
+      <span className={styles.entrySeat} ref={seat.anchorRef}>
+        <button
+          type="button"
+          data-dsh-usage-billing
+          data-dsh-ub-entry
+          data-wide={String(props.wide)}
+          data-dsh-ub-state={load}
+          className={styles.entry}
+          title={failed ? "计费：数据读取失败（点击重试）" : "计费"}
+          aria-label={rest.ariaLabel}
+          aria-expanded={seat.open}
+          onClick={seat.toggle}
+        >
+          {props.wide ? null : (
+            // 收起来（36px）时只留饼图：宽态有文字，不需要再放一个纯装饰的图标。
+            <span
+              className={styles.entryIcon}
+              data-dsh-ub-icon
+              aria-hidden="true"
+            >
+              <PieBadge
+                ratio={budgetBar?.ratio ?? null}
+                level={budgetBar?.level ?? "ok"}
+                size={18}
               />
             </span>
           )}
-        </span>
-        {failed ? (
-          <span className={styles.badge} data-dsh-ub-badge data-kind="error">
-            读取失败
+          <span className={styles.entryText} data-dsh-ub-entry-text>
+            <span className={styles.entryLine}>
+              <span className={styles.entryAmount} data-dsh-ub-amount>
+                <span
+                  className={styles.dot}
+                  title="本月已用"
+                  data-kind="used"
+                  aria-hidden="true"
+                ></span>
+                {`${amountText}`}
+              </span>
+              <span className={styles.entryToday} data-dsh-ub-today>
+                <span
+                  className={styles.dot}
+                  title="今日已用"
+                  data-kind="today"
+                  aria-hidden="true"
+                ></span>
+                {`${todayText}`}
+              </span>
+            </span>
+            {budgetBar === null ? null : (
+              // 条在按钮里是纯装饰：它的口径已经在按钮的 aria-label 里说全了，
+              // 单独给它一个 role 只会让屏幕阅读器在按钮内部再念一遍。
+              <span className={styles.entryBudget} aria-hidden="true">
+                <BudgetStackBar
+                  level={budgetBar.level}
+                  ratio={budgetBar.ratio}
+                  spentValue={budgetBar.spentValue}
+                  segments={segments}
+                />
+              </span>
+            )}
           </span>
-        ) : null}
-      </button>
-      <BillingPopover
-        seat={seat}
-        headlineText={headlineText}
-        totalSegments={totalSegments}
-        todaySegments={todaySegments}
-        unpricedText={unpricedText}
-        tierDay={tierDay}
-        showTierCurve={showTierCurve}
-        budget={popoverBudget}
-      />
+          {failed ? (
+            <span className={styles.badge} data-dsh-ub-badge data-kind="error">
+              读取失败
+            </span>
+          ) : null}
+        </button>
+        <BillingPopover
+          seat={seat}
+          headlineText={headlineText}
+          totalSegments={totalSegments}
+          todaySegments={todaySegments}
+          unpricedText={unpricedText}
+          tierDay={tierDay}
+          showTierCurve={showTierCurve}
+          budget={popoverBudget}
+        />
+      </span>
     </span>
   );
 }
