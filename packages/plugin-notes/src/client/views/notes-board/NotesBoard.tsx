@@ -54,6 +54,7 @@ export function NotesBoard(props: NotesBoardProps): JSX.Element {
     openEditor,
     createNote,
     closeEditor,
+    editorRequestCloseRef,
     saveDraft,
     togglePin,
     toggleArchive,
@@ -179,6 +180,8 @@ export function NotesBoard(props: NotesBoardProps): JSX.Element {
           workspaceOptions={workspaces}
           workspaceReady={workspacesReady}
           taskTargets={taskTargets}
+          // 焦点不在编辑器里时板子的兜底 Esc 也要走这道闸（见 useNotesBoard）。
+          requestCloseRef={editorRequestCloseRef}
           onCancel={closeEditor}
           onSave={saveDraft}
         />

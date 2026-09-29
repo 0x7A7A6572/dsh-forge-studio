@@ -13,7 +13,9 @@
  * - 粘贴图片：剪贴板图片文件 → data URL 内联插入正文（守卫在 core/note-paste-guard.ts）；
  * - 保存：编辑既有便签时**停顿约 1 秒自动保存**（不关弹窗、不打断输入），
  *   Ctrl/Cmd+S 立即保存；Ctrl/Cmd+Enter 与「保存」按钮仍是「保存并关闭」；
- * - 快捷键：Esc 关闭弹层或取消，Ctrl/Cmd+K 插入链接，Ctrl/Cmd+S 保存不关闭。
+ * - 关闭（X / 「取消」/ Esc / 点遮罩）：**有改动先问一句**（保存并关闭 / 放弃改动 /
+ *   继续编辑），没改动直接关 —— 新建便签没有库记录，静默关掉就等于白写；
+ * - 快捷键：Esc 关闭弹层或请求关闭，Ctrl/Cmd+K 插入链接，Ctrl/Cmd+S 保存不关闭。
  * 父组件用 key 控制实例重建（新建/每条便签各一个编辑器），初值即草稿内容。
  */
 
@@ -146,6 +148,12 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
     autoSaver,
     markDirty,
     autoSaveHintText,
+    closeConfirmOpen,
+    requestClose,
+    requestEscapeClose,
+    saveAndClose,
+    discardAndClose,
+    keepEditing,
     run,
     closePopup,
     openLinkPopup,
@@ -183,16 +191,10 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
             void save();
           }
         } else if (e.key === "Escape") {
-          if (popup) {
-            // 弹层开启时：Esc 先关弹层，再按一次才取消编辑
-            e.preventDefault();
-            e.stopPropagation();
-            closePopup();
-          } else {
-            e.preventDefault();
-            e.stopPropagation();
-            props.onCancel();
-          }
+          // Esc 的层级：链接 / 表格弹层先收，再按一次才请求关闭（requestEscapeClose 里判定）。
+          e.preventDefault();
+          e.stopPropagation();
+          requestEscapeClose();
         }
       }}
     >
@@ -216,7 +218,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
           type="button"
           title="关闭编辑器"
           aria-label="关闭编辑器"
-          onClick={props.onCancel}
+          onClick={requestClose}
           style={headCloseBtn}
         >
           <X size={15} />
@@ -1051,7 +1053,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
           className={styles.btn}
           style={btnGhost}
           disabled={saving}
-          onClick={props.onCancel}
+          onClick={requestClose}
         >
           取消
         </button>
@@ -1095,6 +1097,27 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
             markDirty();
           }}
           onCancel={() => setScheduleConfirm(undefined)}
+        />
+      )}
+
+      {/* 关闭前的「有改动」确认：便签只有关闸一道 —— 静默丢过一次内容，用户就再也
+          不会相信这里的自动保存了。主按钮是「保存并关闭」（自动聚焦，回车即保存），
+          想丢改动得再明确点一下「放弃改动」。 */}
+      {closeConfirmOpen && (
+        <ConfirmDialog
+          title="便签有改动"
+          description={
+            props.autoSave === true
+              ? "这次改动还没保存。保存后关闭，还是丢掉它？"
+              : "这张便签还没创建。保存后关闭，还是丢掉刚写的内容？"
+          }
+          accent={colorMeta.ring}
+          confirmLabel="保存并关闭"
+          extraLabel="放弃改动"
+          onExtra={discardAndClose}
+          cancelLabel="继续编辑"
+          onCancel={keepEditing}
+          onConfirm={saveAndClose}
         />
       )}
     </div>

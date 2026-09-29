@@ -1750,7 +1750,15 @@ export class MemoryService extends TypertRemoteService {
       }
     }
     for (const entity of payload.entities) await this.entities.put(entity.id, entity)
-    for (const edge of payload.edges) await this.edges.put(edge.id, edge)
+    // 边必须走 edgeKey 落盘：边 id 是 `memory:<id>|about|entity:<id>` 这类逻辑 id，
+    // 直接当 per-record 的路径键会被后端拒掉（"not path-safe"），于是整次导入在写完
+    // 记忆与实体之后炸掉 —— 表现就是「报错了，但记忆进来了、关联全没了」。
+    // 合并口径与上面 records 一致：同 id 只在备份那条更新时覆盖，别用旧备份盖掉库里的新边。
+    for (const edge of payload.edges) {
+      const key = edgeKey(edge.id)
+      const existing = await this.edges.get(key)
+      if (existing === undefined || edge.updatedAt > existing.updatedAt) await this.edges.put(key, edge)
+    }
     await this.syncAutoEdges()
     return { added, merged, removed }
   }

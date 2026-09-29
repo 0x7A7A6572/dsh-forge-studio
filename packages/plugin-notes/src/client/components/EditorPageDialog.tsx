@@ -8,10 +8,18 @@
  * NoteEditor 初值；保存/取消由上层数据控制器提供。
  * 新建/每条便签各一个编辑器实例由 key 保证（编辑器的初值即草稿内容）。
  *
- * 遮罩点击 = 取消，但只认「从遮罩上按下」的那次点击（见 hooks/useBackdropDismiss）：
- * 在卡片里拉选区、把鼠标拖到卡片外松手，浏览器仍会往遮罩上派一次 click，不能据此关闭。
+ * 关闭请求：编辑器自己的入口（X / 「取消」/ Esc）在编辑器内部；点遮罩发生在本组件的
+ * DOM 上，所以由编辑器把它的关闭闸（Esc 那条：先收弹层再进闸）填进 editorCloseRef，
+ * 遮罩点击走同一条路 —— 否则「点外面」会绕过「有改动先问一句」，成了静默丢内容的暗门。
+ * 外层浮层（快捷新建）与板子的兜底 Esc 监听更是在本组件之外，它们拿到的是本组件的关闭闸，
+ * 由 requestCloseRef 交出去：同一条意义、不同一层，别拿它当编辑器的那个 ref 用。
+ *
+ * 遮罩点击还要多判一层「按下位置」（见 hooks/useBackdropDismiss）：在卡片里拉选区、把鼠标
+ * 拖到卡片外松手时，浏览器仍会往遮罩上派一次 click，那不是「点了外面」，不能据此关闭（#3）。
  */
 
+import { useEffect, useRef } from 'react'
+import type { MutableRefObject } from 'react'
 import type { NoteColor, NoteLane, TaskStatus, TaskTargets } from '../../types.ts'
 import { NoteEditor } from './NoteEditor.tsx'
 import type { NoteSaveOptions, NoteTaskDraft } from './NoteEditor.tsx'
@@ -33,6 +41,12 @@ export interface EditorPageDialogProps {
   readonly workspaceReady?: boolean
   /** 任务执行目标目录（模型 / agent 预设）；空目录即只有「宿主默认」可选。 */
   readonly taskTargets?: TaskTargets
+  /**
+   * 关闭请求出口（可选）：本弹窗的关闭闸 —— 有改动先问一句，没改动直接关。
+   * 给挂在更外层的浮层用（快捷新建的 Esc 监听就在编辑器之外），拿到了才走得进闸；
+   * 拿不到（首帧/卸载）时它应当退回自己的直接关。
+   */
+  readonly requestCloseRef?: MutableRefObject<(() => void) | null>
   readonly onCancel: () => void
   readonly onSave: (
     title: string,
@@ -57,8 +71,25 @@ export function EditorPageDialog(props: EditorPageDialogProps): JSX.Element {
   // 当前弹窗纸色：编辑带出便签既有色，新建默认黄；随底部取色器实时更新。
   const { paper, setPaper } = useEditorPageDialog(props.target)
   const paperMeta = noteColorMeta(paper)
-  // 点遮罩关闭：只在「从遮罩上按下」时才算，否则卡片里拉选区拖到外面松手会误关（issue #3）。
-  const backdropDismiss = useBackdropDismiss(props.onCancel)
+  // 编辑器填进来的关闭请求（有改动先确认）。编辑器还没填（首帧/卸载）就直接关。
+  const editorCloseRef = useRef<(() => void) | null>(null)
+  const requestClose = (): void => {
+    const inner = editorCloseRef.current
+    if (inner) inner()
+    else props.onCancel()
+  }
+  // 同一道闸交给外层浮层（快捷新建的 Esc）：每次渲染刷新，卸载时清空。
+  useEffect(() => {
+    const target = props.requestCloseRef
+    if (!target) return
+    target.current = requestClose
+    return () => {
+      target.current = null
+    }
+  })
+  // 点遮罩关闭：走的是同一道闸（有改动先问一句），但只在「从遮罩上按下」时才算 ——
+  // 卡片里拉选区拖到外面松手，浏览器仍会往遮罩派一次 click，那次不算点外面（issue #3）。
+  const backdropDismiss = useBackdropDismiss(requestClose)
   return (
     <div className={styles.overlay} style={overlayStyle} {...backdropDismiss}>
       <div
@@ -84,6 +115,7 @@ export function EditorPageDialog(props: EditorPageDialogProps): JSX.Element {
           taskTargets={props.taskTargets}
           // 编辑既有便签才自动保存：新建态没有库记录（保存即创建），无从自动落盘。
           autoSave={props.target.mode === 'edit'}
+          requestCloseRef={editorCloseRef}
           onColorChange={setPaper}
           onCancel={props.onCancel}
           onSave={props.onSave}
