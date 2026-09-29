@@ -58,7 +58,7 @@ export function ThemePicker(props: ThemePickerProps): JSX.Element {
         className={styles.themeSelect}
         value={value}
         disabled={disabled}
-        aria-label="侧栏入口主题"
+        aria-label="侧栏入口主题（实验）"
         onChange={(event) => { onChange(event.currentTarget.value) }}
       >
         {registered.map((theme: Theme) => (
