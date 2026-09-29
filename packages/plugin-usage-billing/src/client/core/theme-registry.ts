@@ -27,26 +27,26 @@ export interface ThemeRegistryHandle extends ThemeRegistry {
  * `useSyncExternalStore`，而那个 API 要求 getSnapshot 在数据没变时返回同一个引用，
  * 否则每次读都是一个新数组 → 无限重渲染。
  */
-export function createTierShapeRegistry(): ThemeRegistryHandle {
+export function createThemeRegistry(): ThemeRegistryHandle {
   /** id → 主题。同 id 后注册的**顶掉**先注册的：热改同一个主题不必先注销再注册。 */
-  const shapes = new Map<string, Theme>()
+  const themes = new Map<string, Theme>()
   const listeners = new Set<() => void>()
   let snapshot: readonly Theme[] = []
 
   const emit = (): void => {
-    snapshot = [...shapes.values()]
+    snapshot = [...themes.values()]
     for (const listener of listeners) listener()
   }
 
   return {
-    register(shape) {
-      shapes.set(shape.id, shape)
+    register(theme) {
+      themes.set(theme.id, theme)
       emit()
       return () => {
         // 只在「这一格还是我」时删：被同 id 的后注册者顶掉之后，
         // 旧 disposer 不该把新的那份删掉（HMR 下这个顺序是常态）。
-        if (shapes.get(shape.id) !== shape) return
-        shapes.delete(shape.id)
+        if (themes.get(theme.id) !== theme) return
+        themes.delete(theme.id)
         emit()
       }
     },
@@ -56,7 +56,7 @@ export function createTierShapeRegistry(): ThemeRegistryHandle {
       return () => { listeners.delete(listener) }
     },
     dispose() {
-      shapes.clear()
+      themes.clear()
       listeners.clear()
       snapshot = []
     },

@@ -30,15 +30,15 @@ export function useShowTierCurve(scope: BillingScope): boolean {
 }
 
 /**
- * 侧栏选了哪个形状。
+ * 侧栏选了哪个主题。
  *
  * 缺省（旧 host、还没写过设置）回落到内置那条 id。**这里不校验它是否存在** ——
- * 插件被停用 / 卸载是常态，兜底交给 `selectTierShape`（找不到就回落内置），
+ * 主题目录被删 / 改名是常态，兜底交给 `selectTheme`（找不到就回落内置），
  * 两处都判就会有两套口径。
  */
-export function useTierShapeId(scope: BillingScope): string {
+export function useThemeId(scope: BillingScope): string {
   return useSyncExternalStore(
     useCallback((notify: () => void) => scope.subscribe(notify), [scope]),
-    () => scope.getSnapshot().value?.display?.tierShape ?? BUILTIN_THEME_ID,
+    () => scope.getSnapshot().value?.display?.theme ?? BUILTIN_THEME_ID,
   )
 }

@@ -29,11 +29,11 @@ export interface UsageBillingConfig {
     /** 计费弹窗顶部与侧栏入口卡左侧画今日峰谷时段图（首装默认开）。 */
     showTierCurve: boolean
     /**
-     * 侧栏入口卡用哪个形状（形状注册表里的 id）。**字符串而不是枚举**：
-     * 合法取值由已装的形状插件决定，schema 里写死一份枚举就等于把第三方插件挡在门外。
-     * 值找不到时回落到内置那条（`BUILTIN_THEME_ID`），所以脏值不会白屏。
+     * 侧栏入口卡用哪个主题（`themes/usage-billing/` 下的目录名，或内置的 `builtin`）。
+     * **字符串而不是枚举**：合法取值由磁盘上有哪些主题决定，schema 里写死一份枚举
+     * 就等于把用户自己放的主题挡在门外。值找不到时回落到 `BUILTIN_THEME_ID`。
      */
-    tierShape: string
+    theme: string
     includeSubagents: boolean
     /** 旧配置的落点：已无写入口，只在两个开关都缺席时被读侧翻译。 */
     entryPosition: EntryPosition
@@ -51,7 +51,7 @@ export const USAGE_BILLING_CONFIG_BASE: UsageBillingConfig = {
   display: {
     showUnpricedWarning: true, showTierCurve: true, includeSubagents: true,
     entrySidebar: true, entryComposer: false, entryPosition: 'sidebar',
-    tierShape: BUILTIN_THEME_ID,
+    theme: BUILTIN_THEME_ID,
   },
   pricing: { autoRefresh: true, refreshHours: 6 },
   notices: { backfillDismissed: false, budgetNotified: {} },
@@ -74,8 +74,8 @@ export const Config = Schema.object({
   display: Schema.object({
     showUnpricedWarning: Schema.boolean().default(USAGE_BILLING_CONFIG_BASE.display.showUnpricedWarning),
     showTierCurve: Schema.boolean().default(USAGE_BILLING_CONFIG_BASE.display.showTierCurve),
-    // 形状 id 是开放取值（第三方形状插件的 id），所以只能是 string，不能是 union/const。
-    tierShape: Schema.string().default(USAGE_BILLING_CONFIG_BASE.display.tierShape),
+    // 主题 id 是开放取值（磁盘上有哪些主题目录），所以只能是 string，不能是 union/const。
+    theme: Schema.string().default(USAGE_BILLING_CONFIG_BASE.display.theme),
     includeSubagents: Schema.boolean().default(USAGE_BILLING_CONFIG_BASE.display.includeSubagents),
     // 首装默认 = 只开侧栏（旧落点 base 的 sidebar）；旧配置的 entryPosition 仍在下方，
     // 但校验后字段一律补齐，所以旧值只对「还没写开关的旧 host」有翻译价值。

@@ -1,15 +1,15 @@
 /**
- * 把取数结果装配成形状要的那份数据 —— 契约与宿主内部数据结构之间的**唯一**转换点。
+ * 把取数结果装配成主题要的那份数据 —— 契约与宿主内部数据结构之间的**唯一**转换点。
  *
- * 之所以单独成一个纯函数（不塞进 hook）：它是「宿主的数据 → 形状的数据」这条边界，
- * 边界要能被单测直接钉住（见 scripts/entry-shape.spec.ts），而不是只能靠渲染一个组件去观察。
+ * 之所以单独成一个纯函数（不塞进 hook）：它是「宿主的数据 → 主题的数据」这条边界，
+ * 边界要能被单测直接钉住（见 scripts/entry-theme.spec.ts），而不是只能靠渲染一个组件去观察。
  */
 import type { TierEntryBand, Theme, ThemeProps } from '../../shape/index.ts'
 import { BUILTIN_THEME_ID, toneAtMinute } from '../../shape/index.ts'
 import type { TierDayProfile } from '../../pricing/tiers.ts'
 
 /** 契约里的进度条要的宿主数据（`BudgetBarView` 满足它）。 */
-export interface ShapeBudget {
+export interface ThemeBudget {
   readonly level: 'ok' | 'warn' | 'over'
   readonly ratio: number
   /** 预算上限，已格式化。 */
@@ -19,12 +19,12 @@ export interface ShapeBudget {
 }
 
 /** 契约里的进度分段要的宿主数据（`PopoverSegment` 满足它）。 */
-export interface ShapeSegment {
+export interface ThemeSegment {
   readonly key: string
   readonly value: number | null
 }
 
-/** 绘制顺序 = 叠放顺序（后画的在上），与内置形状的注释一致。 */
+/** 绘制顺序 = 叠放顺序（后画的在上），与内置主题的注释一致。 */
 const BAND_ORDER = ['session', 'workspace', 'today'] as const
 
 /** 一段占「已用段」的比例；未知 / 非正按 0（不画这一段），超过已用则整段。 */
@@ -33,8 +33,8 @@ function bandRatio(value: number | null | undefined, spent: number): number {
   return Math.min(Math.max(value, 0) / spent, 1)
 }
 
-/** 装配形状数据的全部输入（都由 useEntryCard 给出，除了 minute 与 showTier）。 */
-export interface EntryShapeInput {
+/** 装配主题数据的全部输入（都由 useEntryCard 给出，除了 minute 与 showTier）。 */
+export interface EntryThemeInput {
   readonly tierDay: TierDayProfile | null
   /** 宿主那唯一一个时钟读到的「此刻」。 */
   readonly minute: number
@@ -44,17 +44,17 @@ export interface EntryShapeInput {
   readonly failed: boolean
   readonly unpricedText: string | null
   readonly showTier: boolean
-  readonly budget: ShapeBudget | null
-  readonly segments: readonly ShapeSegment[]
+  readonly budget: ThemeBudget | null
+  readonly segments: readonly ThemeSegment[]
 }
 
 /**
  * 组装一份 {@link ThemeProps}。
  *
  * `data` 为 `null` 时（没有分时价口径：规则未生效 / 旧宿主不发这个字段）**不许编一个**
- * —— 写死一个工作日模板等于撒谎，形状宁可只画金额与进度。
+ * —— 写死一个工作日模板等于撒谎，主题宁可只画金额与进度。
  */
-export function tierShapePropsOf(input: EntryShapeInput): ThemeProps {
+export function themePropsOf(input: EntryThemeInput): ThemeProps {
   const { tierDay, minute, budget } = input
   const data = tierDay === null
     ? null
@@ -99,10 +99,10 @@ export function tierShapePropsOf(input: EntryShapeInput): ThemeProps {
 }
 
 /**
- * 挑出要渲染的形状：设置里选的 id 在注册表里找不到时（插件被停用 / 卸载 / 名字改了）
+ * 挑出要渲染的主题：设置里选的 id 在注册表里找不到时（主题目录被删 / 改名）
  * 回落到内置那条。注册表里永远有内置，所以**不会白屏**。
  */
-export function selectTierShape(shapes: readonly Theme[], id: string): Theme | undefined {
-  return shapes.find((shape) => shape.id === id)
-    ?? shapes.find((shape) => shape.id === BUILTIN_THEME_ID)
+export function selectTheme(themes: readonly Theme[], id: string): Theme | undefined {
+  return themes.find((theme) => theme.id === id)
+    ?? themes.find((theme) => theme.id === BUILTIN_THEME_ID)
 }

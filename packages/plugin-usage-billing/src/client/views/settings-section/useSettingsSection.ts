@@ -27,7 +27,7 @@ import { NON_FINITE_PLACEHOLDER } from '../../core/format.ts'
 import { overviewKey } from '../../core/query.ts'
 import type { QueryCache } from '../../core/query.ts'
 import type { Revalidator } from '../../core/revalidate.ts'
-import type { ThemeRegistry } from '../../core/tier-shape-registry.ts'
+import type { ThemeRegistry } from '../../core/theme-registry.ts'
 import { useRevision } from '../../hooks/useRevision.ts'
 import { evaluateBudget } from '../../../budget.ts'
 import type { EntryKey } from '../../../types.ts'
@@ -41,7 +41,7 @@ export interface SettingsSectionProps {
   /** 自动重取心跳（按 fiber 创建，见 core/revalidate.ts）。 */
   revalidate: Revalidator
   /** 侧栏入口的主题集合：设置页用它列出已装的主题（选择器直接订阅它）。 */
-  shapes: ThemeRegistry
+  themes: ThemeRegistry
 }
 
 /** 页签 id：用量模块常驻在页签**之上**，所以这里只剩配置类的内容。 */

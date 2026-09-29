@@ -48,8 +48,8 @@ import type { BillingConfigLike } from './core/config.ts'
 import { EntryCard } from './components/EntryCard.tsx'
 import { ComposerEntry } from './components/ComposerEntry.tsx'
 import { SettingsSection } from './views/settings-section/SettingsSection.tsx'
-import { createTierShapeRegistry } from './core/tier-shape-registry.ts'
-import { builtinEntryShape } from './shapes/builtin-entry.tsx'
+import { createThemeRegistry } from './core/theme-registry.ts'
+import { builtinEntryTheme } from './themes/builtin-entry.tsx'
 import { USAGE_BILLING_NAMESPACE } from '../types.ts'
 
 export const name = '@zzerx/dsh-plugin-usage-billing/client'
@@ -112,8 +112,8 @@ export function apply(ctx: Context): void {
 
       // 主题集合：宿主内部集合，用户主题由 `/usage-billing/themes` 装载。
       // 内置那张先进去（它在 bundle 里，不依赖路由），用户主题随后由装载器补。
-      const themes = createTierShapeRegistry()
-      themes.register(builtinEntryShape)
+      const themes = createThemeRegistry()
+      themes.register(builtinEntryTheme)
       d.effect(() => () => { themes.dispose() })
 
       // 两个入口槽都常驻注册，谁渲染由设置里的两个开关决定（core/config.ts#entryFlagsOf）；
@@ -123,7 +123,7 @@ export function apply(ctx: Context): void {
         id: ENTRY_SLOT_ID,
         order: 10,
         label: ENTRY_LABEL,
-        inject: () => ({ billing: usageBillingOf(d), store, scope, query, revalidate, shapes: themes }),
+        inject: () => ({ billing: usageBillingOf(d), store, scope, query, revalidate, themes }),
       }, EntryCard))
 
       // 输入框下方的状态区（与 DSH 自己的会话统计胶囊同一行）：scope 用于读开关，
@@ -141,7 +141,7 @@ export function apply(ctx: Context): void {
         id: SETTINGS_SECTION_ID,
         order: 40,
         label: ENTRY_LABEL,
-        inject: () => ({ billing: usageBillingOf(d), scope, store, query, revalidate, shapes: themes }),
+        inject: () => ({ billing: usageBillingOf(d), scope, store, query, revalidate, themes }),
       }, SettingsSection))
     })
   })

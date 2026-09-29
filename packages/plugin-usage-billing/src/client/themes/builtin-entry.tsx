@@ -1,11 +1,11 @@
 /**
- * 内置入口形状：默认那张侧栏计费卡 —— 左侧 12h 峰谷环（一天两圈），右侧（本月 / 今日 + 预算叠加条）。
+ * 内置入口主题：默认那张侧栏计费卡 —— 左侧 12h 峰谷环（一天两圈），右侧（本月 / 今日 + 预算叠加条）。
  *
  * 它是**注册表里的第一条**（id = `BUILTIN_THEME_ID`），与用户主题走的是同一个接口：
  * 拿一份 {@link ThemeProps}，自己画完。这个文件就是「怎么写一个主题」的参考实现：
  *
  * - **不 import 任何宿主 hook**。连时钟都是宿主注入的（`data.minute`）——
- *   形状自己开时钟就会「一处走一处停」，「现在」不唯一。
+ *   主题自己开时钟就会「一处走一处停」，「现在」不唯一。
  * - **不自己判档**。契约说得很清楚：`toneAtMinute` 只有一份实现，宿主已经判好了，
  *   直接读 `data.tone` 就行。这里只做一次**口径翻译**（判档说钱 peak/offPeak，画面说高低 peak/valley）。
  * - **只用契约给的数据**：宿主内部还有 `TierDayProfile` / `segments` / 原始金额，这个文件一概不碰。
@@ -28,7 +28,7 @@ function visualTone(tone: TierShapeData['tone']): TierTone {
  * 预算叠加条。契约给的是**比例**（整条的 `ratio`、已用段内三段的 `bands`），
  * 所以这里只做摆放：本项目打底、今日锚右端、会话锚左端（叠放关系是这张卡的口径）。
  */
-function ShapeStackBar(props: { progress: TierEntryProgress }): JSX.Element {
+function ThemeStackBar(props: { progress: TierEntryProgress }): JSX.Element {
   const { progress } = props
   return (
     <span className={styles.bar} data-dsh-ub-stack-bar>
@@ -54,11 +54,11 @@ function ShapeStackBar(props: { progress: TierEntryProgress }): JSX.Element {
   )
 }
 
-export function BuiltinEntryShape(props: ThemeProps): JSX.Element {
+export function BuiltinEntryTheme(props: ThemeProps): JSX.Element {
   const { data, view } = props
   const progress = view.progress
   return (
-    <span className={styles.card} data-wide={String(view.wide)} data-dsh-ub-shape={BUILTIN_THEME_ID}>
+    <span className={styles.card} data-wide={String(view.wide)} data-dsh-ub-theme={BUILTIN_THEME_ID}>
       {/* 峰谷环只在宽态画：rail 是 36px 的方块，塞不下 75px 的图。showTier 是用户偏好，可选遵从。 */}
       {view.wide && view.showTier && data !== null ? (
         <span className={styles.ring}>
@@ -85,7 +85,7 @@ export function BuiltinEntryShape(props: ThemeProps): JSX.Element {
         {progress === null ? null : (
           // 条是纯装饰：口径已经在按钮的 aria-label 里说全了（宿主负责那个标签）。
           <span className={styles.budget} aria-hidden="true">
-            <ShapeStackBar progress={progress} />
+            <ThemeStackBar progress={progress} />
           </span>
         )}
       </span>
@@ -99,8 +99,8 @@ export function BuiltinEntryShape(props: ThemeProps): JSX.Element {
 }
 
 /** 注册进宿主集合的那一条。 */
-export const builtinEntryShape: Theme = {
+export const builtinEntryTheme: Theme = {
   id: BUILTIN_THEME_ID,
   label: '内置：峰谷环 + 金额',
-  component: BuiltinEntryShape,
+  component: BuiltinEntryTheme,
 }
