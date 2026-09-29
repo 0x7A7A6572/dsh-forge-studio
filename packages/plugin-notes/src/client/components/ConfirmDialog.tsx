@@ -9,11 +9,12 @@
  * 视口，且仍在同一层叠上下文里，能把编辑器整层压住。
  *
  * 键盘与鼠标：Esc = 取消（捕获阶段吃掉，避免连带把外层编辑器弹窗也关掉）；
- * 点遮罩 = 取消；主按钮自动聚焦，回车即确认。
+ * 点遮罩 = 取消（只认从遮罩上按下的那次点击，卡片里拉选区拖到外面松手不算）；主按钮自动聚焦，回车即确认。
  */
 
 import { useEffect } from 'react'
 import { t } from '../core/theme-tokens.ts'
+import { useBackdropDismiss } from '../hooks/useBackdropDismiss.ts'
 import styles from '../styles/notes-board.module.css'
 
 export interface ConfirmDialogProps {
@@ -35,6 +36,8 @@ export interface ConfirmDialogProps {
 
 export function ConfirmDialog(props: ConfirmDialogProps): JSX.Element {
   const { onCancel } = props
+  // 点遮罩 = 取消，但只认「从遮罩上按下」的点击（卡片里拉选区拖到外面松手不算）。
+  const backdropDismiss = useBackdropDismiss(onCancel)
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
       if (event.key !== 'Escape') return
@@ -47,7 +50,7 @@ export function ConfirmDialog(props: ConfirmDialogProps): JSX.Element {
   }, [onCancel])
 
   return (
-    <div className={styles.overlay} style={overlayStyle} onClick={onCancel}>
+    <div className={styles.overlay} style={overlayStyle} {...backdropDismiss}>
       <div
         className={styles.dialog}
         style={{ ...cardStyle, borderLeft: `4px solid ${props.accent ?? t.borderL2}` }}

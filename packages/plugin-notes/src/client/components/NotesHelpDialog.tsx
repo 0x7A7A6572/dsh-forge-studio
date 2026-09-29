@@ -11,6 +11,7 @@ import { HELP_MARKDOWN } from '../core/help-content.ts';
 import { pluginVersion } from '../../version.ts';
 import { NoteMarkdownView } from './NotePreview.tsx';
 import { X } from 'lucide-react';
+import { useBackdropDismiss } from '../hooks/useBackdropDismiss.ts';
 // esbuild dataurl loader 内联的 data URI（见 src/client/assets.d.ts），运行时无外部请求。
 import noteFlowBanner from '../assets/note-flow-banner.webp';
 import styles from '../styles/notes-board.module.css';
@@ -20,8 +21,10 @@ export interface NotesHelpDialogProps {
 }
 
 export function NotesHelpDialog(props: NotesHelpDialogProps): JSX.Element {
+  // 点遮罩 = 关闭，但只认「从遮罩上按下」的点击（卡片里拉选区拖到外面松手不算）。
+  const backdropDismiss = useBackdropDismiss(props.onClose);
   return (
-    <div className={styles.overlay} style={overlayStyle} onClick={props.onClose}>
+    <div className={styles.overlay} style={overlayStyle} {...backdropDismiss}>
       <div
         className={styles.dialog}
         style={cardStyle}

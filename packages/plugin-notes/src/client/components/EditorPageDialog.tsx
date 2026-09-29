@@ -7,6 +7,9 @@
  * 由 notes-nav 的 editing 目标驱动渲染，target（create | edit+note）翻译成
  * NoteEditor 初值；保存/取消由上层数据控制器提供。
  * 新建/每条便签各一个编辑器实例由 key 保证（编辑器的初值即草稿内容）。
+ *
+ * 遮罩点击 = 取消，但只认「从遮罩上按下」的那次点击（见 hooks/useBackdropDismiss）：
+ * 在卡片里拉选区、把鼠标拖到卡片外松手，浏览器仍会往遮罩上派一次 click，不能据此关闭。
  */
 
 import type { NoteColor, NoteLane, TaskStatus, TaskTargets } from '../../types.ts'
@@ -16,6 +19,7 @@ import { noteColorMeta } from '../core/note-colors.ts'
 import type { EditorTarget } from '../core/notes-nav.ts'
 import { t } from '../core/theme-tokens.ts'
 import { useEditorPageDialog } from '../hooks/useEditorPageDialog.ts'
+import { useBackdropDismiss } from '../hooks/useBackdropDismiss.ts'
 import styles from '../styles/notes-board.module.css'
 
 export interface EditorPageDialogProps {
@@ -53,8 +57,10 @@ export function EditorPageDialog(props: EditorPageDialogProps): JSX.Element {
   // 当前弹窗纸色：编辑带出便签既有色，新建默认黄；随底部取色器实时更新。
   const { paper, setPaper } = useEditorPageDialog(props.target)
   const paperMeta = noteColorMeta(paper)
+  // 点遮罩关闭：只在「从遮罩上按下」时才算，否则卡片里拉选区拖到外面松手会误关（issue #3）。
+  const backdropDismiss = useBackdropDismiss(props.onCancel)
   return (
-    <div className={styles.overlay} style={overlayStyle} onClick={props.onCancel}>
+    <div className={styles.overlay} style={overlayStyle} {...backdropDismiss}>
       <div
         className={styles.dialog}
         style={cardStyle(paperMeta.paper)}
