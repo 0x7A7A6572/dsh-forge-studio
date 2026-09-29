@@ -316,10 +316,13 @@ export function clientBundle(id, options = {}) {
  * host 产物（lib/index.js，ESM/node）。
  * @param {object} [options]
  * @param {string} [options.entry] - 入口，缺省 src/index.ts。
+ * @param {string} [options.name] - 产物基名（`lib/<name>.js`），缺省 index。
+ * @param {string[]} [options.external] - 额外留成 import 的包；缺省只外部化 @deepseek-ai/*。
  */
 export function hostBundle(options = {}) {
+  const extra = options.external ?? []
   return {
-    entry: { index: options.entry ?? 'src/index.ts' },
+    entry: { [options.name ?? 'index']: options.entry ?? 'src/index.ts' },
     outDir: 'lib',
     format: ['esm'],
     platform: 'node',
@@ -331,8 +334,8 @@ export function hostBundle(options = {}) {
     clean: false,
     // host 半跑在真实安装环境里：@deepseek-ai/* 全部留成 import。
     deps: {
-      neverBundle: specifier => specifier.startsWith('@deepseek-ai/'),
-      alwaysBundle: specifier => !specifier.startsWith('@deepseek-ai/'),
+      neverBundle: specifier => specifier.startsWith('@deepseek-ai/') || extra.includes(specifier),
+      alwaysBundle: specifier => !specifier.startsWith('@deepseek-ai/') && !extra.includes(specifier),
     },
   }
 }

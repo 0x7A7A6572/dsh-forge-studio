@@ -1,0 +1,152 @@
+/*
+ * 内置入口形状：默认那张侧栏计费卡。**它是形状之一，不是宿主的一部分** ——
+ * 所以盒子的全部观感（内边距、圆角、悬浮底色、进度条几何）都在这里。
+ *
+ * 宿主那边只剩一个**没有视觉**的外壳：撑满侧栏给的空间（含 36px rail 的退化尺寸）、
+ * 可点击、是 popup 的锚点。换句话说，这个文件被删掉，换一个形状注册进来，
+ * 卡片照样成立 —— 这正是「插件中的插件」要的口径。
+ *
+ * 换形状不需要改这里：注册一个新的就行（设置页有给 AI 的提示词）。
+ */
+
+.card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  padding: 6px 8px;
+  border-radius: 8px;
+  color: var(--dsw-alias-label-secondary);
+}
+/*
+ * hover 挂在形状自己身上，而不是宿主的外壳：壳是 100% 撑满的，指针在壳里就等于在卡上。
+ * 这样「悬浮态长什么样」也是形状的自由，宿主不必为它留一个类名。
+ */
+.card:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 收起成 36px rail：图和字都藏起来，只留一个饼图。退化尺寸由形状自己处理（契约里有 wide）。 */
+.card[data-wide='false'] {
+  justify-content: center;
+  padding: 0;
+}
+.card[data-wide='false'] .text,
+.card[data-wide='false'] .ring {
+  display: none;
+}
+
+/* 峰谷环：常量宽 75px —— 图自己定死尺寸，卡吃掉侧栏剩下的宽度。 */
+.ring {
+  flex: none;
+  display: inline-flex;
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* 两个指标都是「小色块 + 金额」：色块与叠加条同源（--ub-* 由宿主的外壳提供）。 */
+.amount {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+  font-variant-numeric: tabular-nums;
+}
+.today {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.dot[data-kind='used'] {
+  background: var(--ub-used);
+}
+.dot[data-kind='today'] {
+  background: var(--ub-today);
+}
+
+/*
+ * 叠加预算条：整条 = 预算，已用段 = 本月已用，段内三段 = 会话 / 本项目 / 今日
+ * （长度都在**已用段里**量，不是拿整条预算当尺子 —— 契约给的 bands 就是这个口径）。
+ * 已用段用半透明中性色压深一档，深色 / 浅色主题下都成立；档位色只在 warn / over 时接管。
+ */
+.budget {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.bar {
+  flex: 1 1 auto;
+  position: relative;
+  min-width: 24px;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--dsw-alias-bg-layer-3);
+}
+.barUsed {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--ub-used) 55%, transparent);
+}
+.barUsed[data-level='warn'] {
+  background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 24%, transparent);
+}
+.barUsed[data-level='over'] {
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 28%, transparent);
+}
+/* 三段是**叠放**的（不是并排）：本项目打底、今日从右端压上、当前会话贴在最左侧。 */
+/* min-width：已用段里几块钱的一段可能不到 1px，但「有」和「没有」必须看得出。 */
+.barPiece {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 2px;
+}
+.barPiece[data-kind='session'] {
+  background: var(--ub-session);
+}
+.barPiece[data-kind='workspace'] {
+  background: var(--ub-workspace);
+}
+.barPiece[data-kind='today'] {
+  background: var(--ub-today);
+}
+
+.icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  color: var(--dsw-alias-brand-primary);
+}
+.badge {
+  flex: none;
+  font-size: 10px;
+  color: var(--dsw-alias-state-error-primary);
+}

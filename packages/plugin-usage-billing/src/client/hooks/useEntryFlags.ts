@@ -5,6 +5,7 @@
  * 反注册再注册会把 already-injected 的槽位状态搅乱（宿主侧 slots 的注入是声明式的）。
  */
 import { useCallback, useSyncExternalStore } from 'react'
+import { BUILTIN_THEME_ID } from '../../shape/index.ts'
 import type { BillingScope } from '../core/config.ts'
 import { entryFlagsOf } from '../core/config.ts'
 import type { EntryKey } from '../../types.ts'
@@ -25,5 +26,19 @@ export function useShowTierCurve(scope: BillingScope): boolean {
   return useSyncExternalStore(
     useCallback((notify: () => void) => scope.subscribe(notify), [scope]),
     () => scope.getSnapshot().value?.display?.showTierCurve !== false,
+  )
+}
+
+/**
+ * 侧栏选了哪个形状。
+ *
+ * 缺省（旧 host、还没写过设置）回落到内置那条 id。**这里不校验它是否存在** ——
+ * 插件被停用 / 卸载是常态，兜底交给 `selectTierShape`（找不到就回落内置），
+ * 两处都判就会有两套口径。
+ */
+export function useTierShapeId(scope: BillingScope): string {
+  return useSyncExternalStore(
+    useCallback((notify: () => void) => scope.subscribe(notify), [scope]),
+    () => scope.getSnapshot().value?.display?.tierShape ?? BUILTIN_THEME_ID,
   )
 }

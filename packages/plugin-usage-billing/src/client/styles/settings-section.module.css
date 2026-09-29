@@ -894,57 +894,6 @@
 
 /* 预算条的多色段：三段颜色只定义一次（色标与段共用同一个变量）。 */
 /*
- * 三层嵌套：整条（本月总量 / 预算）→ 已用段（本月已用）→ 三条指标。
- * 已用段用半透明中性色压深一档，深色/浅色主题下都成立；开档位色只在超支时变红。
- */
-.segBar {
-  position: relative;
-  height: 6px;
-  overflow: hidden;
-  border-radius: 3px;
-  background: var(--dsw-alias-bg-layer-3);
-}
-.segUsed {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  overflow: hidden;
-  background: color-mix(in srgb, var(--ub-used) 55%, transparent);
-}
-.segUsed[data-level="warn"] {
-  background: color-mix(
-    in srgb,
-    var(--dsw-alias-state-warn-primary) 24%,
-    transparent
-  );
-}
-.segUsed[data-level="over"] {
-  background: color-mix(
-    in srgb,
-    var(--dsw-alias-state-error-primary) 28%,
-    transparent
-  );
-}
-/* 三段是**叠放**的（不是并排）：本项目打底、今日从右端压上、当前会话贴在最左侧。 */
-/* min-width：已用段里几块钱的一段可能不到 1px，但「有」和「没有」必须看得出。 */
-.segPiece {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  min-width: 2px;
-}
-.segPiece[data-kind="session"] {
-  background: var(--ub-session);
-}
-.segPiece[data-kind="workspace"] {
-  background: var(--ub-workspace);
-}
-.segPiece[data-kind="today"] {
-  background: var(--ub-today);
-}
-
-/*
  * 今日消耗分布条：整条 = 今日合计（所有项目），三段**并排铺满**（不是叠放）——
  * 这里没有预算，左端是几何起点，右端就是「今天到现在」。
  * 颜色与入口卡那三段共用同一组变量：同一个颜色在哪儿都指同一样东西。
@@ -1053,123 +1002,229 @@
   font-size: 11.5px;
 }
 
-/* ---------- 今日费率带（M 型峰谷曲线） ---------- */
+/* ---------- 今日费率带（落差光场 · 柔光双轨） ---------- */
 /*
- * 长方形带状图：横轴 0→24 点（规则时区的自然日），但**不是等分轴** —— 峰窗之外的深夜
- * 被压扁（见 core/tier-curve.ts 的注意力轴），整条线才是 `_M_` 而不是 `___M____`；
- * 纵轴只有峰 / 谷两级，过渡坡是圆肩（宽度按窗口长度取比例），所以整条线是一道平滑的 `m`。
- * 带子上**不写任何常驻文字**（刻度 / 标题 / 时刻都不画，文字挂 hover tooltip），
- * 曲线用 preserveAspectRatio="none" 拉到带子宽度，所以描边交给 vector-effect 恒定
- * （否则会被横向拉粗），指针位置一律 HTML（SVG 里的文字会被拉扁）。
- * 高度在 TSX 里由 CURVE_PLOT_HEIGHT 给（viewBox 与容器 1:1，指针的 y 才能直接写 px）。
+ * 两根轨道：上轨 = 高峰价、下轨 = 空闲价。24 小时里哪一段亮在哪条轨上就是哪一档，
+ * 「半价」是两轨之间那片**落差光场**的浓淡（块的划分与渐变停点见 core/tier-curve.ts）。
+ * 档位刻意**不画成实心条**：每段四层同心描边叠出一团两头淡、中间亮的柔光 ——
+ * 实心圆头描边是进度条的画法，两根轨会长成同一种东西，这正是这次改版要拆掉的东西。
+ * 横轴是**等分的时间轴**（1 单位 = 1 分钟），所以块的起止就是时刻本身，没有任何映射表。
+ * 带子上**不写任何常驻文字**（刻度 / 标题 / 时刻都不画，文字挂 hover tooltip）。
+ * 画布用 preserveAspectRatio="none" 横拉到带子宽度，于是有两条硬约束：
+ * - 描边必须交给 vector-effect: non-scaling-stroke。240px 的带子里摊着 1440 单位，
+ *   横向缩放是 1/6 —— 不恒定的话竖向的落差光柱会被压成 0.3px，等于没画；
+ * - 一切要「圆」的东西都不能画在 SVG 里，会被横向压扁。所以「现在」那颗点仍然是
+ *   HTML（.tierRailDot），横向用百分比定位。
+ * 反过来，**渐变不受这两条约束**：它长在 userSpaceOnUse 的用户坐标里，跟着几何一起被压 1/6，
+ * 所以它的横坐标仍然是时刻 —— 渐变与块的划分是同一把尺子，不会分叉。
+ * 高度在 TSX 里由 RAIL_PLOT_HEIGHT 给（viewBox 与容器 1:1，点的 top 才能直接写 px）。
  * 宽度自己拿 --ub-curve-width（由 .popover 给）：它是弹窗宽度的**因**，不是果。
  */
-.tierCurve {
+.tierRail {
   width: var(--ub-curve-width);
   max-width: 100%;
   margin-bottom: 10px;
 }
-.tierCurvePlot {
+.tierRailPlot {
   position: relative;
 }
-.tierCurveCanvas {
+.tierRailCanvas {
   display: block;
   width: 100%;
 }
-/* 色带的每一站：偏移由 JS 按窗口算出（见 core/tier-curve.ts），颜色只在这里定。 */
-.tierCurveStop[data-tone="peak"] {
-  stop-color: var(--ub-peak);
+/*
+ * 光场的上下沿各一根常驻发丝：不管此刻在哪一档，两级价都得有个不依赖时段的位置参照。
+ *
+ * 0.26 / 0.24 这个值只在**芯是实心**时站得住：没亮的轨合成 alpha 0.40，而亮着的那段
+ * 因为芯不透明而到 1.0，对比 2.5×，边界一眼能认。
+ * （试过把档位改成四层同心描边的柔光：那时亮的那段中心只有 0.73，对比掉到 1.8×，
+ * 边界反而糊了 —— 发丝的透明度必须跟「亮的那一侧有多亮」一起定，不能单独看。）
+ */
+.tierRailTrack {
+  stroke: var(--ub-valley);
+  stroke-opacity: 0.24;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
 }
-.tierCurveStop[data-tone="valley"] {
-  stop-color: var(--ub-valley);
+.tierRailTrack[data-tone="peak"] {
+  stroke: var(--ub-peak);
+  stroke-opacity: 0.26;
 }
-/* 面积只是衬底：读数靠曲线本身，所以压到两成并向下淡出（mask 在 TSX 里）。 */
-.tierCurveArea {
-  opacity: 0.2;
+/*
+ * 发丝亮芯：一层弥散 + 一根芯。芯是实心档位色（沿一天的浓淡由 TSX 的全天渐变给），
+ * 弥散只是让它别像一根贴上去的塑料条 —— 读数靠芯，弥散只负责"它是光"。
+ * 宽度必须交给 vector-effect：240px 的带子里摊着 1440 单位，不恒定的话 8px 那层会被压成 1.3px。
+ */
+.tierRailCore {
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
 }
-.tierCurveLine {
-  stroke-width: 1.5;
-  stroke-linejoin: round;
+.tierRailCore[data-layer="0"][data-tone="peak"] {
+  stroke-width: 8;
+  stroke-opacity: 0.18;
 }
-/* 竖线给「现在」一个可读的横向位置：曲线没有网格，没有它就只能靠曲线本身目测。 */
-.tierCurveGuide {
+.tierRailCore[data-layer="0"][data-tone="valley"] {
+  stroke-width: 7;
+  stroke-opacity: 0.14;
+}
+/* 芯：不写 stroke-opacity —— 不透明才是读数，浓淡已经在渐变的停点里了。 */
+.tierRailCore[data-layer="1"][data-tone="peak"] {
+  stroke-width: 2;
+}
+.tierRailCore[data-layer="1"][data-tone="valley"] {
+  stroke-width: 1.8;
+}
+/* 落差光柱：这一刻离另一档有多远。在峰上实（你正付全价）、在谷里虚 —— 虚实与档位同源。 */
+.tierRailBeam {
+  vector-effect: non-scaling-stroke;
+}
+.tierRailBeam[data-layer="0"] {
+  stroke-width: 7;
+  stroke-opacity: 0.06;
+}
+.tierRailBeam[data-layer="1"] {
+  stroke-width: 3;
+  stroke-opacity: 0.15;
+}
+.tierRailBeam[data-layer="2"] {
+  stroke-width: 1.4;
+}
+.tierRailBeam[data-tone="peak"] {
+  stroke: var(--ub-peak);
+}
+.tierRailBeam[data-tone="valley"] {
+  stroke: var(--ub-valley);
+}
+/* 最窄那层才是读数：峰上实、谷里虚（虚线）。上面两层只是弥散。 */
+.tierRailBeam[data-layer="2"][data-tone="peak"] {
+  stroke-opacity: 0.85;
+}
+.tierRailBeam[data-layer="2"][data-tone="valley"] {
+  stroke-opacity: 0.4;
+  stroke-dasharray: 2 2.5;
+}
+/*
+ * 指针：定位值定的是圆心（13px 的一半），所以 left/top 就是轨上的那个点。
+ *
+ * 它是一个**光点**，不是「色块 + 描边」：两层同色径向渐变叠出实心核 + 一圈晕，
+ * 整颗点没有任何一圈硬边。原来那圈底色描边（`box-shadow: 0 0 0 2px` 面板色）
+ * 在深色主题下是一道黑边、浅色主题下是一道白边，压在同色的芯上像贴了张标签 ——
+ * 而点本来就不靠描边分辨：它比芯粗一倍，外面还有一圈晕。
+ */
+.tierRailDot {
   position: absolute;
-  top: 0;
-  width: 1px;
-  background: currentColor;
-  opacity: 0.3;
-}
-/* 指针：定位值定的是圆心（8px 的负半宽），所以 left/top 就是曲线上的那个点。 */
-.tierCurveDot {
-  position: absolute;
-  width: 8px;
-  height: 8px;
-  margin: -4px 0 0 -4px;
+  width: 13px;
+  height: 13px;
+  margin: -6.5px 0 0 -6.5px;
   border-radius: 50%;
-  background: currentColor;
-  /* 与曲线交界处断开一圈：亮/暗主题下都压得住。色取面板的实色底（.popover 给的变量），
-     不是那块半透明的菜单色 —— 否则环自己也半透明。 */
-  box-shadow: 0 0 0 2px var(--ub-panel-base);
+  /* 上面一层是核（实到 14%、46% 处收干净），下面一层是晕（实到 30%、78% 处收干净）。
+     两层都取 currentColor，所以主题换色与档位换色都不用动这里。 */
+  background:
+    radial-gradient(circle closest-side, currentColor 0 14%, transparent 46%),
+    radial-gradient(circle closest-side, currentColor 0 30%, transparent 78%);
 }
-.tierCurveDot[data-tier="peak"],
-.tierCurveGuide[data-tier="peak"] {
+.tierRailDot[data-tier="peak"] {
   color: var(--ub-peak);
 }
-.tierCurveDot[data-tier="valley"],
-.tierCurveGuide[data-tier="valley"] {
+.tierRailDot[data-tier="valley"] {
   color: var(--ub-valley);
 }
 
-/* ---------- mini 峰谷图（侧栏计费入口卡的左侧） ---------- */
+/* ---------- mini 费率时钟（侧栏计费入口卡的左侧） ---------- */
 /*
- * 形状问 core/tier-curve.ts 的 miniCurve 要（完全平滑的 M：峰窗不做平顶、只在窗口中点取一次顶，
- * 谷分两级深浅 —— 午间的鞍浅、夜线的低点深；角落就是全天最低点，夜线从那里往上爬，
- * 既不上翘也不是平底）。色带与面积两个类与大图直接复用，这里只换画布：**死尺寸 75×35 CSS px** ——
- * 用户按屏幕上的像素报的是 150×70，他的机器 200% 缩放，写进 CSS 就是一半。
- * 宽度是常量、不跟容器走：侧栏在 264–420px 之间变宽（宿主 ui-layout 的 clamp），
- * 曲线不该跟着被拉长 —— 那边变的是金额那一侧。
+ * 一天两圈：一圈 12 小时，12:00 与 00:00 都在正上方、顺时针，峰窗是琥珀弧，环上那一点就是此刻
+ * （几何见 core/tier-curve.ts 的 tierRing）。**弧只画此刻那半天** —— 12 小时盘上同一条弧
+ * 对应两个时刻，只画半天才不会说谎；换半天时弧整片换位。
+ * 画布是**死尺寸 75×35 CSS px**：侧栏在 264–420px 之间变宽（宿主 ui-layout 的 clamp），
+ * 时钟不该跟着被拉长 —— 那边变的是金额那一侧。
  *
- * 纵向不是 1:1（viewBox 高 30 单位 → 35px），所以：
- * - 指针的 left/top 一律百分比（TSX 里算），px 会按 30 单位偏掉；
- * - 描边交给 vector-effect（preserveAspectRatio="none" 会把它横向拉粗），
- *   粗细与大图同为 1.5（试过 2.5，75px 宽看着太笨，去掉了）。
- * 指针只有一颗点、**没有竖线**（6px 点 + 1px 环，大图是 8 + 2）：竖线在 75px 宽的图里
- * 比曲线本身还抢眼；点要比大图那颗相对更重，1/3 宽的画布里才一眼看得见「现在」在哪。
- * 环不能省 —— 点压在同色的线上，没有那圈底色等于没画；
- * 底色取 --ub-panel-base 的**兜底**：那个变量只有弹窗给（这里在侧栏里，没有那个祖先），
- * 兜底再落到侧栏自己的填充色 --dsw-specific-sidebar-fill。
+ * 与大图的关系（原先写的是「三处硬差异」，其中两处已经不成立）：
+ * - **viewBox 与容器 1:1**（都是 75×35）：不需要 preserveAspectRatio="none"、也不会被拉扁，
+ *   描边粗细就是这里写的数，不用 vector-effect；
+ * - **两处共用同一对颜色与同一个点语法**：那颗珠子与大图那颗点是**同一个配方**
+ *   （两层同色径向渐变叠出实心核 + 一圈晕）。原先这里画在 SVG 里、走「实心块 +
+ *   一圈面板色描边」，是另一套语法，两处的点因此长得不一样；现在统一成 CSS 粒子。
+ *   点叠在 HTML 层上，1:1 的画布让 left/top 就等于画布坐标。
+ *
+ * **环上没有刻度，是一根普通粗环**：底环与峰弧共用同一条 stroke-width（下面那条并列选择器），
+ * 合起来是一根环的两段颜色，不是「细底环 + 更粗的弧」。
+ * 曾经铺过 24 格刻度，理由是「光秃的圆环无法验证对错」；那件事现在归断言：
+ * 12:00 / 00:00 精准在正上方、06:00 / 18:00 精准在正下方（scripts/billing-tier-curve.spec.ts）。
  */
-.miniCurve {
+.miniRing {
   flex: none;
   display: block;
   width: 75px;
   height: 35px;
 }
-.miniCurvePlot {
+.miniRingPlot {
   position: relative;
   display: block;
   width: 100%;
   height: 100%;
 }
-.miniCurveCanvas {
+.miniRingCanvas {
   display: block;
   width: 100%;
   height: 100%;
 }
-.miniCurveDot {
-  position: absolute;
-  width: 6px;
-  height: 6px;
-  /* 定位值定的是圆心（6px 的负半宽），所以 left/top 就是曲线上的那个点。 */
-  margin: -3px 0 0 -3px;
-  border-radius: 50%;
-  background: currentColor;
-  box-shadow: 0 0 0 1px var(--ub-panel-base, var(--dsw-specific-sidebar-fill, var(--dsw-alias-bg-base)));
+/*
+ * 环的粗细只写一次：底色环与琥珀弧**是同一根环的两段颜色**，不是「细底环 + 更粗的弧」。
+ * 分两处写就一定会漂（改一处忘一处，环上立刻多出一道台阶）。
+ * 12.5 的半径配 5 的环宽 → 内半径 10、外半径 15，在 35px 高的画布里上下各留 2.5。
+ */
+.miniRingTrack,
+.miniRingArc {
+  fill: none;
+  stroke-width: 5;
 }
-.miniCurveDot[data-tier="peak"] {
+/* 底色环 = 空闲价，一整天常驻。 */
+.miniRingTrack {
+  stroke: var(--ub-valley);
+  stroke-opacity: 0.26;
+}
+/* 琥珀弧 = 高峰窗。圆头收尾，四小时那段看着才不像是被切掉的。 */
+.miniRingArc {
+  stroke: var(--ub-peak);
+  stroke-linecap: round;
+}
+/*
+ * 「现在」那颗珠子：**坐在环上**，不是把环挖个洞再塞进去。
+ * 两层同色径向渐变叠出实心核 + 一圈晕（与大图那颗点同一个配方，见 .tierRailDot），
+ * 边缘会化开，整颗点没有一圈硬边。
+ *
+ * 盒子 9px（半盒 4.5）、可见半径 4.5 × 86% = **3.87** —— 比环的半宽 2.5 胖出 1.37，
+ * 所以它读起来是环上的一颗珠子。旧版是「实心块 2.9 + 一圈面板色描边到 3.7」：
+ * 描边比环还宽，切向会把环**挖断**（实测 310°–342° 两处断口），
+ * 而实心块 2.9 又比环还窄，连珠子的形都没有 —— 既没有形，又留下两道口子。
+ * 这个 3.87 就是 core/tier-curve.ts 的 RING_DOT_REACH，spec 会读回这条规则核对（两处不许漂）。
+ */
+.miniRingDot {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  background:
+    radial-gradient(circle closest-side, currentColor 0 42%, transparent 62%),
+    radial-gradient(circle closest-side, currentColor 0 30%, transparent 86%);
+}
+.miniRingDot[data-tier="peak"] {
   color: var(--ub-peak);
 }
-.miniCurveDot[data-tier="valley"] {
+.miniRingDot[data-tier="valley"] {
+  color: var(--ub-valley);
+}
+/* 右侧那两个字：与点同一套档位色。 */
+.miniRingText {
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  fill: currentColor;
+}
+.miniRingText[data-tier="peak"] {
+  color: var(--ub-peak);
+}
+.miniRingText[data-tier="valley"] {
   color: var(--ub-valley);
 }
 
@@ -1206,108 +1261,126 @@
   margin-left: 6px;
 }
 
-/* ---------- 侧栏入口卡 ---------- */
-.entry {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 6px 8px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  cursor: pointer;
-  text-align: left;
-  font: inherit;
-}
-.entry:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
-}
-.entry[data-wide="false"] {
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  padding: 0;
-}
-.entry[data-wide="false"] .entryText {
-  display: none;
-}
-.entryText {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  flex: 1 1 auto;
-  min-width: 0;
-}
-.entryLine {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-/* 两个指标都是「小色块 + 单字标签 + 金额」：色块与叠加条同源（.palette 提供变量）。 */
-.entryAmount {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--dsw-alias-label-primary);
-  font-variant-numeric: tabular-nums;
-}
-.entryToday {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 11px;
-  color: var(--dsw-alias-label-tertiary);
-  font-variant-numeric: tabular-nums;
-}
-.entryBudget {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-.entryBudget .segBar {
-  flex: 1 1 auto;
-  min-width: 24px;
-}
-.entryIcon {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  color: var(--dsw-alias-brand-primary);
-}
-.badge {
-  flex: none;
-  font-size: 10px;
-  color: var(--dsw-alias-state-error-primary);
-}
-
-/* ---------- 入口座位：popup 的锚点就是它（portal 出去的面板要按它的 rect 定位） ---------- */
+/* ---------- 侧栏入口：宿主只留外壳，画什么由形状决定 ---------- */
 /*
- * 宽态这一行是「mini 峰谷图 + 计费卡」：图 flex: none 吃死自己的 75px，卡吃掉剩下的。
- * 侧栏最窄 264px 时留给卡约 175px，去掉内边距还有 ~160px 放「本月 + 今日」两段数字与预算条
- * —— 再窄就该砍图（或等侧栏放宽），而不是让金额换行。
+ * 外壳**不带任何视觉**：没有内边距、没有圆角、没有悬浮底色 —— 那些是形状的自由
+ * （内置形状那份在 shapes/builtin-entry.module.css）。这里只保证三件事：
+ * 撑满侧栏给的空间、是 popup 的锚点、整块可点击。
  */
 .entryRow {
   display: flex;
   align-items: center;
-  gap: 8px;
   width: 100%;
   min-width: 0;
 }
-/* 卡从「占满整行」改成「吃掉图之外的部分」：width:100% 在 flex 行里会连图一起挤出去。 */
-.entryRow > .entrySeat {
-  flex: 1 1 auto;
-  width: auto;
+.entryShell {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
-.entrySeat {
+/*
+ * rail 的尺寸是**宿主的布局约束**（侧栏此时只给 36px），所以这个退化尺寸留在壳上，
+ * 不交给形状 —— 形状只需要处理「这么窄该藏什么」。
+ */
+.entryShell[data-wide='false'] {
+  width: 36px;
+  height: 36px;
+}
+/* 焦点环也留在宿主：形状换来换去，键盘可达性不该跟着变。 */
+.entryShell:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 2px;
+}
+
+/* ---------- 侧栏入口形状选择（设置页） ---------- */
+.shapeRow {
   display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+/* 原生 select：形状数量由用户装了几个插件决定，取值是开放的，做不成枚举式分段控件。 */
+.shapeSelect {
   width: 100%;
-  min-width: 0;
+  max-width: 280px;
+  padding: 6px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.shapeSelect:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.shapeActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.shapeError {
+  font-size: 12px;
+  color: var(--dsw-alias-state-error-primary);
+}
+/* 「想要的样子」输入框：形状是审美，这里写的是一句人话，不是 JSON。 */
+.shapeIdea {
+  width: 100%;
+  min-height: 64px;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+  resize: vertical;
+}
+
+/* ---------- 提示词弹层 ---------- */
+.modalWide {
+  width: 90vw;
+  max-width: 760px;
+}
+.modalScroll {
+  max-height: 70vh;
+  overflow: auto;
+}
+.modalBody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+/* 要复制走的那段长文字：等宽 + 可选 + 保留换行，长文也不撑破弹层。 */
+.prompt {
+  margin: 0;
+  padding: 10px 12px;
+  max-height: 44vh;
+  overflow: auto;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+.itemActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .pillSeat {
   display: inline-flex;

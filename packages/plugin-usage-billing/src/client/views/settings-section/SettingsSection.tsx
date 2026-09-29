@@ -28,6 +28,7 @@ import { StatCard } from "../../components/StatCard.tsx";
 import { SwitchRow } from "../../components/SwitchRow.tsx";
 import { AliasPanel } from "./components/AliasPanel.tsx";
 import { PricingPanel } from "./components/PricingPanel.tsx";
+import { ShapePicker } from "./components/ShapePicker.tsx";
 import { useAliasPanel } from "./useAliasPanel.ts";
 import { usePricingPanel } from "./usePricingPanel.ts";
 import { SETTINGS_TABS, useSettingsSection } from "./useSettingsSection.ts";
@@ -273,6 +274,8 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
                     disabled={locked}
                     onChange={writeShowTierCurve}
                   />
+                  {/* 形状选择：侧栏那一整块由形状插件画（不是只有峰谷图），这里选渲染哪一个。 */}
+                  <ShapePicker scope={props.scope} shapes={props.shapes} disabled={locked} />
 
                   <div className={styles.settingsEntry}>
                     <div className={styles.row}>

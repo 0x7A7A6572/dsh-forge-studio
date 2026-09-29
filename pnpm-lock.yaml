@@ -394,6 +394,9 @@ importers:
 
   packages/plugin-usage-billing:
     dependencies:
+      esbuild:
+        specifier: ^0.28.2
+        version: 0.28.2
       tyme4ts:
         specifier: ^1.5.2
         version: 1.5.2
@@ -429,6 +432,9 @@ importers:
         specifier: 0.1.7-alpha.2
         version: 0.1.7-alpha.2(@deepseek-ai/cordis@4.0.4)
       '@deepseek-ai/dsh-client-ui-slots':
+        specifier: 0.1.7-alpha.2
+        version: 0.1.7-alpha.2(@deepseek-ai/cordis@4.0.4)
+      '@deepseek-ai/dsh-host-webserver':
         specifier: 0.1.7-alpha.2
         version: 0.1.7-alpha.2(@deepseek-ai/cordis@4.0.4)
       '@deepseek-ai/dsh-llm':

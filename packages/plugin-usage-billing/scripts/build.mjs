@@ -2,8 +2,8 @@
  * plugin-usage-billing 构建脚本：
  * 1. 清空 lib —— 已删除的源码不得留旧产物。
  * 2. tsc —— 产出 lib/types/**（host 与 client 的 .d.ts，rootDir=src）。
- * 3. tsdown —— 按 tsdown.config.ts 出 host 入口 lib/index.js 与闭包工厂产物
- *    lib/client.js（window.__ModuleLoader__.load({ id, factory })）。
+ * 3. tsdown —— 按 tsdown.config.ts 出 host 入口 `lib/index.js`、主题契约 `lib/shape.js`
+ *    与闭包工厂产物 `lib/client.js`（window.__ModuleLoader__.load({ id, factory })）。
  *    平台模块表外部化、CSS Modules 编译与 <style> 注入、动态 import 内联，
  *    都在仓库根 scripts/tsdown.client.mjs 里（移植自官方客户端构建预设）。
  */
@@ -28,4 +28,4 @@ function run(bin, args) {
 run('npx', ['tsc', '-p', join(root, 'tsconfig.json')])
 run('npx', ['tsdown'])
 
-console.log('[usage-billing] built lib/index.js + lib/client.js + lib/types')
+console.log('[usage-billing] built lib/index.js + lib/shape.js + lib/client.js + lib/types')

@@ -17,6 +17,8 @@ export interface BillingConfigLike {
     showUnpricedWarning: boolean
     /** 峰谷时段图开关；缺席（旧 host / 还没写过）按**默认开**处理。 */
     showTierCurve?: boolean
+    /** 侧栏入口用哪个形状；缺席（旧 host / 还没写过）回落到内置那条。 */
+    tierShape?: string
     includeSubagents: boolean
     /** 旧配置的落点与两个开关都可缺席（首次写入前 / 旧 host 落的配置）。 */
     entryPosition?: EntryPosition
