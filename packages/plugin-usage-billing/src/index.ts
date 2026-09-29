@@ -1,7 +1,7 @@
 /**
  * @zzerx/dsh-plugin-usage-billing —— host 入口。
  * 打开 usage_billing 域 → 提供 ctx.usageBilling 服务 → 注册设置命名空间 →
- * 打 base 价表快照 → 起后台刷新与预热聚合。
+ * 打 base 价表快照 → 起后台刷新与预热聚合 → 挂主题路由。
  *
  * storageDomain 未装配时整体降级（不抛），与 plugin-daily-log 的容错姿态一致。
  */
@@ -14,6 +14,9 @@ import { installUsageBillingSettings, configureUsageBillingSettingsPage, type Co
 import type { SessionSource } from './aggregate.ts'
 import { BUILTIN_CATALOG, DEFAULT_USD_TO_CNY } from './pricing/catalog.ts'
 import { fetchPricingFromNetwork } from './pricing/fetch.ts'
+import { createThemeTranspiler } from './themes/transpile.ts'
+import { installThemesRoute } from './themes/route.ts'
+import { resolveThemesRoot } from './themes/discover.ts'
 
 export const name = '@zzerx/dsh-plugin-usage-billing'
 export const inject = ['storageDomain']
@@ -51,6 +54,17 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   ctx.effect(() => () => { void domain.close() })
 
   const settings = installUsageBillingSettings(ctx, config)
+  // 主题路由：把 $DSH_HOME/themes/usage-billing/ 下的主题下发给浏览器。
+  // webServer 是可选服务（非 web 形态的宿主没有它）—— 缺了就不挂，计费照常。
+  // **不放进顶层 `inject`**：那会让插件激活依赖 WebServer；用 `ctx.inject(['webServer'], …)`
+  // 让挂载对激活顺序不敏感（服务后到也会补挂）。详见 route.ts 里 installThemesRoute 的注释。
+  // 转译器**只建一个**、活在插件实例的生命周期里：它的缓存挂在实例上，
+  // 每次请求（甚至每次构建 manifest）新建一个就等于没有缓存。
+  const disposeThemes = installThemesRoute(ctx, {
+    root: resolveThemesRoot(),
+    transpiler: createThemeTranspiler(),
+  })
+  ctx.effect(() => () => { disposeThemes() })
   // 本插件自带设置页面（settings.section），关掉宿主按 schema 自建页面的策略。
   configureUsageBillingSettingsPage(ctx)
   /**
