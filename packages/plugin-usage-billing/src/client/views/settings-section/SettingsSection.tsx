@@ -275,7 +275,12 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
                     onChange={writeShowTierCurve}
                   />
                   {/* 主题选择：侧栏那一整块由主题画（不是只有峰谷图），这里选渲染哪一个。 */}
-                  <ThemePicker scope={props.scope} themes={props.themes} disabled={locked} />
+                  <ThemePicker
+                    scope={props.scope}
+                    themes={props.themes}
+                    failures={props.failures}
+                    disabled={locked}
+                  />
 
                   <div className={styles.settingsEntry}>
                     <div className={styles.row}>

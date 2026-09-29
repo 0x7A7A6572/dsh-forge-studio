@@ -49,6 +49,8 @@ import { EntryCard } from './components/EntryCard.tsx'
 import { ComposerEntry } from './components/ComposerEntry.tsx'
 import { SettingsSection } from './views/settings-section/SettingsSection.tsx'
 import { createThemeRegistry } from './core/theme-registry.ts'
+import { createThemeFailureStore } from './core/themes/failures.ts'
+import { installThemeLoader } from './hooks/theme-runtime.ts'
 import { builtinEntryTheme } from './themes/builtin-entry.tsx'
 import { USAGE_BILLING_NAMESPACE } from '../types.ts'
 
@@ -110,11 +112,13 @@ export function apply(ctx: Context): void {
       }
       d.effect(() => { syncIncludeSubagents(); return scope.subscribe(syncIncludeSubagents) })
 
-      // 主题集合：宿主内部集合，用户主题由 `/usage-billing/themes` 装载。
-      // 内置那张先进去（它在 bundle 里，不依赖路由），用户主题随后由装载器补。
+      // 主题集合：内置那张先进去 —— 它在 bundle 里、不依赖路由，所以侧栏卡任何时候都有得画。
+      // 用户主题随后由装载器按 manifest 补进来；同 id 时后者顶替前者。
       const themes = createThemeRegistry()
       themes.register(builtinEntryTheme)
-      d.effect(() => () => { themes.dispose() })
+      const failures = createThemeFailureStore()
+      const disposeThemes = installThemeLoader({ registry: themes, failures })
+      d.effect(() => () => { disposeThemes(); failures.dispose(); themes.dispose() })
 
       // 两个入口槽都常驻注册，谁渲染由设置里的两个开关决定（core/config.ts#entryFlagsOf）；
       // 槽位 id 分属两个槽，不复用同一个 —— 同一 id 在两个槽里语义会打架。
@@ -141,7 +145,7 @@ export function apply(ctx: Context): void {
         id: SETTINGS_SECTION_ID,
         order: 40,
         label: ENTRY_LABEL,
-        inject: () => ({ billing: usageBillingOf(d), scope, store, query, revalidate, themes }),
+        inject: () => ({ billing: usageBillingOf(d), scope, store, query, revalidate, themes, failures }),
       }, SettingsSection))
     })
   })

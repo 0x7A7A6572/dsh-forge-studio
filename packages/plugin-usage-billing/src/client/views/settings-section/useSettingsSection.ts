@@ -28,6 +28,7 @@ import { overviewKey } from '../../core/query.ts'
 import type { QueryCache } from '../../core/query.ts'
 import type { Revalidator } from '../../core/revalidate.ts'
 import type { ThemeRegistry } from '../../core/theme-registry.ts'
+import type { ThemeFailureStore } from '../../core/themes/failures.ts'
 import { useRevision } from '../../hooks/useRevision.ts'
 import { evaluateBudget } from '../../../budget.ts'
 import type { EntryKey } from '../../../types.ts'
@@ -40,8 +41,10 @@ export interface SettingsSectionProps {
   query: QueryCache
   /** 自动重取心跳（按 fiber 创建，见 core/revalidate.ts）。 */
   revalidate: Revalidator
-  /** 侧栏入口的主题集合：设置页用它列出已装的主题（选择器直接订阅它）。 */
+  /** 侧栏入口的主题集合：设置页用它列出可用主题（主题选择器直接订阅它）。 */
   themes: ThemeRegistry
+  /** 主题装载失败列表（扫到了但转译不过去的主题）。 */
+  failures: ThemeFailureStore
 }
 
 /** 页签 id：用量模块常驻在页签**之上**，所以这里只剩配置类的内容。 */

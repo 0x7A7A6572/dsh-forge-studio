@@ -1,20 +1,21 @@
 /**
  * 侧栏入口主题的选择器。
  *
- * 只有一件事：在已注册的主题里选一个，写进 `display.theme`。
+ * 三件事：
+ * - 在**当前可用**的主题里选一个，写进 `display.theme`；
+ * - 把**装载失败**的主题列出来 —— 用户放了个文件却没生效，这里是唯一会说话的地方；
+ * - 「画成什么样」的提示词交给 `ThemePromptPanel`。
  *
- * 几个刻意的取舍：
- * - **下拉而不是候选卡片**：主题数量由用户放了几个主题目录决定（可能 1 个、可能 8 个），
- *   卡片列表会随主题变长而失控，下拉不会。
- * - **选项来自注册表实时订阅**（`useSyncExternalStore` 那个主题集合），不是设置里的枚举：
- *   主题目录增删之后列表自动跟着变，不需要重开设置页。
- * - **`value` 要对齐「实际渲染的是哪一个」**：设置里留着某个已不存在的主题 id 时，
- *   渲染侧已经回落到内置，下拉也必须显示内置 —— 否则用户看到的是"选了 X"，画的是内置。
+ * 选项来自主题集合的实时订阅，不是设置里的枚举：磁盘上加了主题、刷新页面之后，
+ * 下拉自动跟着变。
  */
 import { useCallback, useSyncExternalStore } from 'react'
 import { BUILTIN_THEME_ID } from '../../../../shape/index.ts'
+import type { Theme } from '../../../../shape/index.ts'
 import type { ThemeRegistry } from '../../../core/theme-registry.ts'
+import type { ThemeFailureStore } from '../../../core/themes/failures.ts'
 import type { BillingScope } from '../../../core/config.ts'
+import { useThemeFailures } from '../../../hooks/useThemeFailures.ts'
 import { ThemePromptPanel } from './ThemePromptPanel.tsx'
 import styles from '../../../styles/settings-section.module.css'
 
@@ -22,18 +23,21 @@ export interface ThemePickerProps {
   scope: BillingScope
   /** 主题集合（`apply` 注入进来的那一张）。 */
   themes: ThemeRegistry
+  /** 装载失败列表，只读展示。 */
+  failures: ThemeFailureStore
   /** 设置不可写时禁用（与其它控件同一个 locked 口径）。 */
   disabled: boolean
 }
 
 export function ThemePicker(props: ThemePickerProps): JSX.Element {
-  const { scope, themes, disabled } = props
+  const { scope, themes, failures, disabled } = props
   const registered = useSyncExternalStore(themes.subscribe, themes.list)
+  const broken = useThemeFailures(failures)
   const stored = useSyncExternalStore(
     useCallback((notify: () => void) => scope.subscribe(notify), [scope]),
     () => scope.getSnapshot().value?.display?.theme ?? BUILTIN_THEME_ID,
   )
-  // 存的 id 不在册（主题被删 / 目录改名）时，渲染侧已经回落到内置，这里跟着对齐。
+  // 存的 id 不在册（主题被删了 / 名字改了）时，渲染侧已经回落到内置，这里跟着对齐。
   const value = registered.some((theme) => theme.id === stored) ? stored : BUILTIN_THEME_ID
   const onChange = useCallback((id: string) => {
     // 整段 display 一起写（与其它开关同姿态）：schema 会用 base 补齐没写的字段。
@@ -45,8 +49,9 @@ export function ThemePicker(props: ThemePickerProps): JSX.Element {
       <div className={styles.rowCopy}>
         <span className={styles.rowTitle}>侧栏入口主题</span>
         <p className={styles.rowDesc}>
-          侧栏计费入口那一整块（峰谷、金额、今日、预算条）由「主题」画。
-          这里列出已装的主题，选一个渲染；选中的主题被删掉或改名时会自动回到内置那条。
+          侧栏计费入口那一整块（峰谷、金额、今日、预算条）由「主题」画。主题是
+          <code>$DSH_HOME/themes/usage-billing/&lt;id&gt;/index.tsx</code> 里的一个文件，
+          放进去刷新页面就会出现；选中项消失时自动回到内置。
         </p>
       </div>
       <select
@@ -56,11 +61,19 @@ export function ThemePicker(props: ThemePickerProps): JSX.Element {
         aria-label="侧栏入口主题"
         onChange={(event) => { onChange(event.currentTarget.value) }}
       >
-        {registered.map((theme) => (
+        {registered.map((theme: Theme) => (
           <option key={theme.id} value={theme.id}>{theme.label}</option>
         ))}
       </select>
-      {/* 「画成什么样」交给别的 AI 写：这里只负责把契约讲清楚、把话递出去。 */}
+      {broken.length === 0 ? null : (
+        <ul className={styles.themeFailures}>
+          {broken.map((failure) => (
+            <li key={failure.id}>
+              <code>{failure.id}</code>：{failure.reason}
+            </li>
+          ))}
+        </ul>
+      )}
       <ThemePromptPanel />
     </div>
   )
