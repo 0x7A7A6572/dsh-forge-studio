@@ -80,8 +80,10 @@ describe('client bundle CSS Modules', () => {
       output => {
         expect(output).toContain('data-plugin-css')
         const css = injectedCss(output)
-        // 哈希是 base64url 字母表，可能含 -；写成 \w+ 会随临时目录随机偶发红。
-        expect(css).toMatch(/\.\w[\w-]*_root\{color:red\}/)
+        // 哈希走 base64url：可能含 -（写成 \w+ 会随临时目录随机偶发红），
+        // 也可能**以数字开头** —— CSS 标识符不许数字打头，lightningcss 于是转义成
+        // `.\34 OrTa_root` 这种，`.` 后面跟的是反斜杠而不是 \w，所以这一段也得容下。
+        expect(css).toMatch(/\.(?:\\[0-9a-f]{1,6} ?|[\w-])[\w-]*_root\{color:red\}/i)
         expect(css).toContain('.ProseMirror{outline:none}')
         expect(classMap(output).root).toMatch(/_root$/)
         expect(classMap(output).ProseMirror).toBeUndefined()

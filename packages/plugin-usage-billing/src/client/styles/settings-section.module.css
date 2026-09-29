@@ -14,6 +14,10 @@
  * 版式目标：与宿主设置面板同一套语言 —— 分区不套描边卡片，靠 0.5px 细线分节；
  * 控件与宿主原语（Input / Button / Pill）同高同圆角；分段选择是细描边 + 选中项浅底，不是胶囊。
  *
+ * 等级一共四级，每一级各有一个**专属装置**，不靠字号微差区分（字号只差 1px 时，人眼读到的是同款）：
+ *   页面 18/600 · 区域 13/600（用量＝全页唯一的表面，见 .zone）· 分区 13/600 + 0.5px 分节线（.card）
+ *   组 12/600 辅助色 + 缩进与左竖线（.groupTitle / .groupBody）· 行与字段 13/500 主色（.rowTitle / .fieldLabel）
+ *
  * 注入由构建预设的 CSS 插件在 factory 执行时插 <style data-plugin>，插件不再有手动 injector。
  */
 
@@ -84,6 +88,10 @@
   min-width: 0;
   border-bottom: 0.5px solid var(--dsw-alias-border-l2);
 }
+/* 区域之间要拉开比分区之间（12px）更大的距离：换的是「这件事的性质」，不是换一项设置。 */
+.zone + .tabs {
+  margin-top: 8px;
+}
 .tab {
   position: relative;
   border: 0;
@@ -142,6 +150,10 @@
 }
 
 /* ---------- 分区（宿主设置页的「小标题 + 细分隔线」，不套描边卡片） ---------- */
+/*
+ * 分区一律平铺：全页唯一的表面留给「用量」区域（见 .zone）—— 表面给到多个块就不再是信号。
+ * 分区之间靠下面那条 `.card + .card` 分节；它只认相邻兄弟，所以中间别夹一层容器。
+ */
 .card {
   display: flex;
   flex-direction: column;
@@ -216,10 +228,12 @@
   gap: 4px;
   min-width: 0;
 }
-/* 行标题只标注一个开关，比分区小标题（13/600）轻一档，不与它抢层级。 */
+/* 行标题是这一页真正被读的字：分区标题（13/600）比它重，组标题（12/600 辅助色）比它轻。
+   上一版这里是 14/500 —— 比分区标题还大一号，而辅助色又没进来，层级是倒的。 */
 .rowTitle {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
+  line-height: 1.5;
 }
 .rowDesc {
   margin: 0;
@@ -877,18 +891,65 @@
   min-width: 0;
 }
 
-.usageView {
-  background: var(--dsw-alias-bg-layer-3);
-  border-radius: 8px;
-  padding: 8px;
-}
-
-.settingsEntry {
+/* ---------- 设置页的两级「块」：区域（.zone）与组（.group*） ---------- */
+/*
+ * 区域是这一页里性质不同的几大块（数据 / 设置 / 口径说明），组是分区内部的一个小集合
+ * （如「计费入口位置」下辖两个开关）。两者都由**装置**坐实，不由字号：
+ *
+ * - 区域「用量」＝全页唯一的表面（宿主「内置插件」页的卡同款：bg-layer-3 + r14 + 0.5px l2）。
+ *   它画的是数据而不是设置，所以只有它值得一张卡。上一版把表面只给了 .usageView
+ *   （头在表面外、身子在表面里），而 .settingsEntry 又各自有一层同样的底色 ——
+ *   表面一旦散给多个块就不再是信号，「哪儿算一块」变成随机。
+ * - 组＝缩进 + 2px 左竖线，把身子挂在标题下面；组标题只是标签（12/600 辅助色）。
+ */
+.zone {
   display: flex;
   flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px 16px 16px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 14px;
   background: var(--dsw-alias-bg-layer-3);
-  border-radius: 8px;
-  padding: 8px;
+}
+
+/* 表面已经在外层，这里只管排布：三张视图各带分节线，不再叠第二层底色与内边距。 */
+.usageView {
+  min-width: 0;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.groupHead {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.groupTitle {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary);
+}
+.groupDesc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--dsw-alias-label-tertiary);
+}
+/* 组体：竖线落在缩进 8 处，文字落在缩进 20 处（与分组标题的左沿对齐）。 */
+.groupBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  margin-left: 8px;
+  padding-left: 12px;
+  border-left: 2px solid var(--dsw-alias-border-l3);
 }
 
 

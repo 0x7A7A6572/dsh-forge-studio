@@ -1,6 +1,6 @@
 # dsh-forge-studio 目录与命名约定
 
-> 已采纳。本文只管「东西该放哪、文件该叫什么」；代码风格与静态检查在根目录：`.editorconfig`（格式基线）+ `.oxlintrc.json`（oxlint，规则逐条点名）。
+> 「东西该放哪、文件该叫什么」；代码风格与静态检查在根目录：`.editorconfig`（格式基线）+ `.oxlintrc.json`（oxlint，规则逐条点名）。
 >
 > 构建已从 esbuild 换成 **tsdown**（共享预设 `scripts/tsdown.client.mjs`，移植自官方 `packages/client/tsdown.client.ts`，CSS 走 lightningcss）。仓库原有的 1147 个测试已全部移除，本文里的测试约定**暂时不适用**，等测试回归再启用。
 >

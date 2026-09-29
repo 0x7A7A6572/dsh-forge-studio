@@ -4,8 +4,10 @@
  * 其他配置（账本状态 / 手工别名）。计费口径说明段常驻在最下面，不随页签走。
  *
  * 版式跟着宿主设置页走：标题 18/600 + 引言 → 平铺分区（13/600 小标题，分区之间一条
- * 0.5px 分隔线，不给每块套描边 + 底色）——描边卡片是插件自己的语言，摆在宿主的设置面板里
- * 就是「格格不入」的那一半。开关一律用 primitives 的 Switch 原语，几档选一个的用本包的
+ * 0.5px 分隔线）。**表面只给一处**：用量区域（它画的是数据，不是设置）—— 描边卡片是插件
+ * 自己的语言，给每个分区都套一层就是「格格不入」；只给这一块，它才成为一个信号。
+ * 分区内部的组（「计费入口位置」）靠缩进 + 左竖线归拢，组标题只做标签（12/600 辅助色）。
+ * 开关一律用 primitives 的 Switch 原语，几档选一个的用本包的
  * SegmentedControl；页签用宿主「内置插件」页那条下划线页签（不是等宽胶囊轨道）。
  *
  * 长内容折起来：概览的「最近活跃度 / 分模型消耗」默认收起（状态在 useSettingsSection 里，
@@ -152,50 +154,53 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
         />
       )}
 
-      {/* 常驻主区：用量模块。只有卡头（开关管的是它下面那三张视图），三张视图由这里切换 ——
-          所以它不归任何页签，翻配置时也能看着数。 */}
-      <Card
-        title="用量"
-        extra={
-          <SegmentedControl
-            label="用量视图"
-            value={view}
-            options={USAGE_VIEWS}
-            onChange={setView}
-          />
-        }
-      />
-      <div className={styles.usageView}>
-        {view === "overview" ? (
-          <TabOverview
-            billing={props.billing}
-            store={props.store}
-            scope={props.scope}
-            query={props.query}
-            revalidate={props.revalidate}
-            activityOpen={activityOpen}
-            modelsOpen={modelsOpen}
-            onToggleActivity={toggleActivity}
-            onToggleModels={toggleModels}
-          />
-        ) : null}
-        {view === "trend" ? (
-          <TabTrend
-            billing={props.billing}
-            store={props.store}
-            query={props.query}
-            revalidate={props.revalidate}
-          />
-        ) : null}
-        {view === "detail" ? (
-          <TabDetail
-            billing={props.billing}
-            store={props.store}
-            query={props.query}
-            revalidate={props.revalidate}
-          />
-        ) : null}
-      </div>
+      {/* 常驻主区：用量模块。这一整块是**全页唯一的表面**（它画的是数据，不是设置），所以卡头
+          必须包在表面里 —— 头在表面外、身子在表面里，那块看着就是两个东西拼的。
+          三张视图由卡头右侧的分段控件切换，所以它不归任何页签，翻配置时也能看着数。 */}
+      <section className={styles.zone}>
+        <div className={styles.cardHead}>
+          <span className={styles.cardTitle}>用量</span>
+          <div className={styles.cardActions}>
+            <SegmentedControl
+              label="用量视图"
+              value={view}
+              options={USAGE_VIEWS}
+              onChange={setView}
+            />
+          </div>
+        </div>
+        <div className={styles.usageView}>
+          {view === "overview" ? (
+            <TabOverview
+              billing={props.billing}
+              store={props.store}
+              scope={props.scope}
+              query={props.query}
+              revalidate={props.revalidate}
+              activityOpen={activityOpen}
+              modelsOpen={modelsOpen}
+              onToggleActivity={toggleActivity}
+              onToggleModels={toggleModels}
+            />
+          ) : null}
+          {view === "trend" ? (
+            <TabTrend
+              billing={props.billing}
+              store={props.store}
+              query={props.query}
+              revalidate={props.revalidate}
+            />
+          ) : null}
+          {view === "detail" ? (
+            <TabDetail
+              billing={props.billing}
+              store={props.store}
+              query={props.query}
+              revalidate={props.revalidate}
+            />
+          ) : null}
+        </div>
+      </section>
 
       <div className={styles.tabs} role="tablist" aria-label="计费设置">
         {SETTINGS_TABS.map((item, index) => (
@@ -282,29 +287,32 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
                     disabled={locked}
                   />
 
-                  <div className={styles.settingsEntry}>
-                    <div className={styles.row}>
-                      <div className={styles.rowCopy}>
-                        <span className={styles.rowTitle}>计费入口位置</span>
-                        <p className={styles.rowDesc}>
-                          本月费用和预算显示在哪一处，两处可分别开关。
-                        </p>
-                      </div>
+                  {/* 组：两个入口开关挂在「计费入口位置」名下（缩进与左竖线在 CSS 里）。
+                      组标题只做标签（12/600 辅助色），比组内的行（13/500 主色）轻 —— 原来这里
+                      与组内开关同用 .rowTitle，等于把「这是一行」说了两遍，谁管谁看不出来。 */}
+                  <div className={styles.group}>
+                    <div className={styles.groupHead}>
+                      <span className={styles.groupTitle}>计费入口位置</span>
+                      <p className={styles.groupDesc}>
+                        本月费用和预算显示在哪一处，两处可分别开关。
+                      </p>
                     </div>
-                    <SwitchRow
-                      title="侧边栏底部"
-                      desc="显示本月费用、今日与预算进度。"
-                      checked={entries.sidebar}
-                      disabled={locked}
-                      onChange={writeSidebarEntry}
-                    />
-                    <SwitchRow
-                      title="输入框下方"
-                      desc="显示预算饼图与当前会话费用。"
-                      checked={entries.composer}
-                      disabled={locked}
-                      onChange={writeComposerEntry}
-                    />
+                    <div className={styles.groupBody}>
+                      <SwitchRow
+                        title="侧边栏底部"
+                        desc="显示本月费用、今日与预算进度。"
+                        checked={entries.sidebar}
+                        disabled={locked}
+                        onChange={writeSidebarEntry}
+                      />
+                      <SwitchRow
+                        title="输入框下方"
+                        desc="显示预算饼图与当前会话费用。"
+                        checked={entries.composer}
+                        disabled={locked}
+                        onChange={writeComposerEntry}
+                      />
+                    </div>
                   </div>
                 </Card>
               </>

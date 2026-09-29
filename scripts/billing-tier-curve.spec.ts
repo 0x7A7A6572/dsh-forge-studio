@@ -1,39 +1,59 @@
 /**
- * M 型费率带的几何门禁（纯函数，不渲染）。
+ * 今日费率形状的几何门禁（纯函数，不渲染）。
  *
- * 这个模块给**两张形状**，共用同一条注意力轴：`tierCurve`（弹窗那条读数带，有平顶）与
- * `miniCurve`（侧栏 75×35 的感觉指示器，完全平滑）。下面两组分别钉住它们。
+ * 这个模块给**两张形状**，共用同一条等分时间轴（0..1440 分钟按 1:1 摊开）：
+ * `tierRails`（弹窗那条双轨：上轨高峰价 / 下轨空闲价）与 `tierRing`
+ * （侧栏 75×35 的 12 小时钟盘，一天两圈）。下面按「轴 → 对齐 → 双轨 → 时钟 → 判档 → 文案」分组钉住。
  *
- * 横轴那张（两条共用）：
- * - **横轴是注意力轴**：峰窗 ±90 分钟按 1:1 展开，之外的深夜压到 0.12 —— 0-6 点、21-24 点
- *   只占很小一截，整条线是 `_M_` 而不是 `___M____`；指针、「现在」共用同一个映射。
- * - 指针永远落在曲线上；判档口径必须与宿主一致（只看窗口，不看斜坡）。
+ * 时间轴那张（两条共用）：
+ * - **位置 = 时刻**。旧版是注意力轴（深夜 ×0.12），现在等分 —— 因为双轨只有两个高度，
+ *   压不压扁都读得出来，而等分换来的是轨上的横坐标与环上的角度**是同一把尺子**，
+ *   两处读数不可能分叉。这条在「同一把尺子」那一节里是断言，不是注释。
  *
- * tierCurve（读数带）：
- * - **纵轴只有两级**：两个峰（9-12 / 14-18）在峰线、其余在谷线。平顶就是峰窗本身
- *   （价在那个区间是平的），起伏只发生在窗口两侧。
- * - **坡是圆肩不是折角**：坡宽 = 窗口长度的一半（90 / 120 分钟），smoothstep 两端斜率为 0 ——
- *   整条线读起来是一道平滑的 `m`。相邻两窗之间那两条相对的坡等比压到吃满间距，
- *   谷底正好落在两窗之间，不会被糊成一个平肩。
+ * 对齐（本次改版的起因）：
+ * - 一天两圈：一圈 12 小时，12:00 与 00:00 都在正上、06:00 与 18:00 都在正下，
+ *   03:00 与 15:00 正右、09:00 与 21:00 正左，**误差精确为 0** —— 与机械钟同一个读法；
+ * - 1440 分钟全扫：点落在琥珀弧内 ⟺ 该分钟判为高峰。这条是「正好对上时间点」的功能契约，
+ *   不是外观检查 —— 弧的覆盖范围与判档口径一旦分叉，它就是红的。
+ * - 12 小时盘上同一条弧对应**两个**时刻，所以弧只画此刻那半天。为什么必须这样、
+ *   不这样又会在多少格里说谎，下面有两条把 420 / 720 这个数钉住的断言。
  *
- * miniCurve（感觉指示器）—— 与大图**刻意不同形**：
- * - 峰窗**没有平顶**，只在窗口中点取一次顶；谷分三级：窗间波谷、起点、夜角。
- * - **纵向骨架照抄一条 5 点的手绘路线**（起点 / 小峰 / 波谷 / 大峰 / 终点）：
- *   小峰只有大峰 62.5% 的高，终点（夜角）比起点低 —— 于是「上午小峰、下午大峰」靠**高度**
- *   分大小，不再靠宽度。
- * - 下坡只有一段：大峰到 24:00 一口气滑到底，中途不插锚点 —— 插了就必然在下坡中段顿出一个
- *   曲率跳变（斜率连续、曲率不连续），细线读起来是个软拐角。
- * - 角落（24 点）**就是全天最低点**；起点（00:00）停在半山腰，照参考那条的「起点 3 / 终点 2」。
- *   相邻锚点高度两两不等，所以一段 L 都不会产生。唯一的例外是没有峰窗的日子（周末）：整条压在
- *   夜线上。
- * - 纵向口径是 mini 自己的：大图那 44 单位里有 20 单位是边距，占掉 42% 的高，这里收窄到 30。
+ * 双轨：
+ * - 上轨的块**就是**峰窗（左闭右开），下轨补满剩下的时段；两块合起来不重不漏地切完一整天。
+ * - 非工作日没有形状可画：上轨空着、下轨一条通到底 —— 一条诚实的平块好过编出来的起伏。
+ * - 落差杆画在两条轨之间，所以「半价」这件事有一个几何位置可指认（见 core 里的 railYOf）。
+ *
+ * 材质（本次改版的第二件事）：
+ * - 档位不再是一条实心圆头描边（那是进度条的画法），而是「落差光场 + 发丝亮芯」。
+ *   光场把「半价」画成一片有颜色的东西、全天常驻；亮芯是「一根细芯 + 一层弥散」，
+ *   沿一天有浓淡（正午最亮、两头压暗）。两个表都只写 offset 与 alpha，下面的断言把它们
+ *   钉在「中间最透明 / 两头最浓」「正午最亮 / 两头压暗」上 —— 换主题换色不该动它们一行。
+ * - 芯的浓淡走**全天一条**渐变（不是每段一条）：每段一条必然让每段两端自己淡下去，
+ *   段与段的边界就跟着糊了；亮度可以淡，边界不能淡。
+ *
+ * 时钟：
+ * - 一天两圈：起点由 RING_START_ANGLE 钉在**正上方**（取 0），每分钟 0.5°，
+ *   满 720 分钟（12 小时）走满 360° 后回到起点，一天转两圈。
+ * - 弧**只画 minute 所在那半天**：同一条弧对应两个时刻，一圈画不下两套弧。
+ *   守卫是那条 1440 分钟全扫的断言 —— 它在一天两圈下依然每分钟成立，因为
+ *   「此刻这半天」与「此刻的角度」永远出自同一个 minute。
+ * - **环上没有刻度**（本次改版去掉的）。从前靠 24 格刻度肉眼核对方位，现在那条口径落在
+ *   断言里：整点方位误差精确为 0，且起点常数本身被钉住 —— 想改角度就得先改这条断言。
+ * - 「现在」那颗珠子全天都留在画布之内（连它那圈晕算上），不会画出去半个点；
+ *   而且它的**可见半径是从 CSS 读回来的**：珠子是 CSS 粒子，尺寸写死在样式表里，
+ *   所以这里把 .miniRingDot 那条规则解析出来核对 —— 几何常数与样式表不许各说各话。
  */
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
-  CURVE_HEIGHT, CURVE_WIDTH, MINI_CURVE_HEIGHT, clockText, curveAriaLabel, curveTitleText,
-  miniCurve, nowText, tierCurve, toneAtMinute,
+  RAIL_BEAM_LAYERS, RAIL_CORE_LAYERS, RAIL_CORE_STOPS, RAIL_FIELD_BLEED, RAIL_FIELD_STOPS,
+  RAIL_HEIGHT, RAIL_PEAK_Y, RAIL_VALLEY_Y, RAIL_WIDTH,
+  RING_CENTER_X, RING_CENTER_Y, RING_DOT_REACH, RING_HEIGHT, RING_MINUTES_PER_TURN,
+  RING_RADIUS, RING_START_ANGLE, RING_WIDTH,
+  clockText, curveAriaLabel, curveTitleText, nowText, railYOf, tierRails, tierRing, toneAtMinute,
 } from '../packages/plugin-usage-billing/src/client/core/tier-curve.ts'
-import type { TierCurve } from '../packages/plugin-usage-billing/src/client/core/tier-curve.ts'
 import { ruleMinuteOfDay } from '../packages/plugin-usage-billing/src/client/hooks/useRuleMinute.ts'
 import type { TierDayProfile } from '../packages/plugin-usage-billing/src/pricing/tiers.ts'
 
@@ -45,381 +65,341 @@ const workday: TierDayProfile = {
 }
 const weekend: TierDayProfile = { ...workday, workday: false, peakWindows: [] }
 
-/** 整点刻度（等分轴下用来对照；带子上不画刻度，只是坐标参照）。 */
-const TICKS = [0, 360, 720, 1080, 1440]
-
-/** 一段分钟摊在横轴上的宽度（viewBox 单位）。 */
-function width(curve: TierCurve, from: number, to: number): number {
-  return curve.x(to) - curve.x(from)
+/**
+ * 「现在」那颗珠子是 **CSS 粒子**：盒子多大、渐变在几个百分比处收干净，都写在样式表里
+ * （.miniRingDot）—— 几何模块只知道它的可见半径 RING_DOT_REACH。
+ * 两处各写一遍就一定会漂，所以这里把那条规则读回来核对。
+ */
+function ringDotRule(): string {
+  const css = readFileSync(
+    join(
+      fileURLToPath(new URL('..', import.meta.url)),
+      'packages/plugin-usage-billing/src/client/styles/settings-section.module.css',
+    ),
+    'utf8',
+  )
+  const body = /\.miniRingDot\s*\{([^}]*)\}/.exec(css)?.[1]
+  if (body === undefined) throw new Error('样式表里找不到 .miniRingDot 规则')
+  return body
 }
 
-describe('横轴是注意力轴：深夜压扁、白天展开', () => {
-  it('两端仍贴边：0 点在 x=0，24 点在 x=1440', () => {
-    const curve = tierCurve(workday)
-    expect(curve.x(0)).toBe(0)
-    expect(curve.x(1440)).toBe(CURVE_WIDTH)
+describe('时间轴是等分轴：位置就是时刻', () => {
+  it('横坐标就是分钟本身：0 → 0、12:00 → 720、24:00 → 1440', () => {
+    const rails = tierRails(workday)
+    expect(rails.x(0)).toBe(0)
+    expect(rails.x(720)).toBe(720)
+    expect(rails.x(RAIL_WIDTH)).toBe(RAIL_WIDTH)
   })
-  it('0-6 点压到 8% 宽以下、21-24 点压到 5% 以下（等分轴下是 25% / 12.5%）', () => {
-    const curve = tierCurve(workday)
-    expect(width(curve, 0, 360) / CURVE_WIDTH).toBeLessThan(0.08)
-    expect(width(curve, 1260, 1440) / CURVE_WIDTH).toBeLessThan(0.05)
+  it('横轴只有一天：越界的分钟被夹回两端', () => {
+    const rails = tierRails(workday)
+    expect(rails.x(-120)).toBe(0)
+    expect(rails.x(2000)).toBe(RAIL_WIDTH)
   })
-  it('深夜的密度正好是白天的 0.12 倍', () => {
-    const curve = tierCurve(workday)
-    const night = width(curve, 0, 360) / 360
-    const day = width(curve, 540, 720) / 180
-    expect(night / day).toBeCloseTo(0.12, 10)
-  })
-  it('峰段几乎铺满：9-19 点占七成以上，12 点仍在中间', () => {
-    const curve = tierCurve(workday)
-    expect(width(curve, 540, 1140) / CURVE_WIDTH).toBeGreaterThan(0.7)
-    expect(curve.x(720) / CURVE_WIDTH).toBeGreaterThan(0.3)
-    expect(curve.x(720) / CURVE_WIDTH).toBeLessThan(0.5)
-  })
-  it('压缩不改变顺序：x 随分钟单调不减', () => {
-    const curve = tierCurve(workday)
-    let last = Number.NEGATIVE_INFINITY
-    for (let minute = 0; minute <= CURVE_WIDTH; minute += 5) {
-      const at = curve.x(minute)
-      expect(at).toBeGreaterThanOrEqual(last)
-      last = at
+  it('环上每分钟 0.5°：一天两圈，720 分钟走满 360° 后回到起点', () => {
+    const ring = tierRing(workday, 0)
+    expect(ring.angle(0)).toBe(0)
+    expect(ring.angle(360)).toBe(180) // 06:00 在正下方
+    expect(ring.angle(720)).toBe(0) // 12:00 回到正上方
+    expect(ring.angle(1080)).toBe(180) // 18:00 又在正下方
+    expect(ring.angle(1440)).toBe(0) // 24:00 = 00:00
+    expect(ring.angle(1) - ring.angle(0)).toBeCloseTo(0.5, 10)
+    // 只在一圈之内严格单调；跨圈是回到起点（360° 的下一格就是 0°），不是继续累加。
+    for (let minute = 1; minute < RING_MINUTES_PER_TURN; minute++) {
+      expect(ring.angle(minute)).toBeGreaterThan(ring.angle(minute - 1))
     }
+    expect(ring.angle(RING_MINUTES_PER_TURN)).toBeLessThan(ring.angle(RING_MINUTES_PER_TURN - 1))
   })
-  it('没有窗口的日子退化成等分轴（周末的整点仍然等距）', () => {
-    const curve = tierCurve(weekend)
-    for (const tick of TICKS) expect(curve.x(tick)).toBeCloseTo(tick, 10)
+  it('一天两圈：两个时刻共用一个角度，且正好相差 12 小时（一圈 720 个位置两两不同）', () => {
+    const ring = tierRing(workday, 0)
+    for (let minute = 0; minute < RING_MINUTES_PER_TURN; minute++) {
+      expect(ring.angle(minute + RING_MINUTES_PER_TURN)).toBe(ring.angle(minute))
+    }
+    const positions = new Set(Array.from({ length: RING_MINUTES_PER_TURN }, (_, m) => ring.angle(m)))
+    expect(positions.size).toBe(RING_MINUTES_PER_TURN)
+    expect(RING_MINUTES_PER_TURN).toBe(RAIL_WIDTH / 2)
   })
-})
-
-describe('曲线形状：两级平顶 + 圆肩过渡坡', () => {
-  it('折点：平顶正好是峰窗，两侧圆肩各占窗口一半；相邻相对的坡压到吃满 12:00-14:00', () => {
-    // 540-450 = 90（= 180 的一半）；720-540 = 180 平顶；771-720 = floor(90 × 120/210)；
-    // 840-772 = floor(120 × 120/210)；1200-1080 = 120（= 240 的一半）。
-    expect(tierCurve(workday).points.map((p) => p.minute)).toEqual([
-      0, 450, 540, 720, 771, 772, 840, 1080, 1200, 1440,
-    ])
-  })
-  it('只有两个高度：平顶在峰线、其余在谷线', () => {
-    const curve = tierCurve(workday)
-    const ys = curve.points.map((p) => p.y)
-    expect(new Set(ys).size).toBe(2)
-    const peak = Math.min(...ys)
-    const valley = Math.max(...ys)
-    expect(ys.filter((y) => y === peak)).toHaveLength(4) // 两段平顶各两个端点
-    expect(curve.y(600)).toBe(peak)   // 10:00 平顶
-    expect(curve.y(900)).toBe(peak)   // 15:00 平顶
-    expect(curve.y(771)).toBe(valley) // 谷底（两窗之间）
-    expect(curve.y(772)).toBe(valley)
-    expect(curve.y(0)).toBe(valley)
-    expect(curve.y(1439)).toBe(valley)
-  })
-  it('谷底落在两窗之间：不会因为坡太宽被抬起来', () => {
-    const curve = tierCurve(workday)
-    const valley = curve.y(0)
-    expect(curve.y(771)).toBe(valley)
-    // 两窗中点附近必须贴近谷底（剩余的抬升只有零点几个单位）
-    expect(valley - curve.y(780)).toBeLessThan(1)
-  })
-  it('过渡坡是曲线不是斜线：两端平、四分之一处比线性更贴谷底', () => {
-    const curve = tierCurve(workday)
-    const peak = curve.y(600)
-    const valley = curve.y(0)
-    // 上坡 450 → 540（90 分钟）
-    expect(curve.y(472.5)).toBeGreaterThan(valley - (valley - peak) * 0.25) // 缓入
-    expect(curve.y(517.5)).toBeLessThan(valley - (valley - peak) * 0.75)    // 缓出
-    expect(curve.y(495)).toBeCloseTo((peak + valley) / 2, 10)               // 中心对称
-    expect(valley - curve.y(450.1)).toBeLessThan(0.01)                      // 起点斜率 0
-    expect(curve.y(539.9) - peak).toBeLessThan(0.01)                        // 终点斜率 0
-  })
-  it('坡宽随窗口走：宽窗口的肩更圆（4 小时的窗口坡 120 分钟 > 3 小时的 90 分钟）', () => {
-    const curve = tierCurve(workday)
-    const rise1 = curve.points.find((p) => p.minute === 450)!
-    expect(540 - rise1.minute).toBe(90)
-    const fall2 = curve.points.find((p) => p.minute === 1200)!
-    expect(fall2.minute - 1080).toBe(120)
-  })
-  it('路径里平坦段是 L、过渡坡是 C（每个窗口上下各一次）', () => {
-    const line = tierCurve(workday).line
-    expect(line).toMatch(/^M0,33/)
-    expect(line.match(/C/g)).toHaveLength(4)
-    expect(line.endsWith('L1440,33')).toBe(true)
-  })
-  it('指针的高度与路径同源：斜坡上也落在两线之间', () => {
-    const curve = tierCurve(workday)
-    expect(curve.y(520)).toBeGreaterThan(curve.y(600))
-    expect(curve.y(520)).toBeLessThan(curve.y(780))
-  })
-  it('非工作日压平成一条谷线（起止两点都在同一高度）', () => {
-    const curve = tierCurve(weekend)
-    expect(curve.points.map((p) => p.y)).toEqual([33, 33])
-    expect(curve.y(600)).toBe(curve.y(0))
-    expect(curve.tones.every((t) => t.tone === 'valley')).toBe(true)
-  })
-  it('窄窗的坡不会叠成负宽（10 分钟的窗口 → 两侧各 5 分钟）', () => {
-    const narrow: TierDayProfile = { ...workday, peakWindows: [[600, 610]] }
-    const minutes = tierCurve(narrow).points.map((p) => p.minute)
-    expect(minutes).toEqual([0, 595, 600, 610, 615, 1440])
-    expect(minutes).toEqual([...minutes].sort((a, b) => a - b))
-  })
-  it('路径收尾闭合到 24:00 与下沿（面积不外溢）', () => {
-    expect(tierCurve(workday).area).toContain(`L${CURVE_WIDTH},${CURVE_HEIGHT}L0,${CURVE_HEIGHT}Z`)
+  it('轨上的横坐标与环上的角度是同一把尺子 —— 环只是把它折成了两圈', () => {
+    const rails = tierRails(workday)
+    const ring = tierRing(workday, 0)
+    // 同一个半天里，轨上走多少分钟，环上就转多少度：比例恒为 360 / 720。
+    // 每对都取在半圈之内 —— 跨过半圈末尾时环的角度按 360 取模回到正上方（另有一条断言钉住）。
+    for (const [a, b] of [[0, 360], [540, 719], [840, 1080], [720, 1439]] as const) {
+      const railSpan = rails.x(b) - rails.x(a)
+      expect(ring.angle(b) - ring.angle(a)).toBeCloseTo((railSpan / RING_MINUTES_PER_TURN) * 360, 10)
+    }
+    expect(ring.angle(0)).toBe(RING_START_ANGLE)
   })
 })
 
-describe('miniCurve：完全平滑的 M（没有平顶、一段直线都没有；纵向骨架照抄参考那条 6 点路线）', () => {
-  const MINI_PEAK = 4      // 大峰：最后一个峰窗的中点
-  const MINI_SUB_PEAK = 12 // 小峰：第一个峰窗的中点
-  const MINI_SADDLE = 20   // 窗间波谷
-  const MINI_RAMP = 22     // 起点：00:00
-  const MINI_VALLEY = 26   // 夜角：24:00（全天最低点）
-
-  it('折点：起点在 00:00 的半山腰，两个峰在各自峰窗中点，波谷在两窗中间，收笔在 24:00 的夜角', () => {
-    const curve = miniCurve(workday)
-    expect(curve.points.map((p) => p.minute)).toEqual([0, 630, 780, 960, 1440])
-    expect(curve.points.map((p) => p.y)).toEqual([
-      MINI_RAMP, MINI_SUB_PEAK, MINI_SADDLE, MINI_PEAK, MINI_VALLEY,
-    ])
+describe('「正好对上时间点」：整点方位精确、全天覆盖、弧只画半天', () => {
+  it('00:00 与 12:00 都在正上方、06:00 与 18:00 都在正下方 —— 误差精确为 0', () => {
+    const ring = tierRing(workday, 0)
+    const top = { x: RING_CENTER_X, y: RING_CENTER_Y - RING_RADIUS }
+    const right = { x: RING_CENTER_X + RING_RADIUS, y: RING_CENTER_Y }
+    const bottom = { x: RING_CENTER_X, y: RING_CENTER_Y + RING_RADIUS }
+    const left = { x: RING_CENTER_X - RING_RADIUS, y: RING_CENTER_Y }
+    // 一天两圈：每个方位都有**两个**整点，这正是它读起来跟机械钟一样的原因。
+    expect(ring.point(0)).toEqual(top) // 00:00
+    expect(ring.point(720)).toEqual(top) // 12:00
+    expect(ring.point(180)).toEqual(right) // 03:00
+    expect(ring.point(900)).toEqual(right) // 15:00
+    expect(ring.point(360)).toEqual(bottom) // 06:00
+    expect(ring.point(1080)).toEqual(bottom) // 18:00
+    expect(ring.point(540)).toEqual(left) // 09:00
+    expect(ring.point(1260)).toEqual(left) // 21:00
   })
-  it('纵向次序就是参考那条路线：终点 < 起点 < 波谷 < 小峰 < 大峰', () => {
-    const order = [MINI_PEAK, MINI_SUB_PEAK, MINI_SADDLE, MINI_RAMP, MINI_VALLEY]
-    expect([...order].sort((a, b) => a - b)).toEqual(order)
-    expect([...order].sort((a, b) => b - a)).toEqual([
-      MINI_VALLEY, MINI_RAMP, MINI_SADDLE, MINI_SUB_PEAK, MINI_PEAK,
-    ])
-  })
-  it('小峰只有大峰 62.5% 的高：参考里 (5.5-3) / (7.5-3.5) = 2.5 / 4', () => {
-    expect(MINI_RAMP - MINI_SUB_PEAK).toBe(10)
-    expect(MINI_SADDLE - MINI_PEAK).toBe(16)
-    expect((MINI_RAMP - MINI_SUB_PEAK) / (MINI_SADDLE - MINI_PEAK)).toBeCloseTo(2.5 / 4, 10)
-  })
-  it('峰锚点就是峰窗中点（630 = 09-12 的中点，960 = 14-18 的中点）', () => {
-    const curve = miniCurve(workday)
-    expect(curve.points.filter((p) => p.y === MINI_SUB_PEAK).map((p) => p.minute)).toEqual([630])
-    expect(curve.points.filter((p) => p.y === MINI_PEAK).map((p) => p.minute)).toEqual([960])
-  })
-  it('高度一共五级；午间的波谷（20）比起点（22）浅', () => {
-    const curve = miniCurve(workday)
-    const depths = [...new Set(curve.points.map((p) => p.y))].sort((a, b) => a - b)
-    expect(depths).toEqual([MINI_PEAK, MINI_SUB_PEAK, MINI_SADDLE, MINI_RAMP, MINI_VALLEY])
-    expect(curve.y(780)).toBe(MINI_SADDLE)
-    expect(curve.y(780)).toBeLessThan(MINI_RAMP)
-  })
-  it('起点在半山腰、收笔在最低的夜角：线不从角落里爬起来，收笔那一格才是全天最低点', () => {
-    const curve = miniCurve(workday)
-    // 参考那条的起点(3)本来就高于终点(2) —— 左边没有线可翘，它就是起笔高度。
-    expect(curve.y(0)).toBe(MINI_RAMP)
-    expect(curve.y(1440)).toBe(MINI_VALLEY)
-    // 全天任何一刻都不比收笔的夜角更低（y 都不更大）
+  it('点的圆心全天都压在同一半径的环上（不会漂到环内或环外）', () => {
+    const ring = tierRing(workday, 0)
     for (let minute = 0; minute <= 1440; minute += 5) {
-      expect(curve.y(minute)).toBeLessThanOrEqual(MINI_VALLEY)
-    }
-    // 而且它不是一段平底：起手一小时就在往峰上爬，09:00 已经走了一半路
-    expect(curve.y(60)).toBeLessThan(MINI_RAMP)
-    expect(curve.y(540)).toBeGreaterThan(MINI_SUB_PEAK)
-    expect(curve.y(540)).toBeLessThan(MINI_RAMP)
-  })
-  it('一段直线都没有：整条路 4 段全是 C、0 段 L', () => {
-    const curve = miniCurve(workday)
-    expect(curve.line.match(/C/g)).toHaveLength(4)
-    expect(curve.line.match(/L/g)).toBeNull()
-    expect(curve.line.startsWith(`M0,${MINI_RAMP}C`)).toBe(true)
-  })
-  it('只有真正的极值点才是水平的：两个峰与中间的波谷；两端都带真实斜率', () => {
-    const curve = miniCurve(workday)
-    // 峰、波谷：左右 1 分钟的差可以忽略 → 切线水平，顶点就落在锚点上
-    for (const minute of [630, 780, 960]) {
-      const y = curve.y(minute)
-      expect(Math.abs(curve.y(minute - 1) - y)).toBeLessThan(0.01)
-      expect(Math.abs(curve.y(minute + 1) - y)).toBeLessThan(0.01)
-    }
-    // 两个端点斜着切进 / 切出画布：起手 1 小时就已经在正常抬升（收平时这里只有 0.03）
-    expect(curve.y(0) - curve.y(60)).toBeGreaterThan(0.1)
-    expect(curve.y(1440) - curve.y(1380)).toBeGreaterThan(0.1)
-  })
-  it('下坡只有一段：16:00 到 24:00 之间斜率单调升完再单调降，中途没有拐点', () => {
-    const curve = miniCurve(workday)
-    // 屏幕口径：按 x 均匀取样。轴在 19:30 有个密度拐点（1.0 → 0.12），按分钟取样会把那个
-    // 轴拐点误读成曲率跳变 —— 那是轴画的，不是曲线画的。
-    const minuteAt = (target: number): number => {
-      let lo = 0
-      let hi = 1440
-      for (let i = 0; i < 40; i++) {
-        const mid = (lo + hi) / 2
-        if (curve.x(mid) < target) lo = mid
-        else hi = mid
-      }
-      return (lo + hi) / 2
-    }
-    const dx = 3
-    const from = curve.x(960) + dx
-    const to = CURVE_WIDTH - dx
-    const samples = Array.from({ length: 30 }, (_, i) => {
-      const at = from + ((to - from) * i) / 29
-      return curve.y(minuteAt(at + dx)) - curve.y(minuteAt(at - dx))
-    })
-    const peak = samples.indexOf(Math.max(...samples))
-    expect(peak).toBeGreaterThan(0)
-    expect(peak).toBeLessThan(samples.length - 1)
-    for (let i = 1; i <= peak; i++) expect(samples[i]!).toBeGreaterThan(samples[i - 1]!)
-    for (let i = peak + 1; i < samples.length; i++) expect(samples[i]!).toBeLessThan(samples[i - 1]!)
-    // 二阶差分 = 曲率突变：坡中间插一个锚点，这里会跳十倍（0.022 对 0.002）
-    const steps = samples.slice(1).map((v, i) => v - samples[i]!)
-    const jumps = steps.slice(1).map((v, i) => Math.abs(v - steps[i]!))
-    expect(Math.max(...jumps)).toBeLessThan(0.005)
-  })
-  it('不过冲：全天任何一刻都在峰线与夜线之间（PCHIP 的单调限幅）', () => {
-    const cases = [
-      workday,
-      { ...workday, peakWindows: [[540, 720]] as const },
-      { ...workday, peakWindows: [[600, 610]] as const },
-      { ...workday, peakWindows: [[540, 600], [900, 960]] as const },
-      { ...workday, peakWindows: [[540, 900], [600, 700]] as const },
-      { ...workday, peakWindows: [[0, 60], [1380, 1440]] as const },
-      { ...workday, peakWindows: [[60, 200], [400, 1000], [1200, 1260]] as const },
-    ]
-    for (const profile of cases) {
-      const curve = miniCurve(profile)
-      for (let minute = 0; minute <= 1440; minute += 1) {
-        expect(curve.y(minute)).toBeGreaterThanOrEqual(MINI_PEAK)
-        expect(curve.y(minute)).toBeLessThanOrEqual(MINI_VALLEY)
-      }
+      const at = ring.point(minute)
+      expect(Math.hypot(at.x - RING_CENTER_X, at.y - RING_CENTER_Y)).toBeCloseTo(RING_RADIUS, 2)
     }
   })
-  it('峰窗内不再是平的：窗口两端只到肩部，顶点只有一个', () => {
-    const curve = miniCurve(workday)
-    const peak = curve.y(630)
-    // 09:00 还高出峰顶 2 个单位（2.3px）、12:00 已经开始往下走 —— 窗口两端都不是顶
-    expect(curve.y(540) - peak).toBeGreaterThan(2)
-    expect(curve.y(720)).toBeGreaterThan(peak + 3)
-    // 窗口正中才是顶：两侧都比它低
-    expect(curve.y(600)).toBeGreaterThan(peak)
-    expect(curve.y(660)).toBeGreaterThan(peak)
-  })
-  it('上午小峰、下午大峰：靠高度分大小，比例就是参考那条路线的 10 : 16', () => {
-    const curve = miniCurve(workday)
-    expect(curve.y(630)).toBe(MINI_SUB_PEAK)
-    expect(curve.y(960)).toBe(MINI_PEAK)
-    // 不是靠宽度：小峰量到起点（参考里 5.5−3）、大峰量到波谷（参考里 7.5−3.5）
-    expect(MINI_RAMP - curve.y(630)).toBe(10)
-    expect(MINI_SADDLE - curve.y(960)).toBe(16)
-  })
-  it('色带按档位判、不按高度：小峰不在峰线上，仍然算高峰色', () => {
-    const curve = miniCurve(workday)
-    const toneOf = (minute: number): string | undefined =>
-      curve.tones.find((t) => Math.abs(t.offset * CURVE_WIDTH - curve.x(minute)) < 0.001)?.tone
-    // 小峰停在自己的高度（12）上，不是峰线（4）—— 用 y === peakY 判就会把它判成谷
-    expect(curve.points.find((p) => p.minute === 630)?.y).toBe(MINI_SUB_PEAK)
-    expect(toneOf(630)).toBe('peak')
-    expect(toneOf(960)).toBe('peak')
-    expect(toneOf(780)).toBe('valley')
-    expect(toneOf(0)).toBe('valley')
-  })
-  it('色带切点 = 折点 ∪ 峰窗两端：最后一个峰之后落回谷色，琥珀不许糊到夜里', () => {
-    const curve = miniCurve(workday)
-    expect(curve.tones.map((t) => Math.round(t.offset * CURVE_WIDTH))).toEqual(
-      [0, 540, 630, 720, 780, 840, 960, 1080, 1440].map((m) => Math.round(curve.x(m))),
-    )
-    // 18:00 到 24:00 之间一个峰色切点都没有 —— 下坡合并成一段后，这段边界只能由窗口端点提供
-    const tail = curve.tones.filter((t) => t.offset * CURVE_WIDTH > curve.x(1080) + 0.001)
-    expect(tail.map((t) => t.tone)).toEqual(['valley'])
-  })
-  it('纵向铺满：峰谷行程占画布的 73%（照搬大图那套边距只剩 55%）', () => {
-    expect((MINI_VALLEY - MINI_PEAK) / MINI_CURVE_HEIGHT).toBeCloseTo(22 / 30, 10)
-    expect((MINI_VALLEY - MINI_PEAK) / MINI_CURVE_HEIGHT).toBeGreaterThan(0.7)
-    expect((33 - 9) / CURVE_HEIGHT).toBeLessThan(0.56)
-  })
-  it('指针落在峰谷之间，并且顺着曲线走', () => {
-    const curve = miniCurve(workday)
-    for (const minute of [0, 300, 540, 630, 720, 780, 960, 1200, 1439]) {
-      expect(curve.y(minute)).toBeGreaterThanOrEqual(MINI_PEAK)
-      expect(curve.y(minute)).toBeLessThanOrEqual(MINI_VALLEY)
-    }
-    expect(curve.y(780)).toBeGreaterThan(curve.y(630)) // 中午的鞍比上午的顶低
-  })
-  it('面积收在 MINI_CURVE_HEIGHT 的下沿，不是大图的 44', () => {
-    expect(miniCurve(workday).area).toContain(`L${CURVE_WIDTH},${MINI_CURVE_HEIGHT}L0,${MINI_CURVE_HEIGHT}Z`)
-  })
-  it('与大图同轴：两张形状的横坐标逐点相同（分歧只在纵轴）', () => {
-    const big = tierCurve(workday)
-    const mini = miniCurve(workday)
-    for (const minute of [0, 450, 630, 780, 960, 1170, 1440]) {
-      expect(mini.x(minute)).toBe(big.x(minute))
+  it('1440 分钟全扫：点落在琥珀弧内 ⟺ 该分钟判为高峰（一天两圈下依然每分钟成立）', () => {
+    // 这条在 12 小时盘上成立不是巧合：弧取的是 minute 所在那半天，点取的是同一个 minute。
+    for (let minute = 0; minute < RAIL_WIDTH; minute++) {
+      const ring = tierRing(workday, minute)
+      const at = ring.angle(minute)
+      const inArc = ring.arcs.some(arc => at >= arc.startAngle && at < arc.endAngle)
+      expect(inArc, clockText(minute)).toBe(toneAtMinute(workday, minute) === 'peak')
     }
   })
-  it('与大图刻意不同形：大图的 09-12 是平顶，mini 的同一段是圆顶', () => {
-    expect(tierCurve(workday).y(600)).toBe(tierCurve(workday).y(660)) // 大图：平
-    expect(miniCurve(workday).y(600)).not.toBe(miniCurve(workday).y(660)) // mini：不平
-  })
-  it('两个峰窗的焦点区重叠时，鞍仍落在两窗正中间（不被区间端点顶到 13:30）', () => {
-    expect(miniCurve(workday).points.find((p) => p.minute === 780)?.y).toBe(MINI_SADDLE)
-  })
-  it('两个峰窗隔得远时中间补一个波谷，否则那一段会退化成直线', () => {
-    // 两个 1 小时的窗隔了 300 分钟，中间必须补一个波谷，否则那一段会退化成直线
-    const apart = miniCurve({ ...workday, peakWindows: [[540, 600], [900, 960]] })
-    expect(apart.points.map((p) => p.minute)).toEqual([0, 570, 750, 930, 1440])
-    expect(apart.points.map((p) => p.y)).toEqual([
-      MINI_RAMP, MINI_SUB_PEAK, MINI_SADDLE, MINI_PEAK, MINI_VALLEY,
-    ])
-    expect(apart.line.match(/L/g)).toBeNull()
-    expect(apart.line.match(/C/g)).toHaveLength(4)
-  })
-  it('三个峰从矮到高插值：第一个是小峰、最后一个是高峰，中间落在两者之间', () => {
-    const three = miniCurve({ ...workday, peakWindows: [[540, 600], [660, 720], [840, 1080]] })
-    const at = (minute: number): number | undefined =>
-      three.points.find((p) => p.minute === minute)?.y
-    expect(at(570)).toBe(MINI_SUB_PEAK)
-    expect(at(690)).toBe((MINI_SUB_PEAK + MINI_PEAK) / 2)
-    expect(at(960)).toBe(MINI_PEAK)
-  })
-  it('单个峰窗一座大圆顶；非工作日没有形状可画，整条压在夜线上', () => {
-    const single = miniCurve({ ...workday, peakWindows: [[540, 720]] })
-    expect(single.points.map((p) => p.minute)).toEqual([0, 630, 1440])
-    expect(single.points.map((p) => p.y)).toEqual([MINI_RAMP, MINI_PEAK, MINI_VALLEY])
-    expect(single.line.match(/L/g)).toBeNull()
-    // 周末是唯一的例外：那天确实全天同价，一条诚实的平线好过编出来的起伏
-    const flat = miniCurve(weekend)
-    expect(flat.points.map((p) => p.minute)).toEqual([0, 1440])
-    expect(flat.points.every((p) => p.y === MINI_VALLEY)).toBe(true)
-    expect(flat.tones.every((t) => t.tone === 'valley')).toBe(true)
-    expect(flat.line).toBe(`M0,${MINI_VALLEY}L${CURVE_WIDTH},${MINI_VALLEY}`)
-  })
-  it('窄窗不塌：10 分钟的窗口仍是一个可画的圆顶', () => {
-    const narrow = miniCurve({ ...workday, peakWindows: [[600, 610]] })
-    expect(narrow.points.map((p) => p.y)).toEqual([MINI_RAMP, MINI_PEAK, MINI_VALLEY])
-    const minutes = narrow.points.map((p) => p.minute)
-    expect(minutes).toEqual([...minutes].sort((a, b) => a - b))
-    expect(minutes[0]).toBe(0)
-    expect(minutes[minutes.length - 1]).toBe(1440)
-  })
-  it('第一个峰窗就压在 0 点上时不补起点：否则会在峰前面凭空挖一个假谷', () => {
-    const midnight = miniCurve({ ...workday, peakWindows: [[0, 60], [1380, 1440]] })
-    // 0 点本身就在峰窗里 → 起点那一格让给夜角，线从角落起、直接上峰
-    expect(midnight.points[0]).toMatchObject({ minute: 0, y: MINI_VALLEY })
-    expect(midnight.points[1]).toMatchObject({ minute: 30, y: MINI_SUB_PEAK })
-  })
-  it('峰窗互相重叠这种退化配置也不炸：点列仍单调、高度仍在口径内', () => {
-    const overlap = miniCurve({ ...workday, peakWindows: [[540, 900], [600, 700]] })
-    const minutes = overlap.points.map((p) => p.minute)
-    expect(minutes).toEqual([...minutes].sort((a, b) => a - b))
-    for (const y of overlap.points.map((p) => p.y)) {
-      expect(y).toBeGreaterThanOrEqual(MINI_PEAK)
-      expect(y).toBeLessThanOrEqual(MINI_VALLEY)
+  it('12 小时盘的固有矛盾：720 个刻度格里 420 格的两个时刻档位相反', () => {
+    // 例：10:00 高峰 / 22:00 空闲落在同一格。一圈只画一套弧，这 420 格里必有一半在说谎 ——
+    // 这就是「弧只画此刻那半天」的量化理由，下面那条断言把它守住。
+    let conflict = 0
+    for (let slot = 0; slot < RING_MINUTES_PER_TURN; slot++) {
+      if (toneAtMinute(workday, slot) !== toneAtMinute(workday, slot + RING_MINUTES_PER_TURN)) conflict++
     }
-    expect(overlap.points.length).toBeGreaterThan(2)
-    expect(overlap.line.startsWith(`M0,${MINI_RAMP}`)).toBe(true)
+    expect(conflict).toBe(420)
+  })
+  it('弧只画此刻那半天：同一个角度、两个时刻，弧不一样，点因此永远压在真实的档位上', () => {
+    const morning = tierRing(workday, 600) // 10:00
+    const evening = tierRing(workday, 1320) // 22:00 —— 与 10:00 共用同一个角度
+    expect(morning.angle(600)).toBe(evening.angle(1320))
+    expect(morning.arcs.map(arc => [arc.from, arc.to])).toEqual([[540, 720]])
+    expect(evening.arcs.map(arc => [arc.from, arc.to])).toEqual([[120, 360]])
+    const at = morning.angle(600)
+    const onArc = (ring: typeof morning) => ring.arcs.some(arc => at >= arc.startAngle && at < arc.endAngle)
+    expect(onArc(morning)).toBe(true) // 10:00 是高峰，点在弧上
+    expect(onArc(evening)).toBe(false) // 22:00 是空闲，同样角度上什么都没画
+  })
+  it('横跨正午的窗被切成两段：两半各画自己那一段，拼起来还是原来那个窗', () => {
+    const across = { ...workday, peakWindows: [[660, 840]] as const } // 11:00-14:00
+    const morning = tierRing(across, 660) // 11:00 还在上午这半
+    const afternoon = tierRing(across, 720) // 12:00 已进入下午这半
+    expect(morning.arcs.map(arc => [arc.from, arc.to])).toEqual([[660, 720]])
+    expect(afternoon.arcs.map(arc => [arc.from, arc.to])).toEqual([[0, 120]])
+    // 角度上两段首尾相接：330°→360° 与 0°→60°，在正上方接上。
+    expect(morning.arcs[0]!.startAngle).toBeCloseTo(330, 10)
+    expect(morning.arcs[0]!.endAngle).toBeCloseTo(360, 10)
+    expect(afternoon.arcs[0]!.startAngle).toBeCloseTo(0, 10)
+    expect(afternoon.arcs[0]!.endAngle).toBeCloseTo(60, 10)
   })
 })
 
-describe('色带与判档口径与宿主一致（只看窗口，不看斜坡）', () => {
-  it('色带切在窗口端点：坡上是渐变，平顶是纯峰色', () => {
-    const curve = tierCurve(workday)
-    const peakOffsets = curve.tones
-      .filter((t) => t.tone === 'peak')
-      .map((t) => Math.round(t.offset * CURVE_WIDTH))
-    expect(peakOffsets).toEqual([540, 720, 840, 1080].map((minute) => Math.round(curve.x(minute))))
-    expect(curve.tones[0]).toEqual({ offset: 0, tone: 'valley' })
-    expect(curve.tones[curve.tones.length - 1]).toEqual({ offset: 1, tone: 'valley' })
+describe('双轨：上轨的块就是峰窗，下轨补满剩下的时段', () => {
+  it('高峰块 = 峰窗本身，起止即时刻、宽度即时长', () => {
+    const rails = tierRails(workday)
+    expect(rails.peakBlocks.map(b => [b.from, b.to])).toEqual([[540, 720], [840, 1080]])
+    expect(rails.peakBlocks.map(b => [b.x, b.width])).toEqual([[540, 180], [840, 240]])
   })
+  it('下轨 = 0-9 点、12-14 点、18-24 点', () => {
+    const rails = tierRails(workday)
+    expect(rails.valleyBlocks.map(b => [b.from, b.to])).toEqual([[0, 540], [720, 840], [1080, 1440]])
+  })
+  it('两块合起来不重不漏：按 start 排好正好首尾相接切完一整天', () => {
+    const rails = tierRails(workday)
+    const all = [...rails.peakBlocks, ...rails.valleyBlocks].sort((a, b) => a.from - b.from)
+    let cursor = 0
+    for (const block of all) {
+      expect(block.from).toBe(cursor)
+      cursor = block.to
+    }
+    expect(cursor).toBe(RAIL_WIDTH)
+  })
+  it('非工作日没有形状可画：上轨空着，下轨一条通到底', () => {
+    const rails = tierRails(weekend)
+    expect(rails.peakBlocks).toEqual([])
+    expect(rails.valleyBlocks.map(b => [b.from, b.to])).toEqual([[0, 1440]])
+  })
+  it('窄窗（10 分钟）仍是一块 10 单位宽的琥珀，不会被夹没', () => {
+    const rails = tierRails({ ...workday, peakWindows: [[600, 610]] })
+    expect(rails.peakBlocks.map(b => [b.from, b.to, b.width])).toEqual([[600, 610, 10]])
+    expect(rails.valleyBlocks.map(b => [b.from, b.to])).toEqual([[0, 600], [610, 1440]])
+  })
+  it('峰窗互相重叠这种退化配置也不炸：上轨叠了两块（视觉无害），下轨绝不重叠', () => {
+    const rails = tierRails({ ...workday, peakWindows: [[540, 900], [600, 700]] })
+    expect(rails.valleyBlocks[0]!.from).toBe(0)
+    expect(rails.valleyBlocks[rails.valleyBlocks.length - 1]!.to).toBe(RAIL_WIDTH)
+    for (let i = 1; i < rails.valleyBlocks.length; i++) {
+      expect(rails.valleyBlocks[i]!.from).toBeGreaterThanOrEqual(rails.valleyBlocks[i - 1]!.to)
+    }
+  })
+  it('第一个峰窗就压在 0 点上时，下轨不会先补出一段零宽的块', () => {
+    const rails = tierRails({ ...workday, peakWindows: [[0, 60], [1380, 1440]] })
+    expect(rails.peakBlocks.map(b => [b.from, b.to])).toEqual([[0, 60], [1380, 1440]])
+    expect(rails.valleyBlocks.map(b => [b.from, b.to])).toEqual([[60, 1380]])
+  })
+  it('两档各自的轨高：上轨在峰线、下轨在谷线，且上下关于中线对称', () => {
+    expect(railYOf('peak')).toBe(RAIL_PEAK_Y)
+    expect(railYOf('valley')).toBe(RAIL_VALLEY_Y)
+    expect(RAIL_PEAK_Y + RAIL_VALLEY_Y).toBeCloseTo(RAIL_HEIGHT, 10)
+  })
+})
+
+describe('材质：落差光场与发丝亮芯', () => {
+  it('光场中间最透明、两端最浓，两侧各自单调', () => {
+    const upper = RAIL_FIELD_STOPS.filter(stop => stop.at <= 0.5)
+    const lower = RAIL_FIELD_STOPS.filter(stop => stop.at >= 0.5)
+    expect(upper.length).toBeGreaterThan(1)
+    expect(lower.length).toBeGreaterThan(1)
+    for (let i = 1; i < upper.length; i++) {
+      expect(upper[i]!.alpha).toBeLessThan(upper[i - 1]!.alpha)
+    }
+    for (let i = 1; i < lower.length; i++) {
+      expect(lower[i]!.alpha).toBeGreaterThan(lower[i - 1]!.alpha)
+    }
+    const middle = RAIL_FIELD_STOPS.find(stop => stop.at === 0.5)!
+    expect(middle.alpha).toBe(0)
+    expect(RAIL_FIELD_STOPS[0]!.alpha).toBeGreaterThan(0)
+    expect(RAIL_FIELD_STOPS[RAIL_FIELD_STOPS.length - 1]!.alpha).toBeGreaterThan(0)
+  })
+  it('光场色相在 0.5 处换手：上半天峰色、下半天谷色（靠一个 alpha 为 0 的停点）', () => {
+    for (const stop of RAIL_FIELD_STOPS) {
+      expect(stop.tone, String(stop.at)).toBe(stop.at < 0.5 ? 'peak' : 'valley')
+    }
+  })
+  it('光场外扩一点点：贴着轨线切会留下一条硬边', () => {
+    expect(RAIL_FIELD_BLEED).toBeGreaterThan(0)
+    // 外扩之后整片仍然留在画布之内（描边按设备像素恒定，不吃画布高度）。
+    expect(RAIL_PEAK_Y - RAIL_FIELD_BLEED).toBeGreaterThan(0)
+    expect(RAIL_VALLEY_Y + RAIL_FIELD_BLEED).toBeLessThan(RAIL_HEIGHT)
+  })
+  it('三个表都是能从 0 走到 1 的合法渐变（offset 递增、首尾齐）', () => {
+    for (const table of [RAIL_FIELD_STOPS, RAIL_CORE_STOPS.peak, RAIL_CORE_STOPS.valley]) {
+      const offsets = table.map(stop => stop.at)
+      expect(offsets).toEqual([...offsets].sort((a, b) => a - b))
+      expect(offsets[0]).toBe(0)
+      expect(offsets[offsets.length - 1]).toBe(1)
+    }
+  })
+  it('亮芯沿一天走：正午最亮、两头压到一半以下，两侧各自单调', () => {
+    for (const tone of ['peak', 'valley'] as const) {
+      const stops = RAIL_CORE_STOPS[tone]
+      const upper = stops.filter(stop => stop.at <= 0.5)
+      const lower = stops.filter(stop => stop.at >= 0.5)
+      for (let i = 1; i < upper.length; i++) {
+        expect(upper[i]!.alpha, tone).toBeGreaterThanOrEqual(upper[i - 1]!.alpha)
+      }
+      for (let i = 1; i < lower.length; i++) {
+        expect(lower[i]!.alpha, tone).toBeLessThanOrEqual(lower[i - 1]!.alpha)
+      }
+      expect(stops.find(stop => stop.at === 0.5)!.alpha, tone).toBe(1)
+      expect(stops[0]!.alpha, tone).toBeLessThan(0.6)
+      expect(stops[stops.length - 1]!.alpha, tone).toBeLessThan(0.6)
+    }
+  })
+  it('亮芯层数恰好两层：一层弥散 + 一根芯（再多就成一团雾，段边界会糊）', () => {
+    expect([...RAIL_CORE_LAYERS]).toEqual([0, 1])
+  })
+  it('光柱恰好三层（最宽那层是弥散）', () => {
+    expect([...RAIL_BEAM_LAYERS]).toEqual([0, 1, 2])
+  })
+})
+
+describe('时钟：一天两圈的峰弧、半天换弧、以及全天的点', () => {
+  it('上午那半画 09:00-12:00（270°-360°），下午那半画 14:00-18:00（60°-180°）', () => {
+    const morning = tierRing(workday, 0).arcs
+    expect(morning.map(arc => [arc.from, arc.to])).toEqual([[540, 720]])
+    expect(morning[0]!.startAngle).toBeCloseTo(270, 10)
+    expect(morning[0]!.endAngle).toBeCloseTo(360, 10)
+    const afternoon = tierRing(workday, 720).arcs
+    expect(afternoon.map(arc => [arc.from, arc.to])).toEqual([[120, 360]])
+    expect(afternoon[0]!.startAngle).toBeCloseTo(60, 10)
+    expect(afternoon[0]!.endAngle).toBeCloseTo(180, 10)
+    // 两半的琥珀加起来仍是一整天的 420 分钟，一分钟不多一分钟不少。
+    const minutes = (arcs: readonly { from: number, to: number }[]) => arcs.reduce((sum, arc) => sum + (arc.to - arc.from), 0)
+    expect(minutes(morning) + minutes(afternoon)).toBe(420)
+  })
+  it('弧路径是单条 A 命令，半径取自环半径', () => {
+    const ring = tierRing(workday, 600)
+    expect(ring.arcPaths).toHaveLength(1)
+    for (const d of ring.arcPaths) {
+      expect(d).toMatch(new RegExp(`^M[\\d.]+,[\\d.]+A${RING_RADIUS},${RING_RADIUS} 0 [01] 1 [\\d.]+,[\\d.]+$`))
+    }
+  })
+  it('一整天都是高峰时圆环仍画得出来：半圈被拆成两段各 180°（两半都一样）', () => {
+    for (const minute of [0, 720]) {
+      const ring = tierRing({ ...workday, peakWindows: [[0, 1440]] }, minute)
+      expect(ring.arcs.map(arc => arc.endAngle - arc.startAngle)).toEqual([180, 180])
+      expect(ring.arcPaths).toHaveLength(2)
+    }
+  })
+  it('环上没有刻度：起点角度写死在正上方（钟面的 12 点）', () => {
+    // 环只剩「一根粗环 + 几段弧 + 一个点」，方位没有刻度可数，全靠这个常数。
+    expect(RING_START_ANGLE).toBe(0)
+    expect(tierRing(workday, 0).angle(0)).toBe(RING_START_ANGLE)
+    expect(tierRing(workday, 0).angle(RING_MINUTES_PER_TURN)).toBe(RING_START_ANGLE)
+  })
+  it('起点换成别的角度时整圈一起转（弧与点同源，不会一处转一处不转）', () => {
+    // 这里是拿「角度就是 起点 + 半天内时刻占一圈的比例」这条恒等式当断言，
+    // 而不是去读渲染结果：弧和点都从 angleAt 出来，只要这条成立，两处就不可能分叉。
+    const ring = tierRing(workday, 600)
+    for (const minute of [0, 540, 720, 1080, 1440]) {
+      const local = minute % RING_MINUTES_PER_TURN
+      expect(ring.angle(minute)).toBe(RING_START_ANGLE + (local / RING_MINUTES_PER_TURN) * 360)
+    }
+    for (const arc of ring.arcs) {
+      expect(arc.startAngle).toBe(RING_START_ANGLE + (arc.from / RING_MINUTES_PER_TURN) * 360)
+      expect(arc.endAngle).toBe(RING_START_ANGLE + (arc.to / RING_MINUTES_PER_TURN) * 360)
+    }
+  })
+  it('「现在」那颗珠子连它那圈晕，全天都留在画布之内', () => {
+    const ring = tierRing(workday, 0)
+    for (let minute = 0; minute <= 1440; minute += 5) {
+      const at = ring.point(minute)
+      expect(at.x - RING_DOT_REACH).toBeGreaterThan(0)
+      expect(at.x + RING_DOT_REACH).toBeLessThan(RING_WIDTH)
+      expect(at.y - RING_DOT_REACH).toBeGreaterThan(0)
+      expect(at.y + RING_DOT_REACH).toBeLessThan(RING_HEIGHT)
+    }
+  })
+  it('珠子的可见半径由 CSS 决定：RING_DOT_REACH = 半盒 × 最外那层收尾', () => {
+    const rule = ringDotRule()
+    const box = Number(/width:\s*([\d.]+)px/.exec(rule)?.[1])
+    expect(box).toBeGreaterThan(0)
+    // 两层同色渐变，各有一个收尾百分比；外面那层决定可见半径（里面那层是核）。
+    const stops = [...rule.matchAll(/transparent\s+([\d.]+)%/g)].map(m => Number(m[1]))
+    expect(stops).toHaveLength(2)
+    const reach = (box / 2) * (Math.max(...stops) / 100)
+    expect(reach).toBeCloseTo(RING_DOT_REACH, 10)
+    // 珠子必须比环的半宽（2.5）胖 —— 否则它整个陷在环里，既没有珠子的形，
+    // 又会逼着人再拿一圈底色把环挖开（旧版就是这么走回断口的）。
+    expect(reach).toBeGreaterThan(2.5)
+    // 配方里不许再出现面板色/底色那一层：那正是当初把环挖断的东西。
+    expect(rule).not.toMatch(/panel|sidebar-fill|bg-base/)
+  })
+  it('周末没有峰：一段弧都没有，整圈只剩底色环（一根诚实的素环）', () => {
+    for (const minute of [0, 600, 720, 1320]) {
+      const ring = tierRing(weekend, minute)
+      expect(ring.arcs).toEqual([])
+      expect(ring.arcPaths).toEqual([])
+    }
+  })
+  it('峰窗按分钟乱序下发时仍然有序（弧不许倒着画）', () => {
+    const ring = tierRing({ ...workday, peakWindows: [[840, 1080], [540, 720]] }, 600)
+    expect(ring.arcs.map(arc => arc.startAngle)).toEqual([...ring.arcs.map(arc => arc.startAngle)].sort((a, b) => a - b))
+  })
+  it('跨午夜的窗在下午这半里也画得出来（23:00-24:00 → 330°-360°）', () => {
+    const ring = tierRing({ ...workday, peakWindows: [[1380, 1440]] }, 1400)
+    expect(ring.arcs.map(arc => [arc.from, arc.to])).toEqual([[660, 720]])
+    expect(ring.arcs[0]!.startAngle).toBeCloseTo(330, 10)
+    expect(ring.arcs[0]!.endAngle).toBeCloseTo(360, 10)
+  })
+})
+
+describe('色带与判档口径与宿主一致（只看窗口，不看画法）', () => {
   it('窗口左闭右开', () => {
     expect(toneAtMinute(workday, 539)).toBe('valley')
     expect(toneAtMinute(workday, 540)).toBe('peak')
@@ -427,6 +407,16 @@ describe('色带与判档口径与宿主一致（只看窗口，不看斜坡）'
     expect(toneAtMinute(workday, 720)).toBe('valley')
     expect(toneAtMinute(workday, 840)).toBe('peak')
     expect(toneAtMinute(workday, 1080)).toBe('valley')
+  })
+  it('非工作日一律空闲', () => {
+    for (const minute of [0, 600, 900, 1439]) expect(toneAtMinute(weekend, minute)).toBe('valley')
+  })
+  it('判档不经过规范化：越界的窗口不会把一天切出额外的峰', () => {
+    // 判档刻意直接读宿主下发的原始窗口（少一层规范化就少一处可能与宿主分叉的地方），
+    // 所以越界的窗口在它自己的区间内仍然算峰 —— 形状那侧才会把窗口夹回一天之内。
+    expect(toneAtMinute({ ...workday, peakWindows: [[-60, 60]] }, 30)).toBe('peak')
+    expect(tierRails({ ...workday, peakWindows: [[-60, 60]] }).peakBlocks.map(b => [b.from, b.to]))
+      .toEqual([[0, 60]])
   })
 })
 
