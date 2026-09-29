@@ -7,7 +7,10 @@
  */
 
 import { useSyncExternalStore } from "react";
-import { NotepadText, Plus as PlusIcon } from "lucide-react";
+import {
+  IconListPenOutlineRegular,
+  IconPlusOutlineRegular,
+} from "@deepseek-ai/dsh-client-ui-primitives";
 import { notesStatsStore, openTaskText } from "../core/notes-stats.ts";
 import styles from "../styles/notes-entry.module.css";
 
@@ -36,11 +39,10 @@ export function NotesPanelIcon({
   return (
     <div className={styles.panelGlyph}>
       <div style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0, flex: "1 1 auto" }}>
-        <NotepadText
-          size={size}
-          aria-hidden
-          style={{ opacity: active ? 1 : 0.75 }}
-        />
+        {/* 官方图标只吃 size/className（不吃 style），所以选中态的透明度挂在外面这层。 */}
+        <span style={{ display: "inline-flex", flex: "none", opacity: active ? 1 : 0.75 }}>
+          <IconListPenOutlineRegular size={size} />
+        </span>
         <span className={styles.panelTitle}>{label}</span>
       </div>
 
@@ -62,8 +64,8 @@ export function NotesPanelIcon({
           </span>
         )}
 
-        <PlusIcon
-          size={14}
+        {/* 官方图标不收 onClick/data-*，所以点击面与 testid 留在外面这层（原来挂在 svg 上）。 */}
+        <span
           className={styles.panelAdd}
           data-testid="notes-panel-add"
           onClick={(event) => {
@@ -71,7 +73,9 @@ export function NotesPanelIcon({
             event.preventDefault();
             capture();
           }}
-        />
+        >
+          <IconPlusOutlineRegular size={14} />
+        </span>
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 /**
- * 输入栏左侧的便签入口（slot: conversation.input.left）：**一个** notepad-text 字形，
- * 点开才弹出「新增便签 / 便签板 / 任务泳道」三行菜单。
+ * 输入栏左侧的便签入口（slot: conversation.input.left）：**一个** 官方便签字形
+ * （IconListPenOutlineRegular，16 视框 / 1px 描边），点开才弹出「新增便签 / 便签板 /
+ * 任务泳道」三行菜单。
  *
  * 以前这里并排三个格子（记一笔 | 打开便签板 | 待办数）还带一层淡便签黄底：输入框
  * 左下角本来就窄，三个字形都在跟输入区抢宽度。收成一个字形后各件事进弹层，底色
@@ -20,8 +21,8 @@
  */
 
 import { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
-import { Kanban, NotepadText, Plus, StickyNote } from 'lucide-react';
-import { Menu } from '@deepseek-ai/dsh-client-ui-primitives';
+import { Kanban, Plus, StickyNote } from 'lucide-react';
+import { IconListPenOutlineRegular, Menu } from '@deepseek-ai/dsh-client-ui-primitives';
 import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives';
 import { useNotesEntryEnabled } from '../hooks/useNotesEntryEnabled.ts';
 import { notesStatsStore } from '../core/notes-stats.ts';
@@ -86,7 +87,7 @@ export function NotesInputToolbar(props: NotesInputToolbarProps): JSX.Element | 
           expanded={menuOpen}
           onClick={() => { setMenuOpen((open) => !open); }}
         >
-          <NotepadText size={16} />
+          <IconListPenOutlineRegular size={16} />
         </NotesEntryIconButton>
       )}
       items={items}
