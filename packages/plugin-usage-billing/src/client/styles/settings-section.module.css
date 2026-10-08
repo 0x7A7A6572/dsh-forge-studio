@@ -966,7 +966,7 @@
   border-radius: 3px;
   background: var(--dsw-alias-bg-layer-3);
 }
-/* 与内置主题那个 .barPiece 同规则（themes/builtin-entry.module.css）：几块钱的一段不到 1px，但「有」和「没有」必须看得出。 */
+/* 与内置主题那个 .barPiece 同规则（themes/entry-shell.module.css）：几块钱的一段不到 1px，但「有」和「没有」必须看得出。 */
 .todayPiece {
   min-width: 2px;
 }
@@ -1325,7 +1325,7 @@
 /* ---------- 侧栏入口：宿主只留外壳，画什么由主题决定 ---------- */
 /*
  * 外壳**不带任何视觉**：没有内边距、没有圆角、没有悬浮底色 —— 那些是主题的自由
- * （内置主题那份在 themes/builtin-entry.module.css）。这里只保证三件事：
+ * （内置主题那份在 themes/entry-shell.module.css）。这里只保证三件事：
  * 撑满侧栏给的空间、是 popup 的锚点、整块可点击。
  */
 .entryRow {

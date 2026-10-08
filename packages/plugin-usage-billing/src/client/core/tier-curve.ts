@@ -3,7 +3,7 @@
  * 两张形状共用同一条等分轴（1 单位 = 1 分钟）：{@link tierRails} 是弹窗顶部的双轨读数带，
  * {@link tierRing} 是侧栏 75×35 的 12 小时钟盘（一天两圈）。
  */
-import { clockText as clockTextOf, toneAtMinute as toneOf } from '../../shape/index.ts'
+import { clockText as clockTextOf, toneAtMinute as toneOf, type TierTone as ContractTone } from '../../shape/index.ts'
 
 /** 档位。与宿主判档同口径（见 pricing/tiers.ts），不是曲线高低。 */
 export type TierTone = 'peak' | 'valley'
@@ -273,6 +273,10 @@ export function tierRing(profile: TierShapeSource, minute: number): TierRing {
 /** 此刻档位。判档只有契约里那一份实现，这里只把钱的口径翻成画面口径。 */
 export function toneAtMinute(profile: TierShapeSource, minute: number): TierTone {
   return toneOf(profile.peakWindows, minute) === 'peak' ? 'peak' : 'valley'
+}
+
+export function visualTone(tone: ContractTone): TierTone {
+  return tone === 'peak' ? 'peak' : 'valley'
 }
 
 /** 同样只有契约里那一份实现。 */

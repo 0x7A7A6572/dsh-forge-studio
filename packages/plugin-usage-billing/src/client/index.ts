@@ -25,6 +25,8 @@ import { createThemeRegistry } from './core/theme-registry.ts'
 import { createThemeFailureStore } from './core/themes/failures.ts'
 import { installThemeLoader } from './hooks/theme-runtime.ts'
 import { builtinEntryTheme } from './themes/builtin-entry.tsx'
+import { builtinLineTheme } from './themes/builtin-line.tsx'
+import { builtinNoneTheme } from './themes/builtin-none.tsx'
 import { USAGE_BILLING_NAMESPACE } from '../types.ts'
 
 export const name = '@zzerx/dsh-plugin-usage-billing/client'
@@ -71,9 +73,11 @@ export function apply(ctx: Context): void {
       }
       d.effect(() => { syncIncludeSubagents(); return scope.subscribe(syncIncludeSubagents) })
 
-      // 内置那张先进去：它在 bundle 里、不依赖路由；同 id 时用户主题顶替它。
+      // 内置那几张先进去：它们在 bundle 里、不依赖路由；同 id 时用户主题顶替它。
       const themes = createThemeRegistry()
       themes.register(builtinEntryTheme)
+      themes.register(builtinLineTheme)
+      themes.register(builtinNoneTheme)
       const failures = createThemeFailureStore()
       const disposeThemes = installThemeLoader({ registry: themes, failures })
       d.effect(() => () => { disposeThemes(); failures.dispose(); themes.dispose() })
