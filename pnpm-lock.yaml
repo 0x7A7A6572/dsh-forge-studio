@@ -127,27 +127,6 @@ importers:
         specifier: 4.4.3
         version: 4.4.3
 
-  packages/plugin-home-studio:
-    devDependencies:
-      '@deepseek-ai/cordis':
-        specifier: 4.0.4
-        version: 4.0.4(@deepseek-ai/cordis-plugin-include@1.0.9)(@deepseek-ai/cordis-plugin-loader@1.0.5)
-      '@types/node':
-        specifier: ^24.0.0
-        version: 24.13.3
-      esbuild:
-        specifier: 0.28.2
-        version: 0.28.2
-      lucide-react:
-        specifier: 1.39.0
-        version: 1.39.0(react@18.3.1)
-      tsup:
-        specifier: 8.5.1
-        version: 8.5.1(postcss@8.5.28)(typescript@5.7.2)(yaml@2.9.0)
-      typescript:
-        specifier: 5.7.2
-        version: 5.7.2
-
   packages/plugin-memory:
     devDependencies:
       '@deepseek-ai/cordis':

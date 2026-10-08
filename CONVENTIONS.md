@@ -2,9 +2,6 @@
 
 > 「东西该放哪、文件该叫什么」；代码风格与静态检查在根目录：`.editorconfig`（格式基线）+ `.oxlintrc.json`（oxlint，规则逐条点名）。
 >
-> 构建已从 esbuild 换成 **tsdown**（共享预设 `scripts/tsdown.client.mjs`，移植自官方 `packages/client/tsdown.client.ts`，CSS 走 lightningcss）。仓库原有的 1147 个测试已全部移除，本文里的测试约定**暂时不适用**，等测试回归再启用。
->
-> `CLAUDE.md` 里那几条硬性规则（一个功能一个包、依赖只指 Service Definition、持久化只走 `ctx.storage`）是上位规则，本文是它们的展开；冲突时以 `CLAUDE.md` 为准。
 
 ## 一条总规则：文件必须自报家门
 
@@ -21,8 +18,6 @@
 
 ## 一个页面怎么写：三件套
 
-Vue 的 SFC 是**一个文件三个块**（`template` / `script setup` / `style scoped`）。React 没有 SFC，社区的标准做法是**一个文件夹三个文件** —— 同样是三块，只是摊开了：
-
 ```
 client/views/settings-section/
 ├── SettingsSection.tsx          # 视图：只有 JSX
@@ -33,15 +28,7 @@ client/views/settings-section/
     └── MemoryCard.module.css
 ```
 
-对应关系：
 
-| Vue SFC | React |
-|---|---|
-| `<template>` | `SettingsSection.tsx` 里 `return` 的那段 |
-| `<script setup>` | `useSettingsSection.ts` |
-| `<style scoped>` | `SettingsSection.module.css`（CSS Modules） |
-| `components/` | 同左 |
-| **一个文件** | **一个文件夹** |
 
 三条铁律：
 
