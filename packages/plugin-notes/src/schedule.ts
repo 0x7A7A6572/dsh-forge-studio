@@ -8,8 +8,9 @@ import type { NoteRecord, NoteSchedule, NoteScheduleInput, ScheduleMode, TaskSta
 import { fmtDateTime } from './client/core/time-text.ts'
 
 export const SCHEDULE_RETRY_MS = 5 * 60 * 1000
-/** 一次性日程过期超过该时长 → 不再补跑，直接停用。 */
-export const ONCE_STALE_MS = 7 * 24 * 60 * 60 * 1000
+/** 到点超过该时长还没派发（宿主停机太久）→ 本次不补跑。 */
+export const SCHEDULE_OVERDUE_MS = 2 * 60 * 60 * 1000
+const OVERDUE_HOURS = SCHEDULE_OVERDUE_MS / (60 * 60 * 1000)
 /** 日历式循环向后搜索的天数上限；> 1 年必命中。 */
 const CALENDAR_SEARCH_DAYS = 400
 /** 连续失败达到该次数 → 自动停用日程。 */
@@ -306,8 +307,9 @@ const OUTCOME_TEXT: Record<ScheduleDispatchOutcome, string> = {
   'dispatch-failed': '派发失败',
 }
 
-export function isOnceStale(schedule: NoteSchedule, now: number): boolean {
-  return schedule.mode === 'once' && schedule.at !== undefined && now - schedule.at > ONCE_STALE_MS
+export function isScheduleOverdue(schedule: NoteSchedule, now: number): boolean {
+  const at = schedule.mode === 'once' ? schedule.at : schedule.nextAt
+  return at !== undefined && at > 0 && now - at > SCHEDULE_OVERDUE_MS
 }
 
 function bumpFailure(schedule: NoteSchedule): NoteSchedule {
@@ -330,6 +332,17 @@ function bumpFailure(schedule: NoteSchedule): NoteSchedule {
 export function applyScheduleSkip(schedule: NoteSchedule, text: string, now: number): NoteSchedule | undefined {
   if (schedule.mode === 'once') return undefined
   return { ...schedule, lastResult: text, nextAt: nextFireAt(schedule, now) ?? schedule.nextAt }
+}
+
+export function applyScheduleOverdue(schedule: NoteSchedule, now: number): NoteSchedule {
+  if (schedule.mode === 'once') {
+    return { ...schedule, enabled: false, lastResult: `已过期超过 ${OVERDUE_HOURS} 小时，已停用` }
+  }
+  return {
+    ...schedule,
+    lastResult: `已过期超过 ${OVERDUE_HOURS} 小时，未补跑`,
+    nextAt: nextFireAt(schedule, now) ?? schedule.nextAt,
+  }
 }
 
 /**
@@ -369,7 +382,7 @@ export function applyScheduleDispatch(
     if (recurring) {
       return { ...schedule, lastResult: text, nextAt: nextFireAt(schedule, now) ?? schedule.nextAt }
     }
-    if (at !== undefined && !isOnceStale(schedule, now)) {
+    if (at !== undefined && !isScheduleOverdue(schedule, now)) {
       return { ...schedule, nextAt: now + SCHEDULE_RETRY_MS, lastResult: `${text}，5 分钟后重试` }
     }
     return { ...schedule, enabled: false, lastResult: `${text}，已停用` }
