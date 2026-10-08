@@ -22,7 +22,6 @@ export function useSettingsSection(memory: MemoryRemote) {
   const [importText, setImportText] = useState('')
   const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge')
   const [resetOpen, setResetOpen] = useState(false)
-  /** 记忆图谱：自带范围与记忆，弹窗里切范围不动背后的列表。 */
   const [graphOpen, setGraphOpen] = useState(false)
   const [graphScope, setGraphScope] = useState<MemoryScope>('global')
   const [graphProjectPath, setGraphProjectPath] = useState('')
@@ -30,25 +29,17 @@ export function useSettingsSection(memory: MemoryRemote) {
   /** 定位请求：图谱收到就点亮对应节点（seq 是重放键，同一个节点再点也要亮）。 */
   const [graphFocus, setGraphFocus] = useState<{ id: string; seq: number } | undefined>(undefined)
   const graphFocusSeq = useRef(0)
-  /** 详情抽屉：当前查看的那条（快照，操作后即关闭，避免看到过期内容）。 */
-  /** 沉淀面板：原文留档 + 后台调用审计。 */
   const [ledgerOpen, setLedgerOpen] = useState(false)
   const [raws, setRaws] = useState<readonly MemoryRawDocument[]>([])
   const [audits, setAudits] = useState<readonly MemoryAuditEntry[]>([])
-  /** 展开过的原文全文（按留档 id 缓存，列表本身不带全文）。 */
   const [rawText, setRawText] = useState<Record<string, string>>({})
   const [conflicts, setConflicts] = useState<readonly MemoryConflict[]>([])
-  /** 后台模型目录（面板「后台模型」下拉的候选；空 = 列不出，只留「跟随会话默认」）。 */
   const [modelGroups, setModelGroups] = useState<readonly MemoryModelGroup[]>([])
-  /** wiki 图层：实体目录 + 全量边（关联数、被提及数都在内存里聚合）。 */
   const [entities, setEntities] = useState<readonly MemoryEntity[]>([])
   const [edges, setEdges] = useState<readonly MemoryEdge[]>([])
-  /** 实体表单草稿（id 为 null 表示新建）。 */
-  /** 展开查看「关联记忆」的实体 id 与它那一次 listEdges 的结果。 */
-  /** 详情弹窗的关联视图与「连一条边」表单。 */
   const [busy, setBusy] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
-  /** 隐藏的文件选择框：按钮点它，选完同一个文件也要能再次触发，所以读后清空 value。 */
+  /** 隐藏的文件框：选完同一个文件也要能再次触发，所以读后清空 value。 */
   const bundleInputRef = useRef<HTMLInputElement | null>(null)
   const [bundleImportOpen, setBundleImportOpen] = useState(false)
   const [bundleName, setBundleName] = useState('')
@@ -69,7 +60,6 @@ export function useSettingsSection(memory: MemoryRemote) {
     setFeedback({ seq: feedbackSeq.current, text, tone })
   }, [])
 
-  /** run() 与详情子块都往这两个口子写，不自己造一套。 */
   const setError = useCallback((text: string) => { showFeedback('error', text) }, [showFeedback])
   const setNotice = useCallback((text: string) => { showFeedback('notice', text) }, [showFeedback])
   const dismissFeedback = useCallback(() => { setFeedback(null) }, [])
@@ -82,7 +72,6 @@ export function useSettingsSection(memory: MemoryRemote) {
       memory.getConflicts(),
       memory.models(),
     ])
-    // 模型目录只影响下拉的可选项：拿不到就退回「跟随会话默认」，不弹错误打断设置页。
     setModelGroups(m.ok ? m.value : [])
     if (c.ok) setConfig(c.value)
     else setError(errText(c.error))
@@ -95,7 +84,7 @@ export function useSettingsSection(memory: MemoryRemote) {
   }, [memory, setError])
 
   const refreshRecords = useCallback(async () => {
-    // 实体页签不按作用域筛选：拉全量条目（含归档），供「实体 → 关联记忆」在内存里映射。
+    // 实体页签不筛选作用域：拉全量（含归档），供「实体 → 关联记忆」内存映射。
     const query: Record<string, unknown> = tab === 'entity' ? { includeArchived: true } : { scope: tab }
     if (tab === 'project' && projectPath !== '') query.projectPath = projectPath
     if (tab !== 'entity' && keyword.trim() !== '') query.keyword = keyword.trim()
@@ -105,7 +94,6 @@ export function useSettingsSection(memory: MemoryRemote) {
     else setError(errText(result.error))
   }, [memory, tab, projectPath, keyword, includeArchived, setError])
 
-  /** wiki 图层的取数：实体目录 + 全量边（一次拉全，关联数在内存里聚合）。 */
   const refreshWiki = useCallback(async () => {
     const [entityResult, edgeResult] = await Promise.all([
       // 远程端点有形参 arity 校验：不传对象会在客户端直接抛「expected 1 argument(s), got 0」，
@@ -119,7 +107,6 @@ export function useSettingsSection(memory: MemoryRemote) {
     else setError(errText(edgeResult.error))
   }, [memory, setError])
 
-  /** 图谱那份记忆：不看关键字（图谱是总览），但跟随「含已归档」。 */
   const loadGraphRecords = useCallback(async (scope: MemoryScope, path: string): Promise<void> => {
     const query: Record<string, unknown> = { scope }
     if (scope === 'project' && path !== '') query.projectPath = path
@@ -133,7 +120,6 @@ export function useSettingsSection(memory: MemoryRemote) {
   useEffect(() => { void refreshRecords() }, [refreshRecords])
   useEffect(() => { void refreshWiki() }, [refreshWiki])
 
-  /** 统一包一层 busy/error 处理并刷新。 */
   async function run(action: () => Promise<unknown>, done?: string): Promise<void> {
     setBusy(true)
     setError('')
@@ -142,7 +128,6 @@ export function useSettingsSection(memory: MemoryRemote) {
       await refreshOverview()
       await refreshRecords()
       await refreshWiki()
-      // 图谱开着时改数据（详情里归档/删边）：它那份记忆也得跟着新。
       if (graphOpen) await loadGraphRecords(graphScope, graphProjectPath)
       if (done !== undefined) setNotice(done)
     } catch (e) {
@@ -152,20 +137,13 @@ export function useSettingsSection(memory: MemoryRemote) {
     }
   }
 
-  // 详情面（草稿 / 详情 / 实体关联）自成一块，run 与 setError/setNotice 单向传下去。
   const detailApi = useMemoryDetail(memory, run, tab, projectPath, setError, setNotice)
-  // 父自己也要动其中几个态（切页签要清编辑态），所以按名取回来。
   const { draft, setDraft, setEntityDraft, setOpenEntityId, setEntityEdges } = detailApi
 
-  /**
-   * 改一条设置项。九个开关/滑杆共用这一个入口 —— 视图那边只报「把哪个字段改成什么」，
-   * busy、错误、三块刷新都由 run 统一兜住。
-   */
   function patchConfig(patch: Parameters<MemoryRemote['setConfig']>[0]): void {
     void run(async () => { await memory.setConfig(patch) })
   }
 
-  /** 复制导入提示词（拿去喂别的 AI）。剪贴板可能被浏览器拒绝，所以两条分支都给提示。 */
   async function copyImportPrompt(): Promise<void> {
     try {
       await navigator.clipboard.writeText(IMPORT_PROMPT_TEXT)
@@ -175,14 +153,12 @@ export function useSettingsSection(memory: MemoryRemote) {
     }
   }
 
-  /** 打开弹窗时清掉上一轮的提示，避免旧消息串进弹窗。 */
   function openModal(open: (value: boolean) => void): void {
     setError('')
     setNotice('')
     open(true)
   }
 
-  /** 切页签：顺手清掉编辑态，免得弹窗开着、内容已经换了页。 */
   function switchTab(next: MemoryTab): void {
     setTab(next)
     setDraft(null)
@@ -228,7 +204,6 @@ export function useSettingsSection(memory: MemoryRemote) {
     })
   }
 
-  /** 重建自动边：共享实体的记忆两两相连，并清掉不再成立的自动边。 */
   async function runRebuildEdges(): Promise<void> {
     await run(async () => {
       const result = await memory.rebuildEdges()
@@ -237,9 +212,7 @@ export function useSettingsSection(memory: MemoryRemote) {
     })
   }
 
-  /* ---------- wiki 图层：实体 ---------- */
 
-  /* ---------- wiki 图层：详情里的关联 ---------- */
 
   async function runImport(): Promise<void> {
     if (tab === 'entity') return
@@ -269,7 +242,6 @@ export function useSettingsSection(memory: MemoryRemote) {
     })
   }
 
-  /** 拉沉淀面板的两段数据：原文留档（不带全文）+ 后台调用审计。 */
   async function loadLedger(): Promise<void> {
     const [rawResult, auditResult] = await Promise.all([
       memory.rawDocuments({ includeText: false, limit: 100 }),
@@ -287,7 +259,6 @@ export function useSettingsSection(memory: MemoryRemote) {
     void run(loadLedger)
   }
 
-  /** 打开图谱：实体与边由 refreshWiki 常驻，记忆按进来的页签定范围。 */
   function openGraph(): void {
     // 从实体页签进来时看全局 —— 图谱只分全局与项目两种。
     const scope: MemoryScope = tab === 'project' ? 'project' : 'global'
@@ -302,7 +273,6 @@ export function useSettingsSection(memory: MemoryRemote) {
     setGraphOpen(false)
   }
 
-  /** 弹窗里换范围：沿用上一次选过的项目，没选过就跟着面板上的选择。 */
   function switchGraphScope(scope: MemoryScope): void {
     const path = scope === 'project' ? (graphProjectPath !== '' ? graphProjectPath : projectPath) : ''
     setGraphScope(scope)
@@ -315,11 +285,6 @@ export function useSettingsSection(memory: MemoryRemote) {
     void loadGraphRecords('project', path)
   }
 
-  /**
-   * 跳去图谱看某个节点。
-   * 记忆先按它自己的范围切图（否则节点可能不在这张图里），实体不用 —— 实体是全量进图的。
-   * 详情的层级比图谱高，所以顺手关掉，不然点了看不见。
-   */
   function locateGraphNode(target: GraphLocateTarget): void {
     if (target.kind === 'memory') {
       const scope: MemoryScope = target.scope ?? 'global'
@@ -336,7 +301,6 @@ export function useSettingsSection(memory: MemoryRemote) {
     setGraphFocus({ id: graphNodeId(target.kind, target.id), seq: graphFocusSeq.current })
   }
 
-  /** 展开某份原文的全文（第一次点才取，避免列表传输整库转录）。 */
   async function showRawText(id: MemoryRawId): Promise<void> {
     await run(async () => {
       const result = await memory.getRawDocument(id)
@@ -386,14 +350,11 @@ export function useSettingsSection(memory: MemoryRemote) {
   }
   const activeProjectLabel = projects.find((item) => item.path === projectPath)?.label ?? projectPath
 
-  /** 内存聚合：每条记忆的关联数 / 每个实体的被提及数（只依赖那一次 listEdges 的结果）。 */
   const linkCounts = memoryLinkCounts(edges)
   const mentionCounts = entityMentionCounts(edges)
 
 
-  /* ---------- 全库备份：导出成文件 / 从文件导入 ---------- */
 
-  /** 导出全库备份文件（记忆 + 实体 + 边）。 */
   async function exportBundleFile(): Promise<void> {
     await run(async () => {
       const result = await memory.exportBundle()
@@ -404,7 +365,6 @@ export function useSettingsSection(memory: MemoryRemote) {
     })
   }
 
-  /** 选好文件先读出来peek一眼，条数亮出来，用户点「导入」前就知道选对没有。 */
   async function pickBundleFile(file: File | undefined): Promise<void> {
     if (file === undefined) return
     try {
@@ -422,7 +382,6 @@ export function useSettingsSection(memory: MemoryRemote) {
     }
   }
 
-  /** 打开导入弹窗：先把上一轮选的文件清掉，免得手滑点了导入用的还是旧文件。 */
   function openBundleImport(): void {
     setBundleName('')
     setBundleText('')
@@ -431,7 +390,7 @@ export function useSettingsSection(memory: MemoryRemote) {
     openModal(setBundleImportOpen)
   }
 
-  /** 确认导入。解析放在这里而不是 pick 时，是为了保证文本和最终提交的是同一份。 */
+  /** 解析放在这里而不是 pick 时：保证解析的文本就是最终提交的那份。 */
   async function runBundleImport(): Promise<void> {
     if (bundleText === '') {
       setError('请先选择一个备份文件')
@@ -456,7 +415,6 @@ export function useSettingsSection(memory: MemoryRemote) {
     })
   }
 
-  /** 下拉选中 → 关菜单再执行原动作（顺序：先关，免得动作打开弹窗后菜单还浮在上层）。 */
   function onMoreSelect(id: string): void {
     setMoreOpen(false)
     if (id === 'tidy') void runTidy()

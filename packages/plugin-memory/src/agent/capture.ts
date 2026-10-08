@@ -1,20 +1,8 @@
-/**
- * 自动生成对话记忆 —— 面板开关「生成对话记忆」= settings.autoCapture。
- *
- * 每个 turn/end 用面板指定的「后台模型」提炼这一次对话里值得长期记住的内容，写进
- * 记忆库；没指定时仍是会话自己的模型（或 agentDefaultModel 的当前选择）。全程 fail-safe：拿不到模型路由、流失败、JSON 非法、
- * 单条字段不合法，都只降级为「这次没记」，绝不干扰对话本身。
- *
- * 提炼结果是 JSON 数组，每项 {title, content, kind, scope}；scope 由模型判定，
- * project 项的工作区目录由 host 用会话 cwd 兜底填上（模型不需要知道路径）。
- */
-
 import type { Context } from '@deepseek-ai/cordis'
 import { MEMORY_KINDS, type MemoryConfig, type MemoryKind, type MemoryRawId, type MemoryScope } from '../types.ts'
 import { MEMORY_RAW_LIMIT, type MemoryService } from '../service.ts'
 import type { MemorySettingsAccess } from '../settings.ts'
 
-/** 提炼提示词。 */
 export const CAPTURE_PROMPT = [
   '你是记忆提炼器。阅读下面这段对话，只提炼"值得在未来的会话里继续知道"的内容。',
   '',
@@ -36,20 +24,14 @@ export const CAPTURE_PROMPT = [
   '没有值得记的内容就输出 []。',
 ].join('\n')
 
-/** 单次提炼最多采纳的条目数（模型多给了也只留前 N 条，其余记 too-many）。 */
 export const CAPTURE_MAX_ITEMS = 3
-/** 单条记忆正文的字符上限（与提示词里的 200 字承诺一致）。 */
 export const CAPTURE_MAX_CONTENT_CHARS = 200
-/** 单条记忆标题的字符上限。 */
 export const CAPTURE_MAX_TITLE_CHARS = 40
-/** 进度/状态快照的开头特征词（正文以此开头即视为状态快照）。 */
 export const CAPTURE_STATUS_PREFIXES = ['已', '当前', '目前', '正在', '待', '尚未'] as const
-/** 进度/状态快照的包含特征词（正文含其一即视为状态快照）。 */
 export const CAPTURE_STATUS_MARKERS = [
   '已发布', '已提交', '已合并', '已部署', '进行中', '测试全过', 'tsc 干净', 'build 成功', '正在等',
 ] as const
 
-/** 提炼出的一条候选记忆。 */
 export interface CapturedItem {
   readonly title: string
   readonly content: string
@@ -76,10 +58,7 @@ function textOfContentParts(value: unknown): string {
   return parts.join('\n').trim()
 }
 
-/**
- * 从流式分片里读 token 用量。各家 provider 字段名不一（inputTokens / promptTokens /
- * input_tokens），这里只认显式出现的数字 —— 读不到就缺省，绝不估算。
- */
+/** 只认显式出现的用量数字，读不到就缺省，绝不估算。 */
 export function readUsage(chunk: unknown): { inputTokens?: number; outputTokens?: number } {
   const usage = asRecord(asRecord(chunk)?.usage)
   if (usage === undefined) return {}
@@ -91,15 +70,11 @@ export function readUsage(chunk: unknown): { inputTokens?: number; outputTokens?
   }
 }
 
-/** 异常转可读文本（审计里的 error 字段）。 */
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-/**
- * 取会话事件：真实 Session 只有 snapshotEvents()（事件日志的方法，不是属性），
- * 测试替身可能直接给 events。两条都认，都读不到就是空。
- */
+/** 真实 Session 只有 snapshotEvents() 方法；测试替身可能直接给 events。 */
 function sessionEvents(session: unknown): readonly unknown[] {
   const handle = session as { snapshotEvents?: () => unknown; events?: unknown } | undefined
   if (handle === undefined) return []
@@ -110,21 +85,13 @@ function sessionEvents(session: unknown): readonly unknown[] {
   return Array.isArray(handle.events) ? handle.events : []
 }
 
-/**
- * 助手文本的位置：assistant/message 的事件体是 { turn, step, message, … }，
- * 正文在 message.content；data.content 是早期形状，留作兜底。
- */
 function assistantBodyOf(data: Record<string, unknown>): string {
   const fromMessage = textOfContentParts(asRecord(data.message)?.content)
   return fromMessage !== '' ? fromMessage : textOfContentParts(data.content)
 }
 
 /**
- * 从会话事件里取最后若干轮「用户问 + 助手答」的纯文本。任何异常返回空串。
- *
- * 只收真人输入（user/message 且 source.kind === 'user'）——agent.inject 塞进来的
- * 合成上下文（文件变更提示、AGENTS.md、技能正文、定时通知、目标续轮）同样是
- * user/message，收进来就是纯噪声。倒着走事件，取满 maxTurns 轮或 maxChars 就停。
+ * 只收真人输入：agent.inject 塞进来的合成上下文同样是 user/message，收进来是噪声。
  */
 export function collectTranscript(session: unknown, maxTurns = 12, maxChars = 12000, includeAssistant = true): string {
   try {
@@ -168,35 +135,25 @@ export function collectTranscript(session: unknown, maxTurns = 12, maxChars = 12
   }
 }
 
-/** 被代码硬闸门丢弃的一条（原因见 CaptureDropReason）。 */
 export interface CaptureDroppedItem {
   readonly title: string
   readonly reason: string
 }
 
-/** 丢弃原因：条数超限 / 标题过长 / 正文过长 / 进度状态快照。 */
 export type CaptureDropReason = 'too-many' | 'title-too-long' | 'too-long' | 'status-snapshot'
 
-/** 解析结果：采纳的条目 + 被丢弃的条目（丢弃不截断，直接不要）。 */
 export interface CaptureParseResult {
   readonly items: CapturedItem[]
   readonly dropped: CaptureDroppedItem[]
 }
 
 
-/** 正文是不是进度 / 状态快照（以「已 / 当前 / …」开头，或含「已发布 / 进行中 / …」）。 */
 export function isStatusSnapshot(text: string): boolean {
   if (CAPTURE_STATUS_PREFIXES.some((prefix) => text.startsWith(prefix))) return true
   return CAPTURE_STATUS_MARKERS.some((marker) => text.includes(marker))
 }
 
-/**
- * 解析模型输出为候选记忆；容忍代码块围栏与前后噪声。
- *
- * 这里是**代码级硬闸门**：提示词只是请求，闸门才是保证 —— 条数只留前 3 条，
- * 标题 >40 字、正文 >200 字、进度状态快照，全部直接丢弃（不截断），
- * 并连标题与原因一起回报，让审计与日志能解释「这次为什么没记」。
- */
+/** 超限与状态快照一律整条丢弃，不截断。 */
 export function parseCapturedItems(text: string): CaptureParseResult {
   const trimmed = text.trim()
   if (trimmed === '') return { items: [], dropped: [] }
@@ -215,14 +172,12 @@ export function parseCapturedItems(text: string): CaptureParseResult {
   for (let index = 0; index < parsed.length; index += 1) {
     const record = asRecord(parsed[index])
     const title = record !== undefined && typeof record.title === 'string' ? record.title.trim() : ''
-    // 条数上限：第 4 条起一律丢弃（不因为它更长/更短而改变判定）。
     if (index >= CAPTURE_MAX_ITEMS) {
       dropped.push({ title, reason: 'too-many' })
       continue
     }
     if (record === undefined) continue
     const content = typeof record.content === 'string' ? record.content.trim() : ''
-    // 结构不完整（缺标题或正文）的项静默跳过，不占丢弃清单。
     if (title === '' || content === '') continue
     if (title.length > CAPTURE_MAX_TITLE_CHARS) {
       dropped.push({ title, reason: 'title-too-long' })
@@ -243,11 +198,7 @@ export function parseCapturedItems(text: string): CaptureParseResult {
   return { items, dropped }
 }
 
-/**
- * 取一个服务：先走服务注册表（ctx.get），再试属性访问（ctx.llm）。
- * 本插件只声明了部分 inject，属性访问未必看得见别的服务；两条都试，
- * 都没有才算不可用 —— 未声明的服务访问可能直接抛，所以两条都要包 try。
- */
+/** 未声明的服务访问可能直接抛，所以 ctx.get 与属性访问两条都要包 try。 */
 export function serviceOf<T>(ctx: Context, name: string): T | undefined {
   try {
     const viaGet = (ctx as unknown as { get?: (key: string) => unknown }).get?.(name)
@@ -260,11 +211,6 @@ export function serviceOf<T>(ctx: Context, name: string): T | undefined {
   return undefined
 }
 
-/**
- * 面板指定的后台模型（设置里的 llmProvider / llmModel）。
- * 两个字段都非空才算指定 —— 只有一个字段是半截配置（多半是手工改过设置），
- * 当作没配，退回默认路由，而不是拿它的残缺值去发一次注定失败的调用。
- */
 export function configuredRoute(
   config: Pick<MemoryConfig, 'llmProvider' | 'llmModel'>,
 ): { provider: string; model: string } | undefined {
@@ -273,13 +219,6 @@ export function configuredRoute(
   return provider !== '' && model !== '' ? { provider, model } : undefined
 }
 
-/**
- * 当前可用的模型路由；拿不到返回 undefined（本次不提炼 / 不判定）。
- *
- * 优先级：面板指定的后台模型 > 会话自身模型 > agentDefaultModel 的当前选择。
- * 指定值不做启动期校验：模型被删/不可路由时调用失败仍是 fail-safe
- * （提炼记一条失败审计，判定退化成新建），比「配置了但悄悄不用」更好查。
- */
 export function resolveRoute(
   ctx: Context,
   session: unknown,
@@ -308,10 +247,6 @@ export function resolveRoute(
   return undefined
 }
 
-/**
- * 频次判定：每 N 个回合提炼一次（N=1 即每轮，等于旧行为）。
- * 拿不到轮次号时兜底为触发 —— 缺一个字段不该把自动提炼整个关掉。
- */
 export function shouldCaptureNow(turn: number | undefined, every: number): boolean {
   const n = Number.isFinite(every) ? Math.max(1, Math.floor(every)) : 1
   if (n <= 1) return true
@@ -319,22 +254,14 @@ export function shouldCaptureNow(turn: number | undefined, every: number): boole
   return Math.floor(turn) % n === 0
 }
 
-/** 一次提炼的转录窗口与料源（来自面板高级配置）。 */
 export interface CaptureOptions {
   readonly maxTurns?: number
   readonly maxChars?: number
   readonly includeAssistant?: boolean
-  /** 面板指定的后台模型；缺省 = 跟随会话自身 / agentDefaultModel。 */
   readonly route?: { readonly provider: string; readonly model: string }
 }
 
-/**
- * 一个 turn/end 的完整摄取：留档转录 → 模型抽取 → 写条目 → 记审计。
- *
- * 顺序上有意为之：**先留档，再调模型**。模型不可用、调用失败、输出不可解析，
- * 原文都已经在库里，之后可以对同一份原文重抽（reingest），不会有"这次没记就永远丢了"。
- * 转录按会话归并成一份（后一轮覆盖前一轮，转录本身是累积的），不会越滚越多。
- */
+/** 有意先留档再调模型：抽取失败原文仍在，可对同一份重抽。 */
 export async function captureOne(
   ctx: Context,
   service: MemoryService,
@@ -359,7 +286,6 @@ export async function captureOne(
     }
   })()
 
-  // 1) 原文留档（不依赖模型是否可用）。
   let rawId: MemoryRawId | undefined
   try {
     const raw = await service.storeRawDocument({
@@ -375,8 +301,6 @@ export async function captureOne(
     ctx.logger?.warn?.('[plugin-memory] capture archive skipped: ' + errorText(error))
   }
 
-  // 2) 模型抽取。拿不到路由 / 没有 llm 服务时到此为止（转录已留档），但**留一条
-  //    失败审计**：静默跳过会让「模型觉得不值得记」和「这一步坏了」长得一模一样。
   const route = resolveRoute(ctx, session, options.route)
   const llm = serviceOf<{ stream?: (options: unknown) => AsyncIterable<unknown> }>(ctx, 'llm')
   if (route === undefined || llm?.stream === undefined) {
@@ -402,7 +326,6 @@ export async function captureOne(
     return
   }
 
-  // 2b) 带上「已有的相关记忆标题」当参考：同一条事别另起新标题（同标题会原地合并）。
   let systemText = CAPTURE_PROMPT
   try {
     const titles = service.overlapTitleHints(cwd)
@@ -427,8 +350,7 @@ export async function captureOne(
     const stream = llm.stream({
       provider: route.provider,
       model: route.model,
-      // 一次性调用走 system 槽（GenerateOptions 的 purpose 是 'compaction' | 'session-title'
-      // 的封闭联合，塞自定义值属于越界）。消息形状对齐 dsh-compaction-basic 的既有用法。
+      // 自定义 purpose 越界（封闭联合），提示词只能走 system 槽。
       system: systemText,
       maxTokens: 2048,
       signal: controller.signal,
@@ -459,7 +381,6 @@ export async function captureOne(
     clearTimeout(timer)
   }
 
-  // 3) 写条目：解析走代码级硬闸门，被丢弃的项连原因一起进审计与日志。
   const parsed: CaptureParseResult = failure === undefined
     ? parseCapturedItems(text)
     : { items: [], dropped: [] }
@@ -496,7 +417,6 @@ export async function captureOne(
     }
   }
 
-  // 4) 审计这次后台调用（读不到用量就缺省）。
   try {
     await service.recordAudit({
       kind: 'capture',
@@ -526,10 +446,6 @@ export async function captureOne(
   else if (failure !== undefined) ctx.logger?.warn?.('[plugin-memory] capture extraction failed: ' + failure)
 }
 
-/**
- * 挂上 turn/end 提炼钩子。返回 disposer。
- * 开关关闭、会话重复触发、模型不可用、提炼失败 —— 全部静默降级。
- */
 export function installMemoryCapture(
   ctx: Context,
   service: MemoryService,

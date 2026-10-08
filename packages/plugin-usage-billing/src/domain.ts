@@ -1,12 +1,7 @@
 /**
- * usage-billing storage domain：ledger_shards（主账本，按会话×天分片）/ folds（水位）
- * / snapshots（价表快照）/ aliases（手工别名）/ diag（诊断）五表，per-record 布局。
- * 数据持久化只走 ctx.storage 之上的 storage-domain，不自造。
- *
- * ⚠️ per-record 布局把**键**当文件路径的一段，只接受 `/^[a-zA-Z0-9_-]+$/`，不匹配的键
- * 在写入时直接被拒。所以五张表的键一律由 `storage-key.ts` 产出，任何调用点都不得自己拼键。
- * ⚠️ 表名另受 `/^[a-z][a-z0-9_]*$/` 约束（defineDomain 在模块加载时直接抛），
- * 所以是 `ledger_shards`，不是驼峰。
+ * usage-billing storage domain：ledger_shards / folds / snapshots / aliases / diag 五表，
+ * per-record 布局；表名受 `/^[a-z][a-z0-9_]*$/` 约束，是 `ledger_shards` 而不是驼峰。
+ * 五表的键一律由 `storage-key.ts` 产出（键当文件路径的一段，只接受 `/^[a-zA-Z0-9_-]+$/`）。
  */
 
 import type { ZodType } from 'zod'
@@ -43,9 +38,8 @@ export const ledgerRowSchema = z.object({
 /**
  * 账本分片记录：一个 (会话, 天) 的全部账本行（键 = \`ledgerShardKey(sessionId, day)\`）。
  *
- * 行本身一个字没改（身份仍是 \`id\`），换掉的只是容器：per-record 布局一行一文件时
- * 两万行就是两万次文件打开（冷启动实测 35.7s），按会话×天收成 373 条后降到 0.68s。
- * \`.passthrough()\` 与行同一理由：升级时旧记录多出的字段不能被判成坏记录。
+ * 行本身一个字没改（身份仍是 \`id\`），换掉的只是容器：per-record 一行一文件时两万行
+ * 要开两万次文件，按会话×天收成一条。\`.passthrough()\`：旧记录多出的字段不能被判成坏。
  */
 export const ledgerShardSchema = z.object({
   v: z.number(),
@@ -92,12 +86,9 @@ export const modelAliasSchema = z.object({
 }) as unknown as ZodType<ModelAlias>
 
 /**
- * 诊断条目。
- *
- * `lastAt` / `count` 用 zod `.default()` 而不是必填：稳定键之前落盘的老记录只有
- * `{id, at, kind, detail}`，而 storage-domain 在 open() 时对**每条**记录跑 schema.parse，
- * 缺必填字段会让整条记录（乃至整个域）读失败。默认值只在「老记录」上生效，
- * 新记录一律由 `recordDiagnostic` 显式写全。
+ * `lastAt` / `count` 用 zod `.default()` 而不是必填：之前的记录只有
+ * `{id, at, kind, detail}`，而 storage-domain 在 open() 时对每条记录跑 schema.parse，
+ * 缺必填字段会让整条记录乃至整个域读失败。
  */
 export const diagnosticSchema = z.object({
   id: z.string(),

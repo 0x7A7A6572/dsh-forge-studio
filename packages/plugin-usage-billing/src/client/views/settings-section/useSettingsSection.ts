@@ -1,22 +1,3 @@
-/**
- * 设置页的全部状态与动作：预算、显示偏好、价表刷新、用量视图（概览 / 趋势 / 明细）、
- * 页签（配置 / 价表 / 其他配置，含「访问过就留着」的挂载集合）、概览长卡的折叠、
- * 预算跨档提醒与回填提示条。
- *
- * 设置快照走宿主真实的 `ctx.configForms.get<BillingConfigLike>(条目 id)` 面
- * （`getSnapshot` / `subscribe`，与 plugin-notes / plugin-daily-log 同一姿态）——
- * 本地再声明一个 `{ get, watch }` 影子契约在宿主里根本不存在。
- *
- * dsh 0.1.7 起写入面（set/unset/mutate）**拒绝时 resolve false**（旧版抛异常），
- * 传输层错误才 reject：`writeConfig` 两条都只记日志 —— 快照始终是 host 的真值，
- * 不回弹也不猜。
- *
- * 计费弹窗取消后，原来挂在弹窗上的两件事（跨档提醒、回填提示条）搬到这里：判定时机从
- * 「面板真的打开」变成「这一页真的被看到」，语义没变（没被看到的提醒不该被记成已提醒）。
- *
- * 用量数据的自动重取见 core/revalidate.ts：跨档提醒跟着心跳重判（用的是同一份 overview，
- * 与入口卡在 query 里合并成一份）；账本状态与价表是「打开时看一眼」的快照，不跟心跳。
- */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { KeyboardEvent } from 'react'
 import type { UsageBillingRemote } from '../../core/remote.ts'
@@ -37,30 +18,26 @@ export interface SettingsSectionProps {
   billing: UsageBillingRemote | undefined
   scope: BillingScope
   store: BillingStore
-  /** 同一拍的重复请求合并（用量视图与入口卡共用同一份 overview）。 */
+  /** 与入口卡共用同一份 overview：同拍重复请求合并。 */
   query: QueryCache
   /** 自动重取心跳（按 fiber 创建，见 core/revalidate.ts）。 */
   revalidate: Revalidator
-  /** 侧栏入口的主题集合：设置页用它列出可用主题（主题选择器直接订阅它）。 */
+  /** 侧栏入口的主题集合：设置页用它列出可用主题。 */
   themes: ThemeRegistry
   /** 主题装载失败列表（扫到了但转译不过去的主题）。 */
   failures: ThemeFailureStore
 }
 
-/** 页签 id：用量模块常驻在页签**之上**，所以这里只剩配置类的内容。 */
+/** 用量模块常驻在页签之上，页签只含配置类内容。 */
 export type SettingsTabId = 'config' | 'pricing' | 'other'
 
-/** 三个页签：模块级常量（身份稳定，渲染时不重建）。 */
 export const SETTINGS_TABS: ReadonlyArray<{ id: SettingsTabId; label: string }> = [
   { id: 'config', label: '配置' },
   { id: 'pricing', label: '价表' },
   { id: 'other', label: '其他配置' },
 ]
 
-/**
- * 写一次配置：拒绝（resolve false）与传输异常都只记日志。
- * 调用方一律不回弹本地状态 —— 快照仍由 host 真值驱动。
- */
+/** false = 写入被拒（不是抛异常）；拒绝与传输异常都只记日志。 */
 function writeConfig(run: () => Promise<boolean>): void {
   void run().then((ok) => {
     if (!ok) console.warn('[usage-billing] 配置写入被拒绝（当前没有写权限）')
@@ -76,7 +53,7 @@ export interface LedgerStatus {
   snapshots: number
   /** 账本摊成的分片记录数；只做诊断，界面不展示。 */
   shards: number
-  /** 正在从会话日志重建：数字还在长，界面要说明而不是把它当结果。 */
+  /** 正在重建：这些数字还在长，不是最终值。 */
   rebuild: { active: boolean }
 }
 
@@ -88,7 +65,7 @@ export interface BudgetNoticeState {
 
 export function useSettingsSection(props: SettingsSectionProps) {
   const { billing, scope, store, query, revalidate } = props
-  // 心跳一拍换一个 revision：用量视图与跨档提醒依赖它重取，账本状态/价表不跟心跳。
+  // 心跳驱动用量视图与跨档提醒重取；账本状态与价表是快照，不跟心跳。
   const revision = useRevision(revalidate)
   const settings = useSyncExternalStore(
     useCallback((notify: () => void) => scope.subscribe(notify), [scope]),
@@ -101,24 +78,22 @@ export function useSettingsSection(props: SettingsSectionProps) {
   const cfg = settings.value
   const [status, setStatus] = useState<LedgerStatus | null>(null)
   const [snapshotId, setSnapshotId] = useState(NON_FINITE_PLACEHOLDER)
-  /** 页内用量视图：弹窗没了，概览 / 趋势 / 明细现在是这一页的三选一。 */
   const [view, setView] = useState<TabId>('overview')
-  /** 当前页签：默认「配置」。 */
   const [tab, setTab] = useState<SettingsTabId>('config')
   /**
-   * 访问过的页签：与宿主「内置插件」页同一姿态 —— 首次选中才挂载，之后一直挂着只隐藏，
-   * 于是别名卡片的开合、价目表的排序与过滤在来回切页签时不丢。
+   * 只增不减：首次选中才挂载，之后一直挂着只隐藏，
+   * 于是切页签不丢卡片开合与价表排序。
    */
   const [visitedTabs, setVisitedTabs] = useState<ReadonlySet<SettingsTabId>>(
     () => new Set<SettingsTabId>(['config']),
   )
   /**
-   * 概览里那两张长卡的折叠：状态放在这里而不是 TabOverview 里 —— 概览 / 趋势 / 明细
-   * 是条件渲染（切走即卸载），状态留在视图里会被重新挂载抹掉。
+   * 概览 / 趋势 / 明细是条件渲染，状态留在视图里会被重新挂载抹掉，
+   * 所以折叠状态留在本 hook 里。
    */
   const [activityOpen, setActivityOpen] = useState(false)
   const [modelsOpen, setModelsOpen] = useState(false)
-  /** 本次跨档的提醒（本地态：落盘后 `shouldNotify` 就变 null 了，提醒本身要留在屏幕上）。 */
+  /** 本次跨档提醒（本地态：落盘后 shouldNotify 变 null，提醒要留在屏幕上）。 */
   const [budgetNotice, setBudgetNotice] = useState<BudgetNoticeState | null>(null)
   /** 预算金额草稿：`null` = 没在编辑，输入框直接显示快照真值。 */
   const [budgetDraft, setBudgetDraft] = useState<string | null>(null)
@@ -134,8 +109,7 @@ export function useSettingsSection(props: SettingsSectionProps) {
         if (!alive) return
         if (s.ok) {
           setStatus(s.value)
-          // 重建是分钟级的：还在重建就隔几秒再看一眼，否则状态区会一直停在旧数字上，
-          // 而用户看到的正是「数字不全」。重建落定后自然不再排下一拍。
+          // 重建是分钟级的：还在重建就每 3s 再看一眼，落定后自然不再排下一拍。
           if (s.value.rebuild.active) timer = setTimeout(load, 3000)
         }
         // 取不到不是「0 行」：状态区停在占位（账本 0 行 / 快照 —）并留日志。
@@ -143,7 +117,6 @@ export function useSettingsSection(props: SettingsSectionProps) {
         if (p.ok) setSnapshotId(p.value.snapshotId)
         else console.warn('[usage-billing] 价表快照取数失败', p.error)
       }).catch((error: unknown) => {
-        // wire 层 reject 同理：状态区停在占位，绝不伪造行数或快照 id。
         console.warn('[usage-billing] 设置页取数通道异常', error)
       })
     }
@@ -151,27 +124,25 @@ export function useSettingsSection(props: SettingsSectionProps) {
     return () => { alive = false; if (timer !== undefined) clearTimeout(timer) }
   }, [billing])
 
-  // 快照一变就把输入交还给快照：写成功、写失败、或被别处改掉，显示的都是宿主真值。
+  // 快照一变就交还草稿：写成功、写失败、被别处改掉都显示宿主真值。
   useEffect(() => { setBudgetDraft(null) }, [budgetText])
 
-  // 首次选中才记进「访问过」：已访问的集合只增不减（引用不变就不触发重渲染）。
   useEffect(() => {
     setVisitedTabs((previous) => (previous.has(tab) ? previous : new Set([...previous, tab])))
   }, [tab])
 
   /**
-   * `notices` 的唯一写缝（回填提示条关闭 / 预算跨档标记共用它）。基数必须在**写入时刻**
-   * 从快照现取，绝不能用本次渲染捕获的 `cfg.notices`：两个写者写的是同一字段的不同子键，
-   * 各自的渲染快照可能都停在对方写入落地之前，用陈旧基数展开会把对方刚写的子键抹掉。
-   * 另用一条写队列把「读基数 → 写回」串起来（宿主对同一命名空间的写入是排队结算的）。
+   * notices 的唯一写缝：基数必须在写入时刻从快照现取，不能用渲染捕获的 cfg.notices
+   * 两个写者写同一字段的不同子键，陈旧基数展开会抹掉对方刚写的。
+   * 另用写队列串起「读基数 → 写回」：宿主同命名空间的写入是排队结算的。
    */
   const noticesQueue = useRef<Promise<void>>(Promise.resolve())
   const writeNotices = useCallback((patch: Partial<BillingConfigLike['notices']>): Promise<void> => {
-    // 队列自身必须被吞掉失败，否则一次写失败会让整条链变成 rejected，后续写入再也排不上。
+    // 先吞掉队列自身的失败，否则一次写失败会让整条链 rejected 再也排不上。
     const run = noticesQueue.current.catch(() => undefined).then(() => {
       const notices = scope.getSnapshot().value?.notices ?? { backfillDismissed: false, budgetNotified: {} }
       return scope.set('notices', { ...notices, ...patch }).then((ok) => {
-        // 拒绝不算「已关」：快照没变，提示条下次进这一页还会出现（另记一条日志）。
+        // 拒绝不算「已关」：快照没变，提示条下次进这一页还会出现。
         if (!ok) console.warn('[usage-billing] notices 写入被拒绝（当前没有写权限）')
       }).catch((error: unknown) => {
         console.warn('[usage-billing] notices 写入失败', error)
@@ -181,16 +152,10 @@ export function useSettingsSection(props: SettingsSectionProps) {
     return run
   }, [scope])
 
-  /** 一次性关闭：写回宿主 notices（快照更新后提示条永久消失）。 */
   const dismissBackfill = useCallback(() => {
     void writeNotices({ backfillDismissed: true })
   }, [writeNotices])
 
-  /**
-   * 预算跨档提醒：数据用 `overview('month')`（预算本来就是月度口径），「已提醒」写进
-   * 设置 `notices.budgetNotified`。`overview` 取数失败就不提醒 —— 宁可不说，
-   * 也不能凭一个坏读报一个假档位。
-   */
   useEffect(() => {
     if (billing === undefined || cfg === undefined) return
     let alive = true
@@ -205,48 +170,36 @@ export function useSettingsSection(props: SettingsSectionProps) {
       if (spend.shouldNotify === null) return
       setBudgetNotice({ tier: spend.shouldNotify, pct: spend.pct })
       void writeNotices({ budgetNotified: { ...notified, [monthKey]: String(spend.shouldNotify) } })
-    }).catch(() => { /* 取数通道异常：不提醒，也不制造 unhandled rejection */ })
+    }).catch(() => { /* 取数通道异常：不提醒，也不留 unhandled rejection */ })
     return () => { alive = false }
   }, [billing, includeSubagents, scope, cfg, writeNotices, revision, query])
 
   const dismissBudgetNotice = useCallback(() => { setBudgetNotice(null) }, [])
 
-  /** 概览两张长卡的开合：回调身份稳定（Card 的折叠按钮不吃重渲染）。 */
   const toggleActivity = useCallback(() => { setActivityOpen((previous) => !previous) }, [])
   const toggleModels = useCallback(() => { setModelsOpen((previous) => !previous) }, [])
 
-  /** 写整段 pricing（与 plugin-notes 写 webdav 同姿态）：schema 会用 base 补上未写的字段。 */
+  /** 写整段 pricing：未写的字段由 schema 的 base 补上。 */
   const writeAutoRefresh = useCallback((next: boolean) => {
     writeConfig(() => scope.set('pricing', { ...(cfg?.pricing ?? {}), autoRefresh: next }))
   }, [scope, cfg])
 
-  /** 预算开关：写宿主设置（`budget.enabled`），入口的进度条下一帧跟随快照变化。 */
   const writeBudgetEnabled = useCallback((next: boolean) => {
     writeConfig(() => scope.set('budget', { ...(cfg?.budget ?? {}), enabled: next }))
   }, [scope, cfg])
 
-  /**
-   * 子代理口径：写宿主设置（持久）**并**同步视图 store（当前账立即按新口径重取）。
-   * 两处都要写：只写 store 刷新页面就丢，只写设置则页面上这一轮仍按旧口径取数。
-   */
+  /** 子代理口径两处都写：settings 持久，store 让当前账立即重取。 */
   const writeIncludeSubagents = useCallback((next: boolean) => {
     store.setIncludeSubagents(next)
     writeConfig(() => scope.set('display', { ...(cfg?.display ?? {}), includeSubagents: next }))
   }, [scope, store, cfg])
 
-  /**
-   * 峰谷时段图开关：写宿主设置（持久）。两个入口的弹窗读同一份快照（hooks/useEntryFlags.ts
-   * 的 useShowTierCurve），所以这里只负责写，画不画由弹窗那一侧判。
-   */
+  /** 峰谷时段图开关：只负责写，画不画由弹窗侧的 useShowTierCurve 判。 */
   const writeShowTierCurve = useCallback((next: boolean) => {
     writeConfig(() => scope.set('display', { ...(cfg?.display ?? {}), showTierCurve: next }))
   }, [scope, cfg])
 
-  /**
-   * 入口开关：写宿主设置（持久）。两个开关各自独立，两个入口组件订阅同一份快照，
-   * 谁渲染由 `entryFlagsOf` 收敛 —— 这里只负责写，且每次都把两个开关一起落盘，
-   * 让「旧落点」那一路彻底让位（只写一个会出现「开关半个在位」的中间态）。
-   */
+  /** 两个开关一起落盘：只写一个会留下「开关半个在位」的中间态。 */
   const writeEntry = useCallback((key: EntryKey, next: boolean) => {
     const flags = entryFlagsOf(cfg)
     writeConfig(() => scope.set('display', {
@@ -260,9 +213,8 @@ export function useSettingsSection(props: SettingsSectionProps) {
   const writeComposerEntry = useCallback((next: boolean) => { writeEntry('composer', next) }, [writeEntry])
 
   /**
-   * 提交预算金额（失焦或回车）。**不在 onChange 里写**：敲 `300` 会依次写 `3` / `30` / `300`，
-   * 每一笔都会拿中间值去判一次跨档提醒。只接受有限正数 —— 空值 / 0 / 负数 / 非数字一律
-   * 不落盘并回弹到快照真值（0 会被 `budget.ts` 当成「无预算」，写进去等于把预算悄悄关掉）。
+   * 提交预算金额（失焦或回车）：只接受有限正数，0 在 budget.ts 里等于「无预算」，
+   * 空值 / 0 / 负数 / 非数字一律不落盘并回弹快照真值。
    */
   const commitBudget = useCallback(() => {
     if (budgetDraft === null) return
@@ -270,9 +222,8 @@ export function useSettingsSection(props: SettingsSectionProps) {
     const parsed = Number(raw)
     if (raw === '' || !Number.isFinite(parsed) || parsed <= 0) { setBudgetDraft(null); return }
     if (parsed === cfg?.budget?.monthlyCny) { setBudgetDraft(null); return }
-    // 先显示已提交值，等宿主快照回来再交还控制权：否则写往返期间会闪回旧金额。
+    // 先显示已提交值，等快照回来再交还：否则写往返期间会闪回旧金额。
     setBudgetDraft(String(parsed))
-    // 提交被拒（或传输失败）时把草稿交还给快照真值，否则输入框会一直显示一个没落盘的数字。
     void scope.set('budget', { ...(cfg?.budget ?? {}), monthlyCny: parsed })
       .then((ok) => { if (!ok) setBudgetDraft(null) })
       .catch((error: unknown) => {
@@ -281,7 +232,7 @@ export function useSettingsSection(props: SettingsSectionProps) {
       })
   }, [scope, cfg, budgetDraft])
 
-  /** 回车提交；**不顺手 blur** —— blur 会再触发一次提交，同一拍里读到的还是旧 prop，会写两遍。 */
+  /** 回车提交；这里不 blur —— 会再触发一次提交，同一拍读到的还是旧 prop。 */
   const onBudgetKeyDown = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter') commitBudget()
   }, [commitBudget])

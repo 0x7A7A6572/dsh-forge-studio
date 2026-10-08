@@ -1,14 +1,8 @@
 /**
- * NotesService —— ctx.notes：把 notes 域的 KvTable 封装成便签 CRUD。
- * 读取同步（storage-domain 权威内存态）；写入经后端持久化后生效。
+ * ctx.notes：把 notes 域的 KvTable 封装成便签 CRUD；读取同步（storage-domain 权威内存态），写入经后端持久化后生效。
  *
- * 本服务同时是 Typert Gateway 的 Remote 服务（SRC 标记模式，无 codegen）：
- * - 继承 TypertRemoteService ⇒ 自动绑定 wire 命名空间 `notes`（服务 key）；
- * - 公开方法在类定义后手动挂 marker（等价于 @Remote 装饰器产物，见
- *   markRemoteMethods）⇒ gateway 以 <namespace>/<method> 端点暴露，
- *   参数/结果按 src-json 透传；client 端 ctx.remote.notes.* 直接调用。
- * 端点参数 wire 名 = 方法形参名（gateway 从函数源码解析），故方法签名
- * 不得解构参数，且 client 侧 descriptors 的 wire 名必须与之完全一致。
+ * Typert Remote 服务（SRC 标记，无 codegen）：端点参数 wire 名 = 方法形参名，所以方法
+ * 签名不得解构参数，client 侧 descriptors 的 wire 名必须与之完全一致。
  */
 
 import { randomUUID } from 'node:crypto'
@@ -41,12 +35,12 @@ import type {
 import type { WebdavRunner } from './webdav-backup.ts'
 import { beginRun, settleRun } from './client/core/task-lanes.ts'
 
-/** notes/watch 流推送的变更事件（client 侧以 src-json 透传，不改形状）。 */
+/** notes/watch 流推送的变更事件。 */
 export interface NotesChangeEvent {
   readonly changedAt: number
 }
 
-/** 任务执行事务结果（client 只当不透明值透传，见 client/core/notes-remote.ts）。 */
+/** 任务执行事务结果，client 只当不透明值透传。 */
 export type TaskExecuteResult =
   | { readonly ok: true; readonly note: NoteRecord }
   | {
@@ -56,10 +50,7 @@ export type TaskExecuteResult =
 
 type NotesChangeListener = () => void
 
-/**
- * 合成任务泳道身份：status 必有，可选执行目标（agentPreset / model）有才带 ——
- * 空串 / undefined 都表示「用宿主默认」，不落空字段（缺省即默认）。
- */
+/** 空串 / undefined 都表示「用宿主默认」，不落空字段。 */
 function makeTaskLane(
   status: TaskStatus,
   agentPreset: string | undefined,
@@ -74,58 +65,39 @@ function makeTaskLane(
 }
 
 /**
- * 任务执行运行时（host 注入的窄接口；见 agent/task-dispatch.ts 实现）：
- * 任务执行 = **按工作区新建一个会话** → 在该新会话里投一次 prompt；便签板所在
- * 会话不再承载任务执行（执行会话可被用户单独打开/续聊）。
- * 拆成四个成员是为了把「新建会话」与「投递」分成两相：service 在两相之间落地
- * 执行租约（租约绑定**新会话** id），agent 一开工即可通过 notes_task_report 收尾，
- * 不存在「prompt 已投出但租约未写」的竞态。
+ * 任务执行运行时（host 注入；见 agent/task-dispatch.ts）。
+ * 拆成四个成员是为了把「新建会话」与「投递」分成两相：租约在两相之间落地，
+ * 不存在 prompt 已投出但租约未写的竞态。
  */
 export interface NotesTaskRuntime {
-  /**
-   * 新建执行会话（cwd = workspace），返回新会话 id；失败抛错。
-   * agentPreset 给了即按该预设装配会话（缺省 = 宿主默认预设）。
-   */
+  /** 新建执行会话（cwd = workspace）；失败抛错。给 `agentPreset` 即按该预设装配。 */
   createSession(input: {
     readonly workspace: string
     readonly agentPreset?: string
   }): Promise<string>
-  /**
-   * 给执行会话选模型（M2）：必须在投递 prompt **之前**调用，首个 turn 才用得上。
-   * 便签没指定模型时调用方直接跳过（不传 = 宿主默认模型）。失败抛错。
-   */
+  /** 必须在投递 prompt 之前调用，首个 turn 才用得上模型；失败抛错。 */
   selectModel(input: {
     readonly sessionId: string
     readonly model: NoteModelSelection
   }): Promise<void>
-  /** 向执行会话投递任务 prompt（agent 由此开工）；失败抛错。 */
+  /** 向执行会话投递任务 prompt（agent 由此开工）。 */
   prompt(input: {
     readonly noteId: NoteId
     readonly title: string
     readonly sessionId: string
     readonly workspace: string
   }): Promise<void>
-  /** 工作区候选（最近会话用过的 cwd，供 UI 下拉）；失败/不可用返回空数组。 */
+  /** 工作区候选（最近会话用过的 cwd，供 UI 下拉）；失败 / 不可用返回空数组。 */
   listWorkspaces(): Promise<readonly string[]>
-  /**
-   * 任务执行目标目录（模型 / agent 预设，供编辑器下拉）；宿主缺能力 / 查询失败
-   * 一律返回空目录（编辑器据此只显示「宿主默认」），绝不抛。
-   */
+  /** 宿主缺能力 / 查询失败一律返回空目录，绝不抛。 */
   listTaskTargets(): Promise<TaskTargets>
 }
 
 export interface NotesServiceConfig {
-  /** 已打开的 notes 域。 */
   readonly domain: Domain<typeof notesDomain>
-  /**
-   * 任务执行运行时（host 注入，可缺省）：未注入时 taskExecute 在任何状态变更前
-   * 直接返回 no-dispatch；新建会话/prompt 抛错则回滚并返回 dispatch-failed。
-   */
+  /** 未注入时 taskExecute 在任何状态变更前直接返回 no-dispatch。 */
   readonly task?: NotesTaskRuntime
-  /**
-   * WebDAV 备份引擎（host index.ts 注入；缺省时 webdav* 端点返回
-   * { ok:false, reason } —— 纯 UI 数据后端没有引擎也不炸）。
-   */
+  /** 缺省时 webdav* 端点返回结构化失败，不炸端点。 */
   readonly webdav?: WebdavRunner
 }
 
@@ -134,12 +106,9 @@ export class NotesService extends TypertRemoteService {
   private readonly leases: KvTable<NoteId, TaskLease>
   private readonly task: NotesServiceConfig['task']
   private readonly webdav: NotesServiceConfig['webdav']
-  /**
-   * agent 桥装配状态（见 agent/bridge-state.ts）。默认 waiting：tools 服务出现后由
-   * index.ts 的桥装配器推进为 installed/failed；纯 UI 宿主保持 waiting。
-   */
+  /** 默认 waiting：tools 服务出现后由 index.ts 推进为 installed/failed。 */
   private agentBridge: NotesAgentBridgeState = bridgeWaiting()
-  /** 变更通知订阅者（notes/watch 每个打开的客户端流一个）；写成功即广播。 */
+  /** notes/watch 每个打开的客户端流一个订阅者。 */
   private readonly changeListeners = new Set<NotesChangeListener>()
 
   constructor(ctx: Context, config: NotesServiceConfig) {
@@ -150,33 +119,22 @@ export class NotesService extends TypertRemoteService {
     this.webdav = config.webdav
   }
 
-  /** 当前 agent 桥装配状态快照（同步；client 经 notes/getAgentBridgeState 端点可读）。 */
   getAgentBridgeState(): NotesAgentBridgeState {
     return this.agentBridge
   }
 
-  /**
-   * 仅供 host 侧 agent 桥装配器（index.ts installNotes*WhenReady）推进桥状态。
-   * 不参与 Typert remote（markRemoteMethods 白名单不包含本方法）。
-   */
+  /** 只给 host 的桥装配器用，不在 markRemoteMethods 白名单里。 */
   setAgentBridgeState(next: NotesAgentBridgeState): void {
     this.agentBridge = next
   }
 
-  /** 全量便签（未删除），同步读自内存。 */
   list(): NoteRecord[] {
     return Array.from(this.table.entries(), ([, note]) => note)
   }
 
   /**
-   * 变更推送流（Typert stream 端点 notes/watch，SRC marker mode: 'stream'）：
-   * 每次写操作成功广播一次；订阅在首次 next() 时建立，generator return/throw
-   * 或 signal abort 时清理。事件只承载时间戳——client 收到后自行 list() 拉
-   * 最新（事件驱动，不做心跳/轮询）。
-   *
-   * signal 语义：等待事件与中止做 race——consumer 断开（gateway 传 abort）时
-   * 等待立即结算并干净收尾，绝不留下悬置 await 卡住 generator.return()。
-   * 未提供 signal（直接调用方）视作永不中止，同样安全。
+   * notes/watch 流端点。写入成功广播一次，事件只带时间戳，client 收到自行 list()。
+   * signal 与等待做 race：consumer 断开时等待立即结算，不留悬置 await 卡住 return()。
    */
   async *watch(signal?: AbortSignal): AsyncGenerator<NotesChangeEvent> {
     const lifetime = signal ?? new AbortController().signal
@@ -214,17 +172,14 @@ export class NotesService extends TypertRemoteService {
       try {
         listener()
       } catch (error) {
-        // 订阅者（如某条流消费循环）抛错只丢该条，不炸写操作。
+        // 订阅者抛错只丢该条，不炸写操作。
         console.error('[plugin-notes] change listener failed:', error)
       }
     }
   }
 
-  /** 新建便签；title/color/origin 缺省时使用默认值（origin 默认 'user'）。 */
   async create(input: NoteCreateInput): Promise<NoteRecord> {
     const now = Date.now()
-    // 定时日程：仅在「新建即任务」（laneStatus）时有意义；语义非法直接抛错（静默丢弃
-    // 用户填的日程更糟）。armSchedule 会把 nextAt 对齐到 now 之后。
     const schedule = input.schedule !== undefined ? armSchedule(input.schedule, now) : undefined
     if (input.schedule !== undefined && schedule === undefined) {
       throw new Error(`schedule 参数非法：mode=${input.schedule.mode} 缺少必填字段`)
@@ -236,20 +191,15 @@ export class NotesService extends TypertRemoteService {
       pinned: false,
       archived: false,
       color: input.color ?? DEFAULT_NOTE_COLOR,
-      // 来源：agent 工具层显式传 'agent'；UI/缺省落 'user'。
       origin: input.origin ?? 'user',
-      // 新建即任务：列头「＋新建任务」传 laneStatus → 落 lane: { status }，并带上
-      // 可选执行目标（agentPreset / model；缺省即宿主默认，不落空字段）；
-      // 缺省不落 lane（普通便签，不进泳道）。
+      // 缺省不落 lane：普通便签不进泳道。
       ...(input.laneStatus !== undefined
         ? { lane: makeTaskLane(input.laneStatus, input.agentPreset, input.model) }
         : {}),
-      // 任务执行工作区：trim 后非空才落字段（空串/缺省 = 未指定；任务必须有工作区，
-      // 执行时会被拒为 missing-workspace）。
       ...(input.workspace !== undefined && input.workspace.trim() !== ''
         ? { workspace: input.workspace.trim() }
         : {}),
-      // 定时日程：只有任务便签（laneStatus）才落——普通便签无 lane，调度器也不认。
+      // 只有任务便签才落 schedule，调度器不认无 lane 的日程。
       ...(input.laneStatus !== undefined && schedule !== undefined ? { schedule } : {}),
       createdAt: now,
       updatedAt: now,
@@ -259,32 +209,23 @@ export class NotesService extends TypertRemoteService {
     return note
   }
 
-  /** 更新便签（title/text/pinned/archived/color 至少一项，缺省字段保持原值）。origin 不可更新。 */
+  /** 缺省字段保持原值；`origin` 不可更新。 */
   async update(id: NoteId, patch: NoteUpdateInput): Promise<NoteRecord | undefined> {
     const current = this.table.get(id)
     if (!current) return undefined
     const now = Date.now()
-    // lane patch：与顶层同语义——缺省字段保留、逐字段合并（next.lane =
-    // { ...current.lane, ...patch.lane }）；run 提供即整体替换（非逐字段合并）；
-    // 空 patch 对象（既无 status 也无 run 且无 clear）= no-op，不改动 lane
-    // （含不凭空造 lane）。
-    // `clear: true` 优先（取消任务）：删除 lane 身份（next.lane = undefined），
-    // 与 status/run 互斥、并存时 clear 胜出（status/run 被忽略）。移除任务身份
-    // 即手动接管，随后的 revoke 一并撤销租约。
+    // lane patch：逐字段合并；run 提供即整体替换；空 patch = no-op（不凭空造 lane）。
+    // `clear: true` 优先于 status/run，移除任务身份即手动接管。
     let lane: NoteLane | undefined = current.lane
     if (patch.lane?.clear === true) {
       lane = undefined
     } else if (patch.lane !== undefined && (patch.lane.status !== undefined || patch.lane.run !== undefined)) {
-      // 合成 status：patch 未给则沿用当前 lane 的 status。
       const status: TaskStatus | undefined = patch.lane.status ?? current.lane?.status
-      // 守卫：patch 仅给 run 没给 status 且当前无 lane 时，会拼出无 status 的 lane，
-      // 下次打开 domain 会因 schema 校验失败炸库。拒绝而非静默落库。（clear 走上面
-      // 分支，不会误触发本守卫。）
+      // 无 lane 时仅凭 run 会拼出没有 status 的 lane，schema 校验会让下次打开直接炸库。
       if (status === undefined) {
         throw new Error('lane patch 缺 status：便签无 lane 时须同时提供 status，不能仅凭 run 造 lane')
       }
-      // 执行目标（M2）：给值即覆盖，agentPreset 空串 / model null 即清除（回到宿主
-      // 默认）。未给保留原值 —— 与 workspace / schedule 同一套「未给即保留」语义。
+      // 给值即覆盖，空串 / null 即清除回宿主默认。
       const agentPreset: string | undefined =
         patch.lane.agentPreset === undefined
           ? current.lane?.agentPreset
@@ -301,33 +242,23 @@ export class NotesService extends TypertRemoteService {
         ...(model !== undefined ? { model } : {}),
       }
     }
-    // M3 手动接管收尾：仅「改到不同状态」的接管路径、且当前 lane 有开着（未
-    // finishedAt）的 run 帧时，先把该帧收尾为「用户手动接管」（closed as
-    // interrupted）。否则状态变了但 run.finishedAt 仍缺，client isRunOpen 恒真、
-    // 编辑器误锁「执行中」。clear（取消任务）删除整段 lane，run 随 lane 一并消失，
-    // 无需收尾（settle 无意义）；归档不改状态，也不在此收尾。status 由用户 patch
-    // 决定——收尾只关闭 run 帧（标记为中断），不覆盖用户选定的结果状态。
+    // 改到不同状态且当前 run 帧还开着时，先把该帧收尾为「用户手动接管」；
+    // 否则 run.finishedAt 缺失会让 client 误以为仍在执行、编辑器一直锁着。
     const statusChanged = patch.lane?.status !== undefined && patch.lane.status !== current.lane?.status
     const currentRunOpen = current.lane?.run !== undefined && current.lane.run.finishedAt === undefined
     if (statusChanged && currentRunOpen) {
       const settled = settleRun(current.lane!, false, '用户手动接管', now)
       lane = { ...lane!, run: settled.run }
     }
-    // 剥离 current 的 lane，最后按合并结果显式写回（clear 时 lane=undefined 即删除
-    // 身份；否则维持「缺省字段保留」）。若不剥离，...current 会带出旧 lane，导致
-    // 「取消任务」后旧 lane 残留。
-    // workspace 合并：给值即覆盖（trim 后空串 = 清除该字段，回退设置默认值）；
-    // 未给保留原值。与 lane 同理先从 current 剥离，按合并结果显式写回——否则
-    // 清除时旧值会随 ...currentWithoutLane 残留。
+    // 必须先剥离旧 lane / workspace，否则取消任务后旧值会随 ...current 残留。
+    // workspace 给值即覆盖，trim 后空串 = 清除回设置默认。
     const workspace: string | undefined =
       patch.workspace === undefined
         ? current.workspace
         : patch.workspace.trim() !== ''
           ? patch.workspace.trim()
           : undefined
-    // schedule 合并：未给保留原值；null = 清除（取消定时）；给对象即整体替换，但保留
-    // 宿主已记录的最近派发信息（client 快照可能未带），并按 now 重算 nextAt。语义非法
-    // 直接抛错——静默清掉用户既有日程比报错更糟。无 lane（非任务）时日程无意义，清空。
+    // schedule：null = 清除；给对象即整体替换，但保留宿主已记的最近派发信息。
     let schedule: NoteSchedule | undefined = current.schedule
     if (patch.schedule === null) {
       schedule = undefined
@@ -345,19 +276,16 @@ export class NotesService extends TypertRemoteService {
       ...(patch.title !== undefined ? { title: patch.title } : {}),
       ...(patch.text !== undefined ? { text: patch.text } : {}),
       ...(patch.pinned !== undefined ? { pinned: patch.pinned } : {}),
-      // archived 显式归一：patch 未带时保留原值。
       archived: patch.archived ?? current.archived ?? false,
-      // color 显式归一：patch 未带时保留原值，原值为空（理论上不存在）回默认黄。
       color: patch.color ?? current.color ?? DEFAULT_NOTE_COLOR,
-      // origin 永远保留原值：来源一经创建不可改写（agent 无法把自己的便签标成 user）。
+      // origin 一经创建不可改写。
       origin: current.origin ?? 'user',
       updatedAt: now,
       ...(workspace !== undefined ? { workspace } : {}),
       ...(lane !== undefined ? { lane } : {}),
       ...(schedule !== undefined ? { schedule } : {}),
     }
-    // 撤销租约（D5 手动接管）：任何用户侧 lane.status 变更即接管；取消任务
-    // （clear）同样接管；归档同样撤销。与当前状态相同则不算接管，不撤销。
+    // 用户侧改状态 / 取消任务 / 归档即接管，撤销租约；同状态不算。
     if (
       patch.lane?.clear === true ||
       (patch.lane?.status !== undefined && patch.lane.status !== current.lane?.status) ||
@@ -370,7 +298,6 @@ export class NotesService extends TypertRemoteService {
     return next
   }
 
-  /** 置顶/取消置顶。 */
   async setPinned(id: NoteId, pinned: boolean): Promise<NoteRecord | undefined> {
     const current = this.table.get(id)
     if (!current) return undefined
@@ -384,7 +311,7 @@ export class NotesService extends TypertRemoteService {
     return next
   }
 
-  /** 删除便签；返回是否确实删除。删除前先撤销其执行租约（若有）。 */
+  /** 删除前先撤销执行租约。 */
   async delete(id: NoteId): Promise<boolean> {
     await this.revokeTaskLease(id)
     const deleted = await this.table.delete(id)
@@ -393,10 +320,8 @@ export class NotesService extends TypertRemoteService {
   }
 
   /**
-   * 授权任务执行：写 leases 行并把该便签 lane 置 running + 新 run 帧（重跑时
-   * 新帧覆盖旧帧），其余字段不动。'missing' = 无此便签；'busy' = 便签无 lane
-   * （非任务）或已有 active lease（防双跑）。便签必须先有 lane（今日唯一路径：
-   * create 时带 laneStatus）。此为 host 内部方法，不经 Typert remote 暴露。
+   * 写 leases 行 + 置 lane running + 新 run 帧（重跑时新帧覆盖旧帧）。
+   * 'busy' = 无 lane 或已有 active lease（防双跑）。host 内部方法，不经 remote 暴露。
    */
   async grantTaskLease(
     id: NoteId,
@@ -408,18 +333,13 @@ export class NotesService extends TypertRemoteService {
     if (!note.lane || this.leases.get(id)) return 'busy'
     const now = Date.now()
     await this.leases.put(id, { noteId: id, sessionId, grantedAt: now })
-    // beginRun 首参按签名透传当前 lane（其实现未使用该参），返回
-    // { status:'running', run:{ startedAt, by } }——by 供 host 超时兜底认领定时发起的 run。
+    // run.by 供 host 超时兜底认领定时发起的那些。
     await this.table.put(id, { ...note, lane: beginRun(note.lane, now, by), updatedAt: now })
     this.broadcastChanged()
     return 'granted'
   }
 
-  /**
-   * 仅供 host 定时调度器：直写 schedule 字段（记 lastFiredAt/lastResult/nextAt，或停用
-   * 一次性日程）。不走 update——update 的「改状态即接管」钩子面向用户侧 UI 改动，而调度器
-   * 恰恰在 running 期间写回，绝不能撤销执行租约。无此便签 → undefined（无副作用）。
-   */
+  /** 只给 host 调度器：直写 schedule。不走 update，避免触发「改状态即接管」撤销租约。 */
   async setSchedule(id: NoteId, schedule: NoteSchedule | undefined): Promise<NoteRecord | undefined> {
     const current = this.table.get(id)
     if (!current) return undefined
@@ -431,25 +351,20 @@ export class NotesService extends TypertRemoteService {
     return next
   }
 
-  /** 撤销执行租约：只删 leases 行（幂等），不改 lane——状态由调用方决定。 */
+  /** 只删 leases 行，不改 lane —— 状态由调用方决定。 */
   async revokeTaskLease(id: NoteId): Promise<boolean> {
     return this.leases.delete(id)
   }
 
-  /** 同步读当前 active lease（agent guard 判定用；无则 undefined）。 */
   getTaskLease(id: NoteId): TaskLease | undefined {
     return this.leases.get(id)
   }
 
   /**
-   * agent 工具专用：置任务状态。通道已收窄（M6 裁定）：仅允许 status='running'
-   * ——完成/失败是 notes_task_report 的职责（自动写结果 + settle + 撤销租约）。
-   * 直接写内存表、不经 update——update 的「手动改状态即撤销租约」钩子面向用户侧
-   * UI 改动，agent 写 lane 由 lease 授权，不得触发该撤销。置 running 且无 run 帧
-   * 时补 beginRun 初始帧；已 running 时 re-assert 为无害 no-op（不重建帧）。
+   * agent 工具专用。只允许置 running：完成 / 失败是 notes_task_report 的职责。
+   * 直写内存表不经 update，避开「手动改状态即撤销租约」的钩子（agent 写 lane 由 lease 授权）。
    */
   async setTaskStatus(id: NoteId, status: TaskStatus): Promise<NoteRecord | undefined> {
-    // 防御性拒绝（host 内部方法，双保险：agent 工具层已先行校验，此处兜底）。
     if (status !== 'running') {
       throw new Error('任务状态变更请用执行中的 report 结束：set_status 仅允许置为 running')
     }
@@ -467,11 +382,8 @@ export class NotesService extends TypertRemoteService {
   }
 
   /**
-   * agent 工具专用：收尾本次执行 —— settleRun 补 finishedAt/ok/summary，status
-   * 置 done（ok）/ failed（!ok），并撤销 lease。note 无 lane 时返回 undefined。
-   *
-   * 循环日程（enabled 且非 once）例外：状态落回 'todo'（用户语义「完成后回到待办」），
-   * 等下一个周期由调度器再次派发；run 结果照常写入，卡片摘要与编辑器只读区都在。
+   * agent 工具专用：settleRun 补 finishedAt/ok/summary，status 置 done/failed，撤销 lease。
+   * 循环日程例外：状态落回 'todo'，等下一周期再派发。
    */
   async settleTaskRun(id: NoteId, ok: boolean, summary: string): Promise<NoteRecord | undefined> {
     const current = this.table.get(id)
@@ -481,7 +393,7 @@ export class NotesService extends TypertRemoteService {
     const status: TaskStatus = looping ? 'todo' : ok ? 'done' : 'failed'
     const lane: NoteLane = { ...settleRun(current.lane, ok, summary, now), status }
     await this.revokeTaskLease(id)
-    // 错误边界：把这一轮的成败写回日程的失败连击（成功清零 / 失败累加，到上限自动停用）。
+    // 成败写回日程的失败连击：成功清零、失败累加，到上限自动停用。
     const schedule = current.schedule !== undefined ? applyRunResult(current.schedule, ok, now) : undefined
     const next: NoteRecord = {
       ...current,
@@ -495,53 +407,29 @@ export class NotesService extends TypertRemoteService {
   }
 
   /**
-   * 执行事务（按工作区新建会话，spec §7/§8）：
-   * 1. 快照当前便签（回滚基准）；missing = 无此便签；busy = 归档 / 无 lane / 已有 lease。
-   * 2. 无 task 运行时 → no-dispatch（此步在任何状态变更之前，故无副作用、无需回滚）。
-   * 3. 解析工作区：**只看便签自己的 workspace**（M1-4 起没有默认工作区兜底）；
-   *    空 → missing-workspace（不新建会话、不改状态）。
-   * 4. task.createSession({ workspace, agentPreset }) 新建执行会话（cwd = 工作区，
-   *    预设取 lane.agentPreset）；抛错 → dispatch-failed（此时尚未改状态，无回滚）。
-   * 5. 便签指定了模型 → task.selectModel({ sessionId, model })（必须在投递前，
-   *    首个 turn 才用得上）；抛错 → dispatch-failed（同样尚未改状态）。
-   * 6. grantTaskLease（置 running + 新 run 帧 + 写 lease，租约绑定**新会话 id**）；非
-   *    granted 按对应 reason 返回。
-   * 7. task.prompt(...) 向新会话投递；抛错 → 回滚 → dispatch-failed。
-   * 8. 成功 → 返回投递后最新便签（running + run 帧）。
-   *
-   * 回滚语义：grant 是「写 lease + 直写 running」两次独立 put（非原子），故回滚 =
-   * revokeTaskLease（只删 lease 行）+ 直写恢复快照 lane——不经 update（update 的「手动
-   * 改状态即撤销租约」钩子面向用户侧 UI，此处直写避免触发，且幂等无碍）。快照存的是
-   * grant 前的整张便签，直写即彻底清掉 grant 造出的 running/run 帧。
-   * 注：grant 失败（并发抢跑）时已建出的空会话不回滚——宿主无删除会话 API，且空会话
-   * 无副作用；该分支极窄（同便签前置检查已排除已有 lease）。
+   * 执行事务：按工作区新建会话 → 选模型 → 授权租约 → 投递 prompt。
+   * 工作区只看便签自己的 workspace，没有就是 missing-workspace（不新建会话、不改状态）。
+   * 回滚 = revokeTaskLease + 直写恢复快照 lane（不经 update，避开接管钩子）。
    */
   async taskExecute(id: NoteId): Promise<TaskExecuteResult> {
     return this.runTaskExecute(id, 'user')
   }
 
-  /**
-   * 仅供 host 定时调度器：与 taskExecute 完全同一条事务，只是 run 帧标记 by='schedule'
-   * ——host 的超时兜底据此只认领**定时发起**的长跑，不碰用户手点、人就在旁边看着的那些。
-   * 不进 markRemoteMethods 白名单，故不改变 wire 签名（client 仍只调 taskExecute）。
-   */
+  /** 只给 host 调度器：同一条事务，只是 run 帧标 by='schedule'，白名单不含它。 */
   async taskExecuteScheduled(id: NoteId): Promise<TaskExecuteResult> {
     return this.runTaskExecute(id, 'schedule')
   }
 
-  /** 执行事务本体（两个入口共用）：by = 这一轮的发起方，写进 run 帧。 */
+  /** 两个入口共用的本体：by 写进 run 帧。 */
   private async runTaskExecute(id: NoteId, by: 'user' | 'schedule'): Promise<TaskExecuteResult> {
     const current = this.table.get(id)
     if (!current) return { ok: false, reason: 'missing' }
-    // T4 forward-minor b：归档便签不得执行（归档即离开工作流）。
+    // 归档便签不得执行。
     if (current.archived || !current.lane || this.leases.get(id)) {
       return { ok: false, reason: 'busy' }
     }
-    // 运行时缺省：任何状态变更之前返回，无副作用（无需回滚）。此判定先于工作区解析
-    // ——没有运行时就无从谈起派发，诊断上该报 no-dispatch。
+    // 先于工作区解析判定：没有运行时就该报 no-dispatch。
     if (this.task === undefined) return { ok: false, reason: 'no-dispatch' }
-    // 工作区解析：**只认便签自己的 workspace**（M1-4：不再有默认工作区兜底）。
-    // 没有工作区 = 这张任务便签还没配好，拒绝执行（任务必须跑在明确的工作区）。
     const workspace = (current.workspace ?? '').trim()
     if (workspace === '') return { ok: false, reason: 'missing-workspace' }
     const snapshot = current
@@ -556,8 +444,7 @@ export class NotesService extends TypertRemoteService {
       return { ok: false, reason: 'dispatch-failed' }
     }
 
-    // 模型选择：必须在投递 prompt 之前 —— 选完才开工，第一个 turn 才是用户选的那个模型。
-    // 抛错同样按 dispatch-failed 处理（此时仍未有状态变更，无回滚；已建的空会话无副作用）。
+    // 必须在投递前选好，第一个 turn 才用得上。
     if (current.lane.model !== undefined) {
       try {
         await this.task.selectModel({ sessionId, model: current.lane.model })
@@ -583,10 +470,7 @@ export class NotesService extends TypertRemoteService {
     return { ok: true, note: fresh }
   }
 
-  /**
-   * 工作区候选（最近会话用过的 cwd，供便签板设置/编辑器下拉）：运行时缺省或宿主
-   * 查询失败一律返回空数组——纯 UI 宿主与降级场景都只是「没有候选」，不炸端点。
-   */
+  /** 运行时缺省或查询失败一律空数组，纯 UI 宿主不炸端点。 */
   async listWorkspaces(): Promise<readonly string[]> {
     if (this.task === undefined) return []
     try {
@@ -596,11 +480,7 @@ export class NotesService extends TypertRemoteService {
     }
   }
 
-  /**
-   * 任务执行目标目录（M2）：模型（按 provider 分组）+ agent 预设，供编辑器那两个
-   * 下拉。运行时缺省 / 宿主没装对应服务 / 查询抛错一律空目录 —— 编辑器看到空目录就
-   * 只显示「宿主默认」，不会因为拿不到目录而让整个编辑器打不开。
-   */
+  /** 缺省 / 查询抛错一律空目录，编辑器据此只显示「宿主默认」。 */
   async taskTargets(): Promise<TaskTargets> {
     if (this.task === undefined) return { models: [], presets: [] }
     try {
@@ -610,10 +490,7 @@ export class NotesService extends TypertRemoteService {
     }
   }
 
-  /**
-   * 手动接管（重置为待办，spec M3）：撤销租约 + settleRun(ok:false, '用户手动接管') +
-   * 状态置 'todo'，直写（不经 update 的接管钩子）。无此便签 / 非任务（无 lane）→ ok:false。
-   */
+  /** 手动接管：撤销租约 + settleRun(false) + 状态置 'todo'，直写不经 update。 */
   async taskReset(id: NoteId): Promise<{ ok: true; note: NoteRecord } | { ok: false }> {
     const current = this.table.get(id)
     if (!current?.lane) return { ok: false }
@@ -626,34 +503,30 @@ export class NotesService extends TypertRemoteService {
     return { ok: true, note: next }
   }
 
-  /** 执行事务回滚：删 lease 行 + 直写恢复 grant 前的整张便签（含原 lane/run/updatedAt）。 */
+  /** 删 lease 行 + 直写恢复 grant 前的整张便签。 */
   private async rollbackTaskExecute(id: NoteId, snapshot: NoteRecord): Promise<void> {
     await this.revokeTaskLease(id)
     await this.table.put(id, snapshot)
     this.broadcastChanged()
   }
 
-  /* ---------- WebDAV 备份/恢复（remote 端点；引擎在 host index 注入） ---------- */
-
-  /** 立即上推一份快照（改配置试跑/手动按钮）。引擎缺省返回结构化失败。 */
   async webdavBackup(): Promise<WebdavBackupResult> {
     if (this.webdav === undefined) return { ok: false, reason: 'WebDAV 引擎未装配' }
     return this.webdav.backupNow()
   }
 
-  /** 远端快照列表（desc 时间序，仅本插件命名）。 */
+  /** desc 时间序，仅本插件命名。 */
   async webdavList(): Promise<WebdavListResult> {
     if (this.webdav === undefined) return { ok: false, reason: 'WebDAV 引擎未装配' }
     return this.webdav.listFiles()
   }
 
-  /** 恢复指定快照（'latest' = 最近一份）；内部先自动备份当前再整体重建。 */
+  /** `'latest'` = 最近一份。 */
   async webdavRestore(name: string): Promise<WebdavRestoreResult> {
     if (this.webdav === undefined) return { ok: false, reason: 'WebDAV 引擎未装配' }
     return this.webdav.restore(name)
   }
 
-  /** 引擎状态（上次备份/恢复结果 + 启用态）。 */
   async webdavStatus(): Promise<WebdavStatus> {
     if (this.webdav === undefined) {
       return {
@@ -670,10 +543,7 @@ export class NotesService extends TypertRemoteService {
     return this.webdav.status()
   }
 
-  /**
-   * 全量重建便签（仅 WebDAV 恢复流程使用，host 可信）：清空便签与租约两张表后
-   * 按恢复 payload 逐条写入。不做 origin guard（agent 工具不可达本方法）。
-   */
+  /** 清空便签与租约两表后按 payload 逐条写入，只给 host 的 WebDAV 恢复流程用。 */
   async replaceAll(notes: readonly NoteRecord[]): Promise<void> {
     for (const [id] of this.table.entries()) await this.table.delete(id)
     for (const [leaseId] of this.leases.entries()) await this.leases.delete(leaseId)
@@ -682,12 +552,7 @@ export class NotesService extends TypertRemoteService {
   }
 }
 
-/**
- * Typert SRC 标记：协议内部以字符串 key 在类原型上存
- * `{version: 1, methods: [{method, invocation: {kind:'direct'}}]}` 的冻结对象。
- * 这里手工复刻 @Remote 装饰器的产物（同 alpha.3 train 的稳定契约），
- * 避免宿主/测试构建对标准装饰器转译的依赖。
- */
+/** 手工复刻 @Remote 装饰器产物，避免构建依赖标准装饰器转译。 */
 const REMOTE_METHODS = '@deepseek-ai/dsh-typert-protocol/remote-methods'
 
 type RemoteMethodEntry =

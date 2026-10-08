@@ -1,33 +1,22 @@
-/**
- * 展示视图：把账本行按各维度聚成 UI 直接可用的形状。
- *
- * **别名只在这里生效**（spec §5.5）：账本永远是原始 id，金额已锁定；合并 = token 与
- * 金额直接相加。合并**只在同一 provider 内**，不跨 provider。
- * 所有函数都是纯函数，缓存由 service 层的 LRU 负责。
- */
-
 import { aliasId } from './model-key.ts'
 import { priceKey } from './pricing/catalog.ts'
 import { sameModelName } from './model-key.ts'
 import type { LedgerRow, ModelAlias } from './types.ts'
 
 export interface ModelRow {
-  /** 同名模型的分组键（`sameModelName` 的结果），也是这一行的展示名。 */
+  /** 同名模型的分组键，也是展示名。 */
   key: string
-  /** 这一行覆盖到的全部 provider（排序去重）。同名模型跨 provider 会并成一行，所以可能不止一个。 */
+  /** 覆盖到的 provider（排序去重），可能不止一个。 */
   providers: string[]
-  /** 主 provider = `providers[0]`（单 provider 行的兼容字段）。 */
+  /** = providers[0]，兼容单 provider 读法。 */
   provider: string
   model: string
   rawModels: string[]
   input: number; cacheRead: number; cacheWrite: number; output: number; reasoning: number
   costCny: number
-  /** 合并行上 `priced: false` 表示**至少一行**未计价；该行仍可能带着已计价行累加出的非零 `costCny`。 */
+  /** false 表示至少一行未计价；costCny 仍可能非零。 */
   priced: boolean
-  /**
-   * 比较的是**混合后的每 token 成本比** `costCny / (input + cacheRead + cacheWrite + output)`，不是单价：
-   * 价格表不变而 token 结构不同也会置位；两种不同价格若比值四舍五入后相同则不置位。
-   */
+  /** 按行内「每 token 成本比」是否唯一置位，不是比单价。 */
   mixedRate: boolean
   calls: number
 }
@@ -40,39 +29,29 @@ export interface DailyPoint {
 export interface SessionRow {
   sessionId: string; cwd?: string; day: string; calls: number
   costCny: number; lastTime: number; isSubagent: boolean
-  /** 该会话**今天**的金额（day === todayKey 的那部分）；与 costCny 同源、同一次响应。 */
+  /** 只算 day === todayKey 的行，与 costCny 同一次响应。 */
   todayCny: number
-  /** 该会话的**历史累计**（不按时间窗过滤，只跟子代理口径走）：由 attachAllCny 从全账本填。 */
+  /** 历史累计（全账本，不按时间窗），由 attachAllCny 填。 */
   allCny: number
 }
 
 export interface WorkspaceRow {
   cwd: string; calls: number; costCny: number
-  /** 该项目**今天**的金额：popup 的「今日消耗分布」用它，与 costCny 同源、同一次响应。 */
+  /** 只算今天，与 costCny 同一次响应。 */
   todayCny: number
-  /** 该项目的**历史累计**：只汇总窗口内的会话会漏掉更早的会话，所以同样由 attachAllCny 填。 */
+  /** 历史累计（全账本），同样由 attachAllCny 填。 */
   allCny: number
   sessions: SessionRow[]
 }
 
-/**
- * 每个携带金额的响应都必须**自带**的口径标记。
- *
- * 存在的理由（review fix round 2）：UI 曾用「第二次 overview 取数」单独判断回填，
- * 那次取数失败时金额照常渲染、披露却消失 —— 一个带估算的金额被无声地显示成精确值。
- * 标记必须与它描述的金额同源（同一次响应、同一行集），所以这里由 host 随值一起算出来。
- */
+/** 必须与它描述的金额同源：同一次响应、同一行集。 */
 export interface LedgerMarkers {
-  /** 该行集里是否有 `time < installAt` 的回填行（估算）。 */
+  /** 是否有 `time < installAt` 的回填行（估算）。 */
   hasBackfilled: boolean
-  /**
-   * 该行集里的未计价模型（**账本原始** `provider/model` id）。整份账一行都没定价时
-   * `totalCny === 0`，UI 必须据此显示 `'—'` 而不是 `¥0.00`（详见 client/core/format.ts）。
-   */
+  /** 账本原始 `provider/model` id，不是别名后的名字。 */
   unpricedModels: string[]
 }
 
-/** 从同一个行集算出金额披露标记；`buildOverview` 也用这条路径，口径不可能分叉。 */
 export function buildMarkers(rows: readonly LedgerRow[]): LedgerMarkers {
   let hasBackfilled = false
   const unpriced = new Set<string>()
@@ -85,17 +64,9 @@ export function buildMarkers(rows: readonly LedgerRow[]): LedgerMarkers {
 
 export interface Overview extends LedgerMarkers {
   totalCny: number; todayCny: number; weekCny: number; avgDailyCny: number
-  /**
-   * 缓存命中率 = cacheRead / (input + cacheRead)。
-   * 分母含未计价行（它们同样携带真实观测 token，剔除会让该比值与旁边的 token 合计口径打架）；
-   * 分母**不含 cacheWrite**（缓存写入不是「读取命中」的分母）。空分母时为 0。
-   */
+  /** cacheRead / (input + cacheRead)；分母不含 cacheWrite，空分母为 0。 */
   cacheHitRate: number
   calls: number
-  /**
-   * 未计价模型（继承 `LedgerMarkers`）：刻意使用**账本原始** `provider/model` id ——
-   * `buildOverview` 拿不到别名表，且原始 id 正是用户需要去补价格的那个名字。
-   */
   unpricedRows: number
 }
 
@@ -109,17 +80,7 @@ function emptyModel(key: string, provider: string, model: string): ModelRow {
   }
 }
 
-/**
- * 按**同名模型**合并（跨 provider）——「同名就是同一个模型，别拆成两行」。
- *
- * 分组键是 `sameModelName(canonical)`：手工别名的 canonical 优先（所以别名照旧能把
- * 别名链上的 id 收拢到一行、也能强制改名），否则用原始 model id 归一后的名字。
- * provider **不进分组键**，但一个都不丢：行的 `providers` 列全部覆盖到的 provider，
- * 客户端把它们显示成 `a / b / 模型名`；`provider` 保留为 `providers[0]` 兼容单 provider 的读法。
- *
- * 跨 provider 合并会把两家的单价混进一行 —— 这正是 `mixedRate` 存在的地方：
- * 它按行内「每 token 成本比」是否唯一置位，界面据此标注「混合单价」。
- */
+/** 跨 provider 按同名模型合并；分组键取别名 canonical（有则优先）。 */
 export function mergeByModel(rows: readonly LedgerRow[], aliases: readonly ModelAlias[]): ModelRow[] {
   const canon = new Map<string, string>()
   for (const a of aliases) canon.set(a.id, a.canonicalModel)
@@ -127,8 +88,7 @@ export function mergeByModel(rows: readonly LedgerRow[], aliases: readonly Model
 
   for (const r of rows) {
     const provider = r.provider.trim().toLowerCase()
-    // 空（含纯空白）canonical 不是有效的合并目标：它 trim 后为空，并进去等于把所有同名行
-    // 都压成一行没有名字的东西。判定口径与 model-key.ts 一致：trim 后为空即无效。
+    // trim 后为空的 canonical 无效，口径同 model-key.ts。
     const rawCanonical = canon.get(aliasId(provider, r.model))
     const canonical = rawCanonical !== undefined && rawCanonical.trim() !== '' ? rawCanonical : r.model
     const key = sameModelName(canonical)
@@ -187,10 +147,6 @@ export function buildDaily(rows: readonly LedgerRow[], days: readonly string[]):
   return [...outside, ...known]
 }
 
-/**
- * 按会话聚合。今日字段与总额出自**同一批行**（同一次响应），所以「本会话今日 ≤ 本项目今日 ≤
- * 今日总额」这类包含关系在界面上永远成立，不靠两次取数去拼。
- */
 export function buildBySession(rows: readonly LedgerRow[], todayKey: string): SessionRow[] {
   const byId = new Map<string, SessionRow>()
   for (const r of rows) {
@@ -202,7 +158,6 @@ export function buildBySession(rows: readonly LedgerRow[], todayKey: string): Se
       }
       byId.set(r.sessionId, s)
     }
-    // 取首个「已定义」的 cwd：首行缺 cwd 时后面的行可以补上。
     if (s.cwd === undefined && r.cwd !== undefined) s.cwd = r.cwd
     s.calls += 1; s.costCny += r.costCny
     if (r.day === todayKey) s.todayCny += r.costCny
@@ -224,10 +179,7 @@ export function buildByWorkspace(rows: readonly LedgerRow[], todayKey: string): 
   return [...byCwd.values()].sort((a, b) => b.costCny - a.costCny || a.cwd.localeCompare(b.cwd))
 }
 
-/**
- * 给窗口里的会话与项目补上**历史累计**：两样都从全账本汇总 —— 只把窗口内的会话加起来
- * 会漏掉这个项目更早的会话。子代理口径与窗口金额一致，不能各算一套。
- */
+/** 两样都从全账本汇总；子代理口径须与窗口金额一致。 */
 export function attachAllCny(
   workspaces: readonly WorkspaceRow[],
   all: readonly LedgerRow[],
@@ -241,16 +193,12 @@ export function attachAllCny(
     byCwd.set(cwd, (byCwd.get(cwd) ?? 0) + r.costCny)
   }
   for (const w of workspaces) {
-    // 窗口里的会话必定也在全账本里；万一缺了，退到窗口值，宁可少算也不写成 0。
+    // 缺了就退到窗口值，宁可少算也不写成 0。
     for (const s of w.sessions) s.allCny = bySession.get(s.sessionId) ?? s.costCny
     w.allCny = byCwd.get(w.cwd) ?? w.costCny
   }
 }
 
-/**
- * 概览指标。其中 `cacheHitRate = cacheRead / (input + cacheRead)`，**分母遍历全部行**
- * （未计价行也计入：它们携带真实观测 token），且**不含 cacheWrite**；详见 `Overview.cacheHitRate`。
- */
 export function buildOverview(
   rows: readonly LedgerRow[],
   opts: { todayKey: string; weekDays: readonly string[] },
@@ -268,8 +216,6 @@ export function buildOverview(
     if (!r.priced) unpricedRows += 1
   }
 
-  // hasBackfilled / unpricedModels 由同一条路径算出：overview 与 daily / byModel /
-  // byWorkspace 的口径不可能分叉（review fix round 2）。
   return {
     ...buildMarkers(rows),
     totalCny, todayCny, weekCny, calls,

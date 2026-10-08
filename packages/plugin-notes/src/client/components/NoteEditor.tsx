@@ -1,22 +1,6 @@
 /**
- * 便签编辑器（tiptap + Markdown）：标题输入 + 富文本正文 + 格式操作栏 + 任务/定时区。
- *
- * 本文件只有编排与 JSX：状态、tiptap 装配、自动保存、弹层与快捷键全在
- * hooks/useNoteEditor.ts；执行记录零件在 components/NoteRunBlock.tsx；操作栏按钮在
- * components/NoteToolButton.tsx。
- *
- * - 正文经 tiptap-markdown 序列化保存为真实 Markdown（不再丢格式）；
- * - 操作栏：粗体/斜体/删除线/标题H1-H3/无序·有序列表/任务清单(todolist)/引用/
- *   行内代码/代码块（+ 语言选择；多行选区一次并成一块，见 core/note-code-block.ts）/
- *   分隔线/链接（弹层设置）/表格（插入·行列操作）/撤销/重做；
- * - 代码块语言高亮、链接与表格能力来自共享扩展层 core/note-richtext.ts；
- * - 粘贴图片：剪贴板图片文件 → data URL 内联插入正文（守卫在 core/note-paste-guard.ts）；
- * - 保存：编辑既有便签时**停顿约 1 秒自动保存**（不关弹窗、不打断输入），
- *   Ctrl/Cmd+S 立即保存；Ctrl/Cmd+Enter 与「保存」按钮仍是「保存并关闭」；
- * - 关闭（X / 「取消」/ Esc / 点遮罩）：**有改动先问一句**（保存并关闭 / 放弃改动 /
- *   继续编辑），没改动直接关 —— 新建便签没有库记录，静默关掉就等于白写；
- * - 快捷键：Esc 关闭弹层或请求关闭，Ctrl/Cmd+K 插入链接，Ctrl/Cmd+S 保存不关闭。
- * 父组件用 key 控制实例重建（新建/每条便签各一个编辑器），初值即草稿内容。
+ * 便签编辑器视图：只有编排与 JSX，状态与逻辑在 hooks/useNoteEditor.ts。
+ * 父组件用 key 控制实例重建（每条便签一个），初值即草稿内容。
  */
 
 import { EditorContent } from "@tiptap/react"
@@ -76,7 +60,6 @@ import styles from "../styles/notes-editor.module.css"
 
 export type { NoteEditorProps, NoteSaveOptions, NoteTaskDraft } from "../hooks/useNoteEditor.ts"
 
-/** 定时周期下拉的中文标签（与 SCHEDULE_MODES 一一对应）。 */
 const SCHEDULE_MODE_LABELS: Record<ScheduleMode, string> = {
   once: "一次性",
   interval: "间隔",
@@ -85,15 +68,12 @@ const SCHEDULE_MODE_LABELS: Record<ScheduleMode, string> = {
   monthly: "每月",
 };
 
-/** 纸面深色淡染（hover / 选中底）。 */
 const PAPER_DEEP_TINT = "rgba(46, 42, 34, 0.06)";
-/** 纸面浅色填充（输入框底 / 标记底）。 */
 const PAPER_SOFT_FILL = "rgba(46, 42, 34, 0.1)";
 
-/** 星期几短标签（0=周日；与 Date#getDay 对齐）。 */
+/** 0 = 周日，与 Date#getDay 对齐。 */
 const WEEKDAY_SHORT = ["日", "一", "二", "三", "四", "五", "六"] as const;
 
-/** 便签编辑器视图：只做编排与 JSX，逻辑全在 useNoteEditor。 */
 export function NoteEditor(props: NoteEditorProps): JSX.Element {
   const {
     title,
@@ -180,18 +160,16 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
           e.preventDefault();
           openLinkPopup();
         } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
-          // Ctrl/Cmd+S：编辑既有便签 → 立即保存且**不关弹窗**（与自动保存同一路径）；
-          // 新建态没有库记录，等同「保存」按钮（创建并关闭）。
+          // 编辑态保存不关闭；新建态等同「保存并关闭」。
           e.preventDefault();
           if (props.autoSave === true) {
-            // 先取消排着的自动保存（避免刚落盘又被定时器跑一次），再立即保存。
             autoSaver.current?.cancel();
             void autoSaveNow(true);
           } else {
             void save();
           }
         } else if (e.key === "Escape") {
-          // Esc 的层级：链接 / 表格弹层先收，再按一次才请求关闭（requestEscapeClose 里判定）。
+          // Esc：先收弹层，再按一次才请求关闭。
           e.preventDefault();
           e.stopPropagation();
           requestEscapeClose();
@@ -199,7 +177,6 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
       }}
     >
       
-      {/* 头部行：便签标题直接放在 header（可编辑），省去单独的「新建便签」标题行 */}
       <div style={headRowStyle}>
         <input
           className={styles.title}
@@ -558,9 +535,6 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
         <EditorContent editor={editor} />
       </div>
 
-      {/* 任务区（M2-1「折纸」版）：便签纸上只留一行 —— [☑ 设为任务 | 摘要 | 设置]，
-          底下压一道虚线折痕，点开才把状态/工作区/模型/预设/定时/执行记录折出来。
-          折叠不等于把问题藏起来：缺工作区时摘要行直接变红字，保存也会被挡下。 */}
       <div
         style={taskAreaStyle}
         aria-label="任务状态"
@@ -575,7 +549,6 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
               onChange={(e) => {
                 const next = e.target.checked;
                 setTaskOn(next);
-                // 打开任务 = 接下来多半要配工作区/状态，顺手把折痕展开（少点一次）。
                 if (next) setTaskDetailOpen(true);
                 markDirty();
               }}
@@ -618,7 +591,6 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
             </button>
           )}
         </div>
-        {/* 折痕与面板包一层：折叠时整块只剩那道虚线，不会在纸面上留一段空白 gap。 */}
         <div className={styles.taskFoldWrap}>
           {taskOn && <div className={styles.taskCrease} aria-hidden="true" />}
           <div
@@ -628,8 +600,6 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
           >
             <div className={styles.taskFoldBody}>
             {taskOn && (
-              /* 规整表单：左列标签、右列字段 —— 标签列按最宽的那个标签取宽，所以每行
-                 字段的左右边缘都严格对齐（见 styles.taskForm）。 */
               <div className={styles.taskForm} role="group" aria-label="任务设置">
                 <span className={styles.taskFormLabel}>状态</span>
                 <div className={styles.taskFormField}>
@@ -658,10 +628,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                   )}
                 </div>
 
-                {/* 工作区（任务专属，**必选**）：执行时以该目录新建会话跑。候选 =
-                    最近会话用过的目录（不给手填新路径）；选项只显示文件夹名，完整
-                    路径进 title。留空即「这张任务还不能执行」——保存会被挡下，红字
-                    提示就贴在字段正下方，不另占一行去挤别的字段。 */}
+                {/* 工作区必选，候选只来自最近会话用过的目录（不给手填新路径）。 */}
                 <span
                   className={styles.taskFormLabel}
                   style={taskWorkspaceMissing ? labelRequiredWarn : undefined}
@@ -691,8 +658,6 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                     <span style={taskFormHint}>任务必须选一个工作区才能执行</span>
                   )}
                 </div>
-                {/* 执行目标（M2-2）：都缺省 = 宿主默认（不指定预设、不额外选模型）。
-                    列表来自宿主目录；宿主没装配对应能力时只剩「宿主默认」一项。 */}
                 <span className={styles.taskFormLabel}>模型</span>
                 <div className={styles.taskFormField}>
                   <select
@@ -740,9 +705,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                     ))}
                   </select>
                 </div>
-                {/* 定时执行（任务专属）：到点由 host 调度器自动派发（等价点「执行」，同样新建
-                    会话 + 投递 + 租约）。一次性 / 间隔 / 每天 / 每周 / 每月；nextAt 由 host 保存时
-                    重算写回，这里只做编辑与预览（previewNextAt）。 */}
+                {/* nextAt 由 host 保存时重算写回，这里只编辑与预览。 */}
                 <span className={styles.taskFormLabel}>定时</span>
                 <div style={scheduleRow} aria-label="定时执行">
                   <label style={laneToggleLabel}>
@@ -783,7 +746,6 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                           </option>
                         ))}
                       </select>
-                      {/* 一次性：绝对时刻（datetime-local，本机时区）。 */}
                       {schedule.mode === "once" && (
                         <input
                           type="datetime-local"
@@ -799,7 +761,6 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                           }}
                         />
                       )}
-                      {/* 间隔：数量 + 单位（落库统一为分钟）。 */}
                       {schedule.mode === "interval" && (
                         <>
                           <input
@@ -840,7 +801,6 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                           </select>
                         </>
                       )}
-                      {/* 每周：星期多选（至少一天；host 侧 sanitizeSchedule 同样拒绝空星期）。 */}
                       {schedule.mode === "weekly" && (
                         <span style={scheduleChips}>
                           {WEEKDAY_SHORT.map((label, day) => {
@@ -869,7 +829,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                           })}
                         </span>
                       )}
-                      {/* 每月：某日（1-31；当月不足时落在当月最后一天）。 */}
+                      {/* 1-31；当月不足时落在当月最后一天。 */}
                       {schedule.mode === "monthly" && (
                         <input
                           type="number"
@@ -889,7 +849,6 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                           }}
                         />
                       )}
-                      {/* 每天/每周/每月共用：当日时刻。 */}
                       {schedule.mode !== "once" && schedule.mode !== "interval" && (
                         <input
                           type="time"
@@ -904,8 +863,6 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                           }}
                         />
                       )}
-                      {/* 定时摘要行：只回答「下次什么时候」。闸门徽章与失败红字仍露在这一行上
-                          （异常必须可见），上次结果 / 共跑次数 / 运行记录 / 说明收进「详情」。 */}
                       <span style={scheduleMeta} title={scheduleSummaryTitle}>
                         <Clock size={11} aria-hidden="true" />
                         {scheduleNextText}
@@ -943,7 +900,6 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                       </button>
                     </>
                   )}
-                  {/* 详情（默认收起）：上次结果 / 共跑次数 / 运行记录 / 一句后果说明。 */}
                   {schedule !== undefined && scheduleDetailOpen && (
                     <div style={scheduleDetail}>
                       <span style={scheduleDetailRow}>
@@ -964,9 +920,6 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                     </div>
                   )}
                 </div>
-                {/* 执行记录：跑过的任务给一行「运行 起 → 止 · 耗时 · 结果」+ 可展开的
-                    agent 摘要，没跑过就写「尚未执行」——同一行标签让两种状态都成立。
-                    定时卡片的运行记录已经收在「定时 · 详情」里，这里不再重复占一行。 */}
             {schedule === undefined && props.initialLane !== undefined && (
               <>
                 <span className={styles.taskFormLabel}>执行记录</span>
@@ -990,7 +943,6 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
         </div>
       </div>
 
-      {/* 便签纸色选（Win11 便签五色——紫色已随任务泳道分类收敛移除；选中色描边高亮）。 */}
       <div
         style={{
           display: "flex",
@@ -1070,8 +1022,6 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
         </button>
       </div>
 
-      {/* 开启「定时」前的确认弹窗：把「到点会自己开 agent 跑」这件事说清楚再授权。
-          点开关只弹窗不落地，确认后才写进草稿（与其它字段一样等保存生效）。 */}
       {scheduleConfirm !== undefined && (
         <ConfirmDialog
           title="开启定时执行？"
@@ -1100,9 +1050,6 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
         />
       )}
 
-      {/* 关闭前的「有改动」确认：便签只有关闸一道 —— 静默丢过一次内容，用户就再也
-          不会相信这里的自动保存了。主按钮是「保存并关闭」（自动聚焦，回车即保存），
-          想丢改动得再明确点一下「放弃改动」。 */}
       {closeConfirmOpen && (
         <ConfirmDialog
           title="便签有改动"
@@ -1124,21 +1071,18 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
   );
 }
 
-/* ---------- 样式 ---------- */
 
 const laneRunMuted: React.CSSProperties = {
   fontSize: 12.5,
   color: "rgba(46, 42, 34, 0.45)",
 };
 
-/** 头部行：便签标题直接放 header（纸面墨迹、无输入框边框），右侧关闭钮。 */
 const headRowStyle: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
   gap: 6,
   minWidth: 0,
 };
-/** 便签标题输入（纸卡 header 直写，无边框无底色，像写在纸上）。 */
 const headTitleStyle: React.CSSProperties = {
   flex: 1,
   minWidth: 0,
@@ -1152,7 +1096,6 @@ const headTitleStyle: React.CSSProperties = {
   border: "none",
   outline: "none",
 };
-/** 头部关闭钮（右上角）。 */
 const headCloseBtn: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
@@ -1167,7 +1110,6 @@ const headCloseBtn: React.CSSProperties = {
   color: NOTE_INK_MUTED,
   cursor: "pointer",
 };
-/** 正文书写区：不再有边框/底框 —— 直接写在便签纸上。 */
 const contentStyle: React.CSSProperties = {
   padding: "0 4px",
   color: NOTE_INK,
@@ -1197,7 +1139,6 @@ const colorDot: React.CSSProperties = {
   height: 20,
   padding: 0,
   border: "none",
-  // borderRadius: '50%',
   cursor: "pointer",
 };
 const btnPrimary: React.CSSProperties = {
@@ -1208,7 +1149,6 @@ const btnPrimary: React.CSSProperties = {
 };
 const disabledBtn: React.CSSProperties = { opacity: 0.5, cursor: "default" };
 
-/* 工具栏弹层锚点与弹层内按钮。 */
 const popAnchor: React.CSSProperties = {
   position: "relative",
   display: "inline-flex",
@@ -1231,9 +1171,7 @@ const popPrimary: React.CSSProperties = {
   fontWeight: 600,
 };
 
-/* ---------- 任务状态区（合并版，纸面无边框） ---------- */
 
-/** 任务区整块：纸底淡墨染层、无边框圆角（不做输入框的盒子感）。 */
 const taskAreaStyle: React.CSSProperties = {
   display: "flex",
   flexDirection: "column",
@@ -1242,7 +1180,6 @@ const taskAreaStyle: React.CSSProperties = {
   borderRadius: 10,
   background: PAPER_DEEP_TINT,
 };
-/** 任务区头部行：开关 + 状态选择（或 running 胶囊）+ 提示。 */
 const taskHeadRow: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
@@ -1260,8 +1197,6 @@ const laneToggleLabel: React.CSSProperties = {
 const laneStatusPill: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
-  /* 表单字段是纵向 flex（子元素默认拉伸），胶囊是「值展示」不是输入控件，
-     必须自己退出拉伸，否则会变成一条整宽的胶囊。 */
   alignSelf: "flex-start",
   height: 20,
   padding: "0 8px",
@@ -1271,9 +1206,6 @@ const laneStatusPill: React.CSSProperties = {
   color: NOTE_INK,
   background: PAPER_SOFT_FILL,
 };
-/** 任务面板里所有控件共用的皮肤：浅纸底、无边框、7px 圆角。
-    原先状态/周期是透明底（laneSelect）、工作区/模型是浅纸底（workspaceSelect），
-    同一块面板两种长相 —— 收敛成这一个。 */
 const taskControl: React.CSSProperties = {
   height: 26,
   padding: "0 6px",
@@ -1286,29 +1218,24 @@ const taskControl: React.CSSProperties = {
   outline: "none",
   minWidth: 0,
 };
-/** 表单字段列里的下拉：撑满整列（同一列的控件左边缘与右边缘都对齐）。 */
 const taskSelect: React.CSSProperties = {
   ...taskControl,
   width: "100%",
   cursor: "pointer",
 };
-/** 必填未选时的字段描边。 */
 const taskSelectMissing: React.CSSProperties = {
   ...taskSelect,
   boxShadow: `inset 0 0 0 1px ${t.danger}`,
 };
-/** 字段正下方的必填/错误小字（贴在字段上，不另占一行去挤别的字段）。 */
 const taskFormHint: React.CSSProperties = {
   fontSize: 11.5,
   lineHeight: 1.4,
   color: t.danger,
 };
-/** 必填未满足时的标签：同一位置、只变红加粗。 */
 const labelRequiredWarn: React.CSSProperties = {
   color: t.danger,
   fontWeight: 600,
 };
-/** 自动保存指示灯：页脚最左，弱化存在感（墨迹系灰）。 */
 const autoSaveHint: React.CSSProperties = {
   fontSize: 11.5,
   color: "rgba(46, 42, 34, 0.5)",
@@ -1317,7 +1244,6 @@ const laneHint: React.CSSProperties = {
   fontSize: 12,
   color: "#b3261e",
 };
-/** 折起来那一行的摘要文字（状态 · 工作区 · 模型 · 预设 合成一句）。 */
 const taskSummary: React.CSSProperties = {
   flex: "1 1 auto",
   minWidth: 0,
@@ -1327,19 +1253,16 @@ const taskSummary: React.CSSProperties = {
   fontSize: 12,
   color: NOTE_INK_MUTED,
 };
-/** 缺工作区时的摘要：同一行、同一位置，只把字变红（问题必须一眼看得见）。 */
 const taskSummaryWarn: React.CSSProperties = {
   ...taskSummary,
   color: t.danger,
 };
-/** 定时行：独占一行（开关 + 周期 + 参数 + 下次/上次），窄弹窗内自动换行。 */
 const scheduleRow: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
   flexWrap: "wrap",
   gap: 6,
 };
-/** 状态闸门徽章（当前列不自动执行）：浅底胶囊，比红字弱、比摘要小字显眼。 */
 const scheduleStatusChip: React.CSSProperties = {
   padding: "1px 6px",
   fontSize: 11,
@@ -1349,7 +1272,6 @@ const scheduleStatusChip: React.CSSProperties = {
   borderRadius: 6,
   whiteSpace: "nowrap",
 };
-/** 「详情」面板：整行独占（flex 1 1 100%），收起时完全不占版面。 */
 const scheduleDetail: React.CSSProperties = {
   flex: "1 1 100%",
   display: "flex",
@@ -1359,13 +1281,11 @@ const scheduleDetail: React.CSSProperties = {
   background: PAPER_SOFT_FILL,
   borderRadius: 8,
 };
-/** 详情里的「上次 / 共跑」一行。 */
 const scheduleDetailRow: React.CSSProperties = {
   fontSize: 11.5,
   lineHeight: 1.5,
   color: NOTE_INK_MUTED,
 };
-/** 详情里的一句后果说明（原是常驻的整行提示，收进详情后不再占版面）。 */
 const scheduleDetailNote: React.CSSProperties = {
   fontSize: 11.5,
   lineHeight: 1.5,
@@ -1375,19 +1295,14 @@ const scheduleWarn: React.CSSProperties = {
   fontSize: 11.5,
   color: t.danger,
 };
-/** 定时参数输入（datetime-local / time）：与表单其它控件同一皮肤，只是不撑满整行
-    （它们和周期下拉同处一个换行集群）。 */
 const scheduleInput: React.CSSProperties = { ...taskControl, cursor: "text" };
-/** 数量输入（间隔时长 / 每月第几日）：窄，免得把整行撑开。 */
 const scheduleNumber: React.CSSProperties = { ...scheduleInput, width: 58 };
-/** 星期多选容器。 */
 const scheduleChips: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   gap: 3,
   flexWrap: "wrap",
 };
-/** 星期胶囊（未选）：浅底墨迹。 */
 const scheduleChip: React.CSSProperties = {
   minWidth: 22,
   height: 22,
@@ -1401,13 +1316,11 @@ const scheduleChip: React.CSSProperties = {
   borderRadius: 6,
   cursor: "pointer",
 };
-/** 星期胶囊（已选）：深墨底反白，纸质卡面上对比恒定。 */
 const scheduleChipActive: React.CSSProperties = {
   background: "rgba(46, 42, 34, 0.72)",
   color: "#ffffff",
   fontWeight: 600,
 };
-/** 定时摘要行尾的「下次时刻 · 倒计时」小字（弱化，别抢正文视线）。 */
 const scheduleMeta: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
@@ -1417,6 +1330,3 @@ const scheduleMeta: React.CSSProperties = {
   flex: "1 1 160px",
   minWidth: 0,
 };
-/** 执行记录区：开始/结束/结果一行（· 分隔）+ 摘要。 */
-/** run.summary 只读 markdown 的内层排版覆盖（嵌套在编辑器内，见 RunSummaryMarkdown）。 */
-/** 执行结果文字：成功绿 / 失败红（语义色令牌，明暗主题自适应）。 */

@@ -1,22 +1,4 @@
-/**
- * 便签富文本「共享扩展装配层」：编辑器与只读渲染（note-preview）共用同一套
- * tiptap 扩展，保证链接 / 表格 / 代码语言高亮在编辑与展示两侧行为一致，
- * 且 Markdown 存取格式不丢（tiptap-markdown 按扩展名回退序列化：
- * codeBlock 围栏带语言、table 管道表格、link 走 [text](url)）。
- *
- * - 链接：@tiptap/extension-link（可输入规则自动链接 + 粘贴解析）；
- *   只读场景 openOnClick=true 可点开，编辑场景 false 避免误跳转。
- * - 表格：@tiptap/extension-table + row/header/cell（插入、行列增删、删除）。
- * - 代码高亮：@tiptap/extension-code-block-lowlight，配 lowlight v3 实例；
- *   common 语法集 + powershell/dos 补注册，vue 借用 xml 文法，js/ts 等
- *   别名由 highlight.js 文法自带。lowlight v3 无 registered 方法，为让
- *   tiptap 的装饰判定把「别名语言」也放行，这里给实例挂一个 registered。
- * - 图片：@tiptap/extension-image（base64 内联）——原 note-editor 定义挪来
- *   一处，避免编辑器与只读渲染各自配置漂移。
- * - 待办清单：@tiptap/extension-task-list + task-item —— 节点名必须保持官方
- *   `taskList` / `taskItem`（tiptap-markdown 的内置 Markdown 规格按扩展名匹配，
- *   改名即丢 `- [ ]` / `- [x]` 存取），详见 NoteTaskListKit。
- */
+/** 编辑器与只读渲染共用这套扩展装配，两侧行为与 Markdown 往返须一致。 */
 
 import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
@@ -35,7 +17,6 @@ import powershell from 'highlight.js/lib/languages/powershell'
 import dos from 'highlight.js/lib/languages/dos'
 import xml from 'highlight.js/lib/languages/xml'
 
-/** 图片节点属性（Markdown 序列化入参的最小形状）。 */
 export interface NoteImageMarkdownAttrs {
   readonly src?: string | null
   readonly alt?: string | null
@@ -49,7 +30,6 @@ interface MarkdownWriteState {
   write(content: string): void
 }
 
-/** HTML 属性值转义（& < > "）。base64 data URL 的 src 通常不含这些字符。 */
 function escapeHtmlAttr(value: string): string {
   return value
     .replace(/&/g, '&amp;')
@@ -68,10 +48,9 @@ function escapeMarkdownInline(value: string): string {
 }
 
 /**
- * 单张图片 → Markdown 字符串：有 width 输出内联 HTML `<img … width>`（tiptap-markdown
- * 默认 html:true 原样保留，加载时经 Image.parseHTML 还原 width）；无 width 输出标准
- * `![alt](src "title")`，与 prosemirror-markdown 默认图片序列化逐字节一致。
- * 抽出为纯函数便于单测；编辑器序列化钩子直接 state.write(本函数结果)。
+ * 单张图片 → Markdown：有 width 走内联 `<img … width>`（tiptap-markdown 的
+ * html:true 原样保留，加载时由 Image.parseHTML 还原）；无 width 走标准
+ * `![alt](src "title")`，与 prosemirror-markdown 默认序列化逐字节一致。
  */
 export function noteImageToMarkdown(attrs: NoteImageMarkdownAttrs): string {
   const src = attrs.src ?? ''
@@ -87,8 +66,6 @@ export function noteImageToMarkdown(attrs: NoteImageMarkdownAttrs): string {
   return `![${escapedAlt}](${escapedSrc}${titlePart})`
 }
 
-/** 编辑器/只读渲染共用的图片扩展（粘贴的图以 data URL 内联进正文）。
- * 新增 width 属性承载显示宽度（百分比），并覆盖 Markdown 序列化让宽度随正文往返。 */
 export const NoteImage = Image.extend({
   addAttributes() {
     return {
@@ -115,25 +92,14 @@ export const NoteImage = Image.extend({
 }).configure({ inline: true, allowBase64: true })
 
 /**
- * 待办清单（todolist）扩展组：taskList + taskItem。
- *
- * 节点名必须保持官方名 `taskList` / `taskItem`：tiptap-markdown 的 Markdown 规格
- * 是按**扩展名**回退的（getMarkdownSpec 用 extension.name 去内置 markdownExtensions
- * 里找同名的 markdown spec），一旦改名，`- [ ]` / `- [x]` 的存取立刻失效。
- * 官方 taskItem 的 `checked` 属性与内置规格的数据契约正好对齐：解析读
- * `data-checked`（markdown-it-task-lists 的 updateDOM 写入），序列化按
- * `attrs.checked` 输出 `- [x] ` / `- [ ] `，故 Markdown 往返零额外代码。
- *
- * nested:true 允许清单项下嵌套子列表（Tab 缩进/回车续行由官方键位处理，
- * Mod-Shift-9 = 切换任务清单）。编辑与只读渲染共用同一份装配：只读态勾选框由
- * 官方默认渲染为不可交互，展示勾选状态即可。
+ * 待办清单扩展组。节点名必须是官方 `taskList` / `taskItem`：tiptap-markdown
+ * 按扩展名回退找内置规格，改名即丢 `- [ ]` / `- [x]` 存取。
  */
 export const NoteTaskListKit = (): AnyExtension[] => [
   TaskList,
   TaskItem.configure({ nested: true }),
 ]
 
-/** 表格扩展组（table 需要 row/header/cell 三个伙伴节点才可实例化）。 */
 export const NoteTableKit = (): AnyExtension[] => [
   Table.configure({ resizable: false }),
   TableRow,
@@ -141,22 +107,15 @@ export const NoteTableKit = (): AnyExtension[] => [
   TableCell,
 ]
 
-/** 链接扩展：输入时自动识别可链接地址、粘贴即转链接。 */
 export function noteLinkExtension(readonly: boolean): AnyExtension {
   return Link.configure({
-    // 只读展示可点开；编辑态点击应落光标而非跳走。
     openOnClick: readonly,
     autolink: true,
     linkOnPaste: true,
     HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' },
-    // 官方默认白名单（http/https/ftp/…，note:// 引用已随 v0.1 移除）。
   })
 }
 
-/**
- * 构造便签编辑器/只读渲染共用扩展列表（代码高亮 / 图片 / 链接 / 待办清单 / 表格）。
- * StarterKit 默认带 codeBlock，需关掉换成 CodeBlockLowlight，避免节点重名。
- */
 export function buildNoteRichTextExtensions(
   opts: { readonly?: boolean; imageNode?: AnyExtension } = {},
 ): AnyExtension[] {
@@ -174,7 +133,6 @@ export function buildNoteRichTextExtensions(
 
 type BaseLowlight = ReturnType<typeof createLowlight>
 
-/** 能否对某语言标记精确高亮（低版本 lowlight 无 registered 时才需要）。 */
 function canHighlight(
   lowlight: BaseLowlight,
   name: string | null | undefined,
@@ -189,11 +147,9 @@ function canHighlight(
 }
 
 /**
- * 语法高亮文法注册表（common + 补漏），模块加载时初始化一次。
- * lowlight v3 未暴露 registered()，@tiptap/extension-code-block-lowlight 的
- * 装饰判定会调用它来决定「该语言是否可精确高亮」（拿不到会退化为自动识别，
- * js/tsx/vue 等别名语言会被误判），这里补一个基于试跑的判定：
- * 能对空串高亮即认为已注册（未注册语言会抛 Unknown language）。
+ * 语法高亮注册表。lowlight v3 没有 registered()，而 tiptap 的装饰判定靠它
+ * 决定「该语言能否精确高亮」，这里补一个试跑判定：
+ * 能高亮空串即算已注册（未注册语言会抛 Unknown language）。
  */
 const baseLowlight = createLowlight(common)
 baseLowlight.register({
@@ -205,7 +161,6 @@ export const noteLowlight = Object.assign(baseLowlight, {
   registered: (name: string): boolean => canHighlight(baseLowlight, name),
 }) as BaseLowlight & { registered: (name: string) => boolean }
 
-/** 公开判定的同款实现：某语言标记当前是否可精确高亮。 */
 export function isCodeLanguageHighlightable(
   language: string | null | undefined,
 ): boolean {

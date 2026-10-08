@@ -1,16 +1,7 @@
 /**
- * 便签板的全部状态与动作（board-view 的逻辑面）。
- *
- * 视图只读返回值，自己永远不碰 remote / notesNav / 键盘事件 —— 想知道「删一条会
- * 发生什么」，看这里。
- *
- * 数据流：开关订阅、拉取（事件驱动，无定时轮询）、错误条、busy 与保存流
- * （saveDraft → run → refresh）。弹窗层（编辑器 / 使用说明）是互斥浮层，开关一律
- * 读 notes-nav store，本 hook 不再持有本地开关 state。
- *
- * 与 sibling 面板（task-board / ssh / daily-log）的互斥见 core/notes-panel：它们
- * 还在抢中间列的 DOM，所以主面板挂载时广播、收到它们的广播时把中间列交还会话；
- * 右侧栏 surface 不参与（见 UseNotesBoardOptions.surface）。
+ * 便签板全部状态与动作：视图只读返回值，不碰 remote / notesNav / 键盘事件。
+ * 刷新为事件驱动（宿主 notes/watch 推送），无定时器。
+ * 与 sibling 面板的互斥只在 surface='main' 参与（见 core/notes-panel）。
  */
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
@@ -36,22 +27,17 @@ import { notesNav } from '../../core/notes-nav.ts'
 import type { NotesRemote } from '../../core/notes-remote.ts'
 import type { NoteSaveOptions, NoteTaskDraft } from '../../components/NoteEditor.tsx'
 
-/** 面板注入面：由 client 入口在注册槽位时提供。 */
 export interface NotesBoardFace {
   readonly notes: NotesRemote
-  /** 本插件配置表单（默认标题 / 打开方式；入口开关在 dsh 设置 → 便签）。 */
   readonly scope: ConfigForm<NotesConfig>
-  /** 关闭便签板：把主面板切回会话（ctx.layout.selectPanel(null)）。 */
   readonly closeBoard: () => void
 }
 
 export interface UseNotesBoardOptions {
   readonly face: NotesBoardFace
   /**
-   * 本品挂在哪块地里：
-   * - 'main'（缺省）：中间列主面板，挂载时广播、并监听 sibling 面板的反向广播；
-   * - 'sidebar'：右侧栏 tab（见 views/notes-sidebar-body）。它不占中间列，所以两边都
-   *   不参与 —— 广播白赶走兄弟面板，监听则会被兄弟面板关掉自己的 tab。
+   * 'main'（缺省）占中间列，挂载时广播并监听 sibling 面板；'sidebar' 不占
+   * 中间列，两边都不参与（广播会白赶走兄弟面板，监听会被关掉自己的 tab）。
    */
   readonly surface?: 'main' | 'sidebar'
 }
@@ -60,14 +46,12 @@ function errText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-/** 提示：执行需宿主可新建会话（no-dispatch / dispatch-failed 共用）。 */
 const EXECUTE_NEEDS_SESSION_HINT = '执行需要宿主能新建会话（会话控制器不可用或投递被拒）'
 
-/** 未指定工作区提示：M1-4 起不再有默认工作区，任务必须自带一个。 */
+/** 任务必须自带工作区，没有默认值。 */
 const EXECUTE_NEEDS_WORKSPACE_HINT =
   '这张任务便签还没指定工作区：打开它，在「设为任务」底下选一个工作区再执行'
 
-/** 任务执行事务失败 reason → 用户提示。 */
 function executeError(
   reason: 'missing' | 'busy' | 'missing-workspace' | 'no-dispatch' | 'dispatch-failed',
 ): string {
@@ -84,7 +68,6 @@ function executeError(
   }
 }
 
-/** 设置分区与板子共用的返回值形状（视图同名解构）。 */
 export interface UseNotesBoardResult {
   readonly notes: readonly NoteRecord[]
   readonly loading: boolean
@@ -96,7 +79,6 @@ export interface UseNotesBoardResult {
   readonly defaultTitle: string
   readonly workspaces: readonly string[]
   readonly workspacesReady: boolean
-  /** 任务执行目标目录（模型 / agent 预设）；拿不到即空目录（只留「宿主默认」）。 */
   readonly taskTargets: TaskTargets
   readonly closeBoard: () => void
   readonly refresh: () => void
@@ -106,10 +88,7 @@ export interface UseNotesBoardResult {
   readonly openEditor: (note: NoteRecord) => void
   readonly createNote: () => void
   readonly closeEditor: () => void
-  /**
-   * 编辑器填进来的关闭闸（转交给 EditorPageDialog）：焦点不在编辑器里时（点了纸卡留白），
-   * 编辑器自己的 Esc 收不到，会落到板子这条兜底 Esc 上 —— 也得走同一道闸。
-   */
+  /** 有未保存改动时先走编辑器自己的关闭闸（板子的兜底 Esc 也必须经它）。 */
   readonly editorRequestCloseRef: MutableRefObject<(() => void) | null>
   readonly saveDraft: (
     title: string,
@@ -127,29 +106,24 @@ export interface UseNotesBoardResult {
   readonly createTask: (status: TaskStatus) => void
 }
 
-/** 便签板的全部状态与动作。 */
 export function useNotesBoard(options: UseNotesBoardOptions): UseNotesBoardResult {
   const { face } = options
   const closeBoard = face.closeBoard
   const surface = options.surface ?? 'main'
 
-  /** 工作区候选（最近会话用过的 cwd，设置/编辑器下拉用；拿不到即空数组）。 */
+  /** 工作区候选：最近会话用过的 cwd；拿不到即空数组。 */
   const [workspaces, setWorkspaces] = useState<readonly string[]>([])
-  /**
-   * 工作区候选是否已加载完成：编辑器「用默认（目录）」文案在就绪前**不写「未配置」**，
-   * 否则候选一到就会被真目录替换，用户看到的就是「提示一闪而过」。
-   */
+  /** 候选是否已加载完成；就绪前不显示「未配置」。 */
   const [workspacesReady, setWorkspacesReady] = useState(false)
-  /** 任务执行目标目录（模型 / agent 预设）：挂载即拉一次，失败即空目录。 */
+  /** 任务执行目标目录；挂载即拉一次，失败即空目录。 */
   const [taskTargets, setTaskTargets] = useState<TaskTargets>({ models: [], presets: [] })
   const [notes, setNotes] = useState<readonly NoteRecord[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | undefined>()
   const [busy, setBusy] = useState(false)
 
-  // 挂载即可见（见 NotesBoard 文件头），所以不订阅「开着吗」；只回报挂载态 + 与 sibling 协调。
   useEffect(() => {
-    // 挂载态照记：notes-stats 靠它判断「板子在，变更由板子自己刷」，与挂在哪块地无关。
+    // 挂载态先记：notes-stats 靠它判断板子在不在，与 surface 无关。
     boardStore.setMounted(true)
     if (surface !== 'main') {
       return () => {
@@ -166,13 +140,10 @@ export function useNotesBoard(options: UseNotesBoardOptions): UseNotesBoardResul
     }
   }, [closeBoard, surface])
 
-  // 弹窗层：编辑器（目标）与使用说明开关都由导航 store 决定（跨开关浮层保留）。
   const editing = useSyncExternalStore(notesNav.subscribe, () => notesNav.editing)
   const helpOpen = useSyncExternalStore(notesNav.subscribe, () => notesNav.helpOpen)
-  /** 编辑器填进来的关闭闸（有改动先确认）；没填（首帧/卸载）时退回直接关编辑器。 */
   const editorRequestCloseRef = useRef<(() => void) | null>(null)
 
-  // 订阅命名空间 scope：默认标题在设置里改完实时生效（新建便签/弹窗展示）。
   const scope = face.scope
   const snapshot = useSyncExternalStore(
     (cb) => scope.subscribe(cb),
@@ -186,7 +157,6 @@ export function useNotesBoard(options: UseNotesBoardOptions): UseNotesBoardResul
     const result = await face.notes.list()
     if (result.ok) {
       setNotes(result.value)
-      // 侧栏「活动待办」徽标：板内操作/变更推送后即时同步（关板时由 notes-stats 事件订阅兜底）。
       notesStatsStore.sync(result.value)
       setError(undefined)
     } else if (!silent) {
@@ -195,8 +165,6 @@ export function useNotesBoard(options: UseNotesBoardOptions): UseNotesBoardResul
     if (!silent) setLoading(false)
   }
 
-  // 事件驱动（替代原 5s/1.5s 轮询）：开板首刷；之后任何写（本板操作、agent 工具、
-  // WebDAV 恢复等）由宿主 notes/watch 推送 → 静默刷新。无定时器。
   useEffect(() => {
     void refresh()
     return notesChangeBus.subscribe(() => {
@@ -205,9 +173,7 @@ export function useNotesBoard(options: UseNotesBoardOptions): UseNotesBoardResul
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // 工作区候选：**挂载即拉**（不等开板）。编辑器里的「用默认（目录）」文案依赖它，
-  // 等开板才拉的话，用户开板后马上点开编辑器就会先看到「未配置」再被真目录替换。
-  // 只读端点，失败静默 —— 没有候选就只是一个空下拉；拉完置 ready（文案才写「未配置」）。
+  // 挂载即拉（不等开板）：编辑器的「用默认（目录）」文案依赖它。
   useEffect(() => {
     let alive = true
     void face.notes
@@ -225,8 +191,6 @@ export function useNotesBoard(options: UseNotesBoardOptions): UseNotesBoardResul
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // 任务执行目标目录（模型 / agent 预设）：同样挂载即拉 —— 编辑器一打开就要用，
-  // 等开编辑器才拉会让两个下拉先空一下再冒出来。只读端点，失败静默降级空目录。
   useEffect(() => {
     let alive = true
     void face.notes
@@ -241,10 +205,7 @@ export function useNotesBoard(options: UseNotesBoardOptions): UseNotesBoardResul
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Esc：按弹窗层级收 —— 使用说明 → 编辑器弹窗 → 整个面板
-  // （编辑器内的 Esc 由 NoteEditor 处理并 stopPropagation，不会走到这里；走到这里的
-  // 是「焦点不在编辑器里」那种，所以也不能在这儿直接关 —— 得走编辑器自己的关闭闸，
-  // 否则「点一下纸卡留白再按 Esc」就是一条静默丢内容的暗门）。
+  // Esc 按层级收：使用说明 → 编辑器（经其关闭闸）→ 整个面板。
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape') return
@@ -281,10 +242,7 @@ export function useNotesBoard(options: UseNotesBoardOptions): UseNotesBoardResul
     }
   }
 
-  /**
-   * 静默写（自动保存用）：成功静默刷新；失败只落错误条，**不动全局 busy** —— 自动保存
-   * 每隔几秒触发一次，动 busy 会让板内控件跟着一闪一闪。
-   */
+  /** 静默写（自动保存用）：不动全局 busy，失败只落错误条。 */
   async function quietRun(action: () => Promise<unknown>): Promise<boolean> {
     try {
       const result = await action()
@@ -304,9 +262,8 @@ export function useNotesBoard(options: UseNotesBoardOptions): UseNotesBoardResul
   }
 
   /**
-   * 保存草稿（唯一落库口：编辑器按钮 / Ctrl+S / 自动保存都走这里）。
-   * options.close（默认 true）= 保存成功后关弹窗；自动保存与 Ctrl+S 传 false（留在弹窗里
-   * 继续改）；options.silent = 静默（不置 busy、不打断输入，见 quietRun）。
+   * 唯一落库口（编辑器按钮 / Ctrl+S / 自动保存）。
+   * options.close 默认 true = 保存成功后关弹窗；silent = 静默（见 quietRun）。
    */
   async function saveDraft(
     title: string,
@@ -320,19 +277,13 @@ export function useNotesBoard(options: UseNotesBoardOptions): UseNotesBoardResul
     const close = options?.close !== false
     const save = (action: () => Promise<unknown>): Promise<boolean> =>
       options?.silent === true ? quietRun(action) : run(action)
-    // 工作区一律 trim 后落库（空串 = 未指定；M1-4 起任务必须有工作区，见 host 侧
-    // missing-workspace 与编辑器侧的必选闸门）。
+    // 空串 = 未指定工作区（任务必须有，见 host 侧 missing-workspace）。
     const workspace = taskPatch.workspace.trim()
-    // 执行目标（模型 / agent 预设）：只有任务便签才带（普通便签无 lane，host 忽略）。
     const target = {
       agentPreset: taskPatch.agentPreset,
       ...(taskPatch.model !== undefined ? { model: taskPatch.model } : {}),
     }
     if (current.mode === 'create') {
-      // 新建：开关开 → 以 laneStatus 落任务身份（并带上可选执行目标）；关 → 普通便签。
-      // 列头「＋新建任务」的初始状态已由 EditorPageDialog 合成进编辑器初值，此处
-      // 开关是唯一真相（用户可在弹窗内改状态/取消任务）。
-      // 定时日程：只有任务便签才带（普通便签无 lane，host 侧同样会忽略）。
       const schedule = taskPatch.on ? taskPatch.schedule : undefined
       const targets = taskPatch.on ? taskTargetCreateInput(target) : {}
       const ok = await save(() =>
@@ -348,18 +299,12 @@ export function useNotesBoard(options: UseNotesBoardOptions): UseNotesBoardResul
       )
       if (ok && close) notesNav.closeEditor()
     } else {
-      // 编辑：仅当用户在对话框内实际改了任务状态才发 lane.status（含「普通便签转
-      // 任务」）；状态未改不携带 lane —— 否则编辑器打开期间陈旧快照会把宿主已 settle
-      // / 已执行的最新状态回滚；开关关且原本是任务 → clear（取消任务）；关且非任务
-      // → 纯内容更新。running 任务的开关在编辑器里只读（状态不可能改），故不会对
-      // running lane 发任何 patch。
+      // 状态未改不发 lane（陈旧快照会回滚宿主已 settle 的状态）；关掉开关 → clear。
       const laneForUpdate = lanePatchForSave(taskPatch.on, taskPatch.status, current.note.lane, target)
-      // workspace 只在真的改了才发（空串 = 清除该字段，此后执行会被拒）；未改不发，
-      // 避免编辑器打开期间的无谓写入。
+      // 改过才发：空串 = 清除工作区（此后执行会被拒）。
       const workspaceChanged = workspace !== (current.note.workspace ?? '')
-      // 定时日程：编辑器草稿（任务态）→ 与便签上既有日程比「可写字段签名」。未改不发，
-      // 免得编辑器打开期间宿主写回的 nextAt/lastResult 被陈旧快照覆盖；草稿缺失（关掉
-      // 定时或取消任务）而便签上有日程 → 发 null 清除。
+      // 只发签名变过的日程：未改不发，免得宿主写回的 nextAt/lastResult 被覆盖；
+      // 草稿缺失而便签上有 → 发 null 清除。
       const draftSchedule: NoteScheduleInput | undefined = taskPatch.on ? taskPatch.schedule : undefined
       const schedulePatch: NoteScheduleInput | null | undefined =
         draftSchedule === undefined
@@ -382,7 +327,6 @@ export function useNotesBoard(options: UseNotesBoardOptions): UseNotesBoardResul
     }
   }
 
-  /** 泳道卡执行/重跑：busy 守卫 → taskExecute → 失败提示 → 刷新。 */
   async function execute(note: NoteRecord): Promise<void> {
     if (busy) return
     setBusy(true)
@@ -405,7 +349,6 @@ export function useNotesBoard(options: UseNotesBoardOptions): UseNotesBoardResul
     }
   }
 
-  /** 泳道卡重置为待办（手动接管）：busy 守卫 → taskReset → 刷新。 */
   async function reset(note: NoteRecord): Promise<void> {
     if (busy) return
     setBusy(true)
@@ -454,11 +397,9 @@ export function useNotesBoard(options: UseNotesBoardOptions): UseNotesBoardResul
     togglePin: (note) => void run(() => face.notes.setPinned(note.id, !note.pinned)),
     toggleArchive: (note) => void run(() => face.notes.update(note.id, { archived: !note.archived })),
     remove: (note) => void run(() => face.notes.delete(note.id)),
-    // 泳道拖拽换列：状态写回 lane（颜色与状态已解耦，纸色不再表状态）。
     move: (id, status) => void run(() => face.notes.update(id, { lane: { status } })),
     execute: (note) => void execute(note),
     reset: (note) => void reset(note),
-    // 泳道列头「＋」：打开新建编辑器，预置 lane 状态为当前列。
     createTask: (status) => notesNav.openEditor({ mode: 'create', laneStatus: status }),
   }
 }
