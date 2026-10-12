@@ -1,19 +1,7 @@
 /**
- * 定时执行调度器（host 侧）：周期 tick 扫描到期日程 → 调 service.taskExecuteScheduled 派发
- * （与用户点泳道卡「执行」**同一条链路**：按工作区新建会话 + 投递 + 租约），再把
- * 结果写回 schedule（lastFiredAt/lastResult/nextAt）。
- *
- * 为什么放 host：调度要「人不在也照跑」——跑在宿主进程里，与便签板/UI 是否打开无关，
- * 与 index.ts 里 WebDAV 的自动检查定时器同款装配方式（setInterval + ctx.effect 清理）。
- *
- * 语义要点（推导见 schedule.ts 头注释）：
- * - 到期 = enabled && !archived && 有 lane && nextAt <= now（纯函数 pickDueNotes）；
- * - 状态闸门（软）：lane.status 为 待规划/已完成/已失败 时不派发，只顺延并记原因；
- * - 错误边界：连续失败到 SCHEDULE_MAX_FAILURES 自动停用；定时发起的 run 超时未收尾
- *   由 host 兜底 settle（见 SCHEDULE_RUN_TIMEOUT_MS / isRunTimeout）；
- * - 不补历史：一次 tick 对一张便签最多派发一次，循环的 nextAt 永远从 now 之后重算；
- * - 单张便签出错只丢该张（记 warn），绝不中断整轮、更不拖垮 host；
- * - 上一轮 tick 未结束（派发慢）时本轮直接跳过，避免同一张便签被派发两次。
+ * 定时执行调度器（host 侧）：周期 tick 扫描到期日程 → 派发并写回日程。
+ * 与用户点「执行」走同一条链路，只是 run 帧带 by=schedule，超时兜底据此认领。
+ * 到期判据与派发后果都是 schedule.ts 的纯语义，这里只管扫描、写回与错误边界。
  */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -21,18 +9,17 @@ import type { NotesService } from './service.ts'
 import {
   SCHEDULE_RUN_TIMEOUT_MS,
   applyScheduleDispatch,
+  applyScheduleOverdue,
   applyScheduleSkip,
   isNoteScheduleDue,
-  isOnceStale,
+  isScheduleOverdue,
   scheduleBlockReason,
   type ScheduleDispatchOutcome,
 } from './schedule.ts'
 
-// 再导出：超时常量的权威定义在 schedule.ts（共享纯语义），host 侧沿用本模块引用。
 export { SCHEDULE_RUN_TIMEOUT_MS }
 import type { NoteId, NoteRecord, NoteSchedule } from './types.ts'
 
-/** tick 间隔（30s）：分钟级精度足够，且比 1s 轮询省得多。 */
 export const SCHEDULE_TICK_MS = 30_000
 
 /** 超时兜底写进 run.summary / 日程失败原因的中文说明。 */
@@ -45,9 +32,6 @@ export function isRunTimeout(note: NoteRecord, now: number): boolean {
   if (run === undefined || run.finishedAt !== undefined || run.by !== 'schedule') return false
   return now - run.startedAt >= SCHEDULE_RUN_TIMEOUT_MS
 }
-
-/** 一次性日程过期未派发时的收尾说明（宿主长期未运行）。 */
-const STALE_RESULT = '已过期（宿主长期未运行），已停用'
 
 /** 调度器依赖（注入以便单测：假 now / 假执行 / 假写回）。 */
 export interface ScheduleRunnerDeps {
@@ -96,10 +80,10 @@ export function createScheduleRunner(deps: ScheduleRunnerDeps): ScheduleRunner {
             if (!isNoteScheduleDue(note, now)) continue
             const schedule = note.schedule
             if (schedule === undefined) continue
-            // 一次性日程过期太久（宿主停了一周以上）：不补跑，直接停用并记原因。
-            // 先于状态闸门——否则躺在「待规划」里的过期一次性日程永远不会被收掉。
-            if (isOnceStale(schedule, now)) {
-              await deps.write(note.id, { ...schedule, enabled: false, lastResult: STALE_RESULT })
+            // 过期太久（宿主停机超过 2 小时）：不补跑，once 停用、循环型顺延。
+            // 先于状态闸门——否则躺在「待规划」里的过期 once 日程永远不会被收掉。
+            if (isScheduleOverdue(schedule, now)) {
+              await deps.write(note.id, applyScheduleOverdue(schedule, now))
               continue
             }
             // 状态闸门（软）：待规划 / 已完成 / 已失败不自动派发——只顺延并记下原因，

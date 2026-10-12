@@ -2,9 +2,6 @@
 
 > 「东西该放哪、文件该叫什么」；代码风格与静态检查在根目录：`.editorconfig`（格式基线）+ `.oxlintrc.json`（oxlint，规则逐条点名）。
 >
-> 构建已从 esbuild 换成 **tsdown**（共享预设 `scripts/tsdown.client.mjs`，移植自官方 `packages/client/tsdown.client.ts`，CSS 走 lightningcss）。仓库原有的 1147 个测试已全部移除，本文里的测试约定**暂时不适用**，等测试回归再启用。
->
-> `CLAUDE.md` 里那几条硬性规则（一个功能一个包、依赖只指 Service Definition、持久化只走 `ctx.storage`）是上位规则，本文是它们的展开；冲突时以 `CLAUDE.md` 为准。
 
 ## 一条总规则：文件必须自报家门
 
@@ -21,8 +18,6 @@
 
 ## 一个页面怎么写：三件套
 
-Vue 的 SFC 是**一个文件三个块**（`template` / `script setup` / `style scoped`）。React 没有 SFC，社区的标准做法是**一个文件夹三个文件** —— 同样是三块，只是摊开了：
-
 ```
 client/views/settings-section/
 ├── SettingsSection.tsx          # 视图：只有 JSX
@@ -33,15 +28,7 @@ client/views/settings-section/
     └── MemoryCard.module.css
 ```
 
-对应关系：
 
-| Vue SFC | React |
-|---|---|
-| `<template>` | `SettingsSection.tsx` 里 `return` 的那段 |
-| `<script setup>` | `useSettingsSection.ts` |
-| `<style scoped>` | `SettingsSection.module.css`（CSS Modules） |
-| `components/` | 同左 |
-| **一个文件** | **一个文件夹** |
 
 三条铁律：
 
@@ -303,6 +290,27 @@ src/client/
 **禁用词**（文件名里出现即改名）：`parts` `kit` `utils` `helpers` `common` `misc` `shared`，以及单独用的 `section`。
 
 `section` 单独用是模糊的。三包现已一致：`views/settings-section/` 文件夹里的 `SettingsSection.tsx`（`{daily-log,memory,usage-billing}` 全部改完，逻辑在同目录 `useSettingsSection.ts`）。
+
+## 注释
+
+**函数读得懂就不写注释；只有复杂机制才配一个文件头或函数头，且不逐行。**
+
+一律不写：
+
+- 命名、类型、函数体已经说清的复述（`// 只看 install 层`、`// 写入的价表就是聚合计价用的价表`）
+- 对已做决定的辩护、后果叙事（「否则 5s 内仍在用上一张表算钱」）、命令式说教（「别为了取一条把整张表排序」）
+- 变更史（「此前…」「旧实现…」）、内部任务编号（`Task 14`、`§5.7`）
+- 版式规格复述、`⚠️` 一类表情、满行 `**加粗**` 撒点
+
+只在三种情况下留：
+
+1. 签名与类型推不出来的语义、边界、单位 —— `可能大于 1（超支）`、`0..1439`、`左闭右开`、`不是占预算`
+2. 反直觉、改了就错的写法 —— `不做夹取、排序、去重`、`不做取模`、`链条失败不让它卡死`
+3. 复杂机制的一个头 —— 串行队列、缓存失效、delta 基线、坐标舍入；说清约束就停
+
+硬指标：**单行 ≤ 30 汉字**；一个 Docblock 的内容 **≤ 3 行**。
+
+门禁见 `scripts/comment-budget.spec.ts`：三项存量（注释内容行总数、单行 >30 汉字的行数、内容 >3 行的 Docblock 数）只许降，`##` 标题与表情零容忍，已清扫文件按上面两条硬指标卡死。收紧基线：`COMMENT_BUDGET_REPORT=1` 跑该文件，报表会打出可直接粘贴的数值。可搬去别的仓库的完整规则（五个删除测试、反模式清单、收尾自检、门禁搬移）见 [`COMMENT-RULES.md`](COMMENT-RULES.md)。
 
 ## 尺寸红线
 

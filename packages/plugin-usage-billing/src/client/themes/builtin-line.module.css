@@ -1,0 +1,64 @@
+/*
+ * 「线条 M」主题那张小图的样式。外壳（盒子、金额、预算条、饼图）在 entry-shell.module.css，
+ * 这里只有图槽和图本身。
+ *
+ * 死尺寸 75×35 CSS px，不跟容器走：侧栏在 264-420px 之间变宽，曲线不该跟着被拉长，
+ * 那边变的是金额那一侧。纵向不是 1:1（viewBox 高 30 单位 → 35px），所以点的
+ * left/top 一律用百分比（TSX 里算），描边交给 vector-effect。
+ */
+
+/* 图槽：往里放什么由主题自己决定。 */
+.chart {
+  flex: none;
+  display: block;
+  width: 75px;
+  height: 35px;
+}
+.miniCurvePlot {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.miniCurveCanvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+/*
+ * 「现在」那颗点：只有一颗点、没有竖线 —— 竖线在 75px 宽的图里比曲线本身还抢眼。
+ * 环不能省：点压在同色的线上，没有那圈底色等于没画。
+ * 底色取 --ub-panel-base 的兜底：那个变量只有弹窗给，侧栏里没有那个祖先。
+ */
+.miniCurveDot {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  /* 定位值定的是圆心（6px 的负半宽），所以 left/top 就是曲线上的那个点。 */
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 1px var(--ub-panel-base, var(--dsw-specific-sidebar-fill, var(--dsw-alias-bg-base)));
+}
+.miniCurveDot[data-tier='peak'] {
+  color: var(--ub-peak);
+}
+.miniCurveDot[data-tier='valley'] {
+  color: var(--ub-valley);
+}
+
+/* 色带与曲线：色带的偏移由 JS 按窗口算出（见 core/line-geometry.ts）。 */
+.tierCurveStop[data-tone='peak'] {
+  stop-color: var(--ub-peak);
+}
+.tierCurveStop[data-tone='valley'] {
+  stop-color: var(--ub-valley);
+}
+/* 面积只是衬底：读数靠曲线本身，所以压到两成并向下淡出（mask 在 TSX 里）。 */
+.tierCurveArea {
+  opacity: 0.2;
+}
+.tierCurveLine {
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}

@@ -1,10 +1,6 @@
 /**
- * UsageBillingService —— ctx.usageBilling：计费聚合的 host 门面，
- * 同时是 Typert Gateway 的 Remote 服务（SRC 标记模式，无 codegen；照抄
- * plugin-daily-log/src/service.ts 的已验证写法）。
- *
- * 展示数据一律**现算**（账本行 × 当前别名 × 当前价表），不做物化物；
- * 账本行是唯一的持久事实。
+ * ctx.usageBilling：计费聚合的 host 门面，也是 Typert Remote 服务（SRC 标记，无 codegen）。
+ * 展示数据一律现算，账本行是唯一的持久事实。
  */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -38,10 +34,9 @@ import type {
 export interface PricingRefreshResult {
   ok: boolean
   reason?: string
-  /** **本次**从 models.dev 抓到的条目数，不是在效价表的总量。 */
   entries?: number
   usdToCny?: number
-  /** 目录被截断，只并入了抢救到的那部分（只增不删）。 */
+  /** 目录被截断，只并入了抢救到的部分。 */
   partial?: boolean
 }
 
@@ -50,48 +45,24 @@ export interface UsageBillingServiceConfig {
   settings: UsageBillingSettingsAccess
   source: SessionSource
   installAt: number
-  /**
-   * 联网拉价（Task 14 注入真实实现；测试注入假实现）。
-   * `force` 由「立即刷新」按钮给出（绕过 TTL），`ttlHours` 取自 `settings.pricing.refreshHours`。
-   */
   fetchPricing: (options: { force: boolean; ttlHours: number }) => Promise<PricingRefreshResult>
   now?: () => number
 }
 
 export class UsageBillingService extends TypertRemoteService {
-  /** 账本读写一律经它：行落在「会话×天」分片里，聚合与视图都不必知道容器粒度。 */
   private readonly ledger: LedgerStore
   private readonly folds: KvTable<string, FoldState>
   private readonly snapshots: KvTable<string, PriceSnapshot>
   private readonly aliases: KvTable<string, ModelAlias>
   private readonly diag: KvTable<string, Diagnostic>
   private readonly config: UsageBillingServiceConfig
-  /**
-   * 价格写入的串行队列：账本快照是**唯一**持久化价目状态，而每次写入都是
-   * 「读当前表 → 算新表 → 追加快照」的读-改-写。同一毫秒内的两次调用若并行，
-   * 会各自读到同一份旧表、按照同一个 `(reason, at)` 算出同一个 delta 键，后一次 put
-   * 悄悄丢掉前一次的改价。所有触碰价表的写入都必须过这里（键本身由 `storage-key.ts` 生成，
-   * 序号只兜住极端撞键，不代替串行化）。
-   */
+  /** 价表写入串行队列：并行会让两次「读-改-写」丢掉其中一次改价。 */
   private chain: Promise<unknown> = Promise.resolve()
 
-  /**
-   * 正在跑的那一趟聚合（本实例内**合并**并发调用）。
-   *
-   * 为什么必须有：侧栏卡片一次就并发发 overview + daily，用量视图再叠几张表 —— 每个读端点
-   * 都要聚合。此前没有任何合并，一次开面板 = 4~6 趟全量扫描同时压在 host 上，磁盘和
-   * 事件循环互相踩，看起来就是"所有接口都挂起"。现在同一时刻只有一趟，其余调用共享它。
-   * 单实例字段（不是模块级）：测试各自 new 一个服务，不会互相串。
-   */
+  /** 正在跑的聚合，本实例内合并并发调用。 */
   private pass: Promise<AggregateStats> | undefined
 
-  /**
-   * 正在跑的那趟「账本分片重建」（见 {@link rebuildLedger}）。
-   *
-   * 为什么读端点要看得见它：重建是分钟级的整语料重折，期间账本从空开始逐步补齐；
-   * 读路径若还照旧「表是空的就等这一趟」，面板会静默卡几分钟 —— 所以空账本 + 重建中
-   * 时立刻返回空快照，由界面按「重建中」呈现（就绪度见 `status().rebuild`）。
-   */
+  /** 正在跑的账本分片重建，读路径据此跳过等待。 */
   private rebuilding = false
 
   constructor(ctx: Context, config: UsageBillingServiceConfig) {
@@ -106,46 +77,31 @@ export class UsageBillingService extends TypertRemoteService {
 
   private now(): number { return (this.config.now ?? Date.now)() }
 
-  /** 串行执行一次价表读-改-写；前一次失败不让链条卡死（rejection 只影响自己的返回值）。 */
+  /** 前一次失败不让链条卡死。 */
   private serialize<T>(work: () => Promise<T>): Promise<T> {
     const run = this.chain.then(work)
     this.chain = run.then(() => undefined, () => undefined)
     return run
   }
 
-  /**
-   * 确保首条 base 快照存在（安装时打点，同时充当回填价表）。
-   *
-   * 公开给 host 入口调用：安装基准只有这一份实现（此前的内联副本用 `size === 0` 判据，
-   * 账本里只要有任何一条非 install 记录，安装基准就永远缺席）。
-   */
   async ensureBaseSnapshot(entries: Record<string, PriceEntry>, usdToCny: number, usdToCnySource: 'live' | 'default'): Promise<void> {
     return this.serialize(async () => {
-      // 只看 install 层：先写过自定义价（或任何非 install 快照）不该让安装基准永远缺席。
       if ([...this.snapshots.entries()].some(([, s]) => s.reason === 'install')) return
       const snap = planSnapshot(undefined, { entries, usdToCny, usdToCnySource },
         { id: SNAPSHOT_INSTALL_ID, at: this.config.installAt, reason: 'install' })
       if (snap === null) return
       await this.snapshots.put(snap.id, snap)
-      // 写入的价表就是聚合计价用的价表：与 appendDelta / repricing 同规则，必须让
-      // TTL 缓存立刻失效，否则最快 5s 内仍在用上一张表算钱。
       resetAggregateCache()
     })
   }
 
-  /**
-   * 跑一趟聚合（带变更戳与 TTL），并发调用合并成同一趟。
-   *
-   * host 入口的预热与所有读端点共用这一条通道，因此"预热还没完时用户点开面板"不会
-   * 再起第二趟扫描。
-   */
   private aggregatePass(rebuild = false): Promise<AggregateStats> {
     if (this.pass !== undefined) return this.pass
     const run = aggregateOnce({
       source: this.config.source,
       ledger: this.ledger, folds: this.folds, diag: this.diag,
       aliases: this.aliases, snapshots: this.snapshots,
-      // 重建要复现历史行的 `backfilled`：它按**首次安装时刻**算，不是本次宿主加载时刻。
+      // `backfilled` 按首次安装时刻算，不是本次加载时刻。
       installAt: rebuild ? this.installSnapshotAt() : this.config.installAt,
       now: this.config.now,
     }, rebuild ? { force: true, rebuild: true } : {})
@@ -154,26 +110,15 @@ export class UsageBillingService extends TypertRemoteService {
     return tracked
   }
 
-  /** host 入口的预热入口：与读端点共用同一趟合并通道。 */
   warmup(): Promise<AggregateStats> { return this.aggregatePass() }
 
-  /** 首次安装时刻：由 `reason: 'install'` 的那条快照留存（配置里的 installAt 每次加载都变）。 */
+  /** `config.installAt` 每次加载都变，所以从 install 快照取。 */
   private installSnapshotAt(): number {
     const install = [...this.snapshots.entries()].find(([, snapshot]) => snapshot.reason === 'install')
     return install === undefined ? this.config.installAt : install[1].at
   }
 
-  /**
-   * 一次性重建账本分片：忽略水位，把全部会话重折一遍写进分片容器，成功后落「已重建」标记。
-   *
-   * 为什么是重折而不是搬旧表：旧表（一行一文件）的读取路径在超过 8191 个记录文件时会静默丢掉
-   * 后面的记录 —— storage-json 用**无上限** Promise.all 读每个文件，超限的 EMFILE 被当成
-   * 「记录不存在」。真实账本 20,842 行只装进 7,918 行（丢 62%），搬它等于把缺失固化下来；
-   * 而账本本来就是会话日志的派生数据，重折得到的是完整状态。旧 `ledger/` 目录一个字节都不动。
-   *
-   * 失败可退：有会话失败就不落标记，下次启动整趟重来（失败的会话水位没被推进，不会被跳过）；
-   * 重建本身逐会话幂等，中断后重跑不会重复计费。
-   */
+  /** 忽略水位，全部会话重折一遍，成功后落标记。 */
   async rebuildLedger(): Promise<AggregateStats> {
     this.rebuilding = true
     try {
@@ -189,23 +134,16 @@ export class UsageBillingService extends TypertRemoteService {
     }
   }
 
-  /**
-   * 读账本快照 —— **不在读路径上等整趟聚合**。
-   *
-   * 聚合是分钟级的全语料扫描（即便有了变更戳，也仍可能撞上大规模变更），而面板的每一个
-   * tab 都调这里。所以：账本已经有行时立刻返回当前快照，下一趟在后台跑完自然生效
-   * （stale-while-revalidate）；只有账本还一行都没有（插件刚起来、预热还没落盘）时才等，
-   * 否则界面会永远停在空白占位。
-   */
+  /** 不在读路径上等整趟聚合，已有行就返回当前快照。 */
   private async rows(): Promise<LedgerRow[]> {
     const pass = this.aggregatePass()
-    // 重建期间即使一行都还没有也不等：那是一趟分钟级重折，等它等于让面板静默卡住。
+    // 重建期间不等，否则分钟级重折会卡住面板。
     if (this.ledger.size === 0 && !this.rebuilding) await pass.catch((error: unknown) => this.reportBackgroundFailure(error))
     else void pass.catch((error: unknown) => this.reportBackgroundFailure(error))
     return this.ledger.all()
   }
 
-  /** 后台失败的唯一出口：吞掉会变成 unhandled rejection，抛出去会打断读端点。 */
+  /** 后台失败只在这里报，抛出会打断读端点。 */
   private reportBackgroundFailure(error: unknown): void {
     const logger = (this.ctx as unknown as { logger?: { warn(...args: unknown[]): void } }).logger
     logger?.warn('[plugin-usage-billing] 后台聚合失败：', error)
@@ -219,13 +157,10 @@ export class UsageBillingService extends TypertRemoteService {
 
   private listAliases(): ModelAlias[] { return [...this.aliases.entries()].map(([, a]) => a) }
 
-  /* ---------------- Remote 端点 ---------------- */
-
   async status(): Promise<{
     installAt: number; rows: number; sessions: number; snapshots: number
-    /** 冷启动要打开的分片文件数（验收口径：重建前两万多，重建后几百）。 */
     shards: number
-    /** 账本还没就绪：正在从会话日志重建，界面不要把这些数字当成最终值。 */
+    /** 账本还没就绪，这些数字不是最终值。 */
     rebuild: { active: boolean }
     lastDiag?: Diagnostic
   }> {
@@ -235,7 +170,6 @@ export class UsageBillingService extends TypertRemoteService {
       shards: this.ledger.shardCount,
       rebuild: { active: this.rebuilding },
     }
-    // 单遍取最新一条：旧实现每次调用都把整张 diag 表排序（历史上曾积累 3014 条）。
     const latest = latestDiagnostic(this.diag)
     return latest === undefined ? base : { ...base, lastDiag: latest }
   }
@@ -247,9 +181,7 @@ export class UsageBillingService extends TypertRemoteService {
     const weekDays = daysInRange(rangeToSpec('7d', now), now)
     const view = buildOverview(rows, { todayKey, weekDays })
     const cfg = this.config.settings.get()
-    // 今日费率形状搭这趟车回客户端：入口卡每一拍本来就在取 overview，为一个小形状再挂一条
-    // wire 方法等于多一次往返 + 多一份参数契约（参数个数是硬契约，见 remote-methods.ts）。
-    // 它和 todayKey 一样与窗口无关 —— 只是「今天」的上下文，不是被 rangeKind 过滤的数字。
+    // tierDay 与 todayKey 一样是「今天」的上下文，不受 rangeKind 过滤。
     return {
       overview: view, todayKey,
       budget: { enabled: cfg.budget.enabled, monthlyCny: cfg.budget.monthlyCny },
@@ -271,9 +203,9 @@ export class UsageBillingService extends TypertRemoteService {
   async byWorkspace(rangeKind: RangeKind, includeSubagents: boolean) {
     const all = await this.rows()
     const rows = this.scoped(all, rangeKind, includeSubagents)
-    // 今日口径与 overview 用同一个 dayKey(now)：同一拍里两个端点的「今天」不可能差一天。
+    // 与 overview 用同一个 dayKey(now)。
     const workspaces = buildByWorkspace(rows, dayKey(this.now()))
-    // 历史累计必须从全账本算：只加起来窗口里的会话会漏掉项目更早的会话。
+    // 历史累计从全账本算，不能用窗口里的行。
     attachAllCny(workspaces, all, includeSubagents)
     return { workspaces, ...buildMarkers(rows) }
   }
@@ -281,9 +213,8 @@ export class UsageBillingService extends TypertRemoteService {
   async pricing(): Promise<{
     entries: Record<string, PriceEntry>; usdToCny: number; usdToCnySource: 'live' | 'default'
     snapshotId: string
-    /** 当前**仍然生效**的自定义单价 key（设置-计费据此显示「自定义」与逐行删除）。 */
     customKeys: string[]
-    /** 峰谷状态：未生效规则时 current 为 null（客户端不必知道规则细节）。 */
+    /** 未生效规则时 current 为 null。 */
     tier: TierStatus
   }> {
     const all = [...this.snapshots.entries()].map(([, s]) => s)
@@ -318,7 +249,7 @@ export class UsageBillingService extends TypertRemoteService {
       const current = await this.pricing()
       const catalog = this.catalogValueOf(key)
       const existing = current.entries[key]
-      // 目录层有价 → 恢复到目录价（不是把整个模型删掉）；只有「价完全来自自定义」时才删 key。
+      // 目录层有价就恢复目录价；只有价全来自自定义才删 key。
       if (existing === undefined) return { ok: false }
       if (catalog !== undefined) {
         const same = diffEntries({ [key]: existing }, { [key]: catalog })
@@ -333,14 +264,8 @@ export class UsageBillingService extends TypertRemoteService {
   }
 
   /**
-   * 目录层（`install` / `catalog-refresh` / `manual-refresh`）里该 key 的最新取值。
-   *
-   * ⚠️ 已知边界（Task 14 落地时必须复核）：快照记录的 `entries` 是**相对累计表**的差分，
-   * 不是分层差分。所以当某个 key 既有自定义价覆盖、目录又改了它的价时，那次目录改动可能
-   * 根本没进差分（累计值没变），这里于是恢复出「刷新前的旧目录价」。危害有界且自愈：
-   * 下一次目录刷新会把累计表纠正回来，且绝不会恢复出错层的值。
-   * 彻底解法是 catalog / override 分层记录差分、解析器按层合成，与目录写入方契约一起在
-   * Task 14 定（见 ledger 的 T12 条目）。
+   * 目录层里该 key 的最新取值。
+   * 快照 `entries` 不是分层差分，有自定义价覆盖时会恢复出刷新前的旧目录价。
    */
   private catalogValueOf(key: string): PriceEntry | undefined {
     const all = [...this.snapshots.entries()].map(([, s]) => s)
@@ -352,15 +277,13 @@ export class UsageBillingService extends TypertRemoteService {
     usdToCnySource: 'live' | 'default', reason: PriceSnapshot['reason'],
   ): Promise<void> {
     const all = [...this.snapshots.entries()].map(([, s]) => s)
-    // 基线必须是「此刻之前生效的完整状态」；上一条记录可能是 delta，只有差量。
+    // 基线是此刻之前生效的完整状态，上一条可能只是 delta。
     const at = this.now()
     const prev = all.length === 0 ? undefined : resolveSnapshotAt(at, all)
-    // 首条记录就是 base：空表合成出的 0 汇率不是真汇率，写进 base 会让所有 USD 条目永远
-    // 算不出钱，必须换成内置兜底汇率并如实标注来源。id 也要诚实——base 不该叫 delta。
+    // 空表合成出的 0 汇率会让 USD 条目永远算不出钱，首条 base 要用兜底汇率。
     const rate = prev === undefined && !(usdToCny > 0)
       ? { usdToCny: DEFAULT_USD_TO_CNY, usdToCnySource: 'default' as const }
       : { usdToCny, usdToCnySource }
-    // 键只由 storage-key.ts 产出（旧的 `${prevId}#delta` 不是路径安全键，真实后端必拒）。
     const id = prev === undefined
       ? SNAPSHOT_BASE_ID
       : uniqueSnapshotDeltaKey(new Set(this.snapshots.keys()), reason, at)
@@ -370,12 +293,8 @@ export class UsageBillingService extends TypertRemoteService {
   }
 
   async refreshPricing(force: boolean): Promise<PricingRefreshResult> {
-    // force 与 TTL 都必须真正送到拉取层：此前两者都被吞掉，「立即刷新」过不了 6h 缓存，
-    // 配置里的 refreshHours 也从未被读过（TTL 是硬编码的）。
     const settings = this.config.settings.get()
-    // 刷新本身也是「读当前表 → 算新表 → 追加快照」的价表写入，必须与 setCustomPrice /
-    // removeCustomPrice 走同一条串行链：否则一次重叠的改价会拿刷新前的旧表当 entries、
-    // 却拿刷新后的表当差分基线，把刚拉到的 key 判成 removed、并按旧值把它们加回来。
+    // 刷新也是读-改-写，必须与改价走同一条串行链。
     return await this.serialize(() =>
       this.config.fetchPricing({ force, ttlHours: settings.pricing.refreshHours }))
   }
@@ -386,18 +305,15 @@ export class UsageBillingService extends TypertRemoteService {
     else await this.aliases.put(id, {
       id, provider: input.provider.trim().toLowerCase(),
       rawModel: input.rawModel,
-      // 展示合并按 trim 判定，计价解析却按原样拼接 —— 不 trim 就会出现「合并对了、自定义价永远
-      // 解析不到」。只去空白，**不要**过 normalizeModelId：带日期的目录 key 必须原样保留。
+      // 只去空白，不要过 normalizeModelId：带日期的目录 key 必须原样保留。
       canonicalModel: input.canonicalModel.trim(),
     })
-    // 别名同时喂给展示合并与计价解析，改完必须让聚合 TTL 缓存失效（与其他写入路径同规则）。
     resetAggregateCache()
     return { ok: true }
   }
 
   async aliasList(): Promise<{ aliases: ModelAlias[] }> { return { aliases: this.listAliases() } }
 
-  /** 只重算未计价行（spec §5.7 的唯一例外通道），已锁定行绝不触碰。 */
   async repricing(): Promise<{ changed: number }> {
     const all = [...this.snapshots.entries()].map(([, s]) => s)
     const aliases = new Map(this.listAliases().map((a) => [a.id, a]))
@@ -407,7 +323,7 @@ export class UsageBillingService extends TypertRemoteService {
       if (row.priced) continue
       const table = resolveSnapshotAt(row.time, all)
       const alias = aliases.get(aliasId(row.provider, row.model))
-      // 档位必须按行自己的时刻判，绝不能用 now —— 否则重算会把历史行算错。
+      // 按行自己的时刻判档，不能用 now。
       const { tier, factor } = tierAndFactorAt(row.time, isCnHoliday)
       const result = priceUsage(
         { inputTokens: row.input, outputTokens: row.output, cacheReadTokens: row.cacheRead, cacheWriteTokens: row.cacheWrite },
@@ -424,17 +340,13 @@ export class UsageBillingService extends TypertRemoteService {
       })
       changed += 1
     }
-    // 成批落盘（同一片一次写）：一次改价可能命中几千行，逐行写会把整片反复重写。
     await this.ledger.putMany(patched)
     resetAggregateCache()
     return { changed }
   }
 }
 
-/**
- * Typert SRC 标记：手工复刻 @Remote 装饰器产物（同 alpha.3 稳定契约）。
- * 名单来自 remote-methods.ts —— client descriptors 读同一份，防止参数契约漂移。
- */
+/** 手工复刻 @Remote 装饰器产物。名单与 client descriptors 共用 remote-methods.ts。 */
 const REMOTE_METHODS = '@deepseek-ai/dsh-typert-protocol/remote-methods'
 
 function markRemoteMethods(prototype: object, methods: readonly string[]): void {

@@ -1,16 +1,3 @@
-/**
- * plugin-memory × agent harness 桥（host 侧）—— 记忆读写工具注册。
- *
- * 7 个工具：memory_save / memory_search / memory_list / memory_update /
- * memory_delete / memory_archive / memory_move。
- *
- * 作用域判定（产品决策：模型自动判定，UI 可手动移动）：
- * - 工具参数 scope 必填，迫使模型显式判断「这是普适偏好还是单项目习惯」；
- * - scope=project 且没给 project_path 时，用当前会话的 cwd 兜底（模型不必知道路径）。
- *
- * 工具以 tools 服务判存后条件挂载（ctx.inject），纯 UI 宿主照常工作（不注册工具）。
- */
-
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type {
@@ -34,17 +21,14 @@ export const TOOL_UPDATE = MEMORY_TOOL_PREFIX + 'update'
 export const TOOL_DELETE = MEMORY_TOOL_PREFIX + 'delete'
 export const TOOL_ARCHIVE = MEMORY_TOOL_PREFIX + 'archive'
 export const TOOL_MOVE = MEMORY_TOOL_PREFIX + 'move'
-/** 实体与边的工具（wiki 图层）。 */
 export const TOOL_ENTITY = MEMORY_TOOL_PREFIX + 'entity'
 export const TOOL_LINK = MEMORY_TOOL_PREFIX + 'link'
-/** 方案 B：写入没自动合并、但附近有条很像的时，回给模型的一句提醒前缀。 */
 export const SUSPECT_HINT_PREFIX = '疑似同一条：'
 
 export function isMemoryTool(name: string): boolean {
   return name.startsWith(MEMORY_TOOL_PREFIX)
 }
 
-/** 会话上下文（id + 工作区目录），任何一步不可用都安全降级为空。 */
 export interface MemorySessionContext {
   readonly sessionId?: string
   readonly cwd?: string
@@ -63,7 +47,6 @@ export function sessionContextOf(exec: unknown): MemorySessionContext {
   }
 }
 
-/** 工具返回的紧凑视图（形状与 RECORD_ITEM_SCHEMA 一致，供类型推断对齐）。 */
 export interface MemoryToolRecord {
   id: string
   kind: MemoryKind
@@ -80,7 +63,6 @@ export interface MemoryToolRecord {
   updatedAt: string
 }
 
-/** 记录 → 工具返回的紧凑视图。 */
 export function describeRecord(record: MemoryRecord): MemoryToolRecord {
   return {
     id: record.id,
@@ -99,7 +81,6 @@ export function describeRecord(record: MemoryRecord): MemoryToolRecord {
   }
 }
 
-/** 边的工具返回视图：端点用 'kind:id' 文本 + 可读标签，模型不必自己解析 id。 */
 export interface MemoryToolEdge {
   id: string
   relation: MemoryEdgeRelation
@@ -113,7 +94,6 @@ export interface MemoryToolEdge {
   weight: number
 }
 
-/** 实体 → 工具返回的紧凑视图。 */
 export interface MemoryToolEntity {
   id: string
   name: string
@@ -125,7 +105,6 @@ export interface MemoryToolEntity {
   updatedAt: string
 }
 
-/** 记录 → 工具返回的紧凑视图（附别名与摘要，便于模型判断是否同一条）。 */
 function render(records: readonly MemoryToolRecord[], emptyHint: string): string {
   if (records.length === 0) return emptyHint
   return records.map((record) => {
@@ -157,9 +136,6 @@ const RECORD_ITEM_SCHEMA = {
   },
 } as const
 
-/**
- * 实体项的输出 schema（memory_entity 的返回值形状，与 MemoryToolEntity 对齐）。
- */
 const ENTITY_ITEM_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -175,7 +151,6 @@ const ENTITY_ITEM_SCHEMA = {
   },
 } as const
 
-/** 边项的输出 schema（memory_link 的返回值形状，与 MemoryToolEdge 对齐）。 */
 const EDGE_ITEM_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -193,7 +168,6 @@ const EDGE_ITEM_SCHEMA = {
   },
 } as const
 
-/** 实体 → 工具返回的紧凑视图。 */
 function describeEntity(entity: MemoryEntity): MemoryToolEntity {
   return {
     id: entity.id,
@@ -207,7 +181,6 @@ function describeEntity(entity: MemoryEntity): MemoryToolEntity {
   }
 }
 
-/** 边 → 工具返回的紧凑视图；端点标签取自 labels 索引，端点已删除时标注出来。 */
 function describeEdge(edge: MemoryEdge, labels: Map<string, string>): MemoryToolEdge {
   const from = edge.from.kind + ':' + edge.from.id
   const to = edge.to.kind + ':' + edge.to.id
@@ -225,7 +198,6 @@ function describeEdge(edge: MemoryEdge, labels: Map<string, string>): MemoryTool
   }
 }
 
-/** 端点标签索引：'memory:<id>' / 'entity:<id>' → 可读名字（含已归档，避免标签显示成已删除）。 */
 async function labelIndex(svc: MemoryService): Promise<Map<string, string>> {
   const map = new Map<string, string>()
   for (const record of await svc.list({ includeArchived: true })) map.set('memory:' + record.id, record.title)
@@ -234,8 +206,7 @@ async function labelIndex(svc: MemoryService): Promise<Map<string, string>> {
 }
 
 /**
- * 收窄模型给的 entities 参数：字符串照旧按名字收，对象才认 kind，其余形态丢弃。
- * schema 声明为 oneOf，运行时不拿它当信任边界，兜住不同 provider 的偏差。
+ * schema 里的 oneOf 不是信任边界，运行时照样逐项收窄。
  */
 function parseEntityRefs(raw: readonly unknown[]): (string | MemoryEntityRef)[] {
   const out: (string | MemoryEntityRef)[] = []
@@ -253,7 +224,6 @@ function parseEntityRefs(raw: readonly unknown[]): (string | MemoryEntityRef)[] 
   return out
 }
 
-/** 按 id / 名称 / 别名精确解析一个实体（工具参数里直接写名字时用）。 */
 async function resolveEntity(svc: MemoryService, ref: string): Promise<MemoryEntity | undefined> {
   const trimmed = ref.trim()
   const key = trimmed.toLowerCase()
@@ -264,30 +234,23 @@ async function resolveEntity(svc: MemoryService, ref: string): Promise<MemoryEnt
     || entity.aliases.some((alias) => alias.trim().toLowerCase() === key))
 }
 
-/**
- * scope=project 时的项目路径解析：优先用模型显式给出的路径，否则用会话 cwd 兜底。
- * 两者都没有时抛出可读错误（而不是静默写进全局，那会污染全局记忆）。
- */
 export function resolveProjectPath(explicit: string | undefined, cwd: string | undefined): string {
   const trimmed = explicit?.trim() ?? ''
   if (trimmed !== '') return trimmed
   const fallback = cwd?.trim() ?? ''
   if (fallback !== '') return fallback
-  throw new Error('project-scoped memory needs a project path; none was given and the session has no workspace cwd')
+  throw new Error('project 作用域的记忆需要项目路径：既没有显式给出，会话也没有工作区 cwd')
 }
 
-/** 本插件注册的全部工具名（与其它记忆插件做重名探测用）。 */
 export const MEMORY_TOOL_NAMES = [
   TOOL_SAVE, TOOL_SEARCH, TOOL_LIST, TOOL_UPDATE, TOOL_DELETE, TOOL_ARCHIVE, TOOL_MOVE,
   TOOL_ENTITY, TOOL_LINK,
 ] as const
 
 export interface InstallMemoryToolsOptions {
-  /** 探测到的重名冲突（这些名字已被跳过，没有注册）。 */
   onConflicts?: (conflicts: MemoryConflict[]) => void
 }
 
-/** memory_save 的结果文案（抽出来单独放，方便直接测「疑似同一条」这类提示）。 */
 export function renderSaveResult(v: {
   readonly saved: Record<string, unknown>
   readonly created: boolean
@@ -319,8 +282,7 @@ export function renderSaveResult(v: {
 }
 
 export function installMemoryTools(ctx: Context, options: InstallMemoryToolsOptions = {}): void {
-  // 延后一个 macrotask 再注册：让同样在等 tools 就绪的插件（比如 dsh-mneme）先落地。
-  // 否则「谁先跑谁占名」，后跑的那个会直接注册失败，探测就成了撞运气。
+  // 延后一个 macrotask：让别的等 tools 的插件先注册。
   const timer = setTimeout(() => { mountMemoryTools(ctx, options) }, 0)
   ctx.effect(() => () => { clearTimeout(timer) })
 }
@@ -328,9 +290,6 @@ export function installMemoryTools(ctx: Context, options: InstallMemoryToolsOpti
 function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): void {
   const svc: MemoryService = ctx.memory
 
-  // 重名硬冲突：tools 服务在同一层重复注册会直接抛错。装了 mneme 之类的记忆插件时
-  // 7 个 memory_* 里多数会撞名 —— 此时本插件**整体让位**，一个工具都不注册，
-  // 不留「部分可用」那种半吊子状态（冲突即锁定，见 service.isLocked）。
   const conflicts = detectToolConflicts(ctx.tools as unknown as ToolProbe | undefined, MEMORY_TOOL_NAMES)
   if (conflicts.length > 0) {
     options.onConflicts?.(conflicts)
@@ -341,57 +300,42 @@ function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): voi
     try {
       ctx.tools.register(definition)
     } catch {
-      // 兜底：探测之后、注册之前的极窄窗口里冒出来的同名工具。
       conflicts.push({ name: definition.name, description: '' })
       ctx.logger?.warn?.('[plugin-memory] tool "' + definition.name + '" is already registered by another plugin — skipped')
     }
   }
 
-  /* ----- 写：记录一条记忆 ----- */
-
   register(defineTool({
     name: TOOL_SAVE,
     description:
-      // 为后续会话持久化一条记忆：用户偏好、身份、项目状态、决策。
-      'Persist one memory entry for future sessions (user preferences, identity, project state, decisions). '
-      // 标题相同、或正文高度重叠时会并入已有条目，重复写入不会产生多条。
-      + 'Merges into an existing entry when the title matches or the body substantially overlaps, so repeated saves never duplicate. '
-      // 附近已有像的条目时还会让模型判一次：并进某一条、或判为已覆盖而不写（结果里回报判定理由）。
-      + 'When a similar entry already exists nearby, a model judge decides once whether to add, merge into one of them, or skip; the outcome reports the reason. '
-      // scope=global：换到任何项目都成立（语气、格式、风格、身份、广泛偏好）。
-      + 'scope=global for anything true across projects (tone, format, style, identity, broad preferences); '
-      // scope=project：只对某一个工作区成立（习惯、决策、环境细节）。
-      + 'scope=project for habits/decisions that only hold for one workspace directory. '
-      // 正文只写结论、≤320 字（合并后的总长也算）；可以用换行与 markdown 排版。
-      + 'The body is conclusion-only text, at most 320 characters (merged length counts too); line breaks and markdown lists are fine. '
-      // 超长会被拒写，不会静默截断。
-      + 'Over-limit bodies are rejected, not truncated. '
-      // 不要记任务进度、进行中的快照、可重跑的验证结果（测试全过 / tsc 干净 / build 成功）。
-      + 'Skip task progress, in-flight snapshots and re-runnable verification results (tests pass / tsc clean / build ok). '
-      // 用 entities 声明这条记忆讲的实体：命中已有实体则复用，未命中按名称新建，并落一条 about 边。
-      + 'Pass entities to declare what this memory is about: each name is matched against existing entities or created, then linked with an about edge. '
-      // 认得出来就给 kind（项目/工具/人/组织/概念）；缺省是 concept，所以能判就填，别一律省。
-      + 'Give each entity its kind (project / tool / person / org / concept) whenever you can tell — the default is concept, so an omitted kind loses the distinction. '
-      // aliases 是同一条记忆的别的说法：之后用别名当标题写入会并进这一条，而不是另起一条。
-      + 'aliases are alternative spellings of this same entry, so a later save titled with an alias merges here instead of creating a duplicate. '
-      // summary 是一行摘要（目录卡 / 关联视图用）；正文仍要写完整结论。
-      + 'summary is a one-line abstract for catalog and relation views; the body still carries the full conclusion.',
+      '保存一条记忆，供未来的会话使用（用户偏好、身份、项目状态、决策）。'
+      + '标题相同或正文高度重合时并入已有条目，反复保存也不会出现重复。'
+      + '附近已有相似条目时，由模型裁判判定一次是新增、并入其中一条还是跳过，结果里会说明理由。'
+      + '跨项目都成立的写 scope=global（语气、格式、风格、身份、广泛偏好）；'
+      + '只对某一个工作区成立的习惯与决策写 scope=project。'
+      + '正文只写结论，最多 320 字（合并后的总长同样计入）；可以换行和使用 markdown 列表。'
+      + '超出上限的正文会被整条拒绝，不会截断。'
+      + '不要写任务进度、进行中的快照、可重跑得到的验证结果（测试全过 / tsc 干净 / build 成功）。'
+      + '用 entities 声明这条记忆讲的是谁：每个名字先匹配已有实体，匹配不到就新建，然后连一条 about 边。'
+      + '能判断就给出实体 kind（project / tool / person / org / concept），缺省是 concept，省掉就丢掉了这个区分。'
+      + 'aliases 是同一条目的其他写法，之后用别名作标题保存会并入这里，而不是新建重复条目。'
+      + 'summary 是目录与关联视图用的一句话摘要；结论的全文仍放在正文里。',
     parameters: {
-      title: { type: 'string', required: true, description: 'Short unique title; the dedup key within a scope.' },
-      content: { type: 'string', required: true, description: 'Conclusion-only text, <=320 chars (hard cap); markdown line breaks and lists are fine.' },
+      title: { type: 'string', required: true, description: '短而唯一的标题，同一作用域内的去重键。' },
+      content: { type: 'string', required: true, description: '只写结论，最多 320 字（硬上限）；可以换行和使用 markdown 列表。' },
       scope: {
         type: 'string',
         required: true,
         enum: ['global', 'project'],
-        description: 'global = cross-project; project = only this workspace. You must decide.',
+        description: 'global=跨项目成立；project=只对当前工作区成立。必须自己判断。',
       },
-      kind: { type: 'string', enum: MEMORY_KINDS, description: 'Memory category (default fact).' },
-      project_path: { type: 'string', description: 'Workspace directory for scope=project; defaults to the session cwd.' },
-      summary: { type: 'string', description: 'One-line abstract for catalog and relation views.' },
-      aliases: { type: 'array', items: { type: 'string' }, description: 'Alternative spellings of this same entry (they become merge targets).' },
+      kind: { type: 'string', enum: MEMORY_KINDS, description: '记忆类别（缺省 fact）。' },
+      project_path: { type: 'string', description: 'scope=project 时的工作区目录，缺省用会话 cwd。' },
+      summary: { type: 'string', description: '目录与关联视图用的一句话摘要。' },
+      aliases: { type: 'array', items: { type: 'string' }, description: '同一条目的其他写法（会成为合并目标）。' },
       entities: {
         type: 'array',
-        description: 'Entities this memory is about: a bare name, or { name, kind } when the kind is known.',
+        description: '这条记忆讲到的实体：直接给名字，或已知类别时给 { name, kind }。',
         items: {
           oneOf: [
             { type: 'string' },
@@ -399,15 +343,15 @@ function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): voi
               type: 'object',
               additionalProperties: false,
               properties: {
-                name: { type: 'string', required: true, description: 'Entity name.' },
-                kind: { type: 'string', enum: MEMORY_ENTITY_KINDS, description: 'Entity category. Omit only when genuinely unclear.' },
+                name: { type: 'string', required: true, description: '实体名。' },
+                kind: { type: 'string', enum: MEMORY_ENTITY_KINDS, description: '实体类别。确实判断不出时才省略。' },
               },
             },
           ],
         },
       },
-      importance: { type: 'integer', description: '1-5; >= the injection threshold gets auto-injected later.' },
-      tags: { type: 'array', items: { type: 'string' }, description: 'Optional tags.' },
+      importance: { type: 'integer', description: '1-5；达到注入阈值后会被自动注入。' },
+      tags: { type: 'array', items: { type: 'string' }, description: '可选标签。' },
     },
     output: {
       schema: {
@@ -416,12 +360,9 @@ function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): voi
         properties: {
           saved: RECORD_ITEM_SCHEMA,
           created: { type: 'boolean', required: true },
-          // 落点：title（同标题）/ overlap（语义重叠）/ judge（模型判定）。
           merged_by: { type: 'string' },
-          // 判定为「已有那条已覆盖」时没有写入。
           skipped: { type: 'boolean' },
           judge_reason: { type: 'string' },
-          // 疑似同一条（方案 B）：没有自动合并，但附近有条很像的。
           suspect_title: { type: 'string' },
           suspect_score: { type: 'number' },
         },
@@ -463,8 +404,6 @@ function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): voi
       const session = sessionContextOf(exec)
       const scope = args.scope as MemoryScope
       const projectPath = scope === 'project' ? resolveProjectPath(args.project_path as string | undefined, session.cwd) : undefined
-      // created 由服务端的落点决定：语义重叠并入时也是 false（提示「已合并更新」，
-      // 而不是「已保存」——模型据此知道这条并进了已有条目）。
       const outcome = await svc.saveWithOutcome({
         title: args.title as string,
         content: args.content as string,
@@ -492,23 +431,18 @@ function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): voi
     },
   }))
 
-  /* ----- 读：搜索 ----- */
-
   register(defineTool({
     name: TOOL_SEARCH,
     description:
-      // 在跨会话记忆库里搜：标题 / 正文 / 摘要 / 别名 / 标签的包含匹配（大小写不敏感）。
-      'Search the cross-session memory store: substring match over title, content, summary, aliases and tags (case-insensitive). '
-      // 要回忆旧上下文时用：某个问题当初怎么解的、用户明确说过的偏好、项目层面的决策。
-      + 'Use it when you need past context: how a problem was solved, a stated preference, a project decision. '
-      // 命中别名也算命中那一条；换个说法搜不到时，换几个关键词再试一次。
-      + 'A hit on an alias counts as a hit on that entry; when a paraphrase misses, retry with different keywords.',
+      '跨会话检索记忆库：在标题、正文、摘要、别名、标签上做子串匹配（大小写不敏感）。'
+      + '需要过去的上下文时用它：某个问题当时怎么解决的、说过的偏好、做过的项目决策。'
+      + '命中别名等同于命中该条目；换了说法没搜到时，换一组关键词再试。',
     parameters: {
-      query: { type: 'string', required: true, description: 'Search text.' },
-      scope: { type: 'string', enum: ['global', 'project'], description: 'Limit to one scope.' },
-      project_path: { type: 'string', description: 'Limit project memories to this workspace (defaults to the session cwd).' },
-      include_archived: { type: 'boolean', description: 'Also search archived entries (default false).' },
-      limit: { type: 'integer', description: 'Max results (default 20).' },
+      query: { type: 'string', required: true, description: '检索词。' },
+      scope: { type: 'string', enum: ['global', 'project'], description: '限定在一个作用域内。' },
+      project_path: { type: 'string', description: '把项目记忆限定在这个工作区（缺省用会话 cwd）。' },
+      include_archived: { type: 'boolean', description: '连已归档的条目一起搜（缺省 false）。' },
+      limit: { type: 'integer', description: '最多返回几条（缺省 20）。' },
     },
     output: {
       schema: {
@@ -521,7 +455,7 @@ function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): voi
       },
       render: (_args, value) => {
         const v = value as { records: MemoryToolRecord[]; count: number }
-        return [{ type: 'text', text: v.count === 0 ? '(no matching memories)' : render(v.records, '') }]
+        return [{ type: 'text', text: v.count === 0 ? '（没有匹配的记忆）' : render(v.records, '') }]
       },
     },
     async execute(args, exec) {
@@ -541,22 +475,17 @@ function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): voi
     },
   }))
 
-  /* ----- 读：列出 ----- */
-
   register(defineTool({
     name: TOOL_LIST,
     description:
-      // 按作用域 / 分类列记忆，置顶与高重要性在前。
-      'List memories by scope / kind, pinned and highest-importance first. '
-      // 想把某个作用域下的条目一次看全时用；只要相关的那几条，用 memory_search 更省。
-      + 'Use it to review everything filed under one scope at once; use memory_search when you only need the few relevant ones. '
-      // 已归档条目只有 include_archived=true 才会出现。
-      + 'Archived entries only show up with include_archived=true.',
+      '按作用域 / 类别列出记忆，置顶与高重要性的排在前面。'
+      + '想一次看完某个作用域下都记了什么时用它；只要相关的那几条就用 memory_search。'
+      + '已归档的条目只在 include_archived=true 时出现。',
     parameters: {
-      scope: { type: 'string', enum: ['global', 'project'], description: 'Limit to one scope.' },
-      project_path: { type: 'string', description: 'Limit project memories to this workspace (defaults to the session cwd).' },
-      kind: { type: 'string', enum: MEMORY_KINDS, description: 'Limit to one category.' },
-      include_archived: { type: 'boolean', description: 'Include archived entries (default false).' },
+      scope: { type: 'string', enum: ['global', 'project'], description: '限定在一个作用域内。' },
+      project_path: { type: 'string', description: '把项目记忆限定在这个工作区（缺省用会话 cwd）。' },
+      kind: { type: 'string', enum: MEMORY_KINDS, description: '限定在一个类别内。' },
+      include_archived: { type: 'boolean', description: '连已归档的条目一起列出（缺省 false）。' },
     },
     output: {
       schema: {
@@ -569,7 +498,7 @@ function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): voi
       },
       render: (_args, value) => {
         const v = value as { records: MemoryToolRecord[]; count: number }
-        return [{ type: 'text', text: v.count === 0 ? '(no memories)' : render(v.records, '') }]
+        return [{ type: 'text', text: v.count === 0 ? '（暂无记忆）' : render(v.records, '') }]
       },
     },
     async execute(args, exec) {
@@ -588,27 +517,22 @@ function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): voi
     },
   }))
 
-  /* ----- 写：修改 ----- */
-
   register(defineTool({
     name: TOOL_UPDATE,
     description:
-      // 改一条已有记忆：标题 / 正文 / 摘要 / 别名 / 分类 / 作用域 / 重要性 / 标签 / 置顶。
-      'Modify an existing memory entry (title / content / summary / aliases / kind / scope / importance / tags / pinned). '
-      // 只改传入的字段，其余保持原样。
-      + 'Only the fields you pass change; everything else stays as it is. '
-      // summary 与 aliases 是整体替换（不是追加）；内容过时或写错时改这一条，别另存一条。
-      + 'summary and aliases replace those fields (not append); fix an outdated or wrong entry here instead of saving a new one.',
+      '修改一条已有记忆（title / content / summary / aliases / kind / scope / importance / tags / pinned）。'
+      + '只改你传进来的字段，其余保持原样。'
+      + 'summary 与 aliases 是整字段替换而非追加；条目过时或写错了在这里改，不要另存一条新的。',
     parameters: {
-      id: { type: 'string', required: true, description: 'Memory id from memory_search / memory_list.' },
-      title: { type: 'string', description: 'New title.' },
-      content: { type: 'string', description: 'New body.' },
-      summary: { type: 'string', description: 'New one-line abstract.' },
-      aliases: { type: 'array', items: { type: 'string' }, description: 'Replacement aliases.' },
-      kind: { type: 'string', enum: MEMORY_KINDS, description: 'New category.' },
-      importance: { type: 'integer', description: 'New importance 1-5.' },
-      tags: { type: 'array', items: { type: 'string' }, description: 'Replacement tags.' },
-      pinned: { type: 'boolean', description: 'Pin or unpin.' },
+      id: { type: 'string', required: true, description: '记忆 id，来自 memory_search / memory_list。' },
+      title: { type: 'string', description: '新标题。' },
+      content: { type: 'string', description: '新正文。' },
+      summary: { type: 'string', description: '新的一句话摘要。' },
+      aliases: { type: 'array', items: { type: 'string' }, description: '替换用的别名。' },
+      kind: { type: 'string', enum: MEMORY_KINDS, description: '新类别。' },
+      importance: { type: 'integer', description: '新的重要性 1-5。' },
+      tags: { type: 'array', items: { type: 'string' }, description: '替换用的标签。' },
+      pinned: { type: 'boolean', description: '置顶或取消置顶。' },
     },
     output: {
       schema: {
@@ -642,17 +566,13 @@ function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): voi
     },
   }))
 
-  /* ----- 写：删除 ----- */
-
   register(defineTool({
     name: TOOL_DELETE,
     description:
-      // 按 id 永久删除一条记忆，删了就没了。
-      'Permanently delete one memory entry by id — there is no undo. '
-      // 只是暂时不想再看到、或不确定以后还有没有用时，用 memory_archive（可恢复）。
-      + 'Prefer memory_archive when the entry may still be useful: archiving is recoverable, deleting is not.',
+      '按 id 永久删除一条记忆，不可撤销。'
+      + '条目可能还有价值时优先 memory_archive：归档可恢复，删除不可。',
     parameters: {
-      id: { type: 'string', required: true, description: 'Memory id.' },
+      id: { type: 'string', required: true, description: '记忆 id。' },
     },
     output: {
       schema: {
@@ -670,18 +590,14 @@ function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): voi
     },
   }))
 
-  /* ----- 写：归档 / 恢复 ----- */
-
   register(defineTool({
     name: TOOL_ARCHIVE,
     description:
-      // 归档一条记忆：不再进列表 / 搜索 / 开场注入，但仍在库里、随时可恢复。
-      'Archive a memory: it leaves lists, search and session injection but stays in the store, still recoverable. '
-      // archived=false 就是恢复；归档不等于删除。
-      + 'Pass archived=false to restore it. Archiving is not deleting.',
+      '归档一条记忆：从列表、检索与会话注入里消失，但仍留在库中，随时可恢复。'
+      + '传 archived=false 把它恢复回来。归档不等于删除。',
     parameters: {
-      id: { type: 'string', required: true, description: 'Memory id.' },
-      archived: { type: 'boolean', description: 'true archives (default), false restores.' },
+      id: { type: 'string', required: true, description: '记忆 id。' },
+      archived: { type: 'boolean', description: 'true 归档（缺省），false 恢复。' },
     },
     output: {
       schema: {
@@ -701,20 +617,16 @@ function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): voi
     },
   }))
 
-  /* ----- 写：移动（全局 ⇄ 项目）----- */
-
   register(defineTool({
     name: TOOL_MOVE,
     description:
-      // 把一条记忆在「全局」与「项目」之间搬作用域。
-      'Move a memory between global and project scope. '
-      // 判断错了地方时用：只对一个项目成立的习惯被记进了全局，或普适偏好被记进了某个项目。
-      + 'Use it when a memory was filed at the wrong level: a one-project habit that landed in global, '
-      + 'or a broad preference that landed in one project.',
+      '在 global 与 project 两个作用域之间移动一条记忆。'
+      + '记错层级时用它：本该只属于某个项目的习惯落进了 global，'
+      + '或本该广泛的偏好落进了某一个项目。',
     parameters: {
-      id: { type: 'string', required: true, description: 'Memory id.' },
-      scope: { type: 'string', required: true, enum: ['global', 'project'], description: 'Target scope.' },
-      project_path: { type: 'string', description: 'Target workspace directory when scope=project; defaults to the session cwd.' },
+      id: { type: 'string', required: true, description: '记忆 id。' },
+      scope: { type: 'string', required: true, enum: ['global', 'project'], description: '目标作用域。' },
+      project_path: { type: 'string', description: 'scope=project 时的目标工作区目录，缺省用会话 cwd。' },
     },
     output: {
       schema: {
@@ -745,31 +657,24 @@ function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): voi
     },
   }))
 
-  /* ----- 实体（wiki 图层）----- */
-
   register(defineTool({
     name: TOOL_ENTITY,
     description:
-      // 管理实体：记忆库里可复用的「名词」（项目 / 工具 / 人物 / 组织 / 概念）。
-      'Manage entities: the reusable nouns of the memory graph (project / tool / person / org / concept). '
-      // upsert：命中同名或同别名的已有实体就并入（补别名与摘要），否则新建一条。
-      + 'action=upsert creates or merges one by name — an existing entity with the same name or alias is merged, never duplicated. '
-      // list：按关键字列实体；remove：删掉这个实体连同挂在它身上的所有边。
-      + 'action=list lists entities by keyword; action=remove deletes one together with all of its edges. '
-      // 实体名出现在记忆的标题或标签里 → about 边（关于它）；只出现在正文里 → mentions 边（提及）。
-      + 'An entity name in a memory title or tags links it with an about edge; a name only in the body links with a mentions edge. '
-      // 共享同一实体的两条记忆会自动连成 related，不需要手工连边。
-      + 'Memories that share an entity are automatically linked as related — no manual linking needed.',
+      '管理实体：记忆图里可复用的名词（project / tool / person / org / concept）。'
+      + 'action=upsert 按名字创建或合并 —— 同名或同别名的已有实体会被合并，不会重复。'
+      + 'action=list 按关键词列出实体；action=remove 删除一个实体，连同它的全部边。'
+      + '实体名出现在记忆标题或标签里会连一条 about 边；只出现在正文里连 mentions 边。'
+      + '共享同一实体的记忆会自动按 related 互连，不需要手工连。',
     parameters: {
       action: { type: 'string', required: true, enum: ['upsert', 'list', 'remove'], description: 'upsert | list | remove.' },
-      id: { type: 'string', description: 'Entity id (upsert: update this one; remove: which one).' },
-      name: { type: 'string', description: 'Entity name (upsert: required).' },
-      kind: { type: 'string', enum: MEMORY_ENTITY_KINDS, description: 'Entity category (default concept).' },
-      aliases: { type: 'array', items: { type: 'string' }, description: 'Other spellings of the same entity (they trigger linkage too).' },
-      summary: { type: 'string', description: 'One-line description of the entity.' },
-      keyword: { type: 'string', description: 'list: substring match over name / aliases / summary.' },
-      include_archived: { type: 'boolean', description: 'list: include archived entities.' },
-      limit: { type: 'integer', description: 'list: max rows (default 50).' },
+      id: { type: 'string', description: '实体 id（upsert：更新这一个；remove：删哪一个）。' },
+      name: { type: 'string', description: '实体名（upsert 时必填）。' },
+      kind: { type: 'string', enum: MEMORY_ENTITY_KINDS, description: '实体类别（缺省 concept）。' },
+      aliases: { type: 'array', items: { type: 'string' }, description: '同一实体的其他写法（同样会触发连边）。' },
+      summary: { type: 'string', description: '实体的一句话说明。' },
+      keyword: { type: 'string', description: 'list：在名字 / 别名 / 摘要上做子串匹配。' },
+      include_archived: { type: 'boolean', description: 'list：连已归档的实体一起列出。' },
+      limit: { type: 'integer', description: 'list：最多几行（缺省 50）。' },
     },
     output: {
       schema: {
@@ -832,28 +737,22 @@ function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): voi
     },
   }))
 
-  /* ----- 边（wiki 图层）----- */
-
   register(defineTool({
     name: TOOL_LINK,
     description:
-      // 在两个节点之间连一条有语义的边：自动推导只覆盖「提及 / 共现」，其余关系要显式连。
-      'Link two nodes in the memory graph when the relationship itself matters — auto-derived edges only cover mentions and co-occurrence. '
-      // 关系取值：about 关于 / mentions 提及 / related 相关 / refines 细化 / supersedes 取代 / contradicts 冲突 / part-of 属于 / uses 使用 / same-as 同义。
-      + 'Relations: ' + MEMORY_EDGE_RELATIONS.join(' / ') + '. '
-      // 幂等：同端点 + 同关系只有一条边，重复连只会更新备注；对称关系（related 等）两个方向视为同一条。
-      + 'Linking is idempotent: same endpoints and relation reuse one edge, so re-linking only updates the note. '
-      // list：给 memory_id 看一条记忆的全部关联（含自动边）；unlink：给 edge_id 断边。
-      + 'action=list with memory_id shows everything one memory is linked to (including auto edges); action=unlink with edge_id removes one.',
+      '关系本身有信息量时，在记忆图里把两个节点连起来 —— 自动推导出的边只覆盖 mentions 与共现。'
+      + '可用关系：' + MEMORY_EDGE_RELATIONS.join(' / ') + '。'
+      + '连边是幂等的：同样的起点终点与关系复用一条边，重连只会更新 note。'
+      + 'action=list 配 memory_id 看某条记忆连到了哪些节点（含自动生成的边）；action=unlink 配 edge_id 断开一条。',
     parameters: {
       action: { type: 'string', required: true, enum: ['link', 'unlink', 'list'], description: 'link | unlink | list.' },
-      from: { type: 'string', description: 'link: source memory id (must exist).' },
-      to: { type: 'string', description: 'link: target — an entity name or id when to_kind=entity, otherwise a memory id.' },
-      to_kind: { type: 'string', enum: ['memory', 'entity'], description: 'link: target kind (default entity).' },
-      relation: { type: 'string', enum: MEMORY_EDGE_RELATIONS, description: 'link: relation (default about for an entity, related for a memory).' },
-      note: { type: 'string', description: 'link: why these two are related.' },
-      edge_id: { type: 'string', description: 'unlink: the edge id returned by action=list.' },
-      memory_id: { type: 'string', description: 'list: show this memory and everything it is linked to.' },
+      from: { type: 'string', description: 'link：起点记忆 id（必须已存在）。' },
+      to: { type: 'string', description: 'link：终点 —— to_kind=entity 时给实体名或实体 id，否则给记忆 id。' },
+      to_kind: { type: 'string', enum: ['memory', 'entity'], description: 'link：终点类型（缺省 entity）。' },
+      relation: { type: 'string', enum: MEMORY_EDGE_RELATIONS, description: 'link：关系（终点是实体时缺省 about，是记忆时缺省 related）。' },
+      note: { type: 'string', description: 'link：这两者为什么相关。' },
+      edge_id: { type: 'string', description: 'unlink：action=list 返回的边 id。' },
+      memory_id: { type: 'string', description: 'list：看这条记忆以及它连到的全部节点。' },
     },
     output: {
       schema: {
@@ -935,6 +834,5 @@ function mountMemoryTools(ctx: Context, options: InstallMemoryToolsOptions): voi
     },
   }))
 
-  // 全部注册完成后再统一上报：探测到的 + 注册时撞到的。
   options.onConflicts?.(conflicts)
 }

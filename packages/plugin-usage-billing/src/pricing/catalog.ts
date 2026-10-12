@@ -1,15 +1,11 @@
 /**
- * 内置价表（USD/CNY 每百万 token，**原生币种存储**：国内厂商直接录人民币，
- * 国外录美元，计价时按快照汇率折算）。
- *
- * ⚠️ 数值是「可用的起点」，不是权威价：Task 14 会用 models.dev 的实时目录覆盖同名 key，
- * 覆盖失败时回落到这里。UI 上以「内置价」徽标标注来源（见 spec §6.5）。
- * 新增模型请优先在 models.dev 目录里确认后再补，不要凭印象编价。
+ * 内置价表（USD/CNY 每百万 token）：国内厂商录人民币，国外录美元，计价时按快照汇率折算。
+ * 数值是起点而非权威价：联网目录会覆盖同名 key，覆盖失败时回落到这里。
  */
 
 import type { PriceEntry } from '../types.ts'
 
-/** 内置兜底汇率（Task 14 联网失败时使用）。 */
+/** 联网拉价失败时的兜底汇率。 */
 export const DEFAULT_USD_TO_CNY = 7.1
 
 /** 统一 key：`provider/model`，provider 去空格转小写。 */

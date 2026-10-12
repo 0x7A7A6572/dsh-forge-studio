@@ -1,15 +1,7 @@
 /**
- * MemoryService —— ctx.memory：记忆库的读写核心（全局 / 项目双作用域）。
- *
- * 职责：
- * - CRUD：list / save / update / remove / setArchived / reset；
- * - 作用域路由：scope=project 的记忆必须带工作区目录，写入前归一化比较；
- * - 去重合并：同作用域 + 同分类 + 同标题（归一化）就地更新，绝不产生重复条目；
- * - 导入/导出：解析「个人画像」提示词的输出，也能反向导出成同样的 Markdown；
- * - 自动注入候选：按会话 cwd 取「全局 + 当前项目」的高重要性条目。
- *
- * 读取同步（storage-domain 权威内存态）；写入经后端持久化后生效。
- * 同时是 Typert Gateway 的 Remote 服务（SRC 标记模式，无 codegen）。
+ * ctx.memory：记忆库读写核心；读取走 storage-domain 内存态，写入经后端持久化后生效。
+ * 同时是 Typert Gateway 的 Remote 服务（SRC 标记，无 codegen）。
+ * 端点参数必须是纯标识符：不得默认值 / 解构 / rest。
  */
 
 import { randomUUID } from 'node:crypto'
@@ -34,39 +26,28 @@ import { validateMemoryBundle } from './bundle.ts'
 import { MEMORY_BUNDLE_SCHEMA, MEMORY_BUNDLE_VERSION } from './types.ts'
 import type { MemoryBundle, MemoryBundleImportInput, MemoryBundleImportResult } from './types.ts'
 
-/** 原文留档保留上限（超出按最旧清理）：转录很长，不能无限堆在 KV 里。 */
 export const MEMORY_RAW_LIMIT = 200
-/** 审计保留上限。 */
 export const MEMORY_AUDIT_LIMIT = 500
-/** 单条记忆的正文上限（字符）。超限拒绝写入，逼源头写短，而不是静默截断。 */
 export const MEMORY_CONTENT_LIMIT = 320
-/** 摄取条目的默认重要性（用户主动整理过的内容，高于自动提炼的 3）。 */
 export const IMPORT_IMPORTANCE = 4
-/**
- * 语义重叠合并阈值：正文 Dice 达到即视为同一条。
- * 0.8 → 0.7（方案 A）：实测「同一条事换个说法」大量落在 0.7~0.8，卡在 0.8 会漏；
- * 再低（0.6 档）开始把「同一主题的两件事」并掉，所以只降这一档。
- */
+/** 正文 Dice 达到此值即视为同一条。 */
 export const MEMORY_OVERLAP_CONTENT = 0.7
-/** 语义重叠合并阈值：标题 Dice 达到即视为同一条（标题短，误判代价大，维持 0.9）。 */
+/** 标题 Dice 达到此值即视为同一条。 */
 export const MEMORY_OVERLAP_TITLE = 0.9
-/** 疑似同一条（方案 B）的提示下限：没到自动合并的线，但已经像到值得提醒模型。 */
+/** 「疑似同一条」提示的下限。 */
 export const MEMORY_NEAR_FLOOR = 0.4
-/** 写入判定（方案 C）的下限：到这条线才值得让模型判一次（判定本身有成本）。 */
+/** 交给模型判定的相似度下限。 */
 export const MEMORY_JUDGE_FLOOR = 0.2
-/** 单次判定最多带几条候选（越靠前越像）。 */
 export const MEMORY_JUDGE_MAX_CANDIDATES = 3
 
 function amountOf(value: number | undefined): number {
   return value === undefined || !Number.isFinite(value) ? 0 : Math.max(0, Math.round(value))
 }
 
-/** 路径归一化键（去尾分隔符 + 统一斜杠 + 小写）：项目记忆的归属比较以此为准。 */
 export function normalizeProjectKey(path: string): string {
   return path.trim().replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase()
 }
 
-/** 目录末段（项目显示名）；空串与根路径按原样返回。 */
 export function projectLabelOf(path: string): string {
   const trimmed = path.trim().replace(/[\\/]+$/, '')
   const parts = trimmed.split(/[\\/]/)
@@ -88,7 +69,6 @@ function normalizeTags(tags: readonly string[] | undefined): string[] {
   return out
 }
 
-/** 超限就抛可读错误；调用方（工具 / 面板 / 摄取）自己决定怎么处理。 */
 function assertContentWithinLimit(text: string): void {
   if (text.length <= MEMORY_CONTENT_LIMIT) return
   throw new Error(
@@ -98,17 +78,12 @@ function assertContentWithinLimit(text: string): void {
 }
 
 
-/** 压平成一行：去首尾空白、换行折算成空格。只用于比较文本是否重复，不写回库。 */
+/** 只用于比较，不写回库。 */
 function flattenToParagraph(text: string): string {
   return text.replace(/\s*[\r\n]+\s*/g, ' ').trim()
 }
 
-/**
- * 同一条目的重复写入：新内容已包含在旧内容里就保留旧的，否则另起一段接上。
- *
- * 比较用压平后的文本（同一句话写成一行还是多行都算重复），但返回的是原文，
- * 所以 markdown 排版在合并后保留。
- */
+/** 新内容已包含在旧内容里就保留旧的，否则另起一段接上。 */
 export function mergeContent(previous: string, incoming: string): string {
   const oldText = previous.trim()
   const newText = incoming.trim()
@@ -121,15 +96,10 @@ export function mergeContent(previous: string, incoming: string): string {
   return oldText + '\n\n' + newText
 }
 
-/** 记忆文本归一化：小写、只留字母数字与汉字（语义重叠比较的输入）。 */
 export function normalizeMemoryText(text: string): string {
   return text.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]/g, '')
 }
 
-/**
- * bigram Dice 相似度（0-1，1 = 完全相同）。二元组按出现次数取交集；
- * 归一化后不足两个字符（单字）时退化为相等判断 —— 没有二元组可比，不硬凑。
- */
 export function bigramDice(a: string, b: string): number {
   if (a === b) return 1
   if (a === '' || b === '') return 0
@@ -155,25 +125,21 @@ export function bigramDice(a: string, b: string): number {
   return total === 0 ? 0 : (2 * shared) / total
 }
 
-/** 自动提及匹配的最小名称长度：单字（「我」「它」）命中率太脏，不做实体的候选。 */
 export const MEMORY_ENTITY_MIN_CHARS = 2
 
-/** 实体名归一化：去首尾空白 + 折叠内部空白。 */
 export function normalizeEntityName(name: string): string {
   return name.trim().replace(/\s+/g, ' ')
 }
 
-/** 实体名 / 标题 / 别名的比较键：归一化后大小写不敏感。 */
 export function entityNameKey(name: string): string {
   return normalizeEntityName(name).toLowerCase()
 }
 
-/** 端点序列化键：'memory:<id>' / 'entity:<id>'（边的存储与索引都以此为准）。 */
 export function nodeKey(ref: MemoryNodeRef): string {
   return ref.kind + ':' + ref.id
 }
 
-/** 端点键解析；格式非法返回 undefined（不抛错，坏数据当噪声丢掉）。 */
+/** 格式非法返回 undefined，不抛错。 */
 export function parseNodeKey(key: string): MemoryNodeRef | undefined {
   const index = key.indexOf(':')
   if (index <= 0) return undefined
@@ -182,7 +148,6 @@ export function parseNodeKey(key: string): MemoryNodeRef | undefined {
   return { kind, id: key.slice(index + 1) }
 }
 
-/** 端点键排序（对称边归一化端点顺序用）。 */
 function compareNodeKey(a: MemoryNodeRef, b: MemoryNodeRef): number {
   const left = nodeKey(a)
   const right = nodeKey(b)
@@ -190,38 +155,29 @@ function compareNodeKey(a: MemoryNodeRef, b: MemoryNodeRef): number {
   return left < right ? -1 : 1
 }
 
-/**
- * 边的确定性 id：同「端点 + 关系」永远同一个 id，因此重复连 = 更新那一条。
- * 对称关系（related / contradicts / same-as）先把两个端点排序，a→b 与 b→a 归一成同一条。
- */
+/** 边的确定性 id：同端点+关系恒等，对称关系先排序端点。 */
 export function edgeIdOf(from: MemoryNodeRef, to: MemoryNodeRef, relation: MemoryEdgeRelation): string {
   const symmetric = MEMORY_SYMMETRIC_RELATIONS.includes(relation)
   const [left, right] = symmetric && compareNodeKey(from, to) > 0 ? [to, from] : [from, to]
   return nodeKey(left) + '|' + relation + '|' + nodeKey(right)
 }
 
-/** 建边时的默认关系：记忆 → 实体 = about（主题就是它），其余 related。 */
 export function defaultEdgeRelation(from: MemoryNodeRef, to: MemoryNodeRef): MemoryEdgeRelation {
   return from.kind === 'memory' && to.kind === 'entity' ? 'about' : 'related'
 }
 
-/** 边排序：关系 → 权重降序 → 最近更新。 */
 export function compareEdges(a: MemoryEdge, b: MemoryEdge): number {
   if (a.relation !== b.relation) return a.relation < b.relation ? -1 : 1
   if (a.weight !== b.weight) return b.weight - a.weight
   return b.updatedAt - a.updatedAt
 }
 
-/** 实体排序：名称（中文按拼音），已归档排最后。 */
 export function compareEntities(a: MemoryEntity, b: MemoryEntity): number {
   if (a.archived !== b.archived) return a.archived ? 1 : -1
   return a.name.localeCompare(b.name, 'zh-Hans-CN')
 }
 
-/**
- * 别名并集：把「并入的标题」与显式别名合并成别名表，并剔掉与本体标题相同的写法
- * （别名只承载「同一条的别的说法」，自己不该是自己的别名）。
- */
+/** 并入的标题与显式别名求并集，剔掉与本体标题相同的写法。 */
 export function mergeAliases(
   record: { title: string; aliases: readonly string[] },
   title: string | undefined,
@@ -232,13 +188,11 @@ export function mergeAliases(
   return normalizeTags(candidates).filter((alias) => entityNameKey(alias) !== own)
 }
 
-/** 参与重叠比较的最小形状：已有条目与待写入内容都满足。 */
 export interface MemoryOverlapText {
   readonly title: string
   readonly content: string
 }
 
-/** 标题 / 正文各自的语义重叠分（归一化后算 bigram Dice）。 */
 export function overlapScores(
   existing: MemoryOverlapText,
   incoming: MemoryOverlapText,
@@ -249,21 +203,18 @@ export function overlapScores(
   }
 }
 
-/** 排序：置顶 → 重要性 → 最近更新。 */
 export function compareMemories(a: MemoryRecord, b: MemoryRecord): number {
   if (a.pinned !== b.pinned) return a.pinned ? -1 : 1
   if (a.importance !== b.importance) return b.importance - a.importance
   return b.updatedAt - a.updatedAt
 }
 
-/** 解析出来的一条导入项。 */
 export interface ParsedMemoryItem {
   readonly title: string
   readonly content: string
   readonly kind: MemoryKind
 }
 
-/** 画像小节标题 → 记忆分类。 */
 const SECTION_KINDS: Record<string, MemoryKind> = {
   指令: 'preference',
   偏好: 'preference',
@@ -282,7 +233,6 @@ function headingOf(line: string): string | undefined {
   if (md) return md[1]?.replace(/[：:]$/, '') ?? undefined
   const bold = /^\*\*(.+?)\*\*\s*[：:]?\s*$/.exec(trimmed)
   if (bold) return bold[1]?.replace(/[：:]$/, '') ?? undefined
-  // 「指令：」这种独立小节标题（无正文）也算。
   const plain = /^([\u4e00-\u9fa5A-Za-z]{2,6})[：:]$/.exec(trimmed)
   if (plain) return plain[1] ?? undefined
   return undefined
@@ -292,7 +242,6 @@ function kindOfHeading(heading: string): MemoryKind | undefined {
   return SECTION_KINDS[heading.trim()]
 }
 
-/** 去掉条目开头的 [日期] / [unknown] 前缀（含紧随的破折号）。 */
 function stripDatePrefix(text: string): string {
   const matched = /^\[([^\]]+)\]\s*(?:[-—–]\s*)?(.*)$/.exec(text)
   if (matched !== null && matched[2] !== undefined && matched[2].trim() !== '') return matched[2].trim()
@@ -305,11 +254,7 @@ function titleOf(content: string): string {
   return clean.length > 40 ? clean.slice(0, 40) : clean
 }
 
-/**
- * 解析导入文本：既吃「导入提示词」产出的画像（分类标题 + \`[日期] - 内容\` 行），
- * 也吃任意纯文本（每个非空行一条「事实」）。代码块围栏与注释行被忽略。
- * 纯函数，便于单测。
- */
+/** 吃画像（分类标题 + 日期行）与任意纯文本；代码块围栏与注释行忽略。 */
 export function parseImportedText(text: string): ParsedMemoryItem[] {
   const items: ParsedMemoryItem[] = []
   let current: MemoryKind = 'fact'
@@ -317,7 +262,6 @@ export function parseImportedText(text: string): ParsedMemoryItem[] {
     const line = raw.trim()
     if (line === '') continue
     if (line.startsWith('```') || line.startsWith('<!--')) continue
-    // 列表项：可带 [日期] / [unknown] 前缀。
     const bullet = /^[-*+]\s+(.+)$/.exec(line) ?? /^\[([^\]]+)\]\s*[-—–]\s*(.+)$/.exec(line)
     if (bullet) {
       const content = bullet.length === 3 ? (bullet[2] ?? '') : (bullet[1] ?? '')
@@ -337,17 +281,15 @@ export function parseImportedText(text: string): ParsedMemoryItem[] {
     if (heading !== undefined) {
       const mapped = kindOfHeading(heading)
       if (mapped !== undefined) current = mapped
-      // 认不出分类的标题一律当章节标题跳过（典型的如文档大标题「# 个人使用画像」）。
-      // 以前它会掉到下面按裸行收成一条记忆，于是每次导入都多出一条名为文档标题的记录。
+      // 认不出分类的标题一律跳过，不当裸行收。
       continue
     }
-    // 裸行：当作当前分类下的一条记录。
     items.push({ title: titleOf(line), content: line, kind: current })
   }
   return items
 }
 
-/** 同一份原文里标题重复的条目先自行去重（保留先出现的那个）。纯函数。 */
+/** 标题重复的保留先出现的那个。 */
 export function dedupeParsedItems(items: readonly ParsedMemoryItem[]): { items: ParsedMemoryItem[]; skipped: number } {
   const seen = new Set<string>()
   const out: ParsedMemoryItem[] = []
@@ -364,7 +306,6 @@ export function dedupeParsedItems(items: readonly ParsedMemoryItem[]): { items: 
   return { items: out, skipped }
 }
 
-/** 留档标题：原文首个像正文的行（去掉标题/列表/日期前缀），截 40 字。纯函数。 */
 export function rawTitleOf(text: string): string {
   for (const line of text.split(/\r?\n/)) {
     const trimmed = line.trim()
@@ -377,36 +318,31 @@ export function rawTitleOf(text: string): string {
   return '（空原文）'
 }
 
-/** 留档的「新鲜度」：写过就用写入时间，否则用创建时间。 */
 export function rawFreshness(doc: MemoryRawDocument): number {
   return doc.updatedAt > 0 ? doc.updatedAt : doc.createdAt
 }
 
-/** 留档排序：最新在前。 */
 export function compareRawDocuments(a: MemoryRawDocument, b: MemoryRawDocument): number {
   return rawFreshness(b) - rawFreshness(a)
 }
 
-/** 超出上限时该删掉的留档 id（最旧的先删）。纯函数，便于单测。 */
 export function prunableRawIds(docs: readonly MemoryRawDocument[], limit: number): MemoryRawId[] {
   if (limit <= 0) return docs.map((doc) => doc.id)
   if (docs.length <= limit) return []
   return [...docs].sort(compareRawDocuments).slice(limit).map((doc) => doc.id)
 }
 
-/** 合并落点：'title' 同标题 / 'overlap' 语义重叠 / 'judge' 模型判定。 */
 export type MemoryMergeReason = 'title' | 'overlap' | 'judge'
 
-/** 写入判定的三个动作。 */
 export type MemoryJudgeDecision = 'add' | 'update' | 'skip'
 
-/** 判定候选（已按相似度从高到低排好，最多 MEMORY_JUDGE_MAX_CANDIDATES 条）。 */
+/** 已按相似度降序，最多 MEMORY_JUDGE_MAX_CANDIDATES 条。 */
 export interface MemoryJudgeCandidate {
   readonly id: MemoryId
   readonly kind: MemoryKind
   readonly title: string
   readonly content: string
-  /** 与待写入条目的相似度（标题 / 正文 Dice 取大者）。 */
+  /** 标题 / 正文 Dice 取大者。 */
   readonly score: number
 }
 
@@ -419,7 +355,6 @@ export interface MemoryJudgeRequest {
   readonly candidates: readonly MemoryJudgeCandidate[]
 }
 
-/** 判定结果。meta 由 agent 层填，服务端据此记一条审计。 */
 export interface MemoryJudgeVerdict {
   readonly decision: MemoryJudgeDecision
   readonly targetId?: MemoryId
@@ -437,35 +372,31 @@ export interface MemoryJudgeVerdict {
   }
 }
 
-/** 判定钩子：返回 undefined = 本次没有判定（拿不到路由 / llm 不可用）。 */
+/** 返回 undefined = 本次没判定。 */
 export type MemoryJudge = (request: MemoryJudgeRequest) => Promise<MemoryJudgeVerdict | undefined>
 
-/** 疑似同一条（方案 B）：没自动合并，但值得让调用方知道「附近有条很像的」。 */
+/** 没自动合并，但附近有很像的一条。 */
 export interface MemorySuspect {
   readonly id: MemoryId
   readonly title: string
   readonly score: number
 }
 
-/** saveWithOutcome 的结果：记录本身 + 这次是新建 / 并进了哪一条 / 有没有疑似重复。 */
 export interface MemorySaveOutcome {
   readonly record: MemoryRecord
   readonly created: boolean
   readonly mergedBy?: MemoryMergeReason
-  /** 模型判定为「已覆盖」而没有写入（record 是那条已有记忆）。 */
+  /** 判定为已覆盖没写入；record 即那条已有记忆。 */
   readonly skipped?: boolean
-  /** 判定结论（服务端把它写进审计，工具据此说明落点）。 */
   readonly judged?: { readonly decision: MemoryJudgeDecision; readonly targetId?: MemoryId; readonly reason?: string }
-  /** 阈值没过、判定也没跑（或判定失败）时的「疑似同一条」提示。 */
   readonly suspect?: MemorySuspect
 }
 
 export interface MemoryServiceConfig {
-  /** memory 存储域。 */
   readonly domain: Domain<typeof memoryDomain>
-  /** 已知工作区目录（来自 ctx.workspaceRegistry）；面板项目下拉的候选。 */
+  /** 工作区候选（ctx.workspaceRegistry），面板下拉用。 */
   readonly knownWorkspaces?: () => Promise<readonly string[]>
-  /** 设置句柄：面板开关（生成对话记忆 / 自动注入）读写同一命名空间。 */
+  /** 面板开关读写同一命名空间。 */
   readonly settings?: MemorySettingsAccess
 }
 
@@ -473,16 +404,15 @@ export class MemoryService extends TypertRemoteService {
   private readonly memories: KvTable<MemoryId, MemoryRecord>
   private readonly rawDocs: KvTable<MemoryRawId, MemoryRawDocument>
   private readonly auditRows: KvTable<string, MemoryAuditEntry>
-  /** wiki 图层：实体表与边表（边是关联的唯一真相来源，记忆/实体两侧都不冗余存邻居）。 */
+  /** 边是关联的唯一真相来源，两侧都不冗余存邻居。 */
   private readonly entities: KvTable<MemoryEntityId, MemoryEntity>
   private readonly edges: KvTable<string, MemoryEdge>
   private readonly config: MemoryServiceConfig
 
-  /** 与其它记忆插件的重名冲突（tools 桥探测后回填；空表示无冲突）。 */
+  /** tools 桥探测到的重名冲突，空表示无冲突。 */
   private conflicts: MemoryConflict[] = []
-  /** 写入判定钩子（agent 层注入）：没有就只走阈值判定 + 疑似提示。 */
+  /** 判定钩子（agent 层注入）；没有就只走阈值 + 疑似提示。 */
   private judge: MemoryJudge | undefined
-  /** 后台模型目录来源（agent 层注入）：拿不到就只剩「跟随会话默认」一项。 */
   private modelCatalog: (() => Promise<readonly MemoryModelGroup[]>) | undefined
 
   constructor(ctx: Context, config: MemoryServiceConfig) {
@@ -494,8 +424,6 @@ export class MemoryService extends TypertRemoteService {
     this.entities = config.domain.table('entities')
     this.edges = config.domain.table('edges')
   }
-
-  /* ---------------- 内部工具 ---------------- */
 
   private collect(): MemoryRecord[] {
     return Array.from(this.memories.entries(), ([, record]) => record)
@@ -517,7 +445,6 @@ export class MemoryService extends TypertRemoteService {
     return Array.from(this.edges.entries(), ([, edge]) => edge)
   }
 
-  /** 把解析出来的条目写进记忆库（同作用域 + 同分类 + 同标题就地合并）。 */
   private async applyItems(
     items: readonly ParsedMemoryItem[],
     target: { scope: MemoryScope; projectPath: string; source: string; importance: number },
@@ -540,7 +467,7 @@ export class MemoryService extends TypertRemoteService {
           source: target.source,
         })
       } catch {
-        // 单条不合格（超长、缺字段）只跳过这一条，不让整批导入失败。
+        // 单条不合格只跳过，不让整批导入失败。
         skipped += 1
         continue
       }
@@ -559,17 +486,10 @@ export class MemoryService extends TypertRemoteService {
       && record.scope === scope
       && normalizeProjectKey(record.projectPath) === pathKey
       && (normalizeProjectKey(record.title) === key
-        // wiki 的 redirect：命中别名 = 同一条（换了说法的标题不该另起一条）。
+        // 命中别名 = 同一条。
         || record.aliases.some((alias) => normalizeProjectKey(alias) === key)))
   }
 
-  /* ---------------- 读 ---------------- */
-
-  /** 列出记忆（默认不含已归档）。 */
-  // 注意：这是 Typert SRC 标记的远程方法，参数必须是纯标识符 ——
-  // 不能有默认值 / 解构 / rest，否则 gateway 会在挂载时报
-  // 'SRC method "list" must use unique identifier parameters ...'。
-  // 需要「不传即全量」的语义时，由调用方显式传 {}。
   async list(query: MemoryQuery): Promise<MemoryRecord[]> {
     const keyword = query.keyword?.trim().toLowerCase()
     const pathKey = query.projectPath !== undefined ? normalizeProjectKey(query.projectPath) : undefined
@@ -592,12 +512,9 @@ export class MemoryService extends TypertRemoteService {
     return query.limit !== undefined && query.limit > 0 ? out.slice(0, query.limit) : out
   }
 
-  /* ---------------- 设置 ---------------- */
-
-  /** 读面板开关（生成对话记忆 / 自动注入 / 注入条数与门槛）。 */
   async getConfig(): Promise<MemoryConfig> {
     if (this.config.settings !== undefined) return this.config.settings.get()
-    // settings 未就绪时的兜底：字段与默认值必须和 MEMORY_CONFIG_BASE 保持一致。
+    // 兜底值必须与 MEMORY_CONFIG_BASE 保持一致。
     return {
       autoCapture: true,
       autoInject: true,
@@ -612,7 +529,6 @@ export class MemoryService extends TypertRemoteService {
     }
   }
 
-  /** 写面板开关；settings 未就绪或被锁时抛可读错误。 */
   async setConfig(patch: Partial<MemoryConfig>): Promise<MemoryConfig> {
     if (this.isLocked()) {
       throw new Error('检测到另一个记忆插件占用了 memory_* 工具名，本插件已被锁定，无法开启。请先在「插件」里停用另一个记忆插件，再重启 dsh。')
@@ -622,15 +538,7 @@ export class MemoryService extends TypertRemoteService {
     return this.config.settings.get()
   }
 
-  /* ---------------- 后台模型目录 ---------------- */
-
-  /**
-   * 读后台模型目录（面板「后台模型」下拉的数据源）。
-   *
-   * 目录来自 dsh 自己的 LLM 注册表（见 agent/models.ts），装配时由 host 注入；
-   * 没注入、注册表没就绪、读取抛错一律返回空数组 —— 面板据此只显示「跟随会话默认」，
-   * 不因为「列不出模型」而让整块设置报错。
-   */
+  /** 模型目录来自 dsh LLM 注册表（见 agent/models.ts）；拿不到一律返回空数组。 */
   async models(): Promise<readonly MemoryModelGroup[]> {
     if (this.modelCatalog === undefined) return []
     try {
@@ -640,29 +548,23 @@ export class MemoryService extends TypertRemoteService {
     }
   }
 
-  /** 装配后台模型目录来源（host 内部调用，非远程方法）。 */
   setModelCatalog(source: (() => Promise<readonly MemoryModelGroup[]>) | undefined): void {
     this.modelCatalog = source
   }
 
-  /* ---------------- 冲突 ---------------- */
-
-  /** 回填 tools 桥探测到的重名冲突（host 内部调用，非远程方法）。 */
   setConflicts(conflicts: readonly MemoryConflict[]): void {
     this.conflicts = [...conflicts]
   }
 
-  /** 装配写入判定钩子（host 内部调用，非远程方法）；传 undefined 即关掉判定。 */
   setJudge(judge: MemoryJudge | undefined): void {
     this.judge = judge
   }
 
-  /** 判定是否生效：钩子装了就跑 —— 写入判定不是开关，是默认行为。 */
   private judgeReady(): boolean {
     return this.judge !== undefined
   }
 
-  /** 跑一次判定：判定自己抛错也只当「没有判定」，绝不能影响写入。 */
+  /** 判定抛错只当没有判定。 */
   private async runJudge(request: MemoryJudgeRequest): Promise<MemoryJudgeVerdict | undefined> {
     if (this.judge === undefined) return undefined
     try {
@@ -672,7 +574,6 @@ export class MemoryService extends TypertRemoteService {
     }
   }
 
-  /** 判定调用记一条审计（面板「后台模型调用」里能看到它花了什么、判了什么）。 */
   private async recordJudgeAudit(verdict: MemoryJudgeVerdict, sessionId?: string): Promise<void> {
     const meta = verdict.meta
     if (meta === undefined) return
@@ -695,7 +596,6 @@ export class MemoryService extends TypertRemoteService {
     } catch { /* 审计写不进去不该影响这次写入 */ }
   }
 
-  /** 按 id 在指定作用域内取一条（判定给回的 targetId 必须能在同一作用域里找到）。 */
   private findInScope(id: MemoryId, scope: MemoryScope, projectPath: string): MemoryRecord | undefined {
     const pathKey = normalizeProjectKey(projectPath)
     return this.collect().find((record) => record.id === id
@@ -703,21 +603,15 @@ export class MemoryService extends TypertRemoteService {
       && (scope !== 'project' || normalizeProjectKey(record.projectPath) === pathKey))
   }
 
-  /** 读冲突列表（面板据此提示「已有另一个记忆插件」）。 */
   async getConflicts(): Promise<MemoryConflict[]> {
     return [...this.conflicts]
   }
 
-  /**
-   * 是否被硬锁。检测到别的记忆插件占用 memory_* 时就锁死本插件：
-   * 不注册工具、不注入、不提炼，面板里的开关也点不动。
-   * 「两个记忆插件同时跑」是不受支持的组合，不做部分可用那种半吊子状态。
-   */
+  /** 检测到别的记忆插件占用 memory_* 即锁死本插件。 */
   isLocked(): boolean {
     return this.conflicts.length > 0
   }
 
-  /** 记忆库概览。 */
   async stats(): Promise<MemoryStats> {
     const all = this.collect()
     const live = all.filter((record) => !record.archived)
@@ -747,7 +641,6 @@ export class MemoryService extends TypertRemoteService {
     }
   }
 
-  /** 项目记忆维度列表（已存项目 + 已知工作区候选合并去重）。 */
   async projects(): Promise<MemoryProjectSummary[]> {
     const stats = await this.stats()
     const known = this.config.knownWorkspaces === undefined ? [] : await this.config.knownWorkspaces()
@@ -764,7 +657,7 @@ export class MemoryService extends TypertRemoteService {
     })
   }
 
-  /** 导出成 Markdown（与导入提示词的格式同构，便于复制到别的 AI 工具）。 */
+  /** 导出格式与导入提示词同构。 */
   async exportText(scope: MemoryScope, projectPath?: string): Promise<string> {
     const records = await this.list({ scope, ...(projectPath !== undefined ? { projectPath } : {}) })
     const title = scope === 'global' ? '# 全局记忆' : '# 项目记忆：' + (projectPath ?? '')
@@ -783,9 +676,8 @@ export class MemoryService extends TypertRemoteService {
     return lines.join('\n').trimEnd()
   }
 
-  /** 自动注入候选：全局 + 当前会话 cwd 对应的项目记忆，按重要性与置顶排序。 */
   injectCandidates(sessionCwd: string | undefined, options: { maxItems: number; threshold: number }): MemoryRecord[] {
-    // 被锁 = 本插件让位：一条都不注入，避免和另一个记忆插件重复喂上下文。
+    // 被锁时一条都不注入。
     if (this.isLocked()) return []
     const cwdKey = sessionCwd === undefined ? undefined : normalizeProjectKey(sessionCwd)
     const live = this.collect().filter((record) => !record.archived)
@@ -799,11 +691,7 @@ export class MemoryService extends TypertRemoteService {
     return eligible.slice(0, Math.max(1, options.maxItems))
   }
 
-  /**
-   * 已有记忆的标题清单，喂给自动提炼当「别另起新标题」的参考：
-   * scope=global 或（scope=project 且 projectPath === 会话 cwd），按 updatedAt 倒序、去重。
-   * 同步方法（只读内存态），调用方拿不到也照常提炼。
-   */
+  /** 标题清单，供自动提炼参考；同步只读。 */
   overlapTitleHints(sessionCwd: string | undefined, limit = 30): string[] {
     if (limit <= 0) return []
     const cwdKey = sessionCwd === undefined ? undefined : normalizeProjectKey(sessionCwd)
@@ -827,12 +715,7 @@ export class MemoryService extends TypertRemoteService {
     return out
   }
 
-  /* ---------------- 摄取管线（原文留档 → 抽取 → 条目） ---------------- */
-
-  /**
-   * 摄取一份原文：先留档（永不丢），再解析成条目，最后回填抽取痕迹。
-   * mode=replace 时先清空目标作用域（连带该作用域的旧留档），再走后半段。
-   */
+  /** mode=replace 时先清空目标作用域（连带其旧留档）。 */
   async ingest(input: MemoryIngestInput): Promise<MemoryIngestResult> {
     const scope: MemoryScope = input.scope ?? 'global'
     const projectPath = scope === 'project' ? (input.projectPath ?? '').trim() : ''
@@ -870,10 +753,7 @@ export class MemoryService extends TypertRemoteService {
     }
   }
 
-  /**
-   * 对已留档的原文重跑抽取（换了算法、或上次抽取失败时用）。
-   * 不新建留档，抽取痕迹回填到同一份原文上。
-   */
+  /** 重跑抽取，不新建留档。 */
   async reingest(rawId: MemoryRawId): Promise<MemoryIngestResult> {
     const doc = await this.rawDocs.get(rawId)
     if (doc === undefined) throw new Error('unknown raw document')
@@ -893,7 +773,6 @@ export class MemoryService extends TypertRemoteService {
     }
   }
 
-  /** 落一份原文留档（不解析）。ingest 与 capture 共用这一段。 */
   async storeRawDocument(input: MemoryRawInput): Promise<MemoryRawDocument> {
     if (input.text.trim() === '') throw new Error('raw document text must not be empty')
     const scope = input.scope
@@ -903,8 +782,7 @@ export class MemoryService extends TypertRemoteService {
     }
     const now = Date.now()
     const title = (input.title ?? rawTitleOf(input.text)).trim()
-    // 会话转录按会话归并：一个会话一份，后一轮覆盖前一轮（转录本身是累积的，
-    // 越后越全）。否则每轮都存一份高度重叠的全文，很快把留档区冲垮。
+    // 转录按会话归并，后一轮覆盖前一轮（转录本身是累积的）。
     if (input.origin === 'capture' && input.sessionId !== undefined) {
       const existing = this.collectRaw().find((doc) =>
         doc.origin === 'capture' && doc.sessionId === input.sessionId)
@@ -939,7 +817,6 @@ export class MemoryService extends TypertRemoteService {
     return doc
   }
 
-  /** 回填「这份原文抽出了哪些条目」。 */
   async markExtracted(rawId: MemoryRawId, recordIds: readonly string[]): Promise<MemoryRawDocument | undefined> {
     const current = await this.rawDocs.get(rawId)
     if (current === undefined) return undefined
@@ -950,7 +827,6 @@ export class MemoryService extends TypertRemoteService {
     return next
   }
 
-  /** 列原文留档（最新在前）。 */
   async rawDocuments(query: MemoryRawQuery): Promise<MemoryRawDocument[]> {
     const pathKey = query.projectPath !== undefined ? normalizeProjectKey(query.projectPath) : undefined
     let out = this.collectRaw().filter((doc) => {
@@ -965,12 +841,11 @@ export class MemoryService extends TypertRemoteService {
     return out
   }
 
-  /** 取一份原文留档（含全文）。 */
   async getRawDocument(rawId: MemoryRawId): Promise<MemoryRawDocument | undefined> {
     return this.rawDocs.get(rawId)
   }
 
-  /** 删掉一份原文留档（已抽出的条目不动）。 */
+  /** 已抽出的条目不跟着删。 */
   async removeRawDocument(rawId: MemoryRawId): Promise<boolean> {
     const current = await this.rawDocs.get(rawId)
     if (current === undefined) return false
@@ -978,16 +853,12 @@ export class MemoryService extends TypertRemoteService {
     return true
   }
 
-  /** 留档超出上限时按「最新优先」清理，返回清理条数。 */
   async pruneRawDocuments(limit: number): Promise<number> {
     const ids = prunableRawIds(this.collectRaw(), limit)
     for (const id of ids) await this.rawDocs.delete(id)
     return ids.length
   }
 
-  /* ---------------- 后台调用审计（路线图 #5） ---------------- */
-
-  /** 记一条后台模型调用；只保留最近 MEMORY_AUDIT_LIMIT 条。 */
   async recordAudit(input: MemoryAuditInput): Promise<MemoryAuditEntry> {
     const entry: MemoryAuditEntry = {
       id: randomUUID(),
@@ -1015,7 +886,6 @@ export class MemoryService extends TypertRemoteService {
     return entry
   }
 
-  /** 列审计（最新在前）。 */
   async audits(query: MemoryAuditQuery): Promise<MemoryAuditEntry[]> {
     let out = this.collectAudits().filter((entry) => {
       if (query.kind !== undefined && entry.kind !== query.kind) return false
@@ -1027,9 +897,6 @@ export class MemoryService extends TypertRemoteService {
     return out
   }
 
-  /* ---------------- wiki 图层：实体 ---------------- */
-
-  /** 按 id / 名称 / 别名找一个实体（比较大小写不敏感）。 */
   private findEntity(ref: string): MemoryEntity | undefined {
     const key = entityNameKey(ref)
     return this.collectEntities().find((entity) =>
@@ -1038,7 +905,6 @@ export class MemoryService extends TypertRemoteService {
       || entity.aliases.some((alias) => entityNameKey(alias) === key))
   }
 
-  /** 列实体（默认不含已归档）。 */
   async listEntities(query: MemoryEntityQuery): Promise<MemoryEntity[]> {
     const keyword = query.keyword?.trim().toLowerCase()
     const out = this.collectEntities().filter((entity) => {
@@ -1054,11 +920,7 @@ export class MemoryService extends TypertRemoteService {
     return query.limit !== undefined && query.limit > 0 ? out.slice(0, query.limit) : out
   }
 
-  /**
-   * 落一个实体：带 id 就地更新；不带 id 时按名称 / 别名命中原有实体则并入
-   * （补别名与摘要、可补类别），否则新建一个。名称或别名会影响「谁提到了它」，
-   * 因此写完重算自动边。
-   */
+  /** 带 id 就地更新；不带 id 时按名称 / 别名并入，否则新建。 */
   async upsertEntity(input: MemoryEntityInput): Promise<MemoryEntity> {
     const name = normalizeEntityName(input.name)
     if (name === '') throw new Error('entity name is required')
@@ -1068,12 +930,10 @@ export class MemoryService extends TypertRemoteService {
       ? this.findEntity(name)
       : await this.entities.get(brandString<MemoryEntityId>(input.id))
     if (existing !== undefined) {
-      // 只有显式带 id 才算改名：按名称 / 别名命中的写入不夺走原来的规范名，
-      // 而是把这次用的写法登记成别名（wiki 的 redirect）。
+      // 只有显式带 id 才算改名，否则把这次的写法登记成别名。
       const renamed = input.id !== undefined
       const nextName = renamed ? name : existing.name
       const sameName = entityNameKey(name) === entityNameKey(existing.name)
-      // 改名时把旧名落成别名；按别名写入时把这次的写法登记成别名。
       const extraAliases = sameName ? aliases : [...aliases, renamed ? existing.name : name]
       const next: MemoryEntity = {
         ...existing,
@@ -1105,7 +965,6 @@ export class MemoryService extends TypertRemoteService {
     return entity
   }
 
-  /** 删一个实体：连同挂在它身上的所有边一起删（不留悬空边）。 */
   async removeEntity(id: MemoryEntityId): Promise<boolean> {
     const current = await this.entities.get(id)
     if (current === undefined) return false
@@ -1118,9 +977,6 @@ export class MemoryService extends TypertRemoteService {
     return true
   }
 
-  /* ---------------- wiki 图层：边 ---------------- */
-
-  /** 列边（默认全部；给了 node 就只看与它相连的，两个方向都算）。 */
   async listEdges(query: MemoryEdgeQuery): Promise<MemoryEdge[]> {
     const key = query.node === undefined ? undefined : nodeKey(query.node)
     let out = this.collectEdges().filter((edge) => {
@@ -1134,11 +990,7 @@ export class MemoryService extends TypertRemoteService {
     return out
   }
 
-  /**
-   * 连一条边。幂等：同「端点 + 关系」= 同一条边，重复连只会更新备注。
-   * 两个端点都必须真实存在 —— 悬空边在关联视图里只会变成噪音，宁可直接报错；
-   * 对称关系（related 等）连 a→b 与 b→a 归一成同一条。
-   */
+  /** 幂等：同端点+关系是同一条边；两端点必须真实存在。 */
   async link(input: MemoryLinkInput): Promise<MemoryEdge> {
     const relation = input.relation ?? defaultEdgeRelation(input.from, input.to)
     if (nodeKey(input.from) === nodeKey(input.to)) throw new Error('cannot link a node to itself')
@@ -1167,7 +1019,7 @@ export class MemoryService extends TypertRemoteService {
       : {
         ...existing,
         note: note === '' ? existing.note : note,
-        // 自动边被显式连过一次就升级成显式边：自动重算从此不再覆盖它。
+        // 自动边被显式连过即升级为显式边，重算不再覆盖。
         origin: existing.origin === 'auto' && input.origin !== undefined && input.origin !== 'auto'
           ? input.origin
           : existing.origin,
@@ -1177,7 +1029,6 @@ export class MemoryService extends TypertRemoteService {
     return edge
   }
 
-  /** 断一条边；返回是否真的删掉了。 */
   async unlink(id: string): Promise<boolean> {
     const current = await this.edges.get(edgeKey(id))
     if (current === undefined) return false
@@ -1185,7 +1036,6 @@ export class MemoryService extends TypertRemoteService {
     return true
   }
 
-  /** 删掉与某个端点相连的所有边：记忆/实体被删除时不留悬空边。 */
   private async removeEdgesFor(ref: MemoryNodeRef): Promise<void> {
     const key = nodeKey(ref)
     for (const edge of this.collectEdges()) {
@@ -1194,7 +1044,6 @@ export class MemoryService extends TypertRemoteService {
     }
   }
 
-  /** 一条记忆的关联视图：与它相连的边 + 每条边「另一端」解析出来的节点。 */
   async neighborhood(id: MemoryId): Promise<MemoryNeighborhood | undefined> {
     const memory = await this.memories.get(id)
     if (memory === undefined) return undefined
@@ -1209,12 +1058,10 @@ export class MemoryService extends TypertRemoteService {
     return { memory, edges, related }
   }
 
-  /** 全量重算自动边（面板「重建关联」按的就是这里）。 */
   async rebuildEdges(): Promise<{ added: number; removed: number }> {
     return this.syncAutoEdges()
   }
 
-  /** 把一个端点解析成图节点；端点已被删除时返回 undefined。 */
   private async resolveNode(ref: MemoryNodeRef): Promise<MemoryGraphNode | undefined> {
     if (ref.kind === 'memory') {
       const record = await this.memories.get(brandString<MemoryId>(ref.id))
@@ -1250,13 +1097,7 @@ export class MemoryService extends TypertRemoteService {
     }
   }
 
-  /* ---------------- 自动边推导：提及 + 共现 ---------------- */
-
-  /**
-   * 一条记忆提到了哪些实体：实体名 / 别名出现在标题、标签、摘要或正文里即算提及
-   * （名称至少 2 个字，单字命中太脏）。出现在标题或标签里算「强命中」→ about 边，
-   * 只出现在摘要 / 正文里 → mentions 边。
-   */
+  /** 标题或标签命中算强命中（about 边），否则 mentions 边。 */
   private mentionedEntities(record: MemoryRecord): { entity: MemoryEntity; strong: boolean }[] {
     const title = record.title.toLowerCase()
     const summary = record.summary.toLowerCase()
@@ -1283,9 +1124,8 @@ export class MemoryService extends TypertRemoteService {
   }
 
   /**
-   * 重算全部自动边（提及边 + 共现 related 边）。确定性算法，可随时重跑：
-   * 先算出「这次应该是哪些自动边」，再与库里已有的自动边求差集，只写变化的那几条。
-   * 手工 / 模型连过的同一条边不会被自动结果覆盖，也不会被自动清理（显式意图优先）。
+   * 自动边重算：先算期望集合，再与已有自动边求差集，只写变化的几条。
+   * 显式连过的边不被覆盖，也不被清理。
    */
   private async syncAutoEdges(): Promise<{ added: number; removed: number }> {
     const desired = new Map<string, { from: MemoryNodeRef; to: MemoryNodeRef; relation: MemoryEdgeRelation; weight: number }>()
@@ -1302,7 +1142,7 @@ export class MemoryService extends TypertRemoteService {
         else bucket.push(record.id)
       }
     }
-    // 共现：共享同一个实体的两条记忆连 related，权重 = 共享实体数。
+    // 共现：共享实体的两条记忆连 related，权重 = 共享实体数。
     const shared = new Map<string, number>()
     for (const ids of byEntity.values()) {
       for (let i = 0; i < ids.length; i += 1) {
@@ -1328,7 +1168,6 @@ export class MemoryService extends TypertRemoteService {
     for (const [id, shape] of desired) {
       const auto = existingAuto.get(id)
       const base = auto ?? await this.edges.get(edgeKey(id))
-      // 手工 / 模型显式连过同一条边：自动推导不覆盖它。
       if (base !== undefined && base.origin !== 'auto') continue
       if (auto !== undefined && auto.weight === shape.weight) continue
       await this.edges.put(edgeKey(id), {
@@ -1352,15 +1191,10 @@ export class MemoryService extends TypertRemoteService {
     return { added, removed }
   }
 
-  /**
-   * 把 memory_save 声明的实体挂上：命中已有实体（名称或别名）就复用（带 kind 时一并
-   * 改写它的分类），否则新建，然后落一条 about 边（origin=agent，说明是模型自己指的）。
-   * 声明时不带 kind 就只能沿用默认的 concept。
-   */
   private async attachEntities(record: MemoryRecord, refs: readonly (string | MemoryEntityRef)[] | undefined): Promise<void> {
     if (refs === undefined || refs.length === 0) return
     const from: MemoryNodeRef = { kind: 'memory', id: record.id }
-    // 同一次声明里同名合并成一次 upsert：后到的 kind 补上，先到的名字写法保留。
+    // 同名合并成一次 upsert：后到的 kind 补上，名字写法用先到的。
     const desired = new Map<string, { name: string; kind?: MemoryEntityKind }>()
     for (const raw of refs) {
       const ref = typeof raw === 'string' ? { name: raw } : raw
@@ -1377,13 +1211,7 @@ export class MemoryService extends TypertRemoteService {
     }
   }
 
-  /* ---------------- 写 ---------------- */
-
-  /**
-   * 语义重叠的落点：同一作用域内（project 需同项目路径，**忽略 kind**）找一条
-   * 标题 Dice ≥ MEMORY_OVERLAP_TITLE 或正文 Dice ≥ MEMORY_OVERLAP_CONTENT 的条目。
-   * 同名标题已经由 findByTitle 处理，这里兜的是「同一条事换了个说法」。
-   */
+  /** 同一作用域内按 Dice 找最像的一条；忽略 kind。 */
   private findOverlap(
     incoming: { title: string; content: string },
     scope: MemoryScope,
@@ -1407,10 +1235,6 @@ export class MemoryService extends TypertRemoteService {
     return best
   }
 
-  /**
-   * 同一作用域内最像的若干条（相似度 ≥ floor，降序，最多 limit 条）：
-   * 方案 B 的「疑似同一条」与方案 C 的判定候选都从这里取。
-   */
   private findNearest(
     incoming: { title: string; content: string },
     scope: MemoryScope,
@@ -1445,10 +1269,6 @@ export class MemoryService extends TypertRemoteService {
     }
   }
 
-  /**
-   * 就地合并进已有条目：保留原 id 与标题，正文追加、取较大重要性，标签与别名求并集。
-   * 摘要只在原来没有时补上（不覆盖已写好的那一行）。
-   */
   private async mergeRecord(
     existing: MemoryRecord,
     incoming: {
@@ -1478,16 +1298,6 @@ export class MemoryService extends TypertRemoteService {
     return merged
   }
 
-  /**
-   * 写入并回报落点：created=true 是新建；created=false 说明并进了已有条目，
-   * mergedBy 区分「同标题 / 语义重叠 / 模型判定」。
-   *
-   * 落点判定顺序（从严到宽，前三道是纯代码、零成本）：
-   *   1) 同作用域同分类同标题（或命中别名）→ 就地更新；
-   *   2) 正文 Dice ≥ 0.7 或标题 Dice ≥ 0.9 → 语义重叠并入；
-   *   3) 附近有相似度 ≥ 0.2 的条目且判定开关打开 → 交给模型判 add/update/skip；
-   *   4) 都不成立 → 新建；若附近有 ≥ 0.4 的条目，顺带在结果里带一条「疑似同一条」。
-   */
   async saveWithOutcome(input: MemorySaveInput): Promise<MemorySaveOutcome> {
     const title = input.title.trim()
     if (title === '') throw new Error('memory title is required')
@@ -1524,11 +1334,9 @@ export class MemoryService extends TypertRemoteService {
       await this.syncAutoEdges()
       return { record, created: false, mergedBy: 'overlap' }
     }
-    // 方案 B / C：没到自动合并的线，但附近已经有「很像」的条目。
     const near = this.findNearest({ title, content }, scope, projectPath, MEMORY_JUDGE_FLOOR)
     let judged: MemorySaveOutcome['judged']
-    // 批量导入（source=import）不判定：一次导入几十条就是几十次调用，而导入本身
-    // 已经有「同标题 / 语义重叠」两道代码闸门兜着。
+    // source=import 不判定：批量导入会放大调用次数。
     const judgeAllowed = (input.source ?? 'agent') !== 'import'
     if (judgeAllowed && near !== undefined && this.judgeReady()) {
       const verdict = await this.runJudge({
@@ -1551,18 +1359,16 @@ export class MemoryService extends TypertRemoteService {
             await this.syncAutoEdges()
             return { record, created: false, mergedBy: 'judge', judged }
           } catch {
-            // 合并会撞 320 字上限：判定说并，但并进去反而写不下 —— 退化成新建，
-            // 宁可多一条，也不要因为一次判定把这次写入丢掉。
+            // 合并撞上限就退化成新建，不丢掉这次写入。
           }
         }
         if (verdict.decision === 'skip' && target !== undefined) {
-          // 判定说「已有那条已经覆盖」，那就不写；record 回已有那条，让调用方知道落点。
+          // 不写入，record 回已有那条。
           return { record: target, created: false, mergedBy: 'judge', skipped: true, judged }
         }
       }
     }
-    // 判定没跑成（没装钩子 / 开关关了 / 拿不到路由 / 判定失败）才提示疑似重复：
-    // 判定成功时以判定结论为准，不再和它唱反调。
+    // 判定成功即以判定结论为准，不再提示疑似。
     const suspect: MemorySuspect | undefined = judged === undefined
       && near !== undefined && near.score >= MEMORY_NEAR_FLOOR
       ? { id: near.record.id, title: near.record.title, score: near.score }
@@ -1587,11 +1393,10 @@ export class MemoryService extends TypertRemoteService {
       ...(input.sessionId !== undefined ? { sessionId: input.sessionId } : {}),
     }
     await this.memories.put(record.id, record)
-    // 先挂显式实体（origin=agent），再重算自动边，让共现边把这条也算进去。
+    // 先挂显式实体再重算自动边，共现边才算得上这条。
     await this.attachEntities(record, input.entities)
     await this.syncAutoEdges()
-    // 判定跑过（哪怕结论是 add、或 update 合并失败退回新建）也要把结论带回去：
-    // 调用方据此知道「模型已经看过、说可以新建」，而不是「附近没有像的」。
+    // 判定跑过就带回结论，调用方能区分「模型看过」与「附近没有像的」。
     return {
       record,
       created: true,
@@ -1600,12 +1405,10 @@ export class MemoryService extends TypertRemoteService {
     }
   }
 
-  /** 新增或合并一条记忆（同作用域 + 同分类 + 同标题，或语义重叠就地更新）。 */
   async save(input: MemorySaveInput): Promise<MemoryRecord> {
     return (await this.saveWithOutcome(input)).record
   }
 
-  /** 局部修改；改 scope/项目时重新校验归属。 */
   async updateMemory(id: MemoryId, patch: MemoryPatch): Promise<MemoryRecord | undefined> {
     const current = await this.memories.get(id)
     if (current === undefined) return undefined
@@ -1620,8 +1423,7 @@ export class MemoryService extends TypertRemoteService {
     if (title === '') throw new Error('memory title must not be empty')
     const content = patch.content === undefined ? current.content : patch.content.trim()
     if (content === '') throw new Error('memory content must not be empty')
-    // 只在真的改正文时过闸门：历史库里可能存着超限的旧条目，
-    // 它们仍可归档、改标题，不该因为旧数据过不了新闸门而卡死。
+    // 只在真的改正文时过闸门：旧库里可能有超限的历史条目。
     if (patch.content !== undefined) {
       assertContentWithinLimit(content)
     }
@@ -1641,17 +1443,14 @@ export class MemoryService extends TypertRemoteService {
       updatedAt: Date.now(),
     }
     await this.memories.put(next.id, next)
-    // 标题 / 摘要 / 正文 / 标签 / 归档态都可能改变提及与共现，统一重算一次。
     await this.syncAutoEdges()
     return next
   }
 
-  /** 归档 / 恢复。 */
   async setArchived(id: MemoryId, archived: boolean): Promise<MemoryRecord | undefined> {
     return this.updateMemory(id, { archived })
   }
 
-  /** 删除一条。 */
   async removeMemory(id: MemoryId): Promise<boolean> {
     const current = await this.memories.get(id)
     if (current === undefined) return false
@@ -1660,7 +1459,6 @@ export class MemoryService extends TypertRemoteService {
     return true
   }
 
-  /** 重置（清空）某个作用域：全局记忆，或某一个项目的项目记忆。返回清空条数。 */
   async reset(scope: MemoryScope, projectPath?: string): Promise<number> {
     const pathKey = normalizeProjectKey(projectPath ?? '')
     const targets = this.collect().filter((record) => {
@@ -1672,7 +1470,7 @@ export class MemoryService extends TypertRemoteService {
       await this.memories.delete(record.id)
       await this.removeEdgesFor({ kind: 'memory', id: record.id })
     }
-    // 同一作用域的原文留档一起清：留档与条目是同一份东西的两段，只删一段会留下孤儿原文。
+    // 同作用域的留档一起清，否则留下孤儿原文。
     for (const doc of this.collectRaw()) {
       if (doc.scope !== scope) continue
       if (scope === 'project' && normalizeProjectKey(doc.projectPath) !== pathKey) continue
@@ -1681,12 +1479,7 @@ export class MemoryService extends TypertRemoteService {
     return targets.length
   }
 
-  /**
-   * 导入画像文本：解析分类与条目，按 mode 合并或覆盖目标作用域。
-   * 同一份文本内标题重复的条目先自行去重。
-   */
   async importText(input: MemoryImportInput): Promise<MemoryImportResult> {
-    // 面板导入 = 摄取管线 origin=import 的那条路（原文留档 + 行式解析 + 条目）。
     const result = await this.ingest({
       text: input.text,
       origin: 'import',
@@ -1702,10 +1495,7 @@ export class MemoryService extends TypertRemoteService {
     }
   }
 
-  /**
-   * 导出全库快照：所有作用域的记忆（含归档）+ 实体 + 边。
-   * 不分页、不筛选 —— 备份要的是完整，任何筛选都会让「恢复后少了东西」变得难以发现。
-   */
+  /** 全库快照：含归档记忆、实体与边，不分页不筛选。 */
   async exportBundle(): Promise<MemoryBundle> {
     return {
       schema: MEMORY_BUNDLE_SCHEMA,
@@ -1717,15 +1507,7 @@ export class MemoryService extends TypertRemoteService {
     }
   }
 
-  /**
-   * 从备份文件导入。
-   *
-   * - merge：按 id 合并，同 id 只在备份那条更新时覆盖（不会用旧数据盖掉新数据）；
-   * - replace：先清空记忆/实体/边再写入。
-   *
-   * replace **不动原文留档**（raw_documents）：备份载荷里根本没有它，删了就是纯丢数据。
-   * 代价是可能留下指向已删条目的孤儿原文 —— 那比丢数据轻。
-   */
+  /** replace 不动原文留档：备份载荷里没有它，删了就是丢数据。 */
   async importBundle(input: MemoryBundleImportInput): Promise<MemoryBundleImportResult> {
     const payload = validateMemoryBundle(input.bundle)
     let removed = 0
@@ -1750,10 +1532,7 @@ export class MemoryService extends TypertRemoteService {
       }
     }
     for (const entity of payload.entities) await this.entities.put(entity.id, entity)
-    // 边必须走 edgeKey 落盘：边 id 是 `memory:<id>|about|entity:<id>` 这类逻辑 id，
-    // 直接当 per-record 的路径键会被后端拒掉（"not path-safe"），于是整次导入在写完
-    // 记忆与实体之后炸掉 —— 表现就是「报错了，但记忆进来了、关联全没了」。
-    // 合并口径与上面 records 一致：同 id 只在备份那条更新时覆盖，别用旧备份盖掉库里的新边。
+    // 边必须走 edgeKey 落盘（逻辑 id 不是 path-safe 的键）。
     for (const edge of payload.edges) {
       const key = edgeKey(edge.id)
       const existing = await this.edges.get(key)
@@ -1763,10 +1542,6 @@ export class MemoryService extends TypertRemoteService {
     return { added, merged, removed }
   }
 
-  /**
-   * 整理（进化）：同作用域 + 同分类 + 同标题的重复条目合并成一条，
-   * 保留信息最完整者，正文与标签求并集。返回合并/回收条数。
-   */
   async tidy(): Promise<{ merged: number; removed: number }> {
     const groups = new Map<string, MemoryRecord[]>()
     for (const record of this.collect()) {
@@ -1790,7 +1565,7 @@ export class MemoryService extends TypertRemoteService {
       const tags = new Set(keeper.tags)
       for (const extra of bucket.slice(1)) {
         const candidate = mergeContent(content, extra.content)
-        // 合并不得顶破上限：顶破就保留现有正文（本来与 keeper 同标题），只并标签。
+        // 顶破上限就只并标签，正文不变。
         if (candidate.length <= MEMORY_CONTENT_LIMIT) content = candidate
         for (const tag of extra.tags) tags.add(tag)
       }
@@ -1820,10 +1595,7 @@ export class MemoryService extends TypertRemoteService {
   }
 }
 
-/**
- * Typert SRC 标记：手工复刻 @Remote 装饰器产物（同 alpha.3 稳定契约），
- * 避免对标准装饰器转译的依赖。client 端 descriptors 的 method 名必须与之完全一致。
- */
+/** 手工复刻 @Remote 产物；清单必须与 client 端 descriptors 的 method 名一致。 */
 const REMOTE_METHODS = '@deepseek-ai/dsh-typert-protocol/remote-methods'
 
 function markRemoteMethods(prototype: object, methods: readonly string[]): void {

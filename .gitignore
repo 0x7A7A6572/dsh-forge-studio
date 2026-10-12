@@ -8,3 +8,5 @@ docs/
 **/PLAN.md
 
 .superpowers/
+docs/superpowers/*
+.pnpm-store/*

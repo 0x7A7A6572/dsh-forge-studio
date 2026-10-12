@@ -1,13 +1,7 @@
 /**
- * DailyLogService —— ctx.dailyLog：把 daily-log 域封装成项目（数据源）/报告/模板
- * CRUD + 按项目聚合多渠道扫描。
- *
- * 数据模型：数据源 = 一个项目（工作区目录，路径唯一）。git / dsh / claude / codex
- * 只是「渠道」：扫描时对该项目路径自动探测命中哪些渠道，命中者全部聚合（同路径
- * 多源覆盖），活动统一归属项目名。
- *
- * 读取同步（storage-domain 权威内存态）；写入经后端持久化后生效。
- * 同时是 Typert Gateway 的 Remote 服务（SRC 标记模式，无 codegen）。
+ * ctx.dailyLog：项目（数据源）/报告/模板 CRUD + 按项目聚合多渠道扫描。
+ * 数据源 = 一个项目路径；git/dsh/claude/codex 是渠道，命中者全部聚合。
+ * 活动统一归属项目名；读取走内存态，写入持久化后生效。
  */
 
 import { randomUUID } from 'node:crypto'
@@ -33,22 +27,12 @@ import { DEFAULT_TEMPLATE_SKELETON, formatDateRange, parseTemplate } from './tem
 
 export interface DailyLogServiceConfig {
   readonly domain: Domain<typeof dailyLogDomain>
-  /** 渠道扫描器：git/claude/codex 内置；dsh 由 host 装配（ctx.workspaceRegistry+sessions）。 */
+  /** dsh 渠道由 host 装配。 */
   readonly channels?: readonly ChannelProvider[]
-  /**
-   * DSH 工作区项目读取（可选，host 装配自 ctx.workspaceRegistry）。
-   * 返回用户添加的项目目录（path/title/sessionIds）；未装配时缺省 []（候选组为空）。
-   */
   readonly workspaceProjects?: () => Promise<Array<{ path: string; title?: string; sessionIds: readonly string[] }>>
-  /**
-   * 读插件配置里与扫描/导出相关的偏好（outputDir / authorEmail）。
-   * dsh 0.1.7 起配置是插件 Config 的 volatile 引用（settings 分区写它），由 index.ts
-   * 注入这个读取点；未装配时按「未配置」处理。
-   */
   readonly readPreferences?: () => { readonly outputDir?: string; readonly authorEmail?: string }
 }
 
-/** 路径归一化 key（去尾斜杠 + 小写；用于路径唯一 / 候选 added / cwd 对比）。 */
 export function normalizePathKey(p: string): string {
   return p.trim().replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase()
 }
@@ -78,8 +62,7 @@ export class DailyLogService extends TypertRemoteService {
     this.reports = config.domain.table('reports')
     this.templates = config.domain.table('templates')
     this.channels = config.channels ?? []
-    // 内置默认模板（LLM 引导骨架）：不存在则种子，存在且为旧 mustache 内容则一次性覆盖。
-    // put 的同步段先写内存态（entries 立即可读），异步段负责持久化。
+    // put 的同步段先写内存态，异步段持久化，故此处 void。
     const now = Date.now()
     const builtin = Array.from(this.templates.entries(), ([, t]) => t).find((t) => t.isBuiltin)
     if (!builtin) {
@@ -97,8 +80,6 @@ export class DailyLogService extends TypertRemoteService {
     }
   }
 
-  /* ---------- 旧记录迁移（升级前 SourceRecord 带 kind 字段） ---------- */
-
   private ensureMigrated(): Promise<void> {
     if (this.migrated) return Promise.resolve()
     this.migrationPromise ??= this.runLegacyMigration()
@@ -106,9 +87,8 @@ export class DailyLogService extends TypertRemoteService {
   }
 
   /**
-   * 升级迁移：旧 kind=git 的记录（仓库路径）转为项目记录；
-   * kind=claude/codex/dsh 的旧记录（会话目录路径，不是工作区/项目）丢弃——
-   * 其会话内容会在对应项目的会话渠道里重新取到。幂等：仅处理仍带 kind 的记录。
+   * 旧记录迁移：kind=git 转项目记录，其余（会话目录）丢弃——内容可从渠道重取。
+   * 仅处理仍带 kind 的记录，故幂等。
    */
   private async runLegacyMigration(): Promise<void> {
     const legacy: Array<{ id: SourceId; record: SourceRecord & { kind?: unknown } }> = []
@@ -139,8 +119,6 @@ export class DailyLogService extends TypertRemoteService {
     this.migrated = true
   }
 
-  /* ---------- 项目（数据源） ---------- */
-
   async listSources(): Promise<SourceRecord[]> {
     await this.ensureMigrated()
     return Array.from(this.sources.entries(), ([, s]) => s)
@@ -156,7 +134,6 @@ export class DailyLogService extends TypertRemoteService {
     const now = Date.now()
     const record: SourceRecord = {
       id: brandString<SourceId>(randomUUID()),
-      // 项目类型：显式传入优先；缺省探测目录（含 .git → code，否则 other）。
       type: input.type ?? (await detectProjectType(path)),
       label: input.label?.trim() || defaultSourceLabel(path),
       path,
@@ -173,9 +150,6 @@ export class DailyLogService extends TypertRemoteService {
     return this.sources.delete(id)
   }
 
-  /* ---------- 渠道探测 ---------- */
-
-  /** 项目路径命中哪些渠道（git/dsh/claude/codex），供来源徽标展示。 */
   private async probeChannels(path: string): Promise<ProjectChannels> {
     const out: ProjectChannels = { git: false, dsh: false, claude: false, codex: false }
     for (const ch of this.channels) {
@@ -188,26 +162,18 @@ export class DailyLogService extends TypertRemoteService {
     return out
   }
 
-  /** 路径归一化后是否已在数据源中（候选 added 标记）。 */
   private hasSourcePath(path: string): boolean {
     const key = normalizePathKey(path)
     return Array.from(this.sources.entries(), ([, s]) => s).some((s) => normalizePathKey(s.path) === key)
   }
 
-  /* ---------- 候选发现 ---------- */
-
-  /**
-   * DSH 工作区项目候选：列出用户已添加的项目目录，标注类型/命中渠道/是否已添加。
-   * 数据源页 dsh 组进入即自动 async 拉取；未装配 workspaceRegistry 时为空。
-   */
   async listWorkspaceCandidates(): Promise<ProjectCandidate[]> {
     await this.ensureMigrated()
     const projects = (await this.config.workspaceProjects?.()) ?? []
     const out: ProjectCandidate[] = []
     for (const p of projects) {
       const channels = await this.probeChannels(p.path)
-      // dsh 会话渠道尚未实现：徽标如实置暗，detail 注明未接入（接入后改回 true）。
-      // channels.dsh = true
+      // dsh 渠道未接入，故徽标恒为暗。
       out.push({
         path: p.path,
         title: p.title || defaultSourceLabel(p.path),
@@ -220,10 +186,6 @@ export class DailyLogService extends TypertRemoteService {
     return out
   }
 
-  /**
-   * 扫描 Claude Code / Codex 会话库，按会话工作目录归集为项目候选
-   * （一键导入穿梭框数据源）。channels 标记 claude/codex 命中，added 标记已添加。
-   */
   async discoverSessionProjects(): Promise<ProjectCandidate[]> {
     await this.ensureMigrated()
     const found = await discoverSessionProjects()
@@ -242,15 +204,7 @@ export class DailyLogService extends TypertRemoteService {
     return out
   }
 
-  /* ---------- 扫描（按项目聚合多渠道） ---------- */
-
-  /**
-   * 扫描一个项目：对命中渠道全部取数（同路径多源合并覆盖），活动归属项目名。
-   * 某渠道异常不中断整体，错误汇入 truncatedHint。
-   *
-   * 作者过滤：项目级 author 优先，其次设置 authorEmail；均为空时由 git 渠道
-   * 回落到仓库 user.email —— 即默认只收本人提交（可显式填 `*` 放开全作者）。
-   */
+  /** 单渠道异常不中断整体，错误汇入 truncatedHint。 */
   async scanSource(id: SourceId, range: DateRange): Promise<ScanResult> {
     await this.ensureMigrated()
     const source = this.sources.get(id)
@@ -273,7 +227,6 @@ export class DailyLogService extends TypertRemoteService {
           range,
           ...(author !== undefined ? { author } : {}),
         })
-        // 归属统一覆盖为项目名、渠道由扫描器侧统一填充：同路径多源聚合到同一分组。
         entries.push(...got.map((e) => ({ ...e, sourceLabel: source.label, channel: ch.kind })))
       } catch (e) {
         errors.push(`[${ch.kind}] ${errText(e)}`)
@@ -286,8 +239,6 @@ export class DailyLogService extends TypertRemoteService {
       ...(errors.length > 0 ? { truncatedHint: errors.join('；') } : {}),
     }
   }
-
-  /* ---------- 报告 ---------- */
 
   listReports(): ReportRecord[] {
     return Array.from(this.reports.entries(), ([, r]) => r)
@@ -317,13 +268,12 @@ export class DailyLogService extends TypertRemoteService {
     return this.reports.delete(id)
   }
 
-  /** 按 id 取模板；缺省按 isDefault → isBuiltin 兜底。 */
   private resolveTemplate(templateId?: TemplateId): TemplateRecord | undefined {
     if (templateId !== undefined) return this.templates.get(templateId)
     return this.listTemplates().find((t) => t.isDefault) ?? this.listTemplates().find((t) => t.isBuiltin)
   }
 
-  /** 生成准备：解析模板引导（不扫描，agent 的 scan 结果已在上下文）。 */
+  /** 只解析模板，不扫描；scan 结果由 agent 侧提供。 */
   async prepareReport(input: ReportPrepareInput): Promise<ReportPrepareResult> {
     const ids = input.sourceIds ?? Array.from(this.sources.entries(), ([, s]) => s.id)
     const template = this.resolveTemplate(input.templateId)
@@ -341,7 +291,6 @@ export class DailyLogService extends TypertRemoteService {
     }
   }
 
-  /** 保存 LLM 撰写的报告正文到 reports 表。 */
   async saveReport(input: ReportSaveInput): Promise<ReportRecord> {
     const markdown = input.markdown.trim()
     if (!markdown) throw new Error('报告正文不能为空')
@@ -355,7 +304,7 @@ export class DailyLogService extends TypertRemoteService {
     })
   }
 
-  /** 把报告导出为 .md 文件到指定目录（缺省取设置 outputDir，再缺省 ~/daily-log-reports）。返回绝对路径。 */
+  /** 返回导出文件的绝对路径。 */
   async exportReport(id: ReportId, outputDir?: string): Promise<string> {
     const report = this.reports.get(id)
     if (!report) throw new Error('report ' + id + ' not found')
@@ -367,7 +316,7 @@ export class DailyLogService extends TypertRemoteService {
     return filePath
   }
 
-  /** 已配置导出目录（插件配置的 outputDir）；未配置或不可用时为空串。 */
+  /** 未配置或读取抛错时为空串。 */
   private configuredOutputDir(): string {
     try {
       const value = this.config.readPreferences?.()?.outputDir
@@ -377,7 +326,7 @@ export class DailyLogService extends TypertRemoteService {
     }
   }
 
-  /** 已配置的 git 作者过滤邮箱（插件配置的 authorEmail）；未配置或不可用时为空串。 */
+  /** 未配置或读取抛错时为空串。 */
   private configuredAuthorEmail(): string {
     try {
       const value = this.config.readPreferences?.()?.authorEmail
@@ -388,16 +337,14 @@ export class DailyLogService extends TypertRemoteService {
   }
 
   /**
-   * 解析项目生效的作者过滤值：项目级 author（`*`/`all` 由渠道解释为放开）优先，
-   * 其次设置 authorEmail；都为空时返回 undefined，交由 git 渠道回落仓库 user.email。
+   * 返回 undefined 时由 git 渠道回落仓库 user.email。
+   * `*` / `all` 由渠道解释为放开全作者。
    */
   private resolveGitAuthor(source: SourceRecord): string | undefined {
     const explicit = source.author?.trim()
     if (explicit) return explicit
     return this.configuredAuthorEmail() || undefined
   }
-
-  /* ---------- 模板 ---------- */
 
   listTemplates(): TemplateRecord[] {
     return Array.from(this.templates.entries(), ([, t]) => t)
@@ -476,8 +423,8 @@ export class DailyLogService extends TypertRemoteService {
 }
 
 /**
- * Typert SRC 标记：手工复刻 @Remote 装饰器产物（同 alpha.3 稳定契约），
- * 避免对标准装饰器转译的依赖。client 端 descriptors 的 method 名必须与之完全一致。
+ * 手工复刻 @Remote 装饰器产物，避免构建依赖标准装饰器转译。
+ * 下方 method 名必须与 client 端 descriptors 完全一致。
  */
 const REMOTE_METHODS = '@deepseek-ai/dsh-typert-protocol/remote-methods'
 
