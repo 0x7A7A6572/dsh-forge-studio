@@ -1,10 +1,10 @@
 /**
- * DSH 会话渠道：`<DSH_HOME>/sessions/--<key>--/session-<id>/session[.v3].jsonl[.zstd]`。
+ * DSH 会话渠道：`<DSH_HOME>/sessions/--<key>--/session-<id>/session[.v4].jsonl[.zstd]`。
  *
  * 三个关键事实（实测）：
  * 1. 会话目录名由 cwd 编码而来，这里**不依赖该编码**——统一用会话头部（首帧）的 `cwd` 字段做归属匹配；
  * 2. 正文是**追加写的多帧 zstd**：`zstdDecompressSync` 只解得出第一帧（头部元数据），必须逐帧解压；
- * 3. 同一会话可能同时存在 v0（session.jsonl.zstd）与 v3（session.v3.jsonl.zstd）两份镜像，优先 v3，否则重复计数。
+ * 3. 新旧格式同存时按候选表优先级只取一份，否则同一会话重复计数。
  *
  * 只采集 `user/message` 与 `assistant/message` 的 text 块：
  * `agent/inbox/spliced` 是 user/message 的副本、`assistant/chunk` 是 assistant/message 的流式副本、
@@ -24,8 +24,15 @@ import type { ChannelProvider } from './provider.ts'
 
 const ZSTD_MAGIC = Buffer.from([0x28, 0xb5, 0x2f, 0xfd])
 
-/** 同一会话目录的候选文件（按优先级）：v3 为迁移后权威，缺失才回退 v0。 */
-const SESSION_FILES = ['session.v3.jsonl.zstd', 'session.v3.jsonl', 'session.jsonl.zstd', 'session.jsonl']
+/** 同一会话目录的候选文件（按优先级）：v4 最新，v3 迁移后权威，缺失才回退 v0。 */
+const SESSION_FILES = [
+  'session.v4.jsonl.zstd',
+  'session.v4.jsonl',
+  'session.v3.jsonl.zstd',
+  'session.v3.jsonl',
+  'session.jsonl.zstd',
+  'session.jsonl',
+]
 
 /** 读头部 cwd 的窗口（首帧就是 session 行，8KB 足够）。 */
 const HEADER_BYTES = 8192
