@@ -541,9 +541,11 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
 
       <div style={taskAreaStyle} aria-label="任务状态">
         <div style={taskHeadRow}>
-          <label style={laneToggleLabel}>
+          <label className={styles.taskSwitch}>
             <input
               type="checkbox"
+              role="switch"
+              className={styles.taskSwitchInput}
               checked={taskOn}
               disabled={saving || runningReadOnly}
               onChange={(e) => {
@@ -552,10 +554,11 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                 if (next) setTaskDetailOpen(true);
                 markDirty();
               }}
-              style={{
-                accentColor: colorMeta.ring,
-                cursor: saving || runningReadOnly ? "default" : "pointer",
-              }}
+            />
+            <span
+              className={styles.taskSwitchTrack}
+              style={taskOn ? { background: colorMeta.ring } : undefined}
+              aria-hidden="true"
             />
             设为任务
           </label>
@@ -684,13 +687,13 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                     />
                   </span>
                   <span style={formBox}>
-                    <span style={formBoxLabel}>agent 预设：</span>
+                    <span style={formBoxLabel}>Agent 预设：</span>
                     <NoteSelect
                       variant="inline"
                       value={agentPreset}
                       disabled={saving}
-                      ariaLabel="任务 agent 预设"
-                      title="执行会话按哪个 agent 预设装配（宿主默认 = 不指定）"
+                      ariaLabel="任务 Agent 预设"
+                      title="执行会话按哪个 Agent 预设装配（宿主默认 = 不指定）"
                       onChange={(next) => {
                         setAgentPreset(next);
                         markDirty();
@@ -1174,6 +1177,7 @@ const contentStyle: React.CSSProperties = {
   color: NOTE_INK,
   background: "transparent",
   maxHeight: "70vh",
+  minHeight: "300px",
   overflowY: "auto",
 };
 const btnBase: React.CSSProperties = {
@@ -1245,15 +1249,6 @@ const taskHeadRow: React.CSSProperties = {
   alignItems: "center",
   gap: 8,
   flexWrap: "wrap",
-};
-const laneToggleLabel: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 5,
-  fontSize: 13,
-  color: NOTE_INK,
-  cursor: "pointer",
-  width: "fit-content",
 };
 const laneStatusPill: React.CSSProperties = {
   display: "inline-flex",
