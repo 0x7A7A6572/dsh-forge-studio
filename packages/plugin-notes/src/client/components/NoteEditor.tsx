@@ -1043,10 +1043,11 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
             }}
             style={{
               width: 24,
-              height: color === c.id ? 56 : 38,
-              background: `linear-gradient(180deg, ${c.paper} 30%, transparent)`,
+              height: color === c.id ? 38 : 24,
+              background: `linear-gradient(180deg, ${c.paper} 50%, transparent)`,
               opacity: saving ? 0.5 : 1,
               cursor: saving ? "default" : "pointer",
+              borderRadius: 0,
             }}
           />
         ))}
@@ -1176,7 +1177,7 @@ const colorPicker: React.CSSProperties = {
   top: "calc(100% + var(--paper-pad, 14px) + 0px)",
   display: "flex",
   alignItems: "flex-start",
-  gap: 6,
+  gap: 3,
   zIndex: 2,
 };
 const btnPrimary: React.CSSProperties = {
