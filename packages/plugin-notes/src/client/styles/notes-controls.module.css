@@ -1,0 +1,67 @@
+/* 下拉选择统一外观：主题令牌 + 渐变箭头，明暗两套都不硬编码色值。 */
+
+.select,
+.selectInline {
+  --note-select-arrow: var(--dsw-alias-label-tertiary);
+  appearance: none;
+  -webkit-appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--note-select-arrow) 50%),
+    linear-gradient(135deg, var(--note-select-arrow) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) calc(50% + 0.5px),
+    calc(100% - 9px) calc(50% + 0.5px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  outline: none;
+  cursor: pointer;
+}
+.select {
+  box-sizing: border-box;
+  height: 30px;
+  padding: 0 26px 0 10px;
+  font-size: 12.5px;
+  background-color: var(--dsw-alias-bg-layer-2);
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: 9px;
+  transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+.select:hover:not(:disabled) { background-color: var(--dsw-alias-interactive-bg-hover); border-color: var(--dsw-alias-border-l2); }
+.select:focus-visible {
+  border-color: var(--dsw-static-deepseek-450);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-static-deepseek-450) 16%, transparent);
+}
+.select:disabled { opacity: 0.5; cursor: default; }
+/* 组合框里的下拉：容器负责描边，这里只留文字与箭头。 */
+.selectInline {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding: 0 18px 0 2px;
+  font-size: 12.5px;
+  background-color: transparent;
+  border: none;
+  border-radius: 0;
+}
+.selectInline:focus-visible { outline: 2px solid var(--dsw-static-deepseek-450); outline-offset: -2px; }
+.selectInline:disabled { opacity: 0.5; cursor: default; }
+/* 纸面上的下拉跟纸走墨迹色，不跟宿主主题。 */
+.selectPaper {
+  --note-select-arrow: rgba(46, 42, 34, 0.6);
+  color: rgba(46, 42, 34, 0.9);
+  background-color: rgba(46, 42, 34, 0.06);
+  border-color: transparent;
+}
+.selectPaper:hover:not(:disabled) { background-color: rgba(46, 42, 34, 0.12); }
+.selectPaper:focus-visible { border-color: rgba(46, 42, 34, 0.5); box-shadow: none; }
+/* 展开列表在 Chromium 里读这两项。 */
+.select option,
+.selectInline option {
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+}
+@media (prefers-reduced-motion: reduce) {
+  .select { transition: none; }
+}

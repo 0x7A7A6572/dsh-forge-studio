@@ -61,6 +61,7 @@ import type { NoteEditorProps } from "../hooks/useNoteEditor.ts"
 import { LaneRunBlock } from "./NoteRunBlock.tsx"
 import { ToolButton, ToolDivider } from "./NoteToolButton.tsx"
 import styles from "../styles/notes-editor.module.css"
+import controls from "../styles/notes-controls.module.css"
 
 export type { NoteEditorProps, NoteSaveOptions, NoteTaskDraft } from "../hooks/useNoteEditor.ts"
 
@@ -324,7 +325,8 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
         </ToolButton>
         {fmt.codeBlock && (
           <select
-            className={styles.langSelect}
+            className={`${controls.select} ${controls.selectPaper}`}
+            style={{ maxWidth: 150, height: 28 }}
             title="代码语言（语法高亮）"
             aria-label="代码语言"
             disabled={saving}
@@ -627,7 +629,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                           markDirty();
                         }}
                         aria-label="任务状态"
-                        style={formBoxSelect}
+                        className={controls.selectInline} style={formBoxSelect}
                       >
                         {TASK_LANES.map((lane) => (
                           <option key={lane.status} value={lane.status}>
@@ -655,7 +657,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                       }}
                       aria-label="任务执行工作区"
                       title={workspaceSelectTitle}
-                      style={formBoxSelect}
+                      className={controls.selectInline} style={formBoxSelect}
                     >
                       <option value="">{workspacePlaceholder}</option>
                       {workspaceOptions.map((option) => (
@@ -681,7 +683,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                       }}
                       aria-label="任务执行模型"
                       title="执行会话用哪个模型（宿主默认 = 不指定，跑宿主自己的选择）"
-                      style={formBoxSelect}
+                      className={controls.selectInline} style={formBoxSelect}
                     >
                       <option value="">宿主默认</option>
                       {modelOptionGroups.map((group) => (
@@ -706,7 +708,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                       }}
                       aria-label="任务 agent 预设"
                       title="执行会话按哪个 agent 预设装配（宿主默认 = 不指定）"
-                      style={formBoxSelect}
+                      className={controls.selectInline} style={formBoxSelect}
                     >
                       <option value="">宿主默认</option>
                       {presetOptions.map((entry) => (
@@ -793,7 +795,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                           disabled={saving}
                           aria-label="定时周期"
                           title="定时周期"
-                          style={formBoxSelect}
+                          className={controls.selectInline} style={formBoxSelect}
                           onChange={(e) => {
                             setSchedule(makeSchedule(e.target.value as ScheduleMode, schedule));
                             markDirty();
@@ -830,7 +832,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                             disabled={saving}
                             aria-label="间隔单位"
                             title="间隔单位"
-                            style={formBoxSelect}
+                            className={controls.selectInline} style={formBoxSelect}
                             onChange={(e) => {
                               const next = e.target.value === "hour" ? "hour" : "min";
                               const minutes = schedule.everyMin ?? 30;
@@ -941,7 +943,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                           disabled={saving}
                           aria-label="有效期"
                           title="到期后日程自动停用"
-                          style={formBoxSelect}
+                          className={controls.selectInline} style={formBoxSelect}
                           onChange={(e) => {
                             if (e.target.value === "until") {
                               if (schedule.endAt === undefined) {
@@ -1393,15 +1395,9 @@ const formBoxLabel: React.CSSProperties = {
   whiteSpace: "nowrap",
 };
 const formBoxSelect: React.CSSProperties = {
-  ...taskControl,
   height: 32,
-  background: "transparent",
-  border: "none",
-  borderRadius: 0,
-  padding: "0 2px",
   flex: "1 1 auto",
   minWidth: 0,
-  cursor: "pointer",
 };
 const formBoxInput: React.CSSProperties = {
   ...taskControl,

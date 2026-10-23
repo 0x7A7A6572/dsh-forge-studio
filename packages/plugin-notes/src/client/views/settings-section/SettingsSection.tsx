@@ -26,6 +26,7 @@ import { SettingsRow } from '../../components/SettingsRow.tsx'
 import { SettingsSwitchRow } from '../../components/SettingsSwitchRow.tsx'
 import { pluginVersion } from '../../../version.ts'
 import { useSettingsSection, type SettingsGroup } from './useSettingsSection.ts'
+import controls from '../../styles/notes-controls.module.css'
 
 /** 注册侧注入的业务面（见 src/client/index.ts）。 */
 export interface NotesSettingsSectionInjected {
@@ -194,7 +195,8 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
                 disabled={!writable}
                 aria-label="便签板打开方式"
                 onChange={(e) => { void setOpenMode(e.target.value as NoteOpenMode) }}
-                style={inputStyle}
+                className={controls.select}
+                style={{ width: '100%' }}
               >
                 {OPEN_MODE_ITEMS.map((item) => (
                   <option key={item.value} value={item.value}>{item.label}</option>
@@ -339,7 +341,7 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
                     setPick(e.target.value)
                     setArmed(false)
                   }}
-                  style={selectStyle}
+                  className={controls.select}
                 >
                   {files.map((name) => (
                     <option key={name} value={name}>
@@ -493,18 +495,6 @@ const gridStyle: React.CSSProperties = {
   gridTemplateColumns: '1fr 1fr',
   gap: '10px 12px',
 }
-const inputStyle: React.CSSProperties = {
-  boxSizing: 'border-box',
-  width: '100%',
-  height: 30,
-  padding: '0 8px',
-  fontSize: 13,
-  color: t.labelPrimary,
-  background: t.surface,
-  border: `1px solid ${t.borderL2}`,
-  borderRadius: 8,
-  outline: 'none',
-}
 const statusStyle: React.CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
@@ -541,17 +531,6 @@ const restorePanelStyle: React.CSSProperties = {
   padding: 10,
   border: `1px dashed ${t.borderL2}`,
   borderRadius: 8,
-}
-const selectStyle: React.CSSProperties = {
-  boxSizing: 'border-box',
-  height: 30,
-  padding: '0 8px',
-  fontSize: 12,
-  color: t.labelPrimary,
-  background: t.surface,
-  border: `1px solid ${t.borderL2}`,
-  borderRadius: 8,
-  outline: 'none',
 }
 const btnBase: React.CSSProperties = {
   height: 28,
