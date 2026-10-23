@@ -1044,11 +1044,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
             style={{
               width: 24,
               height: color === c.id ? 56 : 38,
-              background: `linear-gradient(180deg, ${c.paper} 0%, color-mix(in srgb, ${c.ring} 72%, ${c.paper}) 100%)`,
-              boxShadow:
-                color === c.id
-                  ? `inset 0 0 0 2px ${t.labelPrimary}`
-                  : "inset 0 0 0 1px rgba(0, 0, 0, 0.08)",
+              background: `linear-gradient(0deg, ${c.paper} 0%, color-mix(in srgb, ${c.ring} 72%, ${c.paper}) 100%)`,
               opacity: saving ? 0.5 : 1,
               cursor: saving ? "default" : "pointer",
             }}
@@ -1176,7 +1172,7 @@ const btnGhost: React.CSSProperties = {
 };
 const colorPicker: React.CSSProperties = {
   position: "absolute",
-  left: 18,
+  right: 18,
   top: "calc(100% + var(--paper-pad, 14px) + 2px)",
   display: "flex",
   alignItems: "flex-start",
