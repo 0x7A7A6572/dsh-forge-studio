@@ -276,7 +276,7 @@ const cardStyle: React.CSSProperties = {
   minHeight: 64,
   padding: '9px 10px 7px 12px',
   borderRadius: 18,
-  borderWidth: 2,
+  borderWidth: 1,
   cursor: 'pointer',
   color: t.labelPrimary,
 }

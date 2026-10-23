@@ -139,7 +139,7 @@ const cardStyle: React.CSSProperties = {
   gap: 5,
   padding: '9px 10px 7px 12px',
   borderRadius: 18,
-  borderWidth: 2,
+  borderWidth: 1,
   borderStyle: 'solid',
   borderColor: 'var(--dsw-alias-border-l1)',
   backgroundColor: 'var(--dsw-alias-bg-layer-2)',
