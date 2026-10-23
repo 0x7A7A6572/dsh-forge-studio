@@ -69,6 +69,19 @@ export function sameModelName(raw: string): string {
   return canonicalModelName(raw.trim().toLowerCase().replace(ORG_PREFIX, ''))
 }
 
+/** 中继把路由分组名粘在模型名前：`auto-gpt-6-astra` 的 `auto-`。 */
+const ROUTE_TOKEN = /^[a-z0-9]+-/
+
+/**
+ * 去掉路由标记后的名字；单段且无数字的不算标记。
+ * @param name - 已规范化的模型名。
+ */
+function stripRouteToken(name: string): string | null {
+  const rest = name.replace(ROUTE_TOKEN, '')
+  if (rest === name || rest === '') return null
+  return rest.includes('-') || /\d/.test(rest) ? rest : null
+}
+
 /**
  * 查价候选（按优先级）：
  *
@@ -76,8 +89,9 @@ export function sameModelName(raw: string): string {
  * 2. `<provider>/<规范化 id>` —— 同 provider 下按规范化名字命中（剥组织前缀 / 日期后缀）
  * 3. `<provider>/<别名 canonical>` —— 手工绑定
  * 4. `*`/`<canonical>`、`*`/`<规范化>`、`*`/`<原始>` —— **同名兜底（跨 provider）**
- * 5. `<provider>`/`*` —— provider 兜底
- * 6. `*`/`*` —— 全局兜底
+ * 5. `*`/`<去路由标记>` —— 同名兜底的补充，见 `stripRouteToken`
+ * 6. `<provider>`/`*` —— provider 兜底
+ * 7. `*`/`*` —— 全局兜底
  *
  * 第 4 档是「同名模型就是同一个模型」的落点：经中转渠道（`ds-hk` / `modlens-ds-hk` / `openrouter`…）
  * 调官方模型时，provider 前缀在目录里根本不存在，只有**模型名**能对上内置目录价 ——
@@ -98,6 +112,8 @@ export function priceKeyCandidates(provider: string, rawModel: string, alias?: M
     out.push(`${p}/${alias.canonicalModel}`, `${WILDCARD}/${normalizeModelId(alias.canonicalModel)}`)
   }
   out.push(`${WILDCARD}/${normalized}`, `${WILDCARD}/${raw}`)
+  const unlabeled = stripRouteToken(normalized)
+  if (unlabeled !== null) out.push(`${WILDCARD}/${unlabeled}`)
   out.push(`${p}/${WILDCARD}`, `${WILDCARD}/${WILDCARD}`)
   return [...new Set(out)]
 }
