@@ -158,8 +158,8 @@ const overlayStyle: React.CSSProperties = {
   transition: 'padding-right 300ms cubic-bezier(0.22, 0.61, 0.36, 1)',
 }
 /**
- * 便签纸卡片：无边框，背景 = 当前纸色（pastel），浅底墨迹文字。
- * 阴影保留以与遮罩分层（浅纸卡在遮罩上仍需轻投影），用宿主 shadow-lv3 令牌随主题。
+ * 便签纸卡片：主题表面底 + 便签环色角部渐变，2px 主题描边。
+ * 阴影保留以与遮罩分层，用宿主 shadow-lv3 令牌随主题。
  */
 const cardStyle = (ring: string): React.CSSProperties => ({
   margin: 'auto',
@@ -170,8 +170,8 @@ const cardStyle = (ring: string): React.CSSProperties => ({
   gap: 8,
   padding: 'var(--paper-pad, 14px)',
   backgroundColor: 'var(--dsw-alias-bg-layer-2)',
-  backgroundImage: `linear-gradient(327deg, color-mix(in srgb, ${ring} 26%, transparent), transparent 24%)`,
-  border: `2px solid color-mix(in srgb, ${ring} 28%, transparent)`,
+  backgroundImage: `linear-gradient(327deg, ${ring}, transparent 20%)`,
+  border: '2px solid var(--dsw-alias-border-l1)',
   borderRadius: 18,
   boxShadow: t.shadowLv3,
 })

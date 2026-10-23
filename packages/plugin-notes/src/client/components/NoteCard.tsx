@@ -52,8 +52,7 @@ export function NoteCard(props: NoteCardProps): JSX.Element {
         }}
         style={{
           ...cardStyle,
-          backgroundImage: `linear-gradient(327deg, color-mix(in srgb, ${meta.ring} 34%, transparent), transparent 22%)`,
-          borderColor: `color-mix(in srgb, ${meta.ring} 30%, transparent)`,
+          backgroundImage: `linear-gradient(327deg, ${meta.ring}, transparent 20%)`,
           ...(note.pinned && !note.archived ? { borderTopRightRadius: 0 } : {}),
         }}
       >
@@ -138,9 +137,11 @@ const cardStyle: React.CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   gap: 5,
-  padding: '11px 12px 8px',
+  padding: '9px 10px 7px 12px',
   borderRadius: 18,
-  border: '2px solid transparent',
+  borderWidth: 2,
+  borderStyle: 'solid',
+  borderColor: 'var(--dsw-alias-border-l1)',
   backgroundColor: 'var(--dsw-alias-bg-layer-2)',
   boxShadow: '0 2px 10px rgba(0, 0, 0, 0.10)',
   color: t.labelPrimary,
