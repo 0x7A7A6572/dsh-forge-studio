@@ -203,7 +203,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
           onClick={requestClose}
           style={headCloseBtn}
         >
-          <X size={15} />
+          <X size={20} />
         </button>
       </div>
 

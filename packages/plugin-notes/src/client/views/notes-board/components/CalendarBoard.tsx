@@ -210,8 +210,9 @@ const cellStyle: React.CSSProperties = {
   overflow: 'hidden',
 }
 const cellDayStyle: React.CSSProperties = {
-  fontSize: 12,
+  fontSize: 24,
   lineHeight: 1.2,
+  fontWeight: 600,
   fontVariantNumeric: 'tabular-nums',
 }
 const dotsStyle: React.CSSProperties = {
