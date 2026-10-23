@@ -49,14 +49,11 @@
 .selectValue { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .selectCaret {
   flex: none;
+  display: block;
   width: 10px;
-  height: 5px;
-  background-image:
-    linear-gradient(45deg, transparent 50%, var(--note-select-arrow) 50%),
-    linear-gradient(135deg, var(--note-select-arrow) 50%, transparent 50%);
-  background-position: 0 0, 5px 0;
-  background-size: 5px 5px, 5px 5px;
-  background-repeat: no-repeat;
+  height: 6px;
+  color: var(--note-select-arrow);
+  overflow: visible;
 }
 
 /* 列表面板：portal 到 body，主题表面 + 圆角阴影。 */

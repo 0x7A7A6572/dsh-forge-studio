@@ -185,7 +185,12 @@ export function NoteSelect(props: NoteSelectProps): JSX.Element {
         onKeyDown={onTriggerKeyDown}
       >
         <span className={controls.selectValue}>{current?.label ?? ''}</span>
-        <span className={controls.selectCaret} aria-hidden="true" />
+        <svg className={controls.selectCaret} viewBox="0 0 10 6" width="10" height="6" aria-hidden="true" focusable="false">
+          <path
+            d="M2.1 1 L7.9 1 Q9 1 8.2 1.76 L5.8 4.04 Q5 4.8 4.2 4.04 L1.8 1.76 Q1 1 2.1 1 Z"
+            fill="currentColor"
+          />
+        </svg>
       </button>
       {open && pos !== null
         ? (createPortal(
