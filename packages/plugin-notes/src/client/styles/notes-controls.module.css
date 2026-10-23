@@ -26,7 +26,7 @@
 
 /* 组合框里的下拉：容器负责描边。 */
 .selectTriggerInline {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   height: 100%;
   padding: 0 2px;
   gap: 6px;

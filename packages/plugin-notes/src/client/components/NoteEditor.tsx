@@ -637,8 +637,10 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                   </span>
                   {/* 工作区必选，候选只来自最近会话用过的目录（不给手填新路径）。 */}
                   <span style={{ ...formBox, ...(taskWorkspaceMissing ? formBoxDanger : {}) }}>
-                    <Folder size={13} style={formBoxIcon} aria-hidden="true" />
-                    <span style={formBoxLabel}>工作空间：</span>
+                    <span style={formLabelGroup}>
+                      <Folder size={13} style={formBoxIcon} aria-hidden="true" />
+                      <span style={formBoxLabel}>工作空间：</span>
+                    </span>
                     <NoteSelect
                       variant="inline"
                       value={workspace}
@@ -787,6 +789,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                       {schedule.mode === "interval" && (
                         <span style={formBox}>
                           <span style={formBoxLabel}>每隔：</span>
+                          <span style={formOperators}>
                           <input
                             type="number"
                             min={1}
@@ -821,6 +824,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                               markDirty();
                             }}
                           />
+                          </span>
                         </span>
                       )}
                       {schedule.mode === "once" && (
@@ -862,6 +866,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                       {schedule.mode === "monthly" && (
                         <span style={formBox}>
                           <span style={formBoxLabel}>每月：</span>
+                          <span style={formOperators}>
                           <input
                             type="number"
                             min={1}
@@ -880,6 +885,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                             }}
                           />
                           <span style={formBoxLabel}>日</span>
+                          </span>
                         </span>
                       )}
                       {schedule.mode === "weekly" && (
@@ -912,6 +918,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                       )}
                       <span style={formBox}>
                         <span style={formBoxLabel}>有效期：</span>
+                        <span style={formOperators}>
                         <NoteSelect
                           variant="inline"
                           value={schedule.endAt !== undefined ? "until" : "forever"}
@@ -946,6 +953,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                             }}
                           />
                         )}
+                        </span>
                       </span>
                     </div>
                   )}
@@ -1230,6 +1238,7 @@ const taskAreaStyle: React.CSSProperties = {
   padding: "8px 10px",
   borderRadius: 10,
   background: PAPER_DEEP_TINT,
+  width: "fit-content",
 };
 const taskHeadRow: React.CSSProperties = {
   display: "flex",
@@ -1344,7 +1353,8 @@ const formRow: React.CSSProperties = {
 const formBox: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
-  gap: 3,
+  justifyContent: "space-between",
+  gap: 8,
   height: 34,
   padding: "0 2px 0 11px",
   background: "var(--dsw-alias-bg-layer-3, var(--dsw-alias-bg-layer-2))",
@@ -1374,9 +1384,23 @@ const formBoxInput: React.CSSProperties = {
   border: "none",
   borderRadius: 0,
   padding: 0,
-  flex: "1 1 60px",
-  minWidth: 36,
+  flex: "0 1 auto",
+  minWidth: 32,
   color: t.labelPrimary,
+};
+const formLabelGroup: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 5,
+  flex: "0 0 auto",
+  minWidth: 0,
+};
+const formOperators: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  flex: "0 1 auto",
+  minWidth: 0,
 };
 const scheduleChips: React.CSSProperties = {
   display: "inline-flex",
