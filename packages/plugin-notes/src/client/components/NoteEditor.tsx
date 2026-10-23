@@ -59,9 +59,9 @@ import {
 import { useNoteEditor } from "../hooks/useNoteEditor.ts"
 import type { NoteEditorProps } from "../hooks/useNoteEditor.ts"
 import { LaneRunBlock } from "./NoteRunBlock.tsx"
+import { NoteSelect } from "./NoteSelect.tsx"
 import { ToolButton, ToolDivider } from "./NoteToolButton.tsx"
 import styles from "../styles/notes-editor.module.css"
-import controls from "../styles/notes-controls.module.css"
 
 export type { NoteEditorProps, NoteSaveOptions, NoteTaskDraft } from "../hooks/useNoteEditor.ts"
 
@@ -324,26 +324,22 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
           <CodeXml size={16} />
         </ToolButton>
         {fmt.codeBlock && (
-          <select
-            className={`${controls.select} ${controls.selectPaper}`}
-            style={{ maxWidth: 150, height: 28 }}
+          <NoteSelect
+            variant="paper"
+            maxWidth={150}
+            style={{ height: 28 }}
+            ariaLabel="代码语言"
             title="代码语言（语法高亮）"
-            aria-label="代码语言"
             disabled={saving}
             value={selectLang}
-            onChange={(e) => setCodeLanguage(e.target.value)}
-          >
-            {CODE_LANGUAGES.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-            {unknownLang !== null && (
-              <option key={unknownLang} value={unknownLang}>
-                {codeLanguageLabel(unknownLang)}（未收录）
-              </option>
-            )}
-          </select>
+            onChange={setCodeLanguage}
+            options={[
+              ...CODE_LANGUAGES.map((o) => ({ value: o.value, label: o.label })),
+              ...(unknownLang !== null
+                ? [{ value: unknownLang, label: `${codeLanguageLabel(unknownLang)}（未收录）` }]
+                : []),
+            ]}
+          />
         )}
         <ToolDivider />
         <span style={popAnchor} data-fs-tool-pop>
@@ -621,22 +617,17 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                   <span style={formBox}>
                     <span style={formBoxLabel}>状态：</span>
                     {!runningReadOnly && (
-                      <select
+                      <NoteSelect
+                        variant="inline"
                         value={taskStatus}
                         disabled={saving}
-                        onChange={(e) => {
-                          setTaskStatus(e.target.value as TaskStatus);
+                        ariaLabel="任务状态"
+                        onChange={(next) => {
+                          setTaskStatus(next as TaskStatus);
                           markDirty();
                         }}
-                        aria-label="任务状态"
-                        className={controls.selectInline} style={formBoxSelect}
-                      >
-                        {TASK_LANES.map((lane) => (
-                          <option key={lane.status} value={lane.status}>
-                            {lane.label}
-                          </option>
-                        ))}
-                      </select>
+                        options={TASK_LANES.map((lane) => ({ value: lane.status, label: lane.label }))}
+                      />
                     )}
                     {runningReadOnly && props.initialLane !== undefined && (
                       <span style={laneStatusPill} title="当前状态（执行中不可改）">
@@ -648,24 +639,21 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                   <span style={{ ...formBox, ...(taskWorkspaceMissing ? formBoxDanger : {}) }}>
                     <Folder size={13} style={formBoxIcon} aria-hidden="true" />
                     <span style={formBoxLabel}>工作空间：</span>
-                    <select
+                    <NoteSelect
+                      variant="inline"
                       value={workspace}
                       disabled={saving}
-                      onChange={(e) => {
-                        setWorkspace(e.target.value);
+                      ariaLabel="任务执行工作区"
+                      title={workspaceSelectTitle}
+                      onChange={(next) => {
+                        setWorkspace(next);
                         markDirty();
                       }}
-                      aria-label="任务执行工作区"
-                      title={workspaceSelectTitle}
-                      className={controls.selectInline} style={formBoxSelect}
-                    >
-                      <option value="">{workspacePlaceholder}</option>
-                      {workspaceOptions.map((option) => (
-                        <option key={option.path} value={option.path} title={option.path}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
+                      options={[
+                        { value: "", label: workspacePlaceholder },
+                        ...workspaceOptions.map((option) => ({ value: option.path, label: option.label, title: option.path })),
+                      ]}
+                    />
                   </span>
                 </div>
                 {taskWorkspaceMissing && (
@@ -674,49 +662,42 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                 <div style={formRow}>
                   <span style={formBox}>
                     <span style={formBoxLabel}>模型：</span>
-                    <select
+                    <NoteSelect
+                      variant="inline"
                       value={modelValue}
                       disabled={saving}
-                      onChange={(e) => {
-                        setModelValue(e.target.value);
+                      ariaLabel="任务执行模型"
+                      title="执行会话用哪个模型（宿主默认 = 不指定，跑宿主自己的选择）"
+                      onChange={(next) => {
+                        setModelValue(next);
                         markDirty();
                       }}
-                      aria-label="任务执行模型"
-                      title="执行会话用哪个模型（宿主默认 = 不指定，跑宿主自己的选择）"
-                      className={controls.selectInline} style={formBoxSelect}
-                    >
-                      <option value="">宿主默认</option>
-                      {modelOptionGroups.map((group) => (
-                        <optgroup key={group.id} label={group.label}>
-                          {group.options.map((option) => (
-                            <option key={option.key} value={option.key}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </optgroup>
-                      ))}
-                    </select>
+                      groups={[
+                        { label: "", options: [{ value: "", label: "宿主默认" }] },
+                        ...modelOptionGroups.map((group) => ({
+                          label: group.label,
+                          options: group.options.map((option) => ({ value: option.key, label: option.label })),
+                        })),
+                      ]}
+                    />
                   </span>
                   <span style={formBox}>
                     <span style={formBoxLabel}>agent 预设：</span>
-                    <select
+                    <NoteSelect
+                      variant="inline"
                       value={agentPreset}
                       disabled={saving}
-                      onChange={(e) => {
-                        setAgentPreset(e.target.value);
+                      ariaLabel="任务 agent 预设"
+                      title="执行会话按哪个 agent 预设装配（宿主默认 = 不指定）"
+                      onChange={(next) => {
+                        setAgentPreset(next);
                         markDirty();
                       }}
-                      aria-label="任务 agent 预设"
-                      title="执行会话按哪个 agent 预设装配（宿主默认 = 不指定）"
-                      className={controls.selectInline} style={formBoxSelect}
-                    >
-                      <option value="">宿主默认</option>
-                      {presetOptions.map((entry) => (
-                        <option key={entry.id} value={entry.id}>
-                          {entry.name}
-                        </option>
-                      ))}
-                    </select>
+                      options={[
+                        { value: "", label: "宿主默认" },
+                        ...presetOptions.map((entry) => ({ value: entry.id, label: entry.name })),
+                      ]}
+                    />
                   </span>
                 </div>
                 {/* nextAt 由 host 保存时重算写回，这里只编辑与预览；便签正文即提示词。 */}
@@ -790,23 +771,18 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                     <div style={scheduleRow}>
                       <span style={formBox}>
                         <span style={formBoxLabel}>重复：</span>
-                        <select
+                        <NoteSelect
+                          variant="inline"
                           value={schedule.mode}
                           disabled={saving}
-                          aria-label="定时周期"
+                          ariaLabel="定时周期"
                           title="定时周期"
-                          className={controls.selectInline} style={formBoxSelect}
-                          onChange={(e) => {
-                            setSchedule(makeSchedule(e.target.value as ScheduleMode, schedule));
+                          onChange={(next) => {
+                            setSchedule(makeSchedule(next as ScheduleMode, schedule));
                             markDirty();
                           }}
-                        >
-                          {SCHEDULE_MODES.map((mode) => (
-                            <option key={mode} value={mode}>
-                              {SCHEDULE_MODE_LABELS[mode]}
-                            </option>
-                          ))}
-                        </select>
+                          options={SCHEDULE_MODES.map((mode) => ({ value: mode, label: SCHEDULE_MODE_LABELS[mode] }))}
+                        />
                       </span>
                       {schedule.mode === "interval" && (
                         <span style={formBox}>
@@ -827,14 +803,15 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                               markDirty();
                             }}
                           />
-                          <select
+                          <NoteSelect
+                            variant="inline"
                             value={intervalUnit}
                             disabled={saving}
-                            aria-label="间隔单位"
+                            ariaLabel="间隔单位"
                             title="间隔单位"
-                            className={controls.selectInline} style={formBoxSelect}
-                            onChange={(e) => {
-                              const next = e.target.value === "hour" ? "hour" : "min";
+                            options={[{ value: "min", label: "分钟" }, { value: "hour", label: "小时" }]}
+                            onChange={(rawNext) => {
+                              const next = rawNext === "hour" ? "hour" : "min";
                               const minutes = schedule.everyMin ?? 30;
                               setIntervalUnit(next);
                               setSchedule({
@@ -843,10 +820,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                               });
                               markDirty();
                             }}
-                          >
-                            <option value="min">分钟</option>
-                            <option value="hour">小时</option>
-                          </select>
+                          />
                         </span>
                       )}
                       {schedule.mode === "once" && (
@@ -938,14 +912,15 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                       )}
                       <span style={formBox}>
                         <span style={formBoxLabel}>有效期：</span>
-                        <select
+                        <NoteSelect
+                          variant="inline"
                           value={schedule.endAt !== undefined ? "until" : "forever"}
                           disabled={saving}
-                          aria-label="有效期"
+                          ariaLabel="有效期"
                           title="到期后日程自动停用"
-                          className={controls.selectInline} style={formBoxSelect}
-                          onChange={(e) => {
-                            if (e.target.value === "until") {
+                          options={[{ value: "forever", label: "长期有效" }, { value: "until", label: "到期停用" }]}
+                          onChange={(next) => {
+                            if (next === "until") {
                               if (schedule.endAt === undefined) {
                                 setSchedule({ ...schedule, endAt: defaultEndAt(Date.now()) });
                               }
@@ -955,10 +930,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                             }
                             markDirty();
                           }}
-                        >
-                          <option value="forever">长期有效</option>
-                          <option value="until">到期停用</option>
-                        </select>
+                        />
                         {schedule.endAt !== undefined && (
                           <input
                             type="date"
@@ -1272,6 +1244,7 @@ const laneToggleLabel: React.CSSProperties = {
   fontSize: 13,
   color: NOTE_INK,
   cursor: "pointer",
+  width: "fit-content",
 };
 const laneStatusPill: React.CSSProperties = {
   display: "inline-flex",
@@ -1393,11 +1366,6 @@ const formBoxLabel: React.CSSProperties = {
   color: t.labelTertiary,
   flex: "none",
   whiteSpace: "nowrap",
-};
-const formBoxSelect: React.CSSProperties = {
-  height: 32,
-  flex: "1 1 auto",
-  minWidth: 0,
 };
 const formBoxInput: React.CSSProperties = {
   ...taskControl,
