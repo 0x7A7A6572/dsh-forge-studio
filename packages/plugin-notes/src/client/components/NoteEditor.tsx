@@ -985,46 +985,37 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
       <div
         style={{
           display: "flex",
-          gap: 0,
-          alignItems: "flex-end",
-          flexWrap: "wrap",
-          position: "absolute",
-          bottom: 0,
-          left: '-5px',
-        }}
-      >
-        {NOTE_COLOR_PALETTE.map((c) => (
-          <button
-            key={c.id}
-            type="button"
-            className={styles.color}
-            title={`${c.label}色便签`}
-            aria-label={`设为${c.label}色`}
-            aria-pressed={color === c.id}
-            disabled={saving}
-            onClick={() => {
-              setColor(c.id);
-              props.onColorChange?.(c.id);
-              markDirty();
-            }}
-            style={{
-              ...colorDot,
-              background: c.paper,
-              height: color === c.id ? 40 : 30,
-              ...(saving ? { cursor: "default", opacity: 0.5 } : {}),
-            }}
-          />
-        ))}
-      </div>
-
-      <div
-        style={{
-          display: "flex",
           gap: 8,
           alignItems: "center",
           justifyContent: "flex-end",
         }}
       >
+        <span style={colorPicker} role="group" aria-label="便签颜色">
+          {NOTE_COLOR_PALETTE.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              className={styles.color}
+              title={`${c.label}色便签`}
+              aria-label={`设为${c.label}色`}
+              aria-pressed={color === c.id}
+              disabled={saving}
+              onClick={() => {
+                setColor(c.id);
+                props.onColorChange?.(c.id);
+                markDirty();
+              }}
+              style={{
+                ...colorDot,
+                background: c.paper,
+                ...(color === c.id
+                  ? { boxShadow: `0 0 0 2px var(--dsw-alias-bg-layer-2), 0 0 0 4px ${t.labelPrimary}` }
+                  : {}),
+                ...(saving ? { cursor: "default", opacity: 0.5 } : {}),
+              }}
+            />
+          ))}
+        </span>
         {props.autoSave === true && (
           <span
             role="status"
@@ -1180,11 +1171,18 @@ const btnGhost: React.CSSProperties = {
   background: "transparent",
 };
 const colorDot: React.CSSProperties = {
-  width: 20,
-  height: 20,
+  width: 18,
+  height: 18,
   padding: 0,
   border: "none",
+  borderRadius: 9,
   cursor: "pointer",
+};
+const colorPicker: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  flex: "none",
 };
 const btnPrimary: React.CSSProperties = {
   ...btnBase,
