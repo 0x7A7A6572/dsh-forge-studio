@@ -110,7 +110,7 @@ export function EditorPageDialog(props: EditorPageDialogProps): JSX.Element {
     >
       <div
         className={styles.dialog}
-        style={cardStyle(paperMeta.paper)}
+        style={cardStyle(paperMeta.paper, paperMeta.ring)}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-label={editing ? '编辑便签' : '新建便签'}
@@ -162,7 +162,7 @@ const overlayStyle: React.CSSProperties = {
  * 便签纸卡片：无边框，背景 = 当前纸色（pastel），浅底墨迹文字。
  * 阴影保留以与遮罩分层（浅纸卡在遮罩上仍需轻投影），用宿主 shadow-lv3 令牌随主题。
  */
-const cardStyle = (paper: string): React.CSSProperties => ({
+const cardStyle = (paper: string, ring: string): React.CSSProperties => ({
   margin: 'auto',
   width: 'min(680px, 100%)',
   boxSizing: 'border-box',
@@ -170,7 +170,9 @@ const cardStyle = (paper: string): React.CSSProperties => ({
   flexDirection: 'column',
   gap: 8,
   padding: 'var(--paper-pad, 14px)',
-  background: paper,
-  borderRadius: 12,
+  backgroundColor: paper,
+  backgroundImage: `linear-gradient(327deg, color-mix(in srgb, ${ring} 26%, transparent), transparent 24%)`,
+  border: `2px solid color-mix(in srgb, ${ring} 28%, transparent)`,
+  borderRadius: 18,
   boxShadow: t.shadowLv3,
 })
