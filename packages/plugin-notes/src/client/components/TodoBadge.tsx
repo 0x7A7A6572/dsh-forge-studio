@@ -6,11 +6,10 @@
  * 与 TaskBadge（便签级任务状态，见 core/task-lanes.ts）不是一回事：那只表示便签被
  * 标记成任务、位于泳道哪一列；本徽章只读正文内容，不涉及任何状态机。
  *
- * 形态：墨迹系小胶囊，浮在浅 pastel 纸色上，颜色一律用 NOTE_INK 墨迹族（纸底固定浅，
- * 深字对比恒成立），全部内联样式，无需额外注入 CSS。
+ * 形态：主题色小胶囊，颜色走宿主主题令牌（明暗主题都成立），全部内联样式。
  */
 
-import { NOTE_INK, NOTE_INK_MUTED } from '../core/note-colors.ts'
+import { t } from '../core/theme-tokens.ts'
 
 export interface TodoBadgeProps {
   /** 已勾选项数。 */
@@ -42,8 +41,8 @@ export function TodoBadge(props: TodoBadgeProps): JSX.Element {
         lineHeight: 1,
         letterSpacing: 0.2,
         whiteSpace: 'nowrap',
-        color: allDone ? NOTE_INK_MUTED : NOTE_INK,
-        background: allDone ? 'rgba(0, 0, 0, 0.055)' : 'rgba(0, 0, 0, 0.085)',
+        color: allDone ? t.labelTertiary : t.labelSecondary,
+        background: allDone ? t.hoverBg : t.activeBg,
       }}
     >
       {allDone && <span aria-hidden="true" style={{ fontSize: 10, lineHeight: 1 }}>✓</span>}
