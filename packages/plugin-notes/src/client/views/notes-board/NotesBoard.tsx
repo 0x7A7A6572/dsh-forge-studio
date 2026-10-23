@@ -60,6 +60,8 @@ export function NotesBoard(props: NotesBoardProps): JSX.Element {
     toggleArchive,
     remove,
     move,
+    setDue,
+    toggleSchedule,
     execute,
     reset,
     createTask,
@@ -167,6 +169,8 @@ export function NotesBoard(props: NotesBoardProps): JSX.Element {
           onRemove={remove}
           onCreate={createNote}
           onMove={move}
+          onSetDue={setDue}
+          onToggleSchedule={toggleSchedule}
           onExecute={execute}
           onReset={reset}
           onCreateTask={createTask}

@@ -183,6 +183,7 @@ function parseOptionalSchedule(value: unknown): NoteScheduleInput | null | undef
   const at = optionalNumber(value.at, 'schedule.at')
   const everyMin = optionalNumber(value.everyMin, 'schedule.everyMin')
   const monthDay = optionalNumber(value.monthDay, 'schedule.monthDay')
+  const endAt = optionalNumber(value.endAt, 'schedule.endAt')
   const nextAt = optionalNumber(value.nextAt, 'schedule.nextAt')
   const lastFiredAt = optionalNumber(value.lastFiredAt, 'schedule.lastFiredAt')
   const failureStreak = optionalNumber(value.failureStreak, 'schedule.failureStreak')
@@ -195,6 +196,7 @@ function parseOptionalSchedule(value: unknown): NoteScheduleInput | null | undef
     ...(value.time !== undefined ? { time: value.time } : {}),
     ...(weekdays !== undefined ? { weekdays } : {}),
     ...(monthDay !== undefined ? { monthDay } : {}),
+    ...(endAt !== undefined ? { endAt } : {}),
     ...(nextAt !== undefined ? { nextAt } : {}),
     ...(lastFiredAt !== undefined ? { lastFiredAt } : {}),
     ...(value.lastResult !== undefined ? { lastResult: value.lastResult } : {}),
@@ -211,6 +213,7 @@ const createInputSchema: TypertSchema<NoteCreateInput> = {
     if (value.agentPreset !== undefined && typeof value.agentPreset !== 'string') {
       throw new Error('expected agentPreset?: string')
     }
+    if (value.dueAt !== undefined && typeof value.dueAt !== 'number') throw new Error('expected dueAt?: number')
     const schedule = parseOptionalSchedule(value.schedule)
     if (schedule === null) throw new Error('expected schedule object')
     const model = parseOptionalModel(value.model)
@@ -220,6 +223,7 @@ const createInputSchema: TypertSchema<NoteCreateInput> = {
       color: parseOptionalColor(value.color),
       ...(value.laneStatus !== undefined ? { laneStatus: parseOptionalTaskStatus(value.laneStatus) } : {}),
       ...(value.workspace !== undefined ? { workspace: value.workspace } : {}),
+      ...(value.dueAt !== undefined ? { dueAt: value.dueAt } : {}),
       ...(value.agentPreset !== undefined ? { agentPreset: value.agentPreset } : {}),
       ...(model !== undefined ? { model } : {}),
       ...(schedule !== undefined ? { schedule } : {}),
@@ -236,6 +240,8 @@ const updateInputSchema: TypertSchema<NoteUpdateInput> = {
     if (value.archived !== undefined && typeof value.archived !== 'boolean') throw new Error('expected archived?: boolean')
     // workspace 空串 = 清除（host trim 后为空即删字段）。
     if (value.workspace !== undefined && typeof value.workspace !== 'string') throw new Error('expected workspace?: string')
+    if (value.dueAt !== undefined && value.dueAt !== null && typeof value.dueAt !== 'number') {      throw new Error('expected dueAt?: number | null')
+    }
     const schedule = parseOptionalSchedule(value.schedule)
     return {
       title: value.title,
@@ -245,6 +251,7 @@ const updateInputSchema: TypertSchema<NoteUpdateInput> = {
       color: parseOptionalColor(value.color),
       ...(value.lane !== undefined ? { lane: parseOptionalLane(value.lane) } : {}),
       ...(value.workspace !== undefined ? { workspace: value.workspace } : {}),
+      ...(value.dueAt !== undefined ? { dueAt: value.dueAt } : {}),
       ...(schedule !== undefined ? { schedule } : {}),
     }
   },

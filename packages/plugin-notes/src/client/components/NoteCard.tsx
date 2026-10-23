@@ -9,6 +9,7 @@ import type { NoteRecord } from '../../types.ts'
 import { NOTE_INK, NOTE_INK_MUTED, noteColorMeta } from '../core/note-colors.ts'
 import { mdSnippet, firstImageUrl, todoProgress } from '../core/markdown-text.ts'
 import { fmtDateTime, fmtRelative } from '../core/time-text.ts'
+import { dueTone, fmtDueChip } from '../core/due-date.ts'
 import { TaskBadge } from './TaskBadge.tsx'
 import { TodoBadge } from './TodoBadge.tsx'
 import { PinnedCornerMark } from './PinnedCornerMark.tsx'
@@ -81,7 +82,19 @@ export function NoteCard(props: NoteCardProps): JSX.Element {
           <span style={{ ...cardSnippet, color: NOTE_INK_MUTED, fontStyle: 'italic' }}>（无正文）</span>
         )}
         <span style={cardFooter}>
-          <time style={{ color: NOTE_INK_MUTED }} title={fmtDateTime(note.updatedAt)}>{fmtRelative(note.updatedAt)}</time>
+          {note.dueAt !== undefined && (
+            <span
+              style={{
+                flex: 'none',
+                fontSize: 11,
+                color: dueTone(note.dueAt) === 'overdue' ? '#B3261E' : NOTE_INK_MUTED,
+              }}
+              title={`截止 ${fmtDateTime(note.dueAt)}`}
+            >
+              {fmtDueChip(note.dueAt)}
+            </span>
+          )}
+          <time style={{ color: NOTE_INK_MUTED, flex: 1, textAlign: 'left' }} title={fmtDateTime(note.updatedAt)}>{fmtRelative(note.updatedAt)}</time>
           <span className={styles.actions} style={cardActions}>
             <button type="button" title="编辑" aria-label="编辑" disabled={props.busy}
               onClick={(e) => { e.stopPropagation(); props.onEdit() }} style={actionBtn}>
@@ -125,7 +138,7 @@ const cardStyle: React.CSSProperties = {
   gap: 5,
   padding: '11px 12px 8px',
   borderRadius: 12,
-  border: '1px solid rgba(0, 0, 0, 0.07)',
+  // border: '1px solid rgba(0, 0, 0, 0.07)',
   boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
   cursor: 'pointer',
 }

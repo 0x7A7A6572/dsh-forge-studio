@@ -30,7 +30,7 @@ export interface UseBoardMainOptions {
   readonly onRemove: (note: NoteRecord) => void
 }
 
-/** 一行/一卡的四个动作回调（NoteCard / NoteRow 共用）。 */
+/** 一张卡的四个动作回调（NoteCard / TaskLaneCard 共用）。 */
 export interface BoardRowHandlers {
   readonly onEdit: () => void
   readonly onTogglePin: () => void
@@ -49,11 +49,13 @@ export interface UseBoardMainResult {
   readonly activeVisible: readonly NoteRecord[]
   readonly archivedVisible: readonly NoteRecord[]
   readonly archivedOpen: boolean
+  readonly filterOpen: boolean
   readonly remaining: number
   readonly noNotes: boolean
   readonly noMatch: boolean
   readonly loadMore: () => void
   readonly toggleArchived: () => void
+  readonly toggleFilter: () => void
   readonly rowHandlers: (note: NoteRecord) => BoardRowHandlers
   readonly setView: (view: BoardView) => void
   readonly setQuery: (query: string) => void
@@ -69,6 +71,8 @@ export function useBoardMain(options: UseBoardMainOptions): UseBoardMainResult {
 
   const [win, setWin] = useState<LazyWindow>(initialWindow)
   const [archivedOpen, setArchivedOpen] = useState(false)
+  /** 颜色筛选行默认收起：常驻一行会把顶部工具条挤成两条。 */
+  const [filterOpen, setFilterOpen] = useState(false)
   // 底部哨兵：进入视口下沿附近即继续展开懒加载窗口（见下方 effect）。
   const [sentinelInView, setSentinelInView] = useState(false)
   const sentinelRef = useRef<HTMLDivElement>(null)
@@ -109,7 +113,7 @@ export function useBoardMain(options: UseBoardMainOptions): UseBoardMainResult {
   useEffect(() => {
     const el = sentinelRef.current
     // jsdom/无 IO 环境静默降级（不自动续批，仍有「加载更多」按钮兜底）。
-    if (!el || view === 'lanes' || typeof IntersectionObserver === 'undefined') return
+    if (!el || view !== 'grid' || typeof IntersectionObserver === 'undefined') return
     const io = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) setSentinelInView(entry.isIntersecting)
@@ -122,7 +126,7 @@ export function useBoardMain(options: UseBoardMainOptions): UseBoardMainResult {
 
   // 哨兵可见期间逐批展开，直到填满可视区或全部加载完。
   useEffect(() => {
-    if (!sentinelInView || view === 'lanes') return
+    if (!sentinelInView || view !== 'grid') return
     if (win.active >= activeMatched.length && (!archivedOpen || win.archived >= archivedMatched.length)) {
       return
     }
@@ -170,11 +174,13 @@ export function useBoardMain(options: UseBoardMainOptions): UseBoardMainResult {
     activeVisible,
     archivedVisible,
     archivedOpen,
+    filterOpen,
     remaining,
     noNotes,
     noMatch,
     loadMore,
     toggleArchived,
+    toggleFilter: () => setFilterOpen((open) => !open),
     rowHandlers,
     setView: (next) => boardStore.setView(next),
     setQuery: (next) => boardStore.setQuery(next),

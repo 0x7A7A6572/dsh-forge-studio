@@ -14,8 +14,8 @@
 import type { NoteColor } from '../../types.ts';
 import type { NoteDraft } from './notes-nav.ts';
 
-/** 便签板显示模式：行式列表 / grid 纸卡墙 / 任务泳道（五列看板）。 */
-export type BoardView = 'list' | 'grid' | 'lanes';
+/** 便签板显示模式：grid 纸卡墙 / 任务泳道（五列看板）/ calendar 月历。 */
+export type BoardView = 'grid' | 'lanes' | 'calendar';
 
 type Listener = () => void;
 

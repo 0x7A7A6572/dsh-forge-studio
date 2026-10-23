@@ -106,6 +106,7 @@ export function sanitizeSchedule(input: NoteScheduleInput): NoteSchedule | undef
   const lastResult = typeof input.lastResult === 'string' ? input.lastResult : undefined
   const failureStreak = Number.isFinite(input.failureStreak) ? (input.failureStreak as number) : undefined
   const runCount = Number.isFinite(input.runCount) ? (input.runCount as number) : undefined
+  const endAt = Number.isFinite(input.endAt) ? (input.endAt as number) : undefined
   const base = {
     enabled,
     mode,
@@ -114,6 +115,7 @@ export function sanitizeSchedule(input: NoteScheduleInput): NoteSchedule | undef
     ...(lastResult !== undefined ? { lastResult } : {}),
     ...(failureStreak !== undefined ? { failureStreak } : {}),
     ...(runCount !== undefined ? { runCount } : {}),
+    ...(endAt !== undefined ? { endAt } : {}),
   }
   switch (mode) {
     case 'once': {
@@ -170,6 +172,7 @@ export function scheduleSignature(schedule: NoteScheduleInput | NoteSchedule | u
     schedule.time ?? null,
     schedule.weekdays ?? null,
     schedule.monthDay ?? null,
+    schedule.endAt ?? null,
   ])
 }
 
@@ -187,7 +190,7 @@ export function fromLocalDateTimeInput(value: string): number | undefined {
   return Number.isFinite(ts) ? ts : undefined
 }
 
-/** 切模式的默认值：启用、09:00、30 分钟、周一、每月 1 日、一次性一小时后。 */
+/** 切模式的默认值：启用、09:00、30 分钟、周一、每月 1 日、一次性一小时后；endAt 随 previous 保留。 */
 export function makeSchedule(
   mode: ScheduleMode,
   previous?: NoteScheduleInput,
@@ -195,21 +198,28 @@ export function makeSchedule(
 ): NoteScheduleInput {
   const enabled = true
   const time = parseTimeOfDay(previous?.time ?? '') !== undefined ? previous!.time : '09:00'
+  const carry = previous?.endAt !== undefined ? { endAt: previous.endAt } : {}
   switch (mode) {
     case 'once': {
       const at = previous?.at !== undefined && previous.at > now ? previous.at : now + 60 * MINUTE_MS
-      return { enabled, mode, at }
+      return { enabled, mode, at, ...carry }
     }
     case 'interval':
-      return { enabled, mode, everyMin: previous?.everyMin !== undefined && previous.everyMin >= 1 ? previous.everyMin : 30 }
+      return {
+        enabled,
+        mode,
+        everyMin: previous?.everyMin !== undefined && previous.everyMin >= 1 ? previous.everyMin : 30,
+        ...carry,
+      }
     case 'daily':
-      return { enabled, mode, time }
+      return { enabled, mode, time, ...carry }
     case 'weekly':
       return {
         enabled,
         mode,
         time,
         weekdays: previous?.weekdays !== undefined && previous.weekdays.length > 0 ? previous.weekdays : [1],
+        ...carry,
       }
     case 'monthly':
       return {
@@ -217,17 +227,22 @@ export function makeSchedule(
         mode,
         time,
         monthDay: previous?.monthDay !== undefined && previous.monthDay >= 1 ? previous.monthDay : 1,
+        ...carry,
       }
     default:
-      return { enabled, mode: 'daily', time }
+      return { enabled, mode: 'daily', time, ...carry }
   }
 }
 
-/** 已有权威 nextAt 就用它，否则按 now 试算。 */
+/** 已有权威 nextAt 就用它，否则按 now 试算；endAt 之后不会再触发。 */
 export function previewNextAt(schedule: NoteScheduleInput, now: number = Date.now()): number | undefined {
   if (!schedule.enabled) return undefined
-  if (schedule.nextAt !== undefined && Number.isFinite(schedule.nextAt) && schedule.nextAt > 0) return schedule.nextAt
-  return nextFireAt({ ...schedule, nextAt: 0 } as NoteSchedule, now)
+  const next =
+    schedule.nextAt !== undefined && Number.isFinite(schedule.nextAt) && schedule.nextAt > 0
+      ? schedule.nextAt
+      : nextFireAt({ ...schedule, nextAt: 0 } as NoteSchedule, now)
+  if (next === undefined) return undefined
+  return schedule.endAt !== undefined && next > schedule.endAt ? undefined : next
 }
 
 const WEEKDAY_LABELS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'] as const
@@ -310,6 +325,15 @@ const OUTCOME_TEXT: Record<ScheduleDispatchOutcome, string> = {
 export function isScheduleOverdue(schedule: NoteSchedule, now: number): boolean {
   const at = schedule.mode === 'once' ? schedule.at : schedule.nextAt
   return at !== undefined && at > 0 && now - at > SCHEDULE_OVERDUE_MS
+}
+
+export function isScheduleExpired(schedule: NoteSchedule, now: number): boolean {
+  const endAt = schedule.endAt
+  return endAt !== undefined && Number.isFinite(endAt) && endAt > 0 && now >= endAt
+}
+
+export function applyScheduleExpired(schedule: NoteSchedule): NoteSchedule {
+  return { ...schedule, enabled: false, lastResult: '已到有效期，自动停用' }
 }
 
 function bumpFailure(schedule: NoteSchedule): NoteSchedule {
