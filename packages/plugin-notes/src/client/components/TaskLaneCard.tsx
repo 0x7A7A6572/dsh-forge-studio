@@ -5,10 +5,11 @@
 
 import { useEffect, useState } from 'react'
 import type { NoteRecord } from '../../types.ts'
-import { NOTE_INK, NOTE_INK_MUTED, noteColorMeta } from '../core/note-colors.ts'
+import { noteColorMeta } from '../core/note-colors.ts'
 import { isRunOpen } from '../core/task-lanes.ts'
 import { mdSnippet, mdToPlainText } from '../core/markdown-text.ts'
 import { folderNameOf } from '../core/workspace-path.ts'
+import { t } from '../core/theme-tokens.ts'
 import { fmtDueChip, dueTone, fromDateInputValue, toDateInputValue } from '../core/due-date.ts'
 import { isScheduleBlockedStatus, scheduleBlockTextFor, scheduleLabel } from '../../schedule.ts'
 import { fmtCountdown, fmtDateTime, fmtElapsed, fmtRelative, fmtShortDateTime } from '../core/time-text.ts'
@@ -50,11 +51,11 @@ export interface TaskLaneCardProps {
 
 /** 截止 chips 的语义色：逾期红、今明橙、其余次要色。 */
 function dueColor(note: NoteRecord): string {
-  if (note.dueAt === undefined) return NOTE_INK_MUTED
+  if (note.dueAt === undefined) return t.labelTertiary
   const tone = dueTone(note.dueAt)
-  if (tone === 'overdue') return '#B3261E'
-  if (tone === 'soon') return '#B25E09'
-  return 'rgba(46, 42, 34, 0.72)'
+  if (tone === 'overdue') return t.danger
+  if (tone === 'soon') return t.stateWarn
+  return t.labelSecondary
 }
 
 export function TaskLaneCard(props: TaskLaneCardProps): JSX.Element {
@@ -123,9 +124,7 @@ export function TaskLaneCard(props: TaskLaneCardProps): JSX.Element {
         }}
         style={{
           ...cardStyle,
-          backgroundColor: meta.paper,
           backgroundImage: `linear-gradient(327deg, ${meta.ring}, transparent 20%)`,
-          borderColor: `color-mix(in srgb, ${meta.ring} 32%, transparent)`,
           opacity: dragging ? 0.45 : 1,
         }}
       >
@@ -145,12 +144,12 @@ export function TaskLaneCard(props: TaskLaneCardProps): JSX.Element {
           <>
             <span style={metaRow}>
               <span className={styles.laneSpinner} style={spinner} aria-hidden="true" />
-              <span style={{ color: 'rgba(46, 42, 34, 0.72)' }}>
+              <span style={{ color: t.labelSecondary }}>
                 {run?.by === 'schedule' ? '定时触发 · ' : ''}已执行 {fmtElapsed(elapsedMs)}
               </span>
             </span>
             {interrupted && (
-              <span style={{ ...metaRow, color: NOTE_INK_MUTED }}>执行可能已中断，可重置</span>
+              <span style={{ ...metaRow, color: t.labelTertiary }}>执行可能已中断，可重置</span>
             )}
           </>
         ) : summary ? (
@@ -278,20 +277,19 @@ const cardStyle: React.CSSProperties = {
   padding: '9px 10px 7px 12px',
   borderRadius: 18,
   borderWidth: 2,
-  borderStyle: 'solid',
   cursor: 'pointer',
-  color: NOTE_INK,
+  color: t.labelPrimary,
 }
 const cardTitle: React.CSSProperties = {
   fontSize: 12.5,
   fontWeight: 600,
   lineHeight: 1.45,
-  color: NOTE_INK,
+  color: t.labelPrimary,
 }
 const cardSnippet: React.CSSProperties = {
   fontSize: 11.5,
   lineHeight: 1.5,
-  color: NOTE_INK_MUTED,
+  color: t.labelTertiary,
   wordBreak: 'break-word',
 }
 const chipsRow: React.CSSProperties = {
@@ -313,8 +311,7 @@ const chipStyle: React.CSSProperties = {
   borderRadius: 5,
   fontSize: 10.5,
   lineHeight: 1,
-  background: 'rgba(46, 42, 34, 0.08)',
-  color: 'rgba(46, 42, 34, 0.72)',
+  color: t.labelSecondary,
 }
 const chipText: React.CSSProperties = {
   minWidth: 0,
@@ -329,7 +326,7 @@ const warnMeta: React.CSSProperties = {
   gap: 3,
   fontSize: 10.5,
   lineHeight: 1,
-  color: '#B3261E',
+  color: t.danger,
 }
 const metaRow: React.CSSProperties = {
   display: 'flex',
@@ -338,16 +335,16 @@ const metaRow: React.CSSProperties = {
   minWidth: 0,
   fontSize: 11,
   lineHeight: 1.4,
-  color: 'rgba(46, 42, 34, 0.72)',
+  color: t.labelSecondary,
 }
 const dueInputStyle: React.CSSProperties = {
   width: '100%',
   boxSizing: 'border-box',
   padding: '3px 4px',
-  border: '1px solid rgba(46, 42, 34, 0.22)',
+  border: `1px solid ${t.borderL2}`,
   borderRadius: 6,
   background: 'transparent',
-  color: NOTE_INK,
+  color: t.labelPrimary,
   fontSize: 11.5,
 }
 const spinner: React.CSSProperties = {
@@ -365,7 +362,7 @@ const footerRow: React.CSSProperties = {
 }
 const timeStyle: React.CSSProperties = {
   fontSize: 10.5,
-  color: NOTE_INK_MUTED,
+  color: t.labelTertiary,
 }
 const actionsStyle: React.CSSProperties = {
   flex: 'none',
@@ -382,6 +379,6 @@ const actionBtn: React.CSSProperties = {
   padding: 0,
   border: 'none',
   borderRadius: 5,
-  color: NOTE_INK_MUTED,
+  color: t.labelSecondary,
   cursor: 'pointer',
 }
