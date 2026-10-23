@@ -101,6 +101,8 @@ export interface UseNotesBoardResult {
   readonly toggleArchive: (note: NoteRecord) => void
   readonly remove: (note: NoteRecord) => void
   readonly move: (id: NoteId, status: TaskStatus) => void
+  readonly setDue: (note: NoteRecord, dueAt: number | undefined) => void
+  readonly toggleSchedule: (note: NoteRecord) => void
   readonly execute: (note: NoteRecord) => void
   readonly reset: (note: NoteRecord) => void
   readonly createTask: (status: TaskStatus) => void
@@ -398,6 +400,12 @@ export function useNotesBoard(options: UseNotesBoardOptions): UseNotesBoardResul
     toggleArchive: (note) => void run(() => face.notes.update(note.id, { archived: !note.archived })),
     remove: (note) => void run(() => face.notes.delete(note.id)),
     move: (id, status) => void run(() => face.notes.update(id, { lane: { status } })),
+    setDue: (note, dueAt) => void run(() => face.notes.update(note.id, { dueAt: dueAt ?? null })),
+    toggleSchedule: (note) => {
+      const schedule = note.schedule
+      if (schedule === undefined) return
+      void run(() => face.notes.update(note.id, { schedule: { ...schedule, enabled: !schedule.enabled } }))
+    },
     execute: (note) => void execute(note),
     reset: (note) => void reset(note),
     createTask: (status) => notesNav.openEditor({ mode: 'create', laneStatus: status }),

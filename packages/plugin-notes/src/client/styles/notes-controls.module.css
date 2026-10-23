@@ -1,0 +1,86 @@
+/* 下拉：触发按钮 + 自绘列表面板，颜色全走主题令牌。 */
+
+.selectTrigger {
+  --note-select-arrow: var(--dsw-alias-label-tertiary);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1;
+  text-align: left;
+  color: var(--dsw-alias-label-primary);
+  background-color: var(--dsw-alias-bg-layer-2);
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+.selectTrigger:hover:not(:disabled) { background-color: var(--dsw-alias-interactive-bg-hover); border-color: var(--dsw-alias-border-l2); }
+.selectTrigger:focus-visible { outline: 2px solid var(--dsw-static-deepseek-450); outline-offset: 1px; }
+.selectTrigger:disabled { opacity: 0.5; cursor: default; }
+
+/* 组合框里的下拉：容器负责描边。 */
+.selectTriggerInline {
+  flex: 0 1 auto;
+  height: 100%;
+  padding: 0 2px;
+  gap: 6px;
+  background-color: transparent;
+  border: none;
+  border-radius: 0;
+}
+.selectTriggerInline:hover:not(:disabled) { background-color: transparent; border-color: transparent; }
+.selectTriggerInline:focus-visible { outline-offset: -2px; }
+
+.selectValue { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.selectCaret {
+  flex: none;
+  display: block;
+  width: 10px;
+  height: 6px;
+  color: var(--note-select-arrow);
+  overflow: visible;
+}
+
+/* 列表面板：portal 到 body，主题表面 + 圆角阴影。 */
+.selectMenu {
+  position: fixed;
+  z-index: 9999;
+  box-sizing: border-box;
+  padding: 4px;
+  overflow-y: auto;
+  background: var(--dsw-alias-bg-layer-2);
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  box-shadow: var(--dsw-shadow-lv3);
+  animation: selectMenuIn 120ms ease-out;
+}
+@keyframes selectMenuIn {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.selectMenuGroup { padding: 6px 8px 3px; font-size: 11px; color: var(--dsw-alias-label-tertiary); }
+.selectOption {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.selectOption[data-active='true'] { background: var(--dsw-alias-interactive-bg-hover); }
+.selectOption[aria-selected='true'] { color: var(--dsw-static-deepseek-450); font-weight: 600; }
+.selectOption:disabled { opacity: 0.45; cursor: default; }
+@media (prefers-reduced-motion: reduce) { .selectMenu { animation: none; } }

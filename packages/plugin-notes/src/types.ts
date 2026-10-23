@@ -69,7 +69,7 @@ export const SCHEDULE_MODES = ['once', 'interval', 'daily', 'weekly', 'monthly']
 export type ScheduleMode = (typeof SCHEDULE_MODES)[number]
 
 /**
- * 定时日程：到点由 host 调度器派发一次。once 触发成功后自动停用；
+ * 定时日程：到点由 host 调度器派发一次。once 触发成功后自动停用，endAt 到期亦停用；
  * interval 的锚点是上次排定的 nextAt；monthly 的 monthDay 当月不足时落在最后一天。
  */
 export interface NoteSchedule {
@@ -89,6 +89,7 @@ export interface NoteSchedule {
   weekdays?: number[]
   /** monthly：每月第几日（1-31）。 */
   readonly monthDay?: number
+  readonly endAt?: number
   /** 下次触发时刻，host 计算写回，UI 只读。 */
   readonly nextAt: number
   readonly lastFiredAt?: number
@@ -134,6 +135,7 @@ export interface NoteRecord {
   readonly color: NoteColor
   readonly origin: NoteOrigin
   readonly lane?: NoteLane
+  readonly dueAt?: number
   /** 仅任务便签有效；缺省 = 不定时。 */
   readonly schedule?: NoteSchedule
   /**
@@ -155,6 +157,7 @@ export interface NoteCreateInput {
   readonly laneStatus?: TaskStatus
   /** trim 后空串视同未给、不落该字段。 */
   readonly workspace?: string
+  readonly dueAt?: number
   /** 仅与 laneStatus 搭配才有意义；agentPreset trim 后空串视同未给。 */
   readonly agentPreset?: string
   readonly model?: NoteModelSelection
@@ -184,6 +187,7 @@ export interface NoteUpdateInput {
   }
   /** trim 后空串 = 清除（此后执行被拒 missing-workspace）；未给保留原值。 */
   readonly workspace?: string
+  readonly dueAt?: number | null
   /**
    * `null` = 清除定时；未给保留原值，给对象整体替换。
    * 取消任务或关掉任务开关时，日程一并清除。

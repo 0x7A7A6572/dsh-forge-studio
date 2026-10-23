@@ -83,6 +83,7 @@ export const noteRecordSchema = z.object({
       time: z.string().optional(),
       weekdays: z.array(z.number()).optional(),
       monthDay: z.number().optional(),
+      endAt: z.number().optional(),
       nextAt: z.number(),
       lastFiredAt: z.number().optional(),
       lastResult: z.string().optional(),
@@ -94,6 +95,8 @@ export const noteRecordSchema = z.object({
   // workspace 可选（无默认、不回填）：任务执行工作区（绝对目录路径）。旧记录
   // 天然无该字段，解析不炸；缺省 = 执行会被拒（任务必须有工作区，M1-4）。
   workspace: z.string().optional(),
+  // dueAt 可选（无默认、不回填）：截止时刻（绝对 ms）。旧记录天然无该字段。
+  dueAt: z.number().optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
 }) as unknown as ZodType<NoteRecord>

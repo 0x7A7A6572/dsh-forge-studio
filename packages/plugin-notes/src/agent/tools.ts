@@ -149,6 +149,7 @@ const SCHEDULE_SCHEMA = {
     time: { type: 'string' },
     weekdays: { type: 'array', items: { type: 'number' } },
     monthDay: { type: 'number' },
+    endAt: { type: 'number' },
     // nextAt 是权威下次时刻；failureStreak 达上限即熔断停用。
     nextAt: { type: 'number', required: true },
     lastFiredAt: { type: 'number' },
@@ -180,6 +181,7 @@ const NOTE_OUTPUT_SCHEMA = {
     schedule: SCHEDULE_SCHEMA,
     /** 绝对目录路径；缺省 = 执行被拒。 */
     workspace: { type: 'string' },
+    dueAt: { type: 'number' },
   },
 } as const
 
@@ -292,6 +294,7 @@ export function installNotesTools(ctx: Context): void {
       text: { type: 'string', required: true, description: 'Note body (plain text or markdown).' },
       color: { type: 'string', enum: [...NOTE_COLORS], description: 'Sticky-note color. Defaults to yellow when omitted.' },
       laneStatus: { type: 'string', enum: [...TASK_STATUSES], description: 'Create it as a task note in this lane (Backlog / To do / Running / Done / Failed). Omit for a plain note.' },
+      dueAt: { type: 'number', description: 'Due date as epoch milliseconds (local midnight). Omit for unscheduled.' },
     },
     output: {
       schema: NOTE_OUTPUT_SCHEMA,
@@ -303,6 +306,7 @@ export function installNotesTools(ctx: Context): void {
         text: args.text,
         ...args.color !== undefined ? { color: args.color as NoteRecord['color'] } : {},
         ...args.laneStatus !== undefined ? { laneStatus: args.laneStatus as TaskStatus } : {},
+        ...args.dueAt !== undefined ? { dueAt: args.dueAt } : {},
         origin: 'agent',
       })
     },
@@ -318,6 +322,7 @@ export function installNotesTools(ctx: Context): void {
       color: { type: 'string', enum: [...NOTE_COLORS], description: 'New color.' },
       pinned: { type: 'boolean', description: 'Pin or unpin.' },
       archived: { type: 'boolean', description: 'Archive or restore.' },
+      dueAt: { type: 'number', description: 'Due date as epoch milliseconds (local midnight). Pass 0 to clear it.' },
     },
     output: {
       schema: NOTE_OUTPUT_SCHEMA,
@@ -333,6 +338,7 @@ export function installNotesTools(ctx: Context): void {
         ...args.color !== undefined ? { color: args.color as NoteRecord['color'] } : {},
         ...args.pinned !== undefined ? { pinned: args.pinned } : {},
         ...args.archived !== undefined ? { archived: args.archived } : {},
+        ...args.dueAt !== undefined ? { dueAt: args.dueAt > 0 ? args.dueAt : null } : {},
       })
       if (note === undefined) throw new Error(`note ${id} not found`)
       return note

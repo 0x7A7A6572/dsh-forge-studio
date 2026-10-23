@@ -3,19 +3,15 @@
  * 区分「任务便签」与普通便签 —— 便签含 lane 即任务（见 core/task-lanes.ts），
  * 泳道视图内全是任务无需再标。
  *
- * 形态：墨迹系小胶囊 + 状态中文；running 常驻呼吸圆点提示执行中；done 用 ✓ 弱化，
- * failed 用 ✗ 警示（红墨迹）。徽章浮在浅 pastel 纸色上，颜色一律用 NOTE_INK 墨迹
- * 族（纸色固定浅底，深字对比恒成立），全部内联样式，无需额外注入 CSS。
+ * 形态：主题色小胶囊 + 状态中文；running 常驻呼吸圆点提示执行中；done 用 ✓ 弱化，
+ * failed 用 ✗ 警示（错误色）。颜色走宿主主题令牌，明暗主题下都成立；全部内联样式。
  * 呼吸动画 keyframes 由 notes-board.module.css 的 .taskLiveDot 提供。
  */
 
 import type { NoteLane } from '../../types.ts'
 import { laneLabel, isRunOpen } from '../core/task-lanes.ts'
-import { NOTE_INK, NOTE_INK_MUTED } from '../core/note-colors.ts'
+import { t } from '../core/theme-tokens.ts'
 import styles from '../styles/notes-board.module.css'
-
-/** 失败警示墨迹（与卡片 danger 动作同色系，便于识别）。 */
-const FAIL_INK = '#b3261e'
 
 export interface TaskBadgeProps {
   readonly lane: NoteLane
@@ -54,15 +50,15 @@ export function TaskBadge(props: TaskBadgeProps): JSX.Element {
         lineHeight: 1,
         letterSpacing: 0.2,
         whiteSpace: 'nowrap',
-        color: failed ? FAIL_INK : NOTE_INK_MUTED,
-        background: failed ? 'rgba(179, 38, 30, 0.09)' : 'rgba(0, 0, 0, 0.055)',
+        color: failed ? t.danger : t.labelSecondary,
+        background: failed ? t.hoverDangerBg : t.hoverBg,
       }}
     >
       {running && (
         <span
           className={styles.taskLiveDot}
           aria-hidden="true"
-          style={{ width: 6, height: 6, borderRadius: 3, background: NOTE_INK }}
+          style={{ width: 6, height: 6, borderRadius: 3, background: t.labelSecondary }}
         />
       )}
       {done && <span aria-hidden="true" style={{ fontSize: 10, lineHeight: 1 }}>✓</span>}

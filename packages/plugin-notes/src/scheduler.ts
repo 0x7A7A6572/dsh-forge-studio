@@ -9,9 +9,11 @@ import type { NotesService } from './service.ts'
 import {
   SCHEDULE_RUN_TIMEOUT_MS,
   applyScheduleDispatch,
+  applyScheduleExpired,
   applyScheduleOverdue,
   applyScheduleSkip,
   isNoteScheduleDue,
+  isScheduleExpired,
   isScheduleOverdue,
   scheduleBlockReason,
   type ScheduleDispatchOutcome,
@@ -77,9 +79,14 @@ export function createScheduleRunner(deps: ScheduleRunnerDeps): ScheduleRunner {
               await deps.settle(note.id, RUN_TIMEOUT_SUMMARY)
               continue
             }
-            if (!isNoteScheduleDue(note, now)) continue
             const schedule = note.schedule
             if (schedule === undefined) continue
+            // 有效期到期：只对 enabled 生效（停用态不重写，避免每轮空写），直接停用收尾。
+            if (schedule.enabled && isScheduleExpired(schedule, now)) {
+              await deps.write(note.id, applyScheduleExpired(schedule))
+              continue
+            }
+            if (!isNoteScheduleDue(note, now)) continue
             // 过期太久（宿主停机超过 2 小时）：不补跑，once 停用、循环型顺延。
             // 先于状态闸门——否则躺在「待规划」里的过期 once 日程永远不会被收掉。
             if (isScheduleOverdue(schedule, now)) {

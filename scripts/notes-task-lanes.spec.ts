@@ -1,7 +1,7 @@
 /**
- * 任务执行目标（模型 / agent 预设）与「设为任务」保存决策的门禁。
+ * 任务执行目标（模型 / Agent 预设）与「设为任务」保存决策的门禁。
  *
- * 背景：M2 给任务便签加了两个可选执行目标（模型 / agent 预设），落库位置是 lane 上
+ * 背景：M2 给任务便签加了两个可选执行目标（模型 / Agent 预设），落库位置是 lane 上
  * 的可选字段。保存决策一旦算错，轻则把用户选的目标静默丢掉（看起来「选了没用」），
  * 重则用陈旧快照覆盖宿主已写回的值。所以把决策压成纯函数钉在这里。
  *
@@ -47,7 +47,7 @@ describe('lanePatchForSave —— 既有语义（不含执行目标）', () => {
   })
 })
 
-describe('lanePatchForSave —— 执行目标（模型 / agent 预设）', () => {
+describe('lanePatchForSave —— 执行目标（模型 / Agent 预设）', () => {
   it('目标与既有值一致 → 不发这两个字段', () => {
     const current = lane({ agentPreset: 'fast', model: MODEL_A })
     expect(lanePatchForSave(true, 'todo', current, { agentPreset: 'fast', model: MODEL_A })).toBeUndefined()

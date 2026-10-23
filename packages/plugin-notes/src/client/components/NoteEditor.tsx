@@ -17,9 +17,10 @@ import {
   toLocalDateTimeInput,
 } from "../../schedule.ts"
 import { ConfirmDialog } from "./ConfirmDialog.tsx"
-import { NOTE_COLOR_PALETTE, NOTE_INK, NOTE_INK_MUTED } from "../core/note-colors.ts"
+import { NOTE_COLOR_PALETTE } from "../core/note-colors.ts"
 import { TASK_LANES, laneLabel } from "../core/task-lanes.ts"
 import { fmtDateTime } from "../core/time-text.ts"
+import { defaultEndAt, endAtFromDayInput, fmtMonthDay, toDateInputValue } from "../core/due-date.ts"
 import { t } from "../core/theme-tokens.ts"
 import { CODE_LANGUAGES, codeLanguageLabel } from "../core/code-languages.ts"
 import { toggleNoteCodeBlock } from "../core/note-code-block.ts"
@@ -31,6 +32,9 @@ import {
   Bold,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Folder,
   ChevronUp,
   Clock,
   Code,
@@ -55,6 +59,7 @@ import {
 import { useNoteEditor } from "../hooks/useNoteEditor.ts"
 import type { NoteEditorProps } from "../hooks/useNoteEditor.ts"
 import { LaneRunBlock } from "./NoteRunBlock.tsx"
+import { NoteSelect } from "./NoteSelect.tsx"
 import { ToolButton, ToolDivider } from "./NoteToolButton.tsx"
 import styles from "../styles/notes-editor.module.css"
 
@@ -68,8 +73,6 @@ const SCHEDULE_MODE_LABELS: Record<ScheduleMode, string> = {
   monthly: "每月",
 };
 
-const PAPER_DEEP_TINT = "rgba(46, 42, 34, 0.06)";
-const PAPER_SOFT_FILL = "rgba(46, 42, 34, 0.1)";
 
 /** 0 = 周日，与 Date#getDay 对齐。 */
 const WEEKDAY_SHORT = ["日", "一", "二", "三", "四", "五", "六"] as const;
@@ -95,7 +98,6 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
     presetOptions,
     taskDetailOpen,
     setTaskDetailOpen,
-    taskSummaryText,
     taskWorkspaceMissing,
     schedule,
     setSchedule,
@@ -150,7 +152,10 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
 
   return (
     <div
-      data-dsh-part="note-editor" className={`${styles.editor} ${styles.paper}`}
+      data-dsh-part="note-editor"
+      data-sheet={taskOn && taskDetailOpen ? "open" : "closed"}
+      data-sheet-mode={props.narrowSheet === true ? "overlay" : "behind"}
+      className={styles.editor}
       style={{ display: "flex", flexDirection: "column", gap: 10 }}
       onKeyDown={(e) => {
         if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
@@ -198,7 +203,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
           onClick={requestClose}
           style={headCloseBtn}
         >
-          <X size={15} />
+          <X size={20} />
         </button>
       </div>
 
@@ -317,25 +322,21 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
           <CodeXml size={16} />
         </ToolButton>
         {fmt.codeBlock && (
-          <select
-            className={styles.langSelect}
+          <NoteSelect
+            maxWidth={150}
+            style={{ height: 28 }}
+            ariaLabel="代码语言"
             title="代码语言（语法高亮）"
-            aria-label="代码语言"
             disabled={saving}
             value={selectLang}
-            onChange={(e) => setCodeLanguage(e.target.value)}
-          >
-            {CODE_LANGUAGES.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-            {unknownLang !== null && (
-              <option key={unknownLang} value={unknownLang}>
-                {codeLanguageLabel(unknownLang)}（未收录）
-              </option>
-            )}
-          </select>
+            onChange={setCodeLanguage}
+            options={[
+              ...CODE_LANGUAGES.map((o) => ({ value: o.value, label: o.label })),
+              ...(unknownLang !== null
+                ? [{ value: unknownLang, label: `${codeLanguageLabel(unknownLang)}（未收录）` }]
+                : []),
+            ]}
+          />
         )}
         <ToolDivider />
         <span style={popAnchor} data-fs-tool-pop>
@@ -535,15 +536,13 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
         <EditorContent editor={editor} />
       </div>
 
-      <div
-        style={taskAreaStyle}
-        aria-label="任务状态"
-        data-fold={taskOn && taskDetailOpen ? "open" : "closed"}
-      >
+      <div style={taskAreaStyle} aria-label="任务状态">
         <div style={taskHeadRow}>
-          <label style={laneToggleLabel}>
+          <label className={styles.taskSwitch}>
             <input
               type="checkbox"
+              role="switch"
+              className={styles.taskSwitchInput}
               checked={taskOn}
               disabled={saving || runningReadOnly}
               onChange={(e) => {
@@ -552,217 +551,230 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                 if (next) setTaskDetailOpen(true);
                 markDirty();
               }}
-              style={{
-                accentColor: colorMeta.ring,
-                cursor: saving || runningReadOnly ? "default" : "pointer",
-              }}
+            />
+            <span
+              className={styles.taskSwitchTrack}
+              style={taskOn ? { background: colorMeta.ring } : undefined}
+              aria-hidden="true"
             />
             设为任务
           </label>
-          {taskOn && (
-            <span
-              style={taskWorkspaceMissing ? taskSummaryWarn : taskSummary}
-              title={
-                workspace.trim() === ""
-                  ? "这张任务还没有工作区，执行不了"
-                  : `工作区：${workspace}`
-              }
-            >
-              {taskSummaryText}
-            </span>
-          )}
-          {taskOn && runningReadOnly && (
-            <span style={laneHint}>执行中：改状态请先在泳道重置</span>
-          )}
           {taskOn && (
             <button
               type="button"
               className={styles.taskFoldToggle}
               aria-expanded={taskDetailOpen}
-              title={taskDetailOpen ? "折起任务设置" : "展开任务设置"}
+              title={taskDetailOpen ? "收起任务设置" : "展开任务设置"}
               onClick={() => setTaskDetailOpen((v) => !v)}
             >
               {taskDetailOpen ? (
-                <ChevronUp size={13} aria-hidden="true" />
+                <ChevronLeft size={13} aria-hidden="true" />
               ) : (
-                <ChevronDown size={13} aria-hidden="true" />
+                <ChevronRight size={13} aria-hidden="true" />
               )}
-              {taskDetailOpen ? "折起" : "设置"}
+              {taskDetailOpen ? "收起" : "设置"}
             </button>
           )}
         </div>
-        <div className={styles.taskFoldWrap}>
-          {taskOn && <div className={styles.taskCrease} aria-hidden="true" />}
-          <div
-            className={`${styles.taskFold} ${
-              taskOn && taskDetailOpen ? styles.taskFoldOpen : styles.taskFoldClosed
-            }`}
-          >
-            <div className={styles.taskFoldBody}>
-            {taskOn && (
-              <div className={styles.taskForm} role="group" aria-label="任务设置">
-                <span className={styles.taskFormLabel}>状态</span>
-                <div className={styles.taskFormField}>
-                  {!runningReadOnly && (
-                    <select
-                      value={taskStatus}
-                      disabled={saving}
-                      onChange={(e) => {
-                        setTaskStatus(e.target.value as TaskStatus);
-                        markDirty();
-                      }}
-                      aria-label="任务状态"
-                      style={taskSelect}
-                    >
-                      {TASK_LANES.map((lane) => (
-                        <option key={lane.status} value={lane.status}>
-                          {lane.label}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                  {runningReadOnly && props.initialLane !== undefined && (
-                    <span style={laneStatusPill} title="当前状态（执行中不可改）">
-                      {laneLabel(props.initialLane.status)}
-                    </span>
-                  )}
-                </div>
+      </div>
 
-                {/* 工作区必选，候选只来自最近会话用过的目录（不给手填新路径）。 */}
-                <span
-                  className={styles.taskFormLabel}
-                  style={taskWorkspaceMissing ? labelRequiredWarn : undefined}
-                >
-                  工作区
-                </span>
-                <div className={styles.taskFormField}>
-                  <select
-                    value={workspace}
-                    disabled={saving}
-                    onChange={(e) => {
-                      setWorkspace(e.target.value);
-                      markDirty();
-                    }}
-                    aria-label="任务执行工作区"
-                    title={workspaceSelectTitle}
-                    style={taskWorkspaceMissing ? taskSelectMissing : taskSelect}
-                  >
-                    <option value="">{workspacePlaceholder}</option>
-                    {workspaceOptions.map((option) => (
-                      <option key={option.path} value={option.path} title={option.path}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  {taskWorkspaceMissing && (
-                    <span style={taskFormHint}>任务必须选一个工作区才能执行</span>
-                  )}
-                </div>
-                <span className={styles.taskFormLabel}>模型</span>
-                <div className={styles.taskFormField}>
-                  <select
-                    value={modelValue}
-                    disabled={saving}
-                    onChange={(e) => {
-                      setModelValue(e.target.value);
-                      markDirty();
-                    }}
-                    aria-label="任务执行模型"
-                    title="执行会话用哪个模型（宿主默认 = 不指定，跑宿主自己的选择）"
-                    style={taskSelect}
-                  >
-                    <option value="">宿主默认</option>
-                    {modelOptionGroups.map((group) => (
-                      <optgroup key={group.id} label={group.label}>
-                        {group.options.map((option) => (
-                          <option key={option.key} value={option.key}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
-                </div>
-
-                <span className={styles.taskFormLabel}>agent 预设</span>
-                <div className={styles.taskFormField}>
-                  <select
-                    value={agentPreset}
-                    disabled={saving}
-                    onChange={(e) => {
-                      setAgentPreset(e.target.value);
-                      markDirty();
-                    }}
-                    aria-label="任务 agent 预设"
-                    title="执行会话按哪个 agent 预设装配（宿主默认 = 不指定）"
-                    style={taskSelect}
-                  >
-                    <option value="">宿主默认</option>
-                    {presetOptions.map((entry) => (
-                      <option key={entry.id} value={entry.id}>
-                        {entry.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                {/* nextAt 由 host 保存时重算写回，这里只编辑与预览。 */}
-                <span className={styles.taskFormLabel}>定时</span>
-                <div style={scheduleRow} aria-label="定时执行">
-                  <label style={laneToggleLabel}>
-                    <input
-                      type="checkbox"
-                      checked={schedule?.enabled === true}
-                      disabled={saving}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          // 开启 = 授权无人值守执行：先弹行内确认，不确认就不落地。
-                          setScheduleConfirm(makeSchedule(schedule?.mode ?? "once", schedule));
-                        } else {
-                          setScheduleConfirm(undefined);
-                          if (schedule !== undefined) setSchedule({ ...schedule, enabled: false });
-                          markDirty();
-                        }
-                      }}
-                      style={{ accentColor: colorMeta.ring, cursor: saving ? "default" : "pointer" }}
-                    />
-                    自动执行
-                  </label>
-                  {schedule !== undefined && (
-                    <>
-                      <select
-                        value={schedule.mode}
+      {taskOn && (
+        <aside
+          className={styles.taskSheet}
+          aria-label="任务设置"
+          aria-hidden={!taskDetailOpen}
+          style={{ pointerEvents: taskDetailOpen ? "auto" : "none" }}
+        >
+          <div className={styles.taskSheetHead}>
+            <span className={styles.taskSheetTitle}>任务设置</span>
+            <button
+              type="button"
+              className={styles.taskFoldToggle}
+              title="收起任务设置"
+              onClick={() => setTaskDetailOpen(false)}
+            >
+              收起
+              <ChevronRight size={13} aria-hidden="true" />
+            </button>
+          </div>
+          <div className={styles.taskForm} role="group" aria-label="任务设置">
+                <div style={formRow}>
+                  <span style={formBox}>
+                    <span style={formBoxLabel}>状态：</span>
+                    {!runningReadOnly && (
+                      <NoteSelect
+                        variant="inline"
+                        value={taskStatus}
                         disabled={saving}
-                        aria-label="定时周期"
-                        title="定时周期"
-                        style={taskControl}
-                        onChange={(e) => {
-                          setSchedule(makeSchedule(e.target.value as ScheduleMode, schedule));
+                        ariaLabel="任务状态"
+                        onChange={(next) => {
+                          setTaskStatus(next as TaskStatus);
                           markDirty();
                         }}
+                        options={TASK_LANES.map((lane) => ({ value: lane.status, label: lane.label }))}
+                      />
+                    )}
+                    {runningReadOnly && props.initialLane !== undefined && (
+                      <span style={laneStatusPill} title="当前状态（执行中不可改）">
+                        {laneLabel(props.initialLane.status)}
+                      </span>
+                    )}
+                  </span>
+                  {/* 工作区必选，候选只来自最近会话用过的目录（不给手填新路径）。 */}
+                  <span style={{ ...formBox, ...(taskWorkspaceMissing ? formBoxDanger : {}) }}>
+                    <span style={formLabelGroup}>
+                      <Folder size={13} style={formBoxIcon} aria-hidden="true" />
+                      <span style={formBoxLabel}>工作空间：</span>
+                    </span>
+                    <NoteSelect
+                      variant="inline"
+                      value={workspace}
+                      disabled={saving}
+                      ariaLabel="任务执行工作区"
+                      title={workspaceSelectTitle}
+                      onChange={(next) => {
+                        setWorkspace(next);
+                        markDirty();
+                      }}
+                      options={[
+                        { value: "", label: workspacePlaceholder },
+                        ...workspaceOptions.map((option) => ({ value: option.path, label: option.label, title: option.path })),
+                      ]}
+                    />
+                  </span>
+                </div>
+                {taskWorkspaceMissing && (
+                  <span style={taskFormHint}>任务必须选一个工作区才能执行</span>
+                )}
+                <div style={formRow}>
+                  <span style={formBox}>
+                    <span style={formBoxLabel}>模型：</span>
+                    <NoteSelect
+                      variant="inline"
+                      value={modelValue}
+                      disabled={saving}
+                      ariaLabel="任务执行模型"
+                      title="执行会话用哪个模型（宿主默认 = 不指定，跑宿主自己的选择）"
+                      onChange={(next) => {
+                        setModelValue(next);
+                        markDirty();
+                      }}
+                      groups={[
+                        { label: "", options: [{ value: "", label: "宿主默认" }] },
+                        ...modelOptionGroups.map((group) => ({
+                          label: group.label,
+                          options: group.options.map((option) => ({ value: option.key, label: option.label })),
+                        })),
+                      ]}
+                    />
+                  </span>
+                  <span style={formBox}>
+                    <span style={formBoxLabel}>Agent 预设：</span>
+                    <NoteSelect
+                      variant="inline"
+                      value={agentPreset}
+                      disabled={saving}
+                      ariaLabel="任务 Agent 预设"
+                      title="执行会话按哪个 Agent 预设装配（宿主默认 = 不指定）"
+                      onChange={(next) => {
+                        setAgentPreset(next);
+                        markDirty();
+                      }}
+                      options={[
+                        { value: "", label: "宿主默认" },
+                        ...presetOptions.map((entry) => ({ value: entry.id, label: entry.name })),
+                      ]}
+                    />
+                  </span>
+                </div>
+                {/* nextAt 由 host 保存时重算写回，这里只编辑与预览；便签正文即提示词。 */}
+                <div style={scheduleRow} aria-label="定时执行">
+                    <label className={styles.schedSwitch}>
+                      <input
+                        type="checkbox"
+                        className={styles.schedSwitchInput}
+                        checked={schedule?.enabled === true}
+                        disabled={saving}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            // 开启 = 授权无人值守执行：先弹行内确认，不确认就不落地。
+                            setScheduleConfirm(makeSchedule(schedule?.mode ?? "once", schedule));
+                          } else {
+                            setScheduleConfirm(undefined);
+                            if (schedule !== undefined) setSchedule({ ...schedule, enabled: false });
+                            markDirty();
+                          }
+                        }}
+                      />
+                      <span className={styles.schedSwitchTrack} aria-hidden="true" />
+                      自动执行
+                    </label>
+                    {schedule !== undefined && (
+                      <span style={scheduleDetailNote} title="执行会话收到的提示词 = 这张便签的正文">
+                        便签正文即提示词
+                      </span>
+                    )}
+                    {schedule !== undefined && (
+                      <span style={scheduleMeta} title={scheduleSummaryTitle}>
+                        <Clock size={11} aria-hidden="true" />
+                        {scheduleNextText}
+                      </span>
+                    )}
+                    {schedule !== undefined && schedule.enabled && scheduleBlockTextFor(taskStatus) !== undefined && (
+                      <span
+                        style={scheduleStatusChip}
+                        title={(scheduleBlockTextFor(taskStatus) ?? "") + "——拖回「待办」即恢复"}
                       >
-                        {SCHEDULE_MODES.map((mode) => (
-                          <option key={mode} value={mode}>
-                            {SCHEDULE_MODE_LABELS[mode]}
-                          </option>
-                        ))}
-                      </select>
-                      {schedule.mode === "once" && (
-                        <input
-                          type="datetime-local"
-                          value={schedule.at !== undefined ? toLocalDateTimeInput(schedule.at) : ""}
+                        {laneLabel(taskStatus)} · 不执行
+                      </span>
+                    )}
+                    {schedule !== undefined && (schedule.failureStreak ?? 0) > 0 && (
+                      <span
+                        style={scheduleWarn}
+                        title={
+                          "连续失败 " + (schedule.failureStreak ?? 0) + " 次" +
+                          ((schedule.failureStreak ?? 0) >= SCHEDULE_MAX_FAILURES
+                            ? "（已达上限，日程已停用）"
+                            : `（满 ${SCHEDULE_MAX_FAILURES} 次自动停用）`)
+                        }
+                      >
+                        连续失败 {schedule.failureStreak ?? 0} 次
+                      </span>
+                    )}
+                    {schedule !== undefined && (
+                      <button
+                        type="button"
+                        className={styles.runToggle}
+                        onClick={() => setScheduleDetailOpen((v) => !v)}
+                        aria-expanded={scheduleDetailOpen}
+                        title={scheduleDetailOpen ? "收起详情" : "展开详情"}
+                      >
+                        {scheduleDetailOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                        详情
+                      </button>
+                    )}
+                  </div>
+                  {schedule !== undefined && (
+                    <div style={scheduleRow}>
+                      <span style={formBox}>
+                        <span style={formBoxLabel}>重复：</span>
+                        <NoteSelect
+                          variant="inline"
+                          value={schedule.mode}
                           disabled={saving}
-                          aria-label="一次性触发时刻"
-                          title="触发时刻"
-                          style={scheduleInput}
-                          onChange={(e) => {
-                            const at = fromLocalDateTimeInput(e.target.value);
-                            if (at !== undefined) setSchedule({ ...schedule, at });
+                          ariaLabel="定时周期"
+                          title="定时周期"
+                          onChange={(next) => {
+                            setSchedule(makeSchedule(next as ScheduleMode, schedule));
                             markDirty();
                           }}
+                          options={SCHEDULE_MODES.map((mode) => ({ value: mode, label: SCHEDULE_MODE_LABELS[mode] }))}
                         />
-                      )}
+                      </span>
                       {schedule.mode === "interval" && (
-                        <>
+                        <span style={formBox}>
+                          <span style={formBoxLabel}>每隔：</span>
+                          <span style={formOperators}>
                           <input
                             type="number"
                             min={1}
@@ -771,7 +783,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                             disabled={saving}
                             aria-label="间隔时长"
                             title="间隔时长"
-                            style={scheduleNumber}
+                            style={formBoxInput}
                             onChange={(e) => {
                               const raw = Number(e.target.value);
                               const amount = Number.isFinite(raw) ? Math.max(1, Math.round(raw)) : 1;
@@ -779,14 +791,15 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                               markDirty();
                             }}
                           />
-                          <select
+                          <NoteSelect
+                            variant="inline"
                             value={intervalUnit}
                             disabled={saving}
-                            aria-label="间隔单位"
+                            ariaLabel="间隔单位"
                             title="间隔单位"
-                            style={taskControl}
-                            onChange={(e) => {
-                              const next = e.target.value === "hour" ? "hour" : "min";
+                            options={[{ value: "min", label: "分钟" }, { value: "hour", label: "小时" }]}
+                            onChange={(rawNext) => {
+                              const next = rawNext === "hour" ? "hour" : "min";
                               const minutes = schedule.everyMin ?? 30;
                               setIntervalUnit(next);
                               setSchedule({
@@ -795,11 +808,70 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                               });
                               markDirty();
                             }}
-                          >
-                            <option value="min">分钟</option>
-                            <option value="hour">小时</option>
-                          </select>
-                        </>
+                          />
+                          </span>
+                        </span>
+                      )}
+                      {schedule.mode === "once" && (
+                        <span style={formBox}>
+                          <span style={formBoxLabel}>时间：</span>
+                          <input
+                            type="datetime-local"
+                            value={schedule.at !== undefined ? toLocalDateTimeInput(schedule.at) : ""}
+                            disabled={saving}
+                            aria-label="一次性触发时刻"
+                            title="触发时刻"
+                            style={formBoxInput}
+                            onChange={(e) => {
+                              const at = fromLocalDateTimeInput(e.target.value);
+                              if (at !== undefined) setSchedule({ ...schedule, at });
+                              markDirty();
+                            }}
+                          />
+                        </span>
+                      )}
+                      {schedule.mode !== "once" && schedule.mode !== "interval" && (
+                        <span style={formBox}>
+                          <span style={formBoxLabel}>时间：</span>
+                          <input
+                            type="time"
+                            value={schedule.time ?? "09:00"}
+                            disabled={saving}
+                            aria-label="触发时刻"
+                            title="触发时刻"
+                            style={formBoxInput}
+                            onChange={(e) => {
+                              if (e.target.value !== "") setSchedule({ ...schedule, time: e.target.value });
+                              markDirty();
+                            }}
+                          />
+                        </span>
+                      )}
+                      {/* 1-31；当月不足时落在当月最后一天。 */}
+                      {schedule.mode === "monthly" && (
+                        <span style={formBox}>
+                          <span style={formBoxLabel}>每月：</span>
+                          <span style={formOperators}>
+                          <input
+                            type="number"
+                            min={1}
+                            max={31}
+                            value={schedule.monthDay ?? 1}
+                            disabled={saving}
+                            aria-label="每月第几日"
+                            title="每月第几日"
+                            style={formBoxInput}
+                            onChange={(e) => {
+                              const raw = Number(e.target.value);
+                              if (Number.isFinite(raw)) {
+                                setSchedule({ ...schedule, monthDay: Math.min(31, Math.max(1, Math.round(raw))) });
+                              }
+                              markDirty();
+                            }}
+                          />
+                          <span style={formBoxLabel}>日</span>
+                          </span>
+                        </span>
                       )}
                       {schedule.mode === "weekly" && (
                         <span style={scheduleChips}>
@@ -829,82 +901,53 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                           })}
                         </span>
                       )}
-                      {/* 1-31；当月不足时落在当月最后一天。 */}
-                      {schedule.mode === "monthly" && (
-                        <input
-                          type="number"
-                          min={1}
-                          max={31}
-                          value={schedule.monthDay ?? 1}
+                      <span style={formBox}>
+                        <span style={formBoxLabel}>有效期：</span>
+                        <span style={formOperators}>
+                        <NoteSelect
+                          variant="inline"
+                          value={schedule.endAt !== undefined ? "until" : "forever"}
                           disabled={saving}
-                          aria-label="每月第几日"
-                          title="每月第几日"
-                          style={scheduleNumber}
-                          onChange={(e) => {
-                            const raw = Number(e.target.value);
-                            if (Number.isFinite(raw)) {
-                              setSchedule({ ...schedule, monthDay: Math.min(31, Math.max(1, Math.round(raw))) });
+                          ariaLabel="有效期"
+                          title="到期后日程自动停用"
+                          options={[{ value: "forever", label: "长期有效" }, { value: "until", label: "到期停用" }]}
+                          onChange={(next) => {
+                            if (next === "until") {
+                              if (schedule.endAt === undefined) {
+                                setSchedule({ ...schedule, endAt: defaultEndAt(Date.now()) });
+                              }
+                            } else {
+                              const { endAt: _endAt, ...rest } = schedule;
+                              setSchedule(rest);
                             }
                             markDirty();
                           }}
                         />
-                      )}
-                      {schedule.mode !== "once" && schedule.mode !== "interval" && (
-                        <input
-                          type="time"
-                          value={schedule.time ?? "09:00"}
-                          disabled={saving}
-                          aria-label="触发时刻"
-                          title="触发时刻"
-                          style={scheduleInput}
-                          onChange={(e) => {
-                            if (e.target.value !== "") setSchedule({ ...schedule, time: e.target.value });
-                            markDirty();
-                          }}
-                        />
-                      )}
-                      <span style={scheduleMeta} title={scheduleSummaryTitle}>
-                        <Clock size={11} aria-hidden="true" />
-                        {scheduleNextText}
+                        {schedule.endAt !== undefined && (
+                          <input
+                            type="date"
+                            value={toDateInputValue(schedule.endAt)}
+                            disabled={saving}
+                            aria-label="有效期至"
+                            title="有效期至（当天仍会触发，之后自动停用）"
+                            style={formBoxInput}
+                            onChange={(e) => {
+                              const endAt = endAtFromDayInput(e.target.value);
+                              if (endAt !== undefined) setSchedule({ ...schedule, endAt });
+                              markDirty();
+                            }}
+                          />
+                        )}
+                        </span>
                       </span>
-                      {schedule.enabled && scheduleBlockTextFor(taskStatus) !== undefined && (
-                        <span
-                          style={scheduleStatusChip}
-                          title={(scheduleBlockTextFor(taskStatus) ?? "") + "——拖回「待办」即恢复"}
-                        >
-                          {laneLabel(taskStatus)} · 不执行
-                        </span>
-                      )}
-                      {(schedule.failureStreak ?? 0) > 0 && (
-                        <span
-                          style={scheduleWarn}
-                          title={
-                            "连续失败 " + (schedule.failureStreak ?? 0) + " 次" +
-                            ((schedule.failureStreak ?? 0) >= SCHEDULE_MAX_FAILURES
-                              ? "（已达上限，日程已停用）"
-                              : `（满 ${SCHEDULE_MAX_FAILURES} 次自动停用）`)
-                          }
-                        >
-                          连续失败 {schedule.failureStreak ?? 0} 次
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        className={styles.runToggle}
-                        onClick={() => setScheduleDetailOpen((v) => !v)}
-                        aria-expanded={scheduleDetailOpen}
-                        title={scheduleDetailOpen ? "收起详情" : "展开详情"}
-                      >
-                        {scheduleDetailOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                        详情
-                      </button>
-                    </>
+                    </div>
                   )}
                   {schedule !== undefined && scheduleDetailOpen && (
                     <div style={scheduleDetail}>
                       <span style={scheduleDetailRow}>
                         上次：{schedule.lastResult ?? "还没跑过"}
                         {(schedule.runCount ?? 0) > 0 ? " · 共跑 " + schedule.runCount + " 次" : ""}
+                        {schedule.endAt !== undefined ? " · 有效期至 " + fmtMonthDay(schedule.endAt) : ""}
                       </span>
                       {props.initialLane?.run !== undefined && (
                         <LaneRunBlock
@@ -914,12 +957,11 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                         />
                       )}
                       <span style={scheduleDetailNote}>
-                        到点自动帮你跑一次，跟你手动点「执行」一样；便签板关着也照跑。
+                        到点自动按工作区新开会话执行，便签正文就是提示词。
                         卡片停在『待规划 / 已完成 / 已失败』时不会跑，拖回『待办』就恢复。
                       </span>
                     </div>
                   )}
-                </div>
             {schedule === undefined && props.initialLane !== undefined && (
               <>
                 <span className={styles.taskFormLabel}>执行记录</span>
@@ -936,47 +978,9 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                 </div>
               </>
             )}
-              </div>
-            )}
-            </div>
           </div>
-        </div>
-      </div>
-
-      <div
-        style={{
-          display: "flex",
-          gap: 0,
-          alignItems: "flex-end",
-          flexWrap: "wrap",
-          position: "absolute",
-          bottom: 0,
-          left: '-5px',
-        }}
-      >
-        {NOTE_COLOR_PALETTE.map((c) => (
-          <button
-            key={c.id}
-            type="button"
-            className={styles.color}
-            title={`${c.label}色便签`}
-            aria-label={`设为${c.label}色`}
-            aria-pressed={color === c.id}
-            disabled={saving}
-            onClick={() => {
-              setColor(c.id);
-              props.onColorChange?.(c.id);
-              markDirty();
-            }}
-            style={{
-              ...colorDot,
-              background: c.paper,
-              height: color === c.id ? 40 : 30,
-              ...(saving ? { cursor: "default", opacity: 0.5 } : {}),
-            }}
-          />
-        ))}
-      </div>
+        </aside>
+      )}
 
       <div
         style={{
@@ -1022,6 +1026,33 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
         </button>
       </div>
 
+      <span role="group" aria-label="便签颜色" style={colorPicker}>
+        {NOTE_COLOR_PALETTE.map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            className={styles.swatch}
+            title={`${c.label}色便签`}
+            aria-label={`设为${c.label}色`}
+            aria-pressed={color === c.id}
+            disabled={saving}
+            onClick={() => {
+              setColor(c.id);
+              props.onColorChange?.(c.id);
+              markDirty();
+            }}
+            style={{
+              width: 24,
+              height: color === c.id ? 38 : 24,
+              background: `linear-gradient(180deg, ${c.paper} 50%, transparent)`,
+              opacity: saving ? 0.5 : 1,
+              cursor: saving ? "default" : "pointer",
+              borderRadius: 0,
+            }}
+          />
+        ))}
+      </span>
+
       {scheduleConfirm !== undefined && (
         <ConfirmDialog
           title="开启定时执行？"
@@ -1034,8 +1065,13 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
                 return next !== undefined ? `，下次 ${fmtDateTime(next)}` : "（保存后按当前时刻计算）";
               })()
             }`,
+            `有效期：${
+              scheduleConfirm.endAt !== undefined
+                ? `至 ${fmtMonthDay(scheduleConfirm.endAt)}，到期自动停用`
+                : "长期有效"
+            }`,
             `工作区：${workspace.trim() !== "" ? workspace : "还没选（任务必须有工作区）"}`,
-            "卡片停在『待规划 / 已完成 / 已失败』时不会跑，拖回『待办』就恢复",
+            "提示词 = 便签正文；卡片停在『待规划 / 已完成 / 已失败』时不会跑，拖回『待办』就恢复",
             `连续失败 ${SCHEDULE_MAX_FAILURES} 次自动停用；单次执行超过 ${
               SCHEDULE_RUN_TIMEOUT_MS / 60_000
             } 分钟未收尾按失败收尾`,
@@ -1074,7 +1110,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
 
 const laneRunMuted: React.CSSProperties = {
   fontSize: 12.5,
-  color: "rgba(46, 42, 34, 0.45)",
+  color: t.labelTertiary,
 };
 
 const headRowStyle: React.CSSProperties = {
@@ -1091,7 +1127,7 @@ const headTitleStyle: React.CSSProperties = {
   fontSize: 17,
   fontWeight: 600,
   lineHeight: 1.4,
-  color: NOTE_INK,
+  color: t.labelPrimary,
   background: "transparent",
   border: "none",
   outline: "none",
@@ -1107,14 +1143,15 @@ const headCloseBtn: React.CSSProperties = {
   border: "none",
   borderRadius: 6,
   background: "transparent",
-  color: NOTE_INK_MUTED,
+  color: t.labelTertiary,
   cursor: "pointer",
 };
 const contentStyle: React.CSSProperties = {
   padding: "0 4px",
-  color: NOTE_INK,
+  color: t.labelPrimary,
   background: "transparent",
   maxHeight: "70vh",
+  minHeight: "300px",
   overflowY: "auto",
 };
 const btnBase: React.CSSProperties = {
@@ -1131,20 +1168,22 @@ const btnBase: React.CSSProperties = {
 };
 const btnGhost: React.CSSProperties = {
   ...btnBase,
-  color: NOTE_INK,
+  color: t.labelPrimary,
   background: "transparent",
 };
-const colorDot: React.CSSProperties = {
-  width: 20,
-  height: 20,
-  padding: 0,
-  border: "none",
-  cursor: "pointer",
+const colorPicker: React.CSSProperties = {
+  position: "absolute",
+  right: 18,
+  top: "calc(100% + var(--paper-pad, 14px) + 0px)",
+  display: "flex",
+  alignItems: "flex-start",
+  gap: 3,
+  zIndex: 2,
 };
 const btnPrimary: React.CSSProperties = {
   ...btnBase,
-  color: "#FFFDF4",
-  background: NOTE_INK,
+  color: t.onPrimary,
+  background: t.primaryFill,
   fontWeight: 600,
 };
 const disabledBtn: React.CSSProperties = { opacity: 0.5, cursor: "default" };
@@ -1178,7 +1217,8 @@ const taskAreaStyle: React.CSSProperties = {
   gap: 8,
   padding: "8px 10px",
   borderRadius: 10,
-  background: PAPER_DEEP_TINT,
+  background: t.hoverBg,
+  width: "fit-content",
 };
 const taskHeadRow: React.CSSProperties = {
   display: "flex",
@@ -1186,76 +1226,39 @@ const taskHeadRow: React.CSSProperties = {
   gap: 8,
   flexWrap: "wrap",
 };
-const laneToggleLabel: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 5,
-  fontSize: 13,
-  color: NOTE_INK,
-  cursor: "pointer",
-};
 const laneStatusPill: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   alignSelf: "flex-start",
-  height: 20,
+  height: 22,
   padding: "0 8px",
-  borderRadius: 10,
+  borderRadius: 11,
   fontSize: 12,
   fontWeight: 600,
-  color: NOTE_INK,
-  background: PAPER_SOFT_FILL,
+  color: t.labelSecondary,
+  background: t.hoverBg,
 };
 const taskControl: React.CSSProperties = {
-  height: 26,
-  padding: "0 6px",
+  height: 28,
+  padding: "0 8px",
   fontSize: 12.5,
   fontFamily: "inherit",
-  color: "rgba(46, 42, 34, 0.85)",
-  background: PAPER_SOFT_FILL,
-  border: "none",
-  borderRadius: 7,
+  color: t.labelPrimary,
+  background: "var(--dsw-alias-bg-layer-2)",
+  border: `0.5px solid ${t.borderL1}`,
+  borderRadius: 8,
   outline: "none",
   minWidth: 0,
-};
-const taskSelect: React.CSSProperties = {
-  ...taskControl,
-  width: "100%",
-  cursor: "pointer",
-};
-const taskSelectMissing: React.CSSProperties = {
-  ...taskSelect,
-  boxShadow: `inset 0 0 0 1px ${t.danger}`,
+  boxSizing: "border-box",
 };
 const taskFormHint: React.CSSProperties = {
   fontSize: 11.5,
   lineHeight: 1.4,
   color: t.danger,
 };
-const labelRequiredWarn: React.CSSProperties = {
-  color: t.danger,
-  fontWeight: 600,
-};
 const autoSaveHint: React.CSSProperties = {
   fontSize: 11.5,
-  color: "rgba(46, 42, 34, 0.5)",
-};
-const laneHint: React.CSSProperties = {
-  fontSize: 12,
-  color: "#b3261e",
-};
-const taskSummary: React.CSSProperties = {
-  flex: "1 1 auto",
-  minWidth: 0,
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-  fontSize: 12,
-  color: NOTE_INK_MUTED,
-};
-const taskSummaryWarn: React.CSSProperties = {
-  ...taskSummary,
-  color: t.danger,
+  color: t.labelTertiary,
 };
 const scheduleRow: React.CSSProperties = {
   display: "flex",
@@ -1267,8 +1270,8 @@ const scheduleStatusChip: React.CSSProperties = {
   padding: "1px 6px",
   fontSize: 11,
   lineHeight: 1.6,
-  color: "rgba(46, 42, 34, 0.72)",
-  background: PAPER_SOFT_FILL,
+  color: t.labelSecondary,
+  background: t.hoverBg,
   borderRadius: 6,
   whiteSpace: "nowrap",
 };
@@ -1278,47 +1281,104 @@ const scheduleDetail: React.CSSProperties = {
   flexDirection: "column",
   gap: 5,
   padding: "6px 8px",
-  background: PAPER_SOFT_FILL,
+  background: t.hoverBg,
   borderRadius: 8,
 };
 const scheduleDetailRow: React.CSSProperties = {
   fontSize: 11.5,
   lineHeight: 1.5,
-  color: NOTE_INK_MUTED,
+  color: t.labelTertiary,
 };
 const scheduleDetailNote: React.CSSProperties = {
   fontSize: 11.5,
   lineHeight: 1.5,
-  color: NOTE_INK_MUTED,
+  color: t.labelTertiary,
 };
 const scheduleWarn: React.CSSProperties = {
   fontSize: 11.5,
   color: t.danger,
 };
-const scheduleInput: React.CSSProperties = { ...taskControl, cursor: "text" };
-const scheduleNumber: React.CSSProperties = { ...scheduleInput, width: 58 };
+const formRow: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  flexWrap: "wrap",
+  gap: 6,
+};
+const formBox: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 8,
+  height: 34,
+  padding: "0 2px 0 11px",
+  background: "var(--dsw-alias-bg-layer-3, var(--dsw-alias-bg-layer-2))",
+  border: `0.5px solid ${t.borderL1}`,
+  borderRadius: 10,
+  flex: "1 1 130px",
+  minWidth: 0,
+  boxSizing: "border-box",
+};
+const formBoxDanger: React.CSSProperties = {
+  boxShadow: `inset 0 0 0 1px ${t.danger}`,
+};
+const formBoxIcon: React.CSSProperties = {
+  flex: "none",
+  color: t.labelTertiary,
+};
+const formBoxLabel: React.CSSProperties = {
+  fontSize: 12.5,
+  color: t.labelTertiary,
+  flex: "none",
+  whiteSpace: "nowrap",
+};
+const formBoxInput: React.CSSProperties = {
+  ...taskControl,
+  height: 32,
+  background: "transparent",
+  border: "none",
+  borderRadius: 0,
+  padding: 0,
+  flex: "0 1 auto",
+  minWidth: 32,
+  color: t.labelPrimary,
+};
+const formLabelGroup: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 5,
+  flex: "0 0 auto",
+  minWidth: 0,
+};
+const formOperators: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  flex: "0 1 auto",
+  minWidth: 0,
+};
 const scheduleChips: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
-  gap: 3,
+  gap: 4,
   flexWrap: "wrap",
 };
 const scheduleChip: React.CSSProperties = {
-  minWidth: 22,
-  height: 22,
-  padding: "0 5px",
+  minWidth: 26,
+  height: 24,
+  padding: "0 7px",
   fontSize: 11.5,
   lineHeight: 1,
   boxSizing: "border-box",
-  color: "rgba(46, 42, 34, 0.75)",
-  background: PAPER_SOFT_FILL,
-  border: "none",
-  borderRadius: 6,
+  color: t.labelSecondary,
+  background: "var(--dsw-alias-bg-layer-3, var(--dsw-alias-bg-layer-2))",
+  border: `0.5px solid ${t.borderL1}`,
+  borderRadius: 7,
   cursor: "pointer",
 };
 const scheduleChipActive: React.CSSProperties = {
-  background: "rgba(46, 42, 34, 0.72)",
-  color: "#ffffff",
+  background: t.primaryFill,
+  color: t.onPrimary,
+  borderColor: "transparent",
   fontWeight: 600,
 };
 const scheduleMeta: React.CSSProperties = {
@@ -1326,7 +1386,7 @@ const scheduleMeta: React.CSSProperties = {
   alignItems: "center",
   gap: 4,
   fontSize: 11.5,
-  color: NOTE_INK_MUTED,
+  color: t.labelTertiary,
   flex: "1 1 160px",
   minWidth: 0,
 };

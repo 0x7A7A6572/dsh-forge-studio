@@ -199,6 +199,7 @@ export class NotesService extends TypertRemoteService {
       ...(input.workspace !== undefined && input.workspace.trim() !== ''
         ? { workspace: input.workspace.trim() }
         : {}),
+      ...(input.dueAt !== undefined ? { dueAt: input.dueAt } : {}),
       // 只有任务便签才落 schedule，调度器不认无 lane 的日程。
       ...(input.laneStatus !== undefined && schedule !== undefined ? { schedule } : {}),
       createdAt: now,
@@ -270,7 +271,9 @@ export class NotesService extends TypertRemoteService {
       schedule = armed
     }
     if (lane === undefined) schedule = undefined
-    const { lane: _currentLane, schedule: _currentSchedule, workspace: _currentWorkspace, ...currentWithoutLane } = current
+    const dueAt: number | undefined =
+      patch.dueAt === undefined ? current.dueAt : (patch.dueAt ?? undefined)
+    const { lane: _currentLane, schedule: _currentSchedule, workspace: _currentWorkspace, dueAt: _currentDueAt, ...currentWithoutLane } = current
     const next: NoteRecord = {
       ...currentWithoutLane,
       ...(patch.title !== undefined ? { title: patch.title } : {}),
@@ -282,6 +285,7 @@ export class NotesService extends TypertRemoteService {
       origin: current.origin ?? 'user',
       updatedAt: now,
       ...(workspace !== undefined ? { workspace } : {}),
+      ...(dueAt !== undefined ? { dueAt } : {}),
       ...(lane !== undefined ? { lane } : {}),
       ...(schedule !== undefined ? { schedule } : {}),
     }

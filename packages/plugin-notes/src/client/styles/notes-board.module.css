@@ -15,14 +15,37 @@
 
 /* ---------- 面板框架（board-view） ---------- */
 
-.headerBtn { transition: background 130ms ease, color 130ms ease, transform 90ms ease; }
-.headerBtn:active:not(:disabled) { transform: scale(0.94); }
-.headerBtn:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.headerBtn {
+  transition:
+    background 130ms ease,
+    color 130ms ease,
+    transform 90ms ease;
+}
+.headerBtn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+.headerBtn:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
 
-.backBtn { transition: background 130ms ease, color 130ms ease; }
-.backBtn:hover { display: flex; align-items: center; background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.backBtn {
+  transition:
+    background 130ms ease,
+    color 130ms ease;
+}
+.backBtn:hover {
+  display: flex;
+  align-items: center;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
 
-@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .spinner {
   border: 2px solid var(--dsw-alias-border-l2);
   border-top-color: var(--dsw-alias-label-tertiary);
@@ -30,90 +53,306 @@
   animation: spin 0.8s linear infinite;
 }
 
-@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
-@keyframes pop { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
-.overlay { animation: fade 160ms ease-out backwards; }
-.dialog { animation: pop 200ms cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.overlay {
+  animation: fade 160ms ease-out backwards;
+  --paper-pad: 14px;
+  --sheet-visible: 292px;
+  --sheet-peek: 28px;
+  --overlay-pad-right: 16px;
+}
+/* 附表拉出时右侧让出宽度：纸卡与附表作为一个整体居中。 */
+.overlay:has([data-sheet="open"]) {
+  --overlay-pad-right: calc(16px + var(--sheet-visible));
+}
+@media (max-width: 880px) {
+  .overlay {
+    --sheet-visible: 236px;
+  }
+}
+.dialog {
+  animation: pop 200ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
 
 /* ---------- 动效基础层（board-main） ---------- */
 
 @keyframes noteIn {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 /* 任务徽章 running 呼吸点（task-badge 引用）。 */
 @keyframes taskPulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.25; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
 }
-.taskLiveDot { animation: taskPulse 1.3s ease-in-out infinite; }
+.taskLiveDot {
+  animation: taskPulse 1.3s ease-in-out infinite;
+}
 
-.tool { transition: background 130ms ease, color 130ms ease, transform 90ms ease; }
-.tool:active:not(:disabled) { transform: scale(0.95); }
+.tool {
+  transition:
+    background 130ms ease,
+    color 130ms ease,
+    transform 90ms ease;
+}
+.tool:active:not(:disabled) {
+  transform: scale(0.95);
+}
 
-.searchRow { transition: border-color 160ms ease, box-shadow 160ms ease; }
+.searchRow {
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
 .searchRow:focus-within {
   border-color: var(--dsw-static-deepseek-450);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-static-deepseek-450) 18%, transparent);
+  box-shadow: 0 0 0 2px
+    color-mix(in srgb, var(--dsw-static-deepseek-450) 18%, transparent);
 }
-.searchClear { animation: noteIn 160ms ease-out backwards; }
-.empty { animation: noteIn 240ms ease-out backwards; }
+.searchClear {
+  animation: noteIn 160ms ease-out backwards;
+}
+.empty {
+  animation: noteIn 240ms ease-out backwards;
+}
 
 /* ---------- 纸卡 / 行（note-card / note-row） ---------- */
 
-.card { transition: box-shadow 140ms ease, transform 140ms ease; animation: noteIn 220ms ease-out backwards; }
-.card:hover { box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18); transform: translateY(-1px); }
-.card:focus-visible { outline: 2px solid rgba(0, 0, 0, 0.45); outline-offset: 1px; }
-.card:hover .actions, .card:focus-within .actions { opacity: 1; pointer-events: auto; }
-.card .actions button { color: rgba(46, 42, 34, 0.55); transition: background 110ms ease, color 110ms ease; }
-.card .actions button:hover:not(:disabled) { background: rgba(0, 0, 0, 0.1); color: #2e2a22; }
-.card .actions button[data-danger]:hover:not(:disabled) { background: rgba(197, 48, 48, 0.18); color: #b3261e; }
+.card {
+  transition:
+    box-shadow 140ms ease,
+    transform 140ms ease;
+  animation: noteIn 220ms ease-out backwards;
+}
+.card:hover {
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18);
+  transform: translateY(-1px);
+}
+.card:focus-visible {
+  outline: 2px solid var(--dsw-static-deepseek-450);
+  outline-offset: 1px;
+}
+.card:hover .actions,
+.card:focus-within .actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+.card .actions button {
+  color: var(--dsw-alias-label-tertiary);
+  transition:
+    background 110ms ease,
+    color 110ms ease;
+}
+.card .actions button:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+.card .actions button[data-danger]:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+  color: var(--dsw-alias-state-error-primary);
+}
 
-.snippet { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-
-.row { transition: box-shadow 120ms ease; animation: noteIn 240ms ease-out backwards; }
-.row:hover { box-shadow: inset 0 0 0 999px rgba(0, 0, 0, 0.06); }
-.row:focus-visible { outline: 2px solid var(--dsw-static-deepseek-450); outline-offset: -1px; }
-.row:hover .actions, .row:focus-within .actions { opacity: 1; pointer-events: auto; }
-.row .actions button { color: rgba(46, 42, 34, 0.55); transition: background 110ms ease, color 110ms ease; }
-.row .actions button:hover:not(:disabled) { background: rgba(0, 0, 0, 0.1); color: #2e2a22; }
-.row .actions button[data-danger]:hover:not(:disabled) { background: rgba(197, 48, 48, 0.18); color: #b3261e; }
+.snippet {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 
 /* 卡片/行共用的操作区淡入（两种容器各自挑 hover/focus-within）。 */
-.actions { opacity: 0; pointer-events: none; transition: opacity 120ms ease; }
+.actions {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
 
 /* ---------- 颜色筛选（color-filter） ---------- */
 
-.filterChip { transition: transform 120ms ease, box-shadow 160ms ease, opacity 140ms ease; }
-.filterChip:hover:not(:disabled) { transform: scale(1.12); }
-.filterChip:focus-visible { outline: 2px solid var(--dsw-static-deepseek-450); outline-offset: 1px; }
+.filterChip {
+  transition:
+    transform 120ms ease,
+    box-shadow 160ms ease,
+    opacity 140ms ease;
+}
+.filterChip:hover:not(:disabled) {
+  transform: scale(1.12);
+}
+.filterChip:focus-visible {
+  outline: 2px solid var(--dsw-static-deepseek-450);
+  outline-offset: 1px;
+}
 
-/* ---------- 任务泳道（task-lanes / task-lane-card） ---------- */
+/* ---------- 视图页签（board-main） ---------- */
 
-.laneCards::-webkit-scrollbar { width: 8px; }
-.laneCards::-webkit-scrollbar-thumb { background: var(--dsw-alias-border-l3); border-radius: 4px; }
-.laneCards::-webkit-scrollbar-track { background: transparent; }
+.tab {
+  background: transparent;
+  transition:
+    background 130ms ease,
+    color 130ms ease;
+}
+.tab:hover[aria-selected="false"] {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+.tab:focus-visible {
+  outline: 2px solid var(--dsw-static-deepseek-450);
+  outline-offset: 1px;
+}
 
-.laneCard { transition: box-shadow 140ms ease, transform 140ms ease, opacity 150ms ease; animation: noteIn 200ms ease-out backwards; }
-.laneCard:hover { box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16); transform: translateY(-1px); }
-.laneCard:focus-visible { outline: 2px solid rgba(0, 0, 0, 0.45); outline-offset: 1px; }
-.laneCard[draggable='true'] { cursor: grab; }
-.laneCard[draggable='true']:active { cursor: grabbing; }
-.laneCard:hover .laneActions, .laneCard:focus-within .laneActions { opacity: 1; pointer-events: auto; }
-.laneCard .laneActions button { color: rgba(46, 42, 34, 0.55); transition: background 110ms ease, color 110ms ease; }
-.laneCard .laneActions button:hover:not(:disabled) { background: rgba(0, 0, 0, 0.1); color: #2e2a22; }
-.laneCard .laneActions button[data-danger]:hover:not(:disabled) { background: rgba(197, 48, 48, 0.18); color: #b3261e; }
+/* ---------- 任务看板（task-lanes / task-lane-card） ---------- */
 
-.laneActions { opacity: 0; pointer-events: none; transition: opacity 120ms ease; }
-.laneSnippet { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.laneSummary { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+/* 列是一块浅面板：用 label 的 4% 混色（暗色主题下变亮、亮色主题下变暗），
+   比固定层级令牌在明暗两套主题里都稳。 */
+.lane {
+  background: color-mix(
+    in srgb,
+    var(--dsw-alias-label-primary) 4%,
+    transparent
+  );
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  transition: box-shadow 160ms ease;
+}
 
-@keyframes laneSpin { to { transform: rotate(360deg); } }
+.laneCards::-webkit-scrollbar {
+  width: 8px;
+}
+.laneCards::-webkit-scrollbar-thumb {
+  background: var(--dsw-alias-border-l3);
+  border-radius: 4px;
+}
+.laneCards::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 卡片：中性底比列再上一层（宿主 button 自带底色，这里必须显式覆盖）。 */
+.laneCard {
+  background: var(--dsw-alias-bg-layer-2);
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    opacity 150ms ease;
+  animation: noteIn 200ms ease-out backwards;
+}
+.laneCard:hover {
+  border-color: var(--dsw-alias-border-l2);
+  box-shadow: var(--dsw-shadow-lv3);
+}
+.laneCard:focus-visible {
+  outline: 2px solid var(--dsw-static-deepseek-450);
+  outline-offset: 1px;
+}
+.laneCard[draggable="true"] {
+  cursor: grab;
+}
+.laneCard[draggable="true"]:active {
+  cursor: grabbing;
+}
+.laneCard:hover .laneActions,
+.laneCard:focus-within .laneActions {
+  opacity: 1;
+  pointer-events: auto;
+}
+.laneCard .laneActions button {
+  background: transparent;
+  transition:
+    background 110ms ease,
+    color 110ms ease;
+}
+.laneCard .laneActions button:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+.laneCard .laneActions button[data-danger]:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+  color: var(--dsw-alias-state-error-primary);
+}
+
+/* 标题最多三行：长标题（例如带前缀的工单名）在窄列里也要能读完。 */
+.laneTitle {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+.laneActions {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+.laneSnippet {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.laneSummary {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.chip {
+  background: var(--dsw-alias-interactive-bg-hover);
+  transition:
+    background 110ms ease,
+    color 110ms ease;
+}
+.chip:hover {
+  background: var(--dsw-alias-interactive-bg-active);
+}
+.chip:focus-visible {
+  outline: 2px solid var(--dsw-static-deepseek-450);
+  outline-offset: 1px;
+}
+
+.dueInput:focus {
+  outline: none;
+  border-color: var(--dsw-static-deepseek-450);
+}
+
+@keyframes laneSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .laneSpinner {
-  border: 2px solid rgba(0, 0, 0, 0.12);
-  border-top-color: rgba(46, 42, 34, 0.55);
+  border: 2px solid var(--dsw-alias-border-l2);
+  border-top-color: var(--dsw-alias-label-tertiary);
   border-radius: 50%;
   animation: laneSpin 0.8s linear infinite;
+  corner-shape: unset;
 }
 
 /* running 斜向扫光（光栅扫描）：一道柔光带以约 -18° 倾角从卡片左外斜穿到右外
@@ -123,10 +362,17 @@
    保证过卡全程覆盖；渐变两端大段透明、峰值柔化（避免硬边「突兀」）；起止点都在
    卡片可视区外，循环无闪跳。::after 盖在内容上但 pointer-events 放行交互。 */
 @keyframes laneDiag {
-  0% { transform: translateX(-300%) skewX(-18deg); }
-  100% { transform: translateX(300%) skewX(-18deg); }
+  0% {
+    transform: translateX(-300%) skewX(-18deg);
+  }
+  100% {
+    transform: translateX(300%) skewX(-18deg);
+  }
 }
-.laneCard.laneRunning { position: relative; overflow: hidden; }
+.laneCard.laneRunning {
+  position: relative;
+  overflow: hidden;
+}
 .laneCard.laneRunning::after {
   content: "";
   position: absolute;
@@ -137,21 +383,99 @@
   pointer-events: none;
   background: linear-gradient(
     to right,
-    rgba(255, 255, 255, 0) 0%,
-    rgba(255, 255, 255, 0.14) 24%,
-    rgba(255, 255, 255, 0.52) 50%,
-    rgba(255, 255, 255, 0.14) 76%,
-    rgba(255, 255, 255, 0) 100%
+    transparent 0%,
+    color-mix(in srgb, var(--dsw-alias-label-primary) 4%, transparent) 24%,
+    color-mix(in srgb, var(--dsw-alias-label-primary) 14%, transparent) 50%,
+    color-mix(in srgb, var(--dsw-alias-label-primary) 4%, transparent) 76%,
+    transparent 100%
   );
   animation: laneDiag 2.6s cubic-bezier(0.33, 0, 0.67, 1) infinite;
   will-change: transform;
 }
 
+/* ---------- 日历（calendar-board） ---------- */
+
+/* 格子靠发丝边框分格；背景留空给 hover/选中（内联会盖掉 :hover）。 */
+.calCell {
+  background: transparent;
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  transition:
+    background 120ms ease,
+    box-shadow 120ms ease,
+    border-color 120ms ease;
+}
+.calCell:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  border-color: var(--dsw-alias-border-l2);
+}
+.calCell:focus-visible {
+  outline: 2px solid var(--dsw-static-deepseek-450);
+  outline-offset: -1px;
+}
+/* 今天给一圈品牌描边，选中日给底色 —— 两个状态可以叠加，互不吞掉。 */
+.calCellToday {
+  box-shadow: inset 0 0 0 1px var(--dsw-alias-state-business-primary);
+}
+.calCellSelected {
+  background: var(--dsw-alias-interactive-bg-hover);
+  box-shadow: inset 0 0 0 1px var(--dsw-alias-border-l3);
+}
+.calCellSelected.calCellToday {
+  box-shadow: inset 0 0 0 1px var(--dsw-alias-state-business-primary);
+}
+
+.calNavBtn {
+  background: transparent;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+.calNavBtn:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+.calNavBtn:focus-visible {
+  outline: 2px solid var(--dsw-static-deepseek-450);
+  outline-offset: 1px;
+}
+
+.calEventRow {
+  background: transparent;
+  transition: background 120ms ease;
+}
+.calEventRow:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.calEventRow:focus-visible {
+  outline: 2px solid var(--dsw-static-deepseek-450);
+  outline-offset: -1px;
+}
+
 /* ---------- 动效降级 ---------- */
 
 @media (prefers-reduced-motion: reduce) {
-  .headerBtn, .backBtn, .overlay, .dialog,
-  .card, .row, .laneCard, .searchClear, .empty, .filterChip, .tool,
-  .searchRow, .taskLiveDot { animation: none !important; transition: none !important; }
-  .laneCard.laneRunning::after { animation: none !important; opacity: 0 !important; }
+  .headerBtn,
+  .backBtn,
+  .overlay,
+  .dialog,
+  .card,
+  .laneCard,
+  .searchClear,
+  .empty,
+  .filterChip,
+  .tool,
+  .tab,
+  .calCell,
+  .calNavBtn,
+  .calEventRow,
+  .chip,
+  .searchRow,
+  .taskLiveDot {
+    animation: none !important;
+    transition: none !important;
+  }
+  .laneCard.laneRunning::after {
+    animation: none !important;
+    opacity: 0 !important;
+  }
 }

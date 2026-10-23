@@ -12,7 +12,6 @@ import type { NoteLane } from '../../types.ts'
 import { fmtElapsed, fmtShortDateTime } from '../core/time-text.ts'
 import { buildNoteRichTextExtensions } from '../core/note-richtext.ts'
 import { t } from '../core/theme-tokens.ts'
-import { NOTE_INK_MUTED } from '../core/note-colors.ts'
 import styles from '../styles/notes-editor.module.css'
 
 /** 只读 markdown 渲染（正文观感）：run.summary 是 agent 写回的 markdown 总结，
@@ -89,11 +88,11 @@ const laneMetaRow: React.CSSProperties = {
   flexWrap: "wrap",
   gap: 5,
   fontSize: 12.5,
-  color: NOTE_INK_MUTED,
+  color: t.labelTertiary,
   lineHeight: 1.6,
 };
 const metaDot: React.CSSProperties = {
-  color: "rgba(46, 42, 34, 0.32)",
+  color: t.borderL3,
 };
 const runOkText: React.CSSProperties = { color: t.success };
 const runFailText: React.CSSProperties = { color: t.danger };

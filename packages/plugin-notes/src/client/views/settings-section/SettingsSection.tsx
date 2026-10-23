@@ -26,6 +26,7 @@ import { SettingsRow } from '../../components/SettingsRow.tsx'
 import { SettingsSwitchRow } from '../../components/SettingsSwitchRow.tsx'
 import { pluginVersion } from '../../../version.ts'
 import { useSettingsSection, type SettingsGroup } from './useSettingsSection.ts'
+import { NoteSelect } from '../../components/NoteSelect.tsx'
 
 /** 注册侧注入的业务面（见 src/client/index.ts）。 */
 export interface NotesSettingsSectionInjected {
@@ -189,17 +190,14 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
                 ? '左栏那一行与输入栏的「打开便签板」会把板子开进右侧栏；宿主没装右侧栏时自动回退中间列。'
                 : '默认：板子开在中间列，也是插件一直以来的行为。'}
             >
-              <select
+              <NoteSelect
                 value={openMode}
                 disabled={!writable}
-                aria-label="便签板打开方式"
-                onChange={(e) => { void setOpenMode(e.target.value as NoteOpenMode) }}
-                style={inputStyle}
-              >
-                {OPEN_MODE_ITEMS.map((item) => (
-                  <option key={item.value} value={item.value}>{item.label}</option>
-                ))}
-              </select>
+                ariaLabel="便签板打开方式"
+                style={{ width: '100%' }}
+                onChange={(next) => { void setOpenMode(next as NoteOpenMode) }}
+                options={OPEN_MODE_ITEMS.map((item) => ({ value: item.value, label: item.label }))}
+              />
             </SettingsRow>
 
             {ENTRY_ITEMS.map((item) => {
@@ -332,21 +330,16 @@ export function SettingsSection(props: SettingsSectionProps): JSX.Element {
             {/* 恢复面板 */}
             {showFiles && files.length > 0 && (
               <div style={restorePanelStyle}>
-                <select
+                <NoteSelect
                   value={pick}
                   disabled={busy}
-                  onChange={(e) => {
-                    setPick(e.target.value)
+                  ariaLabel="选择快照"
+                  onChange={(next) => {
+                    setPick(next)
                     setArmed(false)
                   }}
-                  style={selectStyle}
-                >
-                  {files.map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
+                  options={files.map((name) => ({ value: name, label: name }))}
+                />
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <button
                     type="button"
@@ -493,18 +486,6 @@ const gridStyle: React.CSSProperties = {
   gridTemplateColumns: '1fr 1fr',
   gap: '10px 12px',
 }
-const inputStyle: React.CSSProperties = {
-  boxSizing: 'border-box',
-  width: '100%',
-  height: 30,
-  padding: '0 8px',
-  fontSize: 13,
-  color: t.labelPrimary,
-  background: t.surface,
-  border: `1px solid ${t.borderL2}`,
-  borderRadius: 8,
-  outline: 'none',
-}
 const statusStyle: React.CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
@@ -541,17 +522,6 @@ const restorePanelStyle: React.CSSProperties = {
   padding: 10,
   border: `1px dashed ${t.borderL2}`,
   borderRadius: 8,
-}
-const selectStyle: React.CSSProperties = {
-  boxSizing: 'border-box',
-  height: 30,
-  padding: '0 8px',
-  fontSize: 12,
-  color: t.labelPrimary,
-  background: t.surface,
-  border: `1px solid ${t.borderL2}`,
-  borderRadius: 8,
-  outline: 'none',
 }
 const btnBase: React.CSSProperties = {
   height: 28,

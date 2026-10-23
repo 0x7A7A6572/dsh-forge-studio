@@ -1,7 +1,6 @@
 /**
  * 便签板「编辑器弹窗」：浮在列表页（BoardMain）之上的居中弹窗层。
- * 半透明遮罩 + 纸卡（背景即当前便签纸色）；整卡无边框，正文与控件走 NOTE_INK
- * 墨迹族（见 NoteEditor 的 styles.paper）。
+ * 半透明遮罩 + 纸卡（主题表面底 + 便签环色渐变与描边），正文与控件走主题令牌。
  * 弹窗头部不再有独立「新建便签」标签行 —— 可编辑的便签标题由 NoteEditor 自己的
  * header 行承担（标题即 header，省一行），关闭钮也在该行右侧。
  * 由 notes-nav 的 editing 目标驱动渲染，target（create | edit+note）翻译成
@@ -18,7 +17,7 @@
  * 拖到卡片外松手时，浏览器仍会往遮罩上派一次 click，那不是「点了外面」，不能据此关闭（#3）。
  */
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { MutableRefObject } from 'react'
 import type { NoteColor, NoteLane, TaskStatus, TaskTargets } from '../../types.ts'
 import { NoteEditor } from './NoteEditor.tsx'
@@ -39,7 +38,7 @@ export interface EditorPageDialogProps {
   readonly workspaceOptions?: readonly string[]
   /** 工作区候选是否已加载完成（未就绪时不写「未配置」，避免提示一闪而过）。 */
   readonly workspaceReady?: boolean
-  /** 任务执行目标目录（模型 / agent 预设）；空目录即只有「宿主默认」可选。 */
+  /** 任务执行目标目录（模型 / Agent 预设）；空目录即只有「宿主默认」可选。 */
   readonly taskTargets?: TaskTargets
   /**
    * 关闭请求出口（可选）：本弹窗的关闭闸 —— 有改动先问一句，没改动直接关。
@@ -90,11 +89,27 @@ export function EditorPageDialog(props: EditorPageDialogProps): JSX.Element {
   // 点遮罩关闭：走的是同一道闸（有改动先问一句），但只在「从遮罩上按下」时才算 ——
   // 卡片里拉选区拖到外面松手，浏览器仍会往遮罩派一次 click，那次不算点外面（issue #3）。
   const backdropDismiss = useBackdropDismiss(requestClose)
+  const overlayRef = useRef<HTMLDivElement | null>(null)
+  const [narrow, setNarrow] = useState(false)
+  useEffect(() => {
+    const node = overlayRef.current
+    if (node === null) return
+    const probe = (): void => setNarrow(node.clientWidth < 640)
+    probe()
+    const observer = new ResizeObserver(probe)
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [])
   return (
-    <div className={styles.overlay} style={overlayStyle} {...backdropDismiss}>
+    <div
+      ref={overlayRef}
+      className={styles.overlay}
+      style={narrow ? { ...overlayStyle, '--overlay-pad-right': '16px' } as React.CSSProperties : overlayStyle}
+      {...backdropDismiss}
+    >
       <div
         className={styles.dialog}
-        style={cardStyle(paperMeta.paper)}
+        style={cardStyle(paperMeta.ring)}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-label={editing ? '编辑便签' : '新建便签'}
@@ -115,6 +130,7 @@ export function EditorPageDialog(props: EditorPageDialogProps): JSX.Element {
           taskTargets={props.taskTargets}
           // 编辑既有便签才自动保存：新建态没有库记录（保存即创建），无从自动落盘。
           autoSave={props.target.mode === 'edit'}
+          narrowSheet={narrow}
           requestCloseRef={editorCloseRef}
           onColorChange={setPaper}
           onCancel={props.onCancel}
@@ -133,23 +149,29 @@ const overlayStyle: React.CSSProperties = {
   zIndex: 10,
   display: 'flex',
   background: t.mask,
-  padding: 16,
+  paddingTop: 16,
+  paddingRight: 'var(--overlay-pad-right, 16px)',
+  paddingBottom: 16,
+  paddingLeft: 16,
   boxSizing: 'border-box',
   overflow: 'auto',
+  transition: 'padding-right 300ms cubic-bezier(0.22, 0.61, 0.36, 1)',
 }
 /**
- * 便签纸卡片：无边框，背景 = 当前纸色（pastel），浅底墨迹文字。
- * 阴影保留以与遮罩分层（浅纸卡在遮罩上仍需轻投影），用宿主 shadow-lv3 令牌随主题。
+ * 便签纸卡片：主题表面底 + 便签环色角部渐变，2px 主题描边。
+ * 阴影保留以与遮罩分层，用宿主 shadow-lv3 令牌随主题。
  */
-const cardStyle = (paper: string): React.CSSProperties => ({
+const cardStyle = (ring: string): React.CSSProperties => ({
   margin: 'auto',
   width: 'min(680px, 100%)',
   boxSizing: 'border-box',
   display: 'flex',
   flexDirection: 'column',
   gap: 8,
-  padding: 14,
-  background: paper,
-  borderRadius: 12,
+  padding: 'var(--paper-pad, 14px)',
+  backgroundColor: 'var(--dsw-alias-bg-layer-2)',
+  backgroundImage: `linear-gradient(327deg, ${ring}, transparent 20%)`,
+  border: '2px solid var(--dsw-alias-border-l1)',
+  borderRadius: 18,
   boxShadow: t.shadowLv3,
 })

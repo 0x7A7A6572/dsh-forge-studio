@@ -37,7 +37,7 @@ export interface QuickAddDialogProps {
   }) => Promise<QuickCreateResult>
   /** 工作区候选（最近会话用过的 cwd）：挂载即拉一次；缺省 = 无候选。 */
   readonly listWorkspaces?: () => Promise<readonly string[]>
-  /** 任务执行目标目录（模型 / agent 预设）：同样挂载即拉；缺省 = 空目录。 */
+  /** 任务执行目标目录（模型 / Agent 预设）：同样挂载即拉；缺省 = 空目录。 */
   readonly listTaskTargets?: () => Promise<TaskTargets>
   /** 保存成功回调（补刷侧栏徽标等）。 */
   readonly onCreated: () => void

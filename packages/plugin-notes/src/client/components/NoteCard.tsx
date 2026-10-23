@@ -6,9 +6,11 @@
  */
 
 import type { NoteRecord } from '../../types.ts'
-import { NOTE_INK, NOTE_INK_MUTED, noteColorMeta } from '../core/note-colors.ts'
+import { noteColorMeta } from '../core/note-colors.ts'
+import { t } from '../core/theme-tokens.ts'
 import { mdSnippet, firstImageUrl, todoProgress } from '../core/markdown-text.ts'
 import { fmtDateTime, fmtRelative } from '../core/time-text.ts'
+import { dueTone, fmtDueChip } from '../core/due-date.ts'
 import { TaskBadge } from './TaskBadge.tsx'
 import { TodoBadge } from './TodoBadge.tsx'
 import { PinnedCornerMark } from './PinnedCornerMark.tsx'
@@ -50,14 +52,14 @@ export function NoteCard(props: NoteCardProps): JSX.Element {
         }}
         style={{
           ...cardStyle,
-          background: meta.paper,
+          backgroundImage: `linear-gradient(327deg, ${meta.ring}, transparent 20%)`,
           ...(note.pinned && !note.archived ? { borderTopRightRadius: 0 } : {}),
         }}
       >
         {note.pinned && !note.archived && <PinnedCornerMark color={meta.ring} />}
         <span style={cardTitleRow}>
           <span style={cardTitle} title={note.title || '（无标题）'}>
-            {note.title || <span style={{ color: NOTE_INK_MUTED }}>（无标题）</span>}
+            {note.title || <span style={{ color: t.labelTertiary }}>（无标题）</span>}
           </span>
           {note.lane && <TaskBadge lane={note.lane} />}
           {todo && <TodoBadge done={todo.done} total={todo.total} />}
@@ -76,12 +78,24 @@ export function NoteCard(props: NoteCardProps): JSX.Element {
           </span>
         )}
         {snippet ? (
-          <span className={styles.snippet} style={{ ...cardSnippet, color: NOTE_INK_MUTED }}>{snippet}</span>
+          <span className={styles.snippet} style={{ ...cardSnippet, color: t.labelSecondary }}>{snippet}</span>
         ) : (
-          <span style={{ ...cardSnippet, color: NOTE_INK_MUTED, fontStyle: 'italic' }}>（无正文）</span>
+          <span style={{ ...cardSnippet, color: t.labelTertiary, fontStyle: 'italic' }}>（无正文）</span>
         )}
         <span style={cardFooter}>
-          <time style={{ color: NOTE_INK_MUTED }} title={fmtDateTime(note.updatedAt)}>{fmtRelative(note.updatedAt)}</time>
+          {note.dueAt !== undefined && (
+            <span
+              style={{
+                flex: 'none',
+                fontSize: 11,
+                color: dueTone(note.dueAt) === 'overdue' ? t.danger : t.labelTertiary,
+              }}
+              title={`截止 ${fmtDateTime(note.dueAt)}`}
+            >
+              {fmtDueChip(note.dueAt)}
+            </span>
+          )}
+          <time style={{ color: t.labelTertiary, flex: 1, textAlign: 'left' }} title={fmtDateTime(note.updatedAt)}>{fmtRelative(note.updatedAt)}</time>
           <span className={styles.actions} style={cardActions}>
             <button type="button" title="编辑" aria-label="编辑" disabled={props.busy}
               onClick={(e) => { e.stopPropagation(); props.onEdit() }} style={actionBtn}>
@@ -123,10 +137,14 @@ const cardStyle: React.CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   gap: 5,
-  padding: '11px 12px 8px',
-  borderRadius: 12,
-  border: '1px solid rgba(0, 0, 0, 0.07)',
-  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+  padding: '9px 10px 7px 12px',
+  borderRadius: 18,
+  borderWidth: 1,
+  borderStyle: 'solid',
+  borderColor: 'var(--dsw-alias-border-l1)',
+  backgroundColor: 'var(--dsw-alias-bg-layer-2)',
+  boxShadow: '0 2px 10px rgba(0, 0, 0, 0.10)',
+  color: t.labelPrimary,
   cursor: 'pointer',
 }
 const cardTitleRow: React.CSSProperties = {
@@ -140,7 +158,7 @@ const cardTitle: React.CSSProperties = {
   minWidth: 0,
   fontSize: 14,
   fontWeight: 600,
-  color: NOTE_INK,
+  color: t.labelPrimary,
   whiteSpace: 'nowrap',
   overflow: 'hidden',
   textOverflow: 'ellipsis',
@@ -159,7 +177,7 @@ const cardThumbWrap: React.CSSProperties = {
   maxHeight: 110,
   overflow: 'hidden',
   borderRadius: 8,
-  background: 'rgba(0, 0, 0, 0.05)',
+  background: t.hoverBg,
 }
 const cardThumbImg: React.CSSProperties = {
   maxWidth: '100%',
@@ -193,5 +211,6 @@ const actionBtn: React.CSSProperties = {
   border: 'none',
   borderRadius: 6,
   background: 'transparent',
+  color: t.labelSecondary,
   cursor: 'pointer',
 }

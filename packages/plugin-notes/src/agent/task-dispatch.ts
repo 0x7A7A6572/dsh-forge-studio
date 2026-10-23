@@ -26,7 +26,7 @@ interface WorkspaceLookup {
   resolveByPath(path: string): Promise<{ readonly id: string } | undefined>
 }
 
-/** agent 预设目录的结构面：同样不 import 该包，缺席时下拉只剩「宿主默认」。 */
+/** Agent 预设目录的结构面：同样不 import 该包，缺席时下拉只剩「宿主默认」。 */
 interface PresetLookup {
   list(): Promise<readonly {
     readonly id: string

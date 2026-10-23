@@ -2,6 +2,7 @@
  * 操作栏的两个小组件：带选中态的图标按钮与分隔线。
  * 从 note-editor 拆出（原文件 2000 行），只吃 props、无自有状态。
  */
+import { t } from '../core/theme-tokens.ts'
 import styles from '../styles/notes-editor.module.css'
 
 /* ---------- 操作栏小组件 ---------- */
@@ -23,7 +24,7 @@ export function ToolButton(props: {
       style={{
         ...toolBtn,
         ...(props.active
-          ? { background: "rgba(46, 42, 34, 0.14)", color: "#2E2A22" }
+          ? { background: t.activeBg, color: t.labelPrimary }
           : {}),
         ...(props.disabled ? { cursor: "default", opacity: 0.35 } : {}),
       }}
@@ -36,7 +37,7 @@ export function ToolButton(props: {
 export function ToolDivider(): JSX.Element {
   return (
     <span
-      style={{ width: 1, height: 16, background: "rgba(46, 42, 34, 0.22)", margin: "0 2px" }}
+      style={{ width: 1, height: 16, background: t.borderL2, margin: "0 2px" }}
     />
   );
 }
@@ -53,6 +54,6 @@ const toolBtn: React.CSSProperties = {
   border: "none",
   borderRadius: 7,
   background: "transparent",
-  color: "rgba(46, 42, 34, 0.75)",
+  color: t.labelSecondary,
   cursor: "pointer",
 };

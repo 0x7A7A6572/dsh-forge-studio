@@ -37,7 +37,7 @@ const FIELD_CHANGES: ReadonlyArray<readonly [string, Partial<NoteDraftFields>]> 
   ['任务开关', { taskOn: true }],
   ['任务状态', { taskStatus: 'running' }],
   ['工作区', { workspace: 'F:\\codes\\demo' }],
-  ['agent 预设', { agentPreset: 'fast' }],
+  ['Agent 预设', { agentPreset: 'fast' }],
   ['模型', { modelValue: 'deepseek/deepseek-flash' }],
   ['定时日程', { schedule: SCHEDULE }],
 ]
