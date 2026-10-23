@@ -175,71 +175,122 @@
 /* run.summary 内嵌在编辑器里，再压一层高度上限。 */
 .runSummary { padding: 0; max-height: 36vh; overflow-y: auto; }
 .runSummary :global(.ProseMirror) { min-height: 0; caret-color: transparent; }
-/* ---------- 任务区「折纸」折叠（M2-1） ----------
-
-   便签纸里默认只留一行摘要，任务设置折在下面。折叠用 grid-template-rows 0fr ⇄ 1fr
-   做——这是唯一能对「内容自适应高度」做过渡的写法（max-height 猜高度会跳）。
-   折痕是一道虚线 + 一层往下淡出的纸影：合上时是压在纸上的折痕，展开后变成面板与
-   纸面的分界。 */
-.taskFold {
-  display: grid;
-  grid-template-rows: 1fr;
-  transition: grid-template-rows 300ms cubic-bezier(0.22, 0.61, 0.36, 1);
+/* ---------- 任务设置附表 ----------
+   从纸后右侧拉出的一张纸，负 z 层让纸卡盖住左缘。
+   拉出靠 right 过渡；收起时整块缩回纸后。 */
+.taskSheet {
+  position: absolute;
+  top: calc(-1 * var(--paper-pad, 14px));
+  bottom: calc(-1 * var(--paper-pad, 14px));
+  right: calc(-1 * var(--paper-pad, 14px));
+  z-index: -1;
+  box-sizing: border-box;
+  width: calc(var(--sheet-visible, 292px) + var(--sheet-peek, 28px));
+  padding: 14px 16px 14px calc(var(--sheet-peek, 28px) + 14px);
+  overflow-y: auto;
+  border-radius: 0 12px 12px 0;
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-left: none;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  box-shadow: var(--dsw-shadow-lv3);
+  visibility: hidden;
+  transition: right 300ms cubic-bezier(0.22, 0.61, 0.36, 1), visibility 0s linear 300ms;
 }
-/* 顺序即优先级：两个状态类都在 .taskFold 之后，谁生效只看挂的是哪个。 */
-.taskFoldOpen { grid-template-rows: 1fr; }
-.taskFoldClosed { grid-template-rows: 0fr; }
-.taskFoldBody { min-height: 0; overflow: hidden; }
-/* 合上时把面板里的控件从 tab 序里摘掉（0 高度挡得住鼠标，挡不住键盘），
-   并延迟到折纸动画结束再摘，免得折叠过程里控件突然消失。 */
-.taskFoldClosed .taskFoldBody { visibility: hidden; transition: visibility 0s linear 300ms; }
-.taskFoldOpen .taskFoldBody { visibility: visible; transition: visibility 0s linear 0s; }
-
-/* 折痕 + 面板的包裹层：两者之间不留 gap（父容器的 gap 只落在这一整块之上），
-   折叠时整块高度 = 一道虚线，纸面上不会多出一段空。 */
-.taskFoldWrap { display: flex; flex-direction: column; min-width: 0; }
+[data-sheet='open'] .taskSheet {
+  right: calc(-1 * (var(--paper-pad, 14px) + var(--sheet-visible, 292px)));
+  visibility: visible;
+  transition: right 300ms cubic-bezier(0.22, 0.61, 0.36, 1), visibility 0s linear 0s;
+}
+/* 面板窄：附表浮在纸上，免得把纸挤没。 */
+[data-sheet-mode='overlay'][data-sheet='open'] .taskSheet {
+  z-index: 5;
+  right: calc(-1 * var(--paper-pad, 14px));
+  width: min(78%, 320px);
+  padding-left: 16px;
+  border-radius: 12px;
+  box-shadow: var(--dsw-shadow-lv3);
+}
+.taskSheetHead { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.taskSheetTitle { flex: 1 1 auto; min-width: 0; font-size: 12.5px; font-weight: 600; color: var(--dsw-alias-label-secondary); }
+/* 附表是主题表面：纸上的墨迹色不外溢到这里。 */
+.taskSheet .taskFoldToggle { color: var(--dsw-alias-label-secondary); }
+.taskSheet .runToggle { color: var(--dsw-alias-label-secondary); }
+.taskSheet .runToggle:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.taskSheet .taskFoldToggle:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.taskSheet input::placeholder { color: var(--dsw-alias-label-tertiary); }
+.taskSheet ::selection {
+  background: color-mix(in srgb, var(--dsw-static-deepseek-450) 32%, transparent);
+  color: var(--dsw-alias-label-primary);
+}
 
 /* ---------- 任务设置表单（折纸面板的内层排版） ----------
 
-   两列网格：左列标签、右列字段。标签列按最宽的那个标签（agent 预设）取宽，所以四行
-   字段的左右边缘严格对齐，不再是一个个位置各异的「标签+控件」小块。
-   align-items 用 start 而不是 center：「执行记录」这类整块内容会把行撑高，标签必须
-   贴着行首，不能跟着垂直居中飘到行的中间去。 */
+   对齐宿主编辑器底栏的「标签在框内」组合控件：全部字段都是带描边的
+   组合框（图标 + 标签 + 控件），两两一行；不再用左标签列的网格。 */
 .taskForm {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  align-items: start;
-  column-gap: 10px;
-  row-gap: 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   padding: 2px 0;
 }
 .taskFormLabel {
-  /* 与 26px 高的控件视觉居中：文字行高约 19px，补 4px 上边距刚好对齐。 */
-  padding-top: 4px;
-  font-size: 12.5px;
+  /* 与 28px 高的控件视觉居中：文字行高约 19px，补 5px 上边距刚好对齐。 */
+  padding-top: 5px;
+  font-size: 12px;
   line-height: 1.5;
-  color: rgba(46, 42, 34, 0.55);
+  color: var(--dsw-alias-label-tertiary);
   white-space: nowrap;
 }
 .taskFormField {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
   min-width: 0;
 }
-
-/* 折痕：虚线 + 向下淡出的纸影。 */
-.taskCrease {
-  height: 7px;
-  margin: 0;
-  border-top: 1px dashed rgba(46, 42, 34, 0.26);
-  background-image: linear-gradient(rgba(46, 42, 34, 0.09), rgba(46, 42, 34, 0));
-  opacity: 0.7;
-  transition: opacity 300ms ease, border-color 300ms ease;
+/* 表单控件统一走 dsh 令牌（底色 layer-2 + l1 描边），focus 描品牌蓝。 */
+.taskForm select:focus,
+.taskForm input:focus {
+  border-color: var(--dsw-static-deepseek-450);
+  outline: none;
 }
-/* 展开后折痕是分界线（压深、压直），合上时是那道压痕（虚得更明显）。 */
-[data-fold='open'] .taskCrease { opacity: 1; border-color: rgba(46, 42, 34, 0.2); }
-[data-fold='closed'] .taskCrease { opacity: 0.85; }
+
+/* 「自动执行」开关：对齐宿主「允许完全访问」那类 toggle 的观感。 */
+.schedSwitch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  user-select: none;
+}
+.schedSwitchInput { position: absolute; opacity: 0; width: 0; height: 0; margin: 0; }
+.schedSwitchTrack {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 20px;
+  border-radius: 10px;
+  background: var(--dsw-alias-interactive-bg-active);
+  transition: background 160ms ease;
+}
+.schedSwitchTrack::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--dsw-alias-bg-layer-3, var(--dsw-alias-bg-layer-2));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+  transition: transform 160ms ease;
+}
+.schedSwitchInput:checked + .schedSwitchTrack { background: var(--dsw-alias-state-business-primary); }
+.schedSwitchInput:checked + .schedSwitchTrack::after { transform: translateX(14px); }
+.schedSwitchInput:disabled + .schedSwitchTrack { opacity: 0.5; }
+.schedSwitchInput:focus-visible + .schedSwitchTrack { outline: 2px solid var(--dsw-static-deepseek-450); outline-offset: 1px; }
 
 /* 摘要行右端的「设置 / 折起」。 */
 .taskFoldToggle {
@@ -261,5 +312,5 @@
 .taskFoldToggle:hover { background: rgba(46, 42, 34, 0.09); color: #2E2A22; }
 
 @media (prefers-reduced-motion: reduce) {
-  .taskFold, .taskFoldBody, .taskCrease, .taskFoldToggle { transition: none; }
+  .taskSheet, .taskFoldToggle { transition: none; }
 }

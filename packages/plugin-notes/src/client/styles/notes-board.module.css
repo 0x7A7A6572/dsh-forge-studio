@@ -32,7 +32,16 @@
 
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes pop { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
-.overlay { animation: fade 160ms ease-out backwards; }
+.overlay {
+  animation: fade 160ms ease-out backwards;
+  --paper-pad: 14px;
+  --sheet-visible: 292px;
+  --sheet-peek: 28px;
+  --overlay-pad-right: 16px;
+}
+/* 附表拉出时右侧让出宽度：纸卡与附表作为一个整体居中。 */
+.overlay:has([data-sheet='open']) { --overlay-pad-right: calc(16px + var(--sheet-visible)); }
+@media (max-width: 880px) { .overlay { --sheet-visible: 236px; } }
 .dialog { animation: pop 200ms cubic-bezier(0.22, 1, 0.36, 1) backwards; }
 
 /* ---------- 动效基础层（board-main） ---------- */

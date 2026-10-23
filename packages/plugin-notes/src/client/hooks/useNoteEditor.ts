@@ -79,6 +79,7 @@ export interface NoteEditorProps {
   readonly taskTargets?: TaskTargets;
   /** 编辑既有便签才开：停顿自动保存，不关弹窗。 */
   readonly autoSave?: boolean;
+  readonly narrowSheet?: boolean;
   /** 编辑器外那几条关闭路径（遮罩 / 浮层 / 板子）由此 ref 走同一道闸。 */
   readonly requestCloseRef?: MutableRefObject<(() => void) | null>;
   readonly onCancel: () => void;
@@ -148,10 +149,12 @@ export function useNoteEditor(props: NoteEditorProps) {
     schedule === undefined
       ? ""
       : !schedule.enabled
-        ? "定时已停用"
+        ? "已暂停"
         : scheduleNextPreview !== undefined
           ? fmtShortDateTime(scheduleNextPreview) + " · " + fmtCountdown(scheduleNextPreview)
-          : "保存后生效";
+          : schedule.endAt !== undefined && schedule.endAt <= Date.now()
+            ? "已过有效期，将自动停用"
+            : "保存后生效";
   const scheduleSummaryTitle =
     schedule === undefined
       ? ""

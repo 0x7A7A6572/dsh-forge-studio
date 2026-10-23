@@ -18,7 +18,7 @@
  * 拖到卡片外松手时，浏览器仍会往遮罩上派一次 click，那不是「点了外面」，不能据此关闭（#3）。
  */
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { MutableRefObject } from 'react'
 import type { NoteColor, NoteLane, TaskStatus, TaskTargets } from '../../types.ts'
 import { NoteEditor } from './NoteEditor.tsx'
@@ -90,8 +90,24 @@ export function EditorPageDialog(props: EditorPageDialogProps): JSX.Element {
   // 点遮罩关闭：走的是同一道闸（有改动先问一句），但只在「从遮罩上按下」时才算 ——
   // 卡片里拉选区拖到外面松手，浏览器仍会往遮罩派一次 click，那次不算点外面（issue #3）。
   const backdropDismiss = useBackdropDismiss(requestClose)
+  const overlayRef = useRef<HTMLDivElement | null>(null)
+  const [narrow, setNarrow] = useState(false)
+  useEffect(() => {
+    const node = overlayRef.current
+    if (node === null) return
+    const probe = (): void => setNarrow(node.clientWidth < 640)
+    probe()
+    const observer = new ResizeObserver(probe)
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [])
   return (
-    <div className={styles.overlay} style={overlayStyle} {...backdropDismiss}>
+    <div
+      ref={overlayRef}
+      className={styles.overlay}
+      style={narrow ? { ...overlayStyle, '--overlay-pad-right': '16px' } as React.CSSProperties : overlayStyle}
+      {...backdropDismiss}
+    >
       <div
         className={styles.dialog}
         style={cardStyle(paperMeta.paper)}
@@ -115,6 +131,7 @@ export function EditorPageDialog(props: EditorPageDialogProps): JSX.Element {
           taskTargets={props.taskTargets}
           // 编辑既有便签才自动保存：新建态没有库记录（保存即创建），无从自动落盘。
           autoSave={props.target.mode === 'edit'}
+          narrowSheet={narrow}
           requestCloseRef={editorCloseRef}
           onColorChange={setPaper}
           onCancel={props.onCancel}
@@ -133,9 +150,13 @@ const overlayStyle: React.CSSProperties = {
   zIndex: 10,
   display: 'flex',
   background: t.mask,
-  padding: 16,
+  paddingTop: 16,
+  paddingRight: 'var(--overlay-pad-right, 16px)',
+  paddingBottom: 16,
+  paddingLeft: 16,
   boxSizing: 'border-box',
   overflow: 'auto',
+  transition: 'padding-right 300ms cubic-bezier(0.22, 0.61, 0.36, 1)',
 }
 /**
  * 便签纸卡片：无边框，背景 = 当前纸色（pastel），浅底墨迹文字。
@@ -148,7 +169,7 @@ const cardStyle = (paper: string): React.CSSProperties => ({
   display: 'flex',
   flexDirection: 'column',
   gap: 8,
-  padding: 14,
+  padding: 'var(--paper-pad, 14px)',
   background: paper,
   borderRadius: 12,
   boxShadow: t.shadowLv3,
