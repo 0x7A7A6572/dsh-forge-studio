@@ -187,7 +187,7 @@ export function NoteSelect(props: NoteSelectProps): JSX.Element {
         <span className={controls.selectValue}>{current?.label ?? ''}</span>
         <svg className={controls.selectCaret} viewBox="0 0 10 6" width="10" height="6" aria-hidden="true" focusable="false">
           <path
-            d="M2.1 1 L7.9 1 Q9 1 8.2 1.76 L5.8 4.04 Q5 4.8 4.2 4.04 L1.8 1.76 Q1 1 2.1 1 Z"
+            d="M2.74 2.65 Q1 1 3.40 1 L6.60 1 Q9 1 7.26 2.65 L6.74 3.15 Q5 4.80 3.26 3.15 Z"
             fill="currentColor"
           />
         </svg>
