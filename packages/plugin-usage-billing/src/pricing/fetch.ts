@@ -84,22 +84,68 @@ function ttlMsOf(refreshHours: number | undefined): number {
 
 const TRUNCATED = '响应被截断（超过宿主单次抓取上限），本次不合并半份目录'
 
-/**
- * 取 JSON 文本；allowPartial 时抢救被截断响应的完整前缀。
- * 汇率页一律不救：半截的汇率会静默缩放全部金额。
- */
-async function fetchJson(
+export const DIRECT_FETCH_MAX_BYTES = 32 * 1024 * 1024
+const DIRECT_FETCH_TIMEOUT_MS = 60_000
+
+/** 宿主截断或报错时直连同一 URL；流式读取，超上限即中断。 */
+export async function fetchJsonDirect(url: string, maxBytes = DIRECT_FETCH_MAX_BYTES): Promise<unknown> {
+  const response = await fetch(url, {
+    headers: { accept: 'application/json, text/plain;q=0.9, */*;q=0.8' },
+    signal: AbortSignal.timeout(DIRECT_FETCH_TIMEOUT_MS),
+  })
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  if (response.body === null) return JSON.parse(await response.text()) as unknown
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.byteLength
+    if (total > maxBytes) {
+      await reader.cancel()
+      throw new Error(`直连响应超过 ${maxBytes} 字节上限`)
+    }
+    chunks.push(value)
+  }
+  return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown
+}
+
+interface HostFetchResult {
+  statusCode: number
+  body: { kind: string; content: string }
+  truncated: boolean
+}
+
+/** allowPartial 时先直连取全量，再退回前缀抢救；汇率页不走兜底。 */
+export async function fetchJson(
   deps: PricingFetchDeps, url: string, allowPartial = false,
 ): Promise<{ json: unknown; partial: boolean }> {
-  const res = await deps.web.fetch({ url })
+  let res: HostFetchResult | undefined
+  try {
+    res = await deps.web.fetch({ url })
+  } catch (error) {
+    if (!allowPartial) throw error
+    try {
+      return { json: await fetchJsonDirect(url), partial: false }
+    } catch {
+      throw error
+    }
+  }
+  if (res === undefined) throw new Error(TRUNCATED)
   if (res.statusCode < 200 || res.statusCode >= 300) throw new Error(`HTTP ${res.statusCode}`)
   if (!res.truncated) return { json: JSON.parse(res.body.content) as unknown, partial: false }
-  const repaired = allowPartial ? salvageJsonPrefix(res.body.content) : null
-  if (repaired === null) throw new Error(TRUNCATED)
+  if (!allowPartial) throw new Error(TRUNCATED)
   try {
-    return { json: JSON.parse(repaired) as unknown, partial: true }
+    return { json: await fetchJsonDirect(url), partial: false }
   } catch {
-    throw new Error(TRUNCATED)
+    const repaired = salvageJsonPrefix(res.body.content)
+    if (repaired === null) throw new Error(TRUNCATED)
+    try {
+      return { json: JSON.parse(repaired) as unknown, partial: true }
+    } catch {
+      throw new Error(TRUNCATED)
+    }
   }
 }
 
