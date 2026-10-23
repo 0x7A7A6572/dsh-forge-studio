@@ -99,7 +99,6 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
     presetOptions,
     taskDetailOpen,
     setTaskDetailOpen,
-    taskSummaryText,
     taskWorkspaceMissing,
     schedule,
     setSchedule,
@@ -562,21 +561,6 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
             />
             设为任务
           </label>
-          {taskOn && (
-            <span
-              style={taskWorkspaceMissing ? taskSummaryWarn : taskSummary}
-              title={
-                workspace.trim() === ""
-                  ? "这张任务还没有工作区，执行不了"
-                  : `工作区：${workspace}`
-              }
-            >
-              {taskSummaryText}
-            </span>
-          )}
-          {taskOn && runningReadOnly && (
-            <span style={laneHint}>执行中：改状态请先在泳道重置</span>
-          )}
           {taskOn && (
             <button
               type="button"
@@ -1283,23 +1267,6 @@ const taskFormHint: React.CSSProperties = {
 const autoSaveHint: React.CSSProperties = {
   fontSize: 11.5,
   color: "rgba(46, 42, 34, 0.5)",
-};
-const laneHint: React.CSSProperties = {
-  fontSize: 12,
-  color: "#b3261e",
-};
-const taskSummary: React.CSSProperties = {
-  flex: "1 1 auto",
-  minWidth: 0,
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
-  fontSize: 12,
-  color: NOTE_INK_MUTED,
-};
-const taskSummaryWarn: React.CSSProperties = {
-  ...taskSummary,
-  color: t.danger,
 };
 const scheduleRow: React.CSSProperties = {
   display: "flex",

@@ -137,7 +137,7 @@ const cardStyle: React.CSSProperties = {
   flexDirection: 'column',
   gap: 5,
   padding: '11px 12px 8px',
-  borderRadius: 12,
+  borderRadius: 'var(--dsw-radius-md)',
   // border: '1px solid rgba(0, 0, 0, 0.07)',
   boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
   cursor: 'pointer',

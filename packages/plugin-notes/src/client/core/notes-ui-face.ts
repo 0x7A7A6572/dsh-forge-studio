@@ -51,7 +51,7 @@ export interface NotesUiFace {
   readonly create: (input: NotesCreateInput) => Promise<NotesCreateResult>;
   /** 工作区候选（最近会话用过的 cwd）。 */
   readonly listWorkspaces: () => Promise<readonly string[]>;
-  /** 任务执行目标目录（模型 / agent 预设）；宿主缺能力时返回空目录。 */
+  /** 任务执行目标目录（模型 / Agent 预设）；宿主缺能力时返回空目录。 */
   readonly listTaskTargets: () => Promise<TaskTargets>;
   /** 新建成功回调（补刷徽标）。 */
   readonly onCreated: () => void;

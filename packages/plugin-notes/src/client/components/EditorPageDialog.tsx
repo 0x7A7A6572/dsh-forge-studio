@@ -39,7 +39,7 @@ export interface EditorPageDialogProps {
   readonly workspaceOptions?: readonly string[]
   /** 工作区候选是否已加载完成（未就绪时不写「未配置」，避免提示一闪而过）。 */
   readonly workspaceReady?: boolean
-  /** 任务执行目标目录（模型 / agent 预设）；空目录即只有「宿主默认」可选。 */
+  /** 任务执行目标目录（模型 / Agent 预设）；空目录即只有「宿主默认」可选。 */
   readonly taskTargets?: TaskTargets
   /**
    * 关闭请求出口（可选）：本弹窗的关闭闸 —— 有改动先问一句，没改动直接关。

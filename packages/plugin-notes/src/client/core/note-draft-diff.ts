@@ -24,7 +24,7 @@ export interface NoteDraftFields {
   readonly taskStatus: TaskStatus
   /** 执行工作区（'' = 未指定）。 */
   readonly workspace: string
-  /** agent 预设（'' = 宿主默认）。 */
+  /** Agent 预设（'' = 宿主默认）。 */
   readonly agentPreset: string
   /** 模型下拉的 value（modelKey 编码；'' = 宿主默认）。 */
   readonly modelValue: string
