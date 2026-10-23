@@ -22,7 +22,7 @@ export interface NoteSelectProps {
   readonly disabled?: boolean
   readonly ariaLabel: string
   readonly title?: string
-  readonly variant?: 'default' | 'inline' | 'paper'
+  readonly variant?: 'default' | 'inline'
   readonly maxWidth?: number
   readonly style?: React.CSSProperties
 }
@@ -164,7 +164,6 @@ export function NoteSelect(props: NoteSelectProps): JSX.Element {
   const triggerClass = [
     controls.selectTrigger,
     variant === 'inline' ? controls.selectTriggerInline : '',
-    variant === 'paper' ? controls.selectTriggerPaper : '',
   ].filter((name) => name !== '').join(' ')
 
   let optionIndex = -1

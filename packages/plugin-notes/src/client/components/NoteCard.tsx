@@ -6,7 +6,8 @@
  */
 
 import type { NoteRecord } from '../../types.ts'
-import { NOTE_INK, NOTE_INK_MUTED, noteColorMeta } from '../core/note-colors.ts'
+import { noteColorMeta } from '../core/note-colors.ts'
+import { t } from '../core/theme-tokens.ts'
 import { mdSnippet, firstImageUrl, todoProgress } from '../core/markdown-text.ts'
 import { fmtDateTime, fmtRelative } from '../core/time-text.ts'
 import { dueTone, fmtDueChip } from '../core/due-date.ts'
@@ -51,7 +52,6 @@ export function NoteCard(props: NoteCardProps): JSX.Element {
         }}
         style={{
           ...cardStyle,
-          backgroundColor: meta.paper,
           backgroundImage: `linear-gradient(327deg, color-mix(in srgb, ${meta.ring} 34%, transparent), transparent 22%)`,
           borderColor: `color-mix(in srgb, ${meta.ring} 30%, transparent)`,
           ...(note.pinned && !note.archived ? { borderTopRightRadius: 0 } : {}),
@@ -60,7 +60,7 @@ export function NoteCard(props: NoteCardProps): JSX.Element {
         {note.pinned && !note.archived && <PinnedCornerMark color={meta.ring} />}
         <span style={cardTitleRow}>
           <span style={cardTitle} title={note.title || '（无标题）'}>
-            {note.title || <span style={{ color: NOTE_INK_MUTED }}>（无标题）</span>}
+            {note.title || <span style={{ color: t.labelTertiary }}>（无标题）</span>}
           </span>
           {note.lane && <TaskBadge lane={note.lane} />}
           {todo && <TodoBadge done={todo.done} total={todo.total} />}
@@ -79,9 +79,9 @@ export function NoteCard(props: NoteCardProps): JSX.Element {
           </span>
         )}
         {snippet ? (
-          <span className={styles.snippet} style={{ ...cardSnippet, color: NOTE_INK_MUTED }}>{snippet}</span>
+          <span className={styles.snippet} style={{ ...cardSnippet, color: t.labelSecondary }}>{snippet}</span>
         ) : (
-          <span style={{ ...cardSnippet, color: NOTE_INK_MUTED, fontStyle: 'italic' }}>（无正文）</span>
+          <span style={{ ...cardSnippet, color: t.labelTertiary, fontStyle: 'italic' }}>（无正文）</span>
         )}
         <span style={cardFooter}>
           {note.dueAt !== undefined && (
@@ -89,14 +89,14 @@ export function NoteCard(props: NoteCardProps): JSX.Element {
               style={{
                 flex: 'none',
                 fontSize: 11,
-                color: dueTone(note.dueAt) === 'overdue' ? '#B3261E' : NOTE_INK_MUTED,
+                color: dueTone(note.dueAt) === 'overdue' ? t.danger : t.labelTertiary,
               }}
               title={`截止 ${fmtDateTime(note.dueAt)}`}
             >
               {fmtDueChip(note.dueAt)}
             </span>
           )}
-          <time style={{ color: NOTE_INK_MUTED, flex: 1, textAlign: 'left' }} title={fmtDateTime(note.updatedAt)}>{fmtRelative(note.updatedAt)}</time>
+          <time style={{ color: t.labelTertiary, flex: 1, textAlign: 'left' }} title={fmtDateTime(note.updatedAt)}>{fmtRelative(note.updatedAt)}</time>
           <span className={styles.actions} style={cardActions}>
             <button type="button" title="编辑" aria-label="编辑" disabled={props.busy}
               onClick={(e) => { e.stopPropagation(); props.onEdit() }} style={actionBtn}>
@@ -141,7 +141,9 @@ const cardStyle: React.CSSProperties = {
   padding: '11px 12px 8px',
   borderRadius: 18,
   border: '2px solid transparent',
+  backgroundColor: 'var(--dsw-alias-bg-layer-2)',
   boxShadow: '0 2px 10px rgba(0, 0, 0, 0.10)',
+  color: t.labelPrimary,
   cursor: 'pointer',
 }
 const cardTitleRow: React.CSSProperties = {
@@ -155,7 +157,7 @@ const cardTitle: React.CSSProperties = {
   minWidth: 0,
   fontSize: 14,
   fontWeight: 600,
-  color: NOTE_INK,
+  color: t.labelPrimary,
   whiteSpace: 'nowrap',
   overflow: 'hidden',
   textOverflow: 'ellipsis',
@@ -174,7 +176,7 @@ const cardThumbWrap: React.CSSProperties = {
   maxHeight: 110,
   overflow: 'hidden',
   borderRadius: 8,
-  background: 'rgba(0, 0, 0, 0.05)',
+  background: t.hoverBg,
 }
 const cardThumbImg: React.CSSProperties = {
   maxWidth: '100%',
@@ -208,5 +210,6 @@ const actionBtn: React.CSSProperties = {
   border: 'none',
   borderRadius: 6,
   background: 'transparent',
+  color: t.labelSecondary,
   cursor: 'pointer',
 }

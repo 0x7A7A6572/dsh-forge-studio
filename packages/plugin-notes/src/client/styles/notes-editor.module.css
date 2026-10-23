@@ -118,50 +118,10 @@
 .editor .popGridCell { width: 17px; height: 17px; padding: 0; border: 1px solid var(--dsw-alias-border-l3); border-radius: 3px; background: transparent; cursor: pointer; box-sizing: border-box; }
 .editor .popGridCell.on { background: color-mix(in srgb, var(--dsw-static-deepseek-450) 55%, transparent); border-color: var(--dsw-static-deepseek-450); }
 .editor .popGridCell:hover:not(:disabled) { background: color-mix(in srgb, var(--dsw-static-deepseek-450) 30%, transparent); }
-/* ---------- 弹窗纸态覆盖（.paper） ----------
-   编辑器所在弹窗整卡是浅 pastel 便签纸（纸色实时随取色器变化），正文与控件统一
-   转 NOTE_INK 墨迹族（明暗自适应无效，纸底恒浅）；只读预览（.preview）
-   不带该修饰类，仍走宿主令牌自适应。弹层（链接/表格）是悬浮控件，保持主题表面。
-   例外：代码块在两种表面都是黑底（见上方 pre 规则）。 */
-.paper { color: #2E2A22; }
-.paper :global(.ProseMirror) { color: #2E2A22; caret-color: var(--dsw-static-deepseek-400); }
-.paper :global(.ProseMirror) blockquote { border-left-color: rgba(46, 42, 34, 0.32); color: rgba(46, 42, 34, 0.6); }
-.paper :global(.ProseMirror) code { background: rgba(46, 42, 34, 0.1); color: #2E2A22; }
-/* 代码块是墨迹族的例外：纸面与主题表面共用上方那条黑底 pre 规则，这里不再按纸色
-   覆写成墨迹淡染 —— rgba(46, 42, 34, 0.07) 在浅 pastel 纸上就是「半透明的一块灰」。 */
-.paper :global(.ProseMirror) hr { border-top-color: rgba(46, 42, 34, 0.22); }
-.paper :global(.ProseMirror) a { color: #1458a0; }
-.paper :global(.ProseMirror) a:hover { color: #0d3f75; }
-.paper :global(.ProseMirror) th, .paper :global(.ProseMirror) td { border-color: rgba(46, 42, 34, 0.26); }
-.paper :global(.ProseMirror) th { background: rgba(46, 42, 34, 0.06); }
-.paper input::placeholder { color: rgba(46, 42, 34, 0.45); }
-.paper input:focus { border-color: rgba(46, 42, 34, 0.5); }
-/* 纸面待办清单：勾选框随墨迹（不用品牌蓝），勾选后墨字弱化（删除线走通用规则）。 */
-.paper :global(.ProseMirror) ul[data-type="taskList"] li > label input { accent-color: #2E2A22; }
-.paper :global(.ProseMirror) ul[data-type="taskList"] li[data-checked="true"] > div { color: rgba(46, 42, 34, 0.5); }
-/* 便签标题（header 直写）：无边框输入，聚焦仅淡墨染底，保持「写在纸上」观感。 */
-.paper .title { border-radius: 7px; }
-.paper .title:hover { background: rgba(46, 42, 34, 0.045); }
-.paper .title:focus { background: rgba(46, 42, 34, 0.08); outline: none; }
-.paper .tool { color: rgba(46, 42, 34, 0.75); }
-.paper .tool:hover:not(:disabled) { background: rgba(46, 42, 34, 0.09); color: #2E2A22; }
-.paper .color:focus-visible { outline: 2px solid rgba(46, 42, 34, 0.55); }
-.paper .btnPrimary:hover:not(:disabled) { background: #100e08; }
-/* 选中态（纸面编辑）：纸底恒浅 + 墨字，若沿用主题高亮就只剩「灰底黑字」，选区与正文
-   几乎分不出来。这里改为反相选中（墨底 + 纸白字）：六种纸色、标题/正文/代码块/结果区
-   一律高对比。注意两条选择器都要写——.ProseMirror 那条与上方主题规则同为 (0,2,1)，
-   靠「顺序在后」取胜；泛化那条管标题输入框与只读结果区（不受主题规则覆盖）。 */
-.paper :global(.ProseMirror) ::selection,
-.paper ::selection {
-  background: rgba(46, 42, 34, 0.85);
-  color: #FFFDF4;
-}
-/* 黑底代码块里的选中：上面那条墨底 + 纸白字落在黑底上等于没选，改一层半透明白。
-   选择器比上面多一个 pre、顺序也在后，盖得住。 */
-.paper :global(.ProseMirror) pre ::selection { background: rgba(255, 255, 255, 0.32); color: #FFFFFF; }
 
-.runToggle { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border: none; border-radius: 7px; background: transparent; color: rgba(46, 42, 34, 0.72); font-size: 12.5px; cursor: pointer; }
-.runToggle:hover { background: rgba(46, 42, 34, 0.09); color: #2E2A22; }
+.runToggle { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border: none; border-radius: 7px; background: transparent; color: var(--dsw-alias-label-secondary); font-size: 12.5px; cursor: pointer; }
+.runToggle:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.editor input::placeholder { color: var(--dsw-alias-label-tertiary); }
 
 /* ---------- 只读展示态 ---------- */
 
@@ -299,12 +259,12 @@
   border: none;
   border-radius: 7px;
   background: transparent;
-  color: rgba(46, 42, 34, 0.62);
+  color: var(--dsw-alias-label-secondary);
   font-size: 11.5px;
   cursor: pointer;
   transition: background 130ms ease, color 130ms ease;
 }
-.taskFoldToggle:hover { background: rgba(46, 42, 34, 0.09); color: #2E2A22; }
+.taskFoldToggle:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
 
 /* ---------- 设为任务开关（纸面） ----------
    轨道关态是墨迹淡染，开态用便签环色（由组件内联写入）。 */
@@ -314,7 +274,7 @@
   gap: 7px;
   width: fit-content;
   font-size: 13px;
-  color: #2E2A22;
+  color: var(--dsw-alias-label-primary);
   cursor: pointer;
   user-select: none;
 }
@@ -326,7 +286,7 @@
   width: 32px;
   height: 18px;
   border-radius: 9px;
-  background: rgba(46, 42, 34, 0.18);
+  background: var(--dsw-alias-interactive-bg-active);
   transition: background 160ms ease;
 }
 .taskSwitchTrack::after {
@@ -337,13 +297,13 @@
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #FFFDF4;
+  background: var(--dsw-alias-bg-layer-2);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
   transition: transform 160ms ease;
 }
 .taskSwitchInput:checked + .taskSwitchTrack::after { transform: translateX(14px); }
 .taskSwitchInput:disabled + .taskSwitchTrack { opacity: 0.45; }
-.taskSwitchInput:focus-visible + .taskSwitchTrack { outline: 2px solid rgba(46, 42, 34, 0.55); outline-offset: 1px; }
+.taskSwitchInput:focus-visible + .taskSwitchTrack { outline: 2px solid var(--dsw-static-deepseek-450); outline-offset: 1px; }
 
 @media (prefers-reduced-motion: reduce) {
   .taskSheet, .taskFoldToggle { transition: none; }

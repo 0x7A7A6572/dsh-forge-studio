@@ -1,7 +1,6 @@
 /**
  * 便签板「编辑器弹窗」：浮在列表页（BoardMain）之上的居中弹窗层。
- * 半透明遮罩 + 纸卡（背景即当前便签纸色）；整卡无边框，正文与控件走 NOTE_INK
- * 墨迹族（见 NoteEditor 的 styles.paper）。
+ * 半透明遮罩 + 纸卡（主题表面底 + 便签环色渐变与描边），正文与控件走主题令牌。
  * 弹窗头部不再有独立「新建便签」标签行 —— 可编辑的便签标题由 NoteEditor 自己的
  * header 行承担（标题即 header，省一行），关闭钮也在该行右侧。
  * 由 notes-nav 的 editing 目标驱动渲染，target（create | edit+note）翻译成
@@ -110,7 +109,7 @@ export function EditorPageDialog(props: EditorPageDialogProps): JSX.Element {
     >
       <div
         className={styles.dialog}
-        style={cardStyle(paperMeta.paper, paperMeta.ring)}
+        style={cardStyle(paperMeta.ring)}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-label={editing ? '编辑便签' : '新建便签'}
@@ -162,7 +161,7 @@ const overlayStyle: React.CSSProperties = {
  * 便签纸卡片：无边框，背景 = 当前纸色（pastel），浅底墨迹文字。
  * 阴影保留以与遮罩分层（浅纸卡在遮罩上仍需轻投影），用宿主 shadow-lv3 令牌随主题。
  */
-const cardStyle = (paper: string, ring: string): React.CSSProperties => ({
+const cardStyle = (ring: string): React.CSSProperties => ({
   margin: 'auto',
   width: 'min(680px, 100%)',
   boxSizing: 'border-box',
@@ -170,7 +169,7 @@ const cardStyle = (paper: string, ring: string): React.CSSProperties => ({
   flexDirection: 'column',
   gap: 8,
   padding: 'var(--paper-pad, 14px)',
-  backgroundColor: paper,
+  backgroundColor: 'var(--dsw-alias-bg-layer-2)',
   backgroundImage: `linear-gradient(327deg, color-mix(in srgb, ${ring} 26%, transparent), transparent 24%)`,
   border: `2px solid color-mix(in srgb, ${ring} 28%, transparent)`,
   borderRadius: 18,

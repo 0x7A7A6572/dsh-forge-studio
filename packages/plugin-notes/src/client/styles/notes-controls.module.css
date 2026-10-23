@@ -37,15 +37,6 @@
 .selectTriggerInline:hover:not(:disabled) { background-color: transparent; border-color: transparent; }
 .selectTriggerInline:focus-visible { outline-offset: -2px; }
 
-/* 纸面上的下拉跟纸走墨迹色。 */
-.selectTriggerPaper {
-  --note-select-arrow: rgba(46, 42, 34, 0.6);
-  color: rgba(46, 42, 34, 0.9);
-  background-color: rgba(46, 42, 34, 0.06);
-  border-color: transparent;
-}
-.selectTriggerPaper:hover:not(:disabled) { background-color: rgba(46, 42, 34, 0.12); border-color: transparent; }
-
 .selectValue { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .selectCaret {
   flex: none;

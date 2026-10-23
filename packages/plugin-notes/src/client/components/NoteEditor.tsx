@@ -17,7 +17,7 @@ import {
   toLocalDateTimeInput,
 } from "../../schedule.ts"
 import { ConfirmDialog } from "./ConfirmDialog.tsx"
-import { NOTE_COLOR_PALETTE, NOTE_INK, NOTE_INK_MUTED } from "../core/note-colors.ts"
+import { NOTE_COLOR_PALETTE } from "../core/note-colors.ts"
 import { TASK_LANES, laneLabel } from "../core/task-lanes.ts"
 import { fmtDateTime } from "../core/time-text.ts"
 import { defaultEndAt, endAtFromDayInput, fmtMonthDay, toDateInputValue } from "../core/due-date.ts"
@@ -73,7 +73,6 @@ const SCHEDULE_MODE_LABELS: Record<ScheduleMode, string> = {
   monthly: "每月",
 };
 
-const PAPER_DEEP_TINT = "rgba(46, 42, 34, 0.06)";
 
 /** 0 = 周日，与 Date#getDay 对齐。 */
 const WEEKDAY_SHORT = ["日", "一", "二", "三", "四", "五", "六"] as const;
@@ -156,7 +155,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
       data-dsh-part="note-editor"
       data-sheet={taskOn && taskDetailOpen ? "open" : "closed"}
       data-sheet-mode={props.narrowSheet === true ? "overlay" : "behind"}
-      className={`${styles.editor} ${styles.paper}`}
+      className={styles.editor}
       style={{ display: "flex", flexDirection: "column", gap: 10 }}
       onKeyDown={(e) => {
         if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
@@ -324,7 +323,6 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
         </ToolButton>
         {fmt.codeBlock && (
           <NoteSelect
-            variant="paper"
             maxWidth={150}
             style={{ height: 28 }}
             ariaLabel="代码语言"
@@ -1137,7 +1135,7 @@ const headTitleStyle: React.CSSProperties = {
   fontSize: 17,
   fontWeight: 600,
   lineHeight: 1.4,
-  color: NOTE_INK,
+  color: t.labelPrimary,
   background: "transparent",
   border: "none",
   outline: "none",
@@ -1153,12 +1151,12 @@ const headCloseBtn: React.CSSProperties = {
   border: "none",
   borderRadius: 6,
   background: "transparent",
-  color: NOTE_INK_MUTED,
+  color: t.labelTertiary,
   cursor: "pointer",
 };
 const contentStyle: React.CSSProperties = {
   padding: "0 4px",
-  color: NOTE_INK,
+  color: t.labelPrimary,
   background: "transparent",
   maxHeight: "70vh",
   minHeight: "300px",
@@ -1178,7 +1176,7 @@ const btnBase: React.CSSProperties = {
 };
 const btnGhost: React.CSSProperties = {
   ...btnBase,
-  color: NOTE_INK,
+  color: t.labelPrimary,
   background: "transparent",
 };
 const colorDot: React.CSSProperties = {
@@ -1190,8 +1188,8 @@ const colorDot: React.CSSProperties = {
 };
 const btnPrimary: React.CSSProperties = {
   ...btnBase,
-  color: "#FFFDF4",
-  background: NOTE_INK,
+  color: t.onPrimary,
+  background: t.primaryFill,
   fontWeight: 600,
 };
 const disabledBtn: React.CSSProperties = { opacity: 0.5, cursor: "default" };
@@ -1225,7 +1223,7 @@ const taskAreaStyle: React.CSSProperties = {
   gap: 8,
   padding: "8px 10px",
   borderRadius: 10,
-  background: PAPER_DEEP_TINT,
+  background: t.hoverBg,
   width: "fit-content",
 };
 const taskHeadRow: React.CSSProperties = {
@@ -1266,7 +1264,7 @@ const taskFormHint: React.CSSProperties = {
 };
 const autoSaveHint: React.CSSProperties = {
   fontSize: 11.5,
-  color: "rgba(46, 42, 34, 0.5)",
+  color: t.labelTertiary,
 };
 const scheduleRow: React.CSSProperties = {
   display: "flex",
