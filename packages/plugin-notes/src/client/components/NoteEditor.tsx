@@ -990,32 +990,6 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
           justifyContent: "flex-end",
         }}
       >
-        <span style={colorPicker} role="group" aria-label="便签颜色">
-          {NOTE_COLOR_PALETTE.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              className={styles.color}
-              title={`${c.label}色便签`}
-              aria-label={`设为${c.label}色`}
-              aria-pressed={color === c.id}
-              disabled={saving}
-              onClick={() => {
-                setColor(c.id);
-                props.onColorChange?.(c.id);
-                markDirty();
-              }}
-              style={{
-                ...colorDot,
-                background: c.paper,
-                ...(color === c.id
-                  ? { boxShadow: `0 0 0 2px var(--dsw-alias-bg-layer-2), 0 0 0 4px ${t.labelPrimary}` }
-                  : {}),
-                ...(saving ? { cursor: "default", opacity: 0.5 } : {}),
-              }}
-            />
-          ))}
-        </span>
         {props.autoSave === true && (
           <span
             role="status"
@@ -1051,6 +1025,36 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
           {saving ? "保存中…" : "保存"}
         </button>
       </div>
+
+      <span role="group" aria-label="便签颜色" style={colorPicker}>
+        {NOTE_COLOR_PALETTE.map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            className={styles.swatch}
+            title={`${c.label}色便签`}
+            aria-label={`设为${c.label}色`}
+            aria-pressed={color === c.id}
+            disabled={saving}
+            onClick={() => {
+              setColor(c.id);
+              props.onColorChange?.(c.id);
+              markDirty();
+            }}
+            style={{
+              width: 24,
+              height: color === c.id ? 56 : 38,
+              background: `linear-gradient(180deg, ${c.paper} 0%, color-mix(in srgb, ${c.ring} 72%, ${c.paper}) 100%)`,
+              boxShadow:
+                color === c.id
+                  ? `inset 0 0 0 2px ${t.labelPrimary}`
+                  : "inset 0 0 0 1px rgba(0, 0, 0, 0.08)",
+              opacity: saving ? 0.5 : 1,
+              cursor: saving ? "default" : "pointer",
+            }}
+          />
+        ))}
+      </span>
 
       {scheduleConfirm !== undefined && (
         <ConfirmDialog
@@ -1170,19 +1174,14 @@ const btnGhost: React.CSSProperties = {
   color: t.labelPrimary,
   background: "transparent",
 };
-const colorDot: React.CSSProperties = {
-  width: 18,
-  height: 18,
-  padding: 0,
-  border: "none",
-  borderRadius: 9,
-  cursor: "pointer",
-};
 const colorPicker: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
+  position: "absolute",
+  left: 18,
+  top: "calc(100% + var(--paper-pad, 14px) + 2px)",
+  display: "flex",
+  alignItems: "flex-start",
   gap: 6,
-  flex: "none",
+  zIndex: 2,
 };
 const btnPrimary: React.CSSProperties = {
   ...btnBase,

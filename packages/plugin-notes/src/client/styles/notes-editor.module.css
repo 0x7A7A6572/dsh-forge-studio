@@ -69,9 +69,15 @@
 .tool:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
 .editor .btn:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
 .editor .btnPrimary:hover:not(:disabled) { background: var(--dsw-alias-button-primary-hover); }
-.color { transition: transform 100ms ease; }
-.color:hover:not(:disabled) { transform: scale(1.15); }
-.color:focus-visible { outline: 2px solid var(--dsw-static-deepseek-450); outline-offset: 1px; }
+.swatch {
+  border: none;
+  padding: 0;
+  border-radius: 0 0 7px 7px;
+  transform-origin: top center;
+  transition: transform 120ms ease, filter 120ms ease;
+}
+.swatch:hover:not(:disabled) { transform: translateY(2px); filter: brightness(1.04); }
+.swatch:focus-visible { outline: 2px solid var(--dsw-static-deepseek-450); outline-offset: 2px; }
 
 /* ---------- 表格 ---------- */
 .editor :global(.ProseMirror) table { border-collapse: collapse; table-layout: fixed; width: 100%; margin: 6px 0; overflow: hidden; }
