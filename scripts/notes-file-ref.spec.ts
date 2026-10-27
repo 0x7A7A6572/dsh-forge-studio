@@ -8,6 +8,7 @@ import {
   fileNameOfNoteFileSrc,
   isNoteFileSrc,
   isValidNoteFile,
+  mediaTypeOfNoteFileName,
   noteFileSrc,
 } from '../packages/plugin-notes/src/note-file-ref.ts'
 
@@ -43,5 +44,19 @@ describe('extensionOfNoteFileName', () => {
 
   it('超长扩展名截断到 10 位', () => {
     expect(extensionOfNoteFileName('a.abcdefghijklmnop')).toBe('abcdefghij')
+  })
+})
+
+describe('mediaTypeOfNoteFileName', () => {
+  it('可查看类型给浏览器渲染用', () => {
+    expect(mediaTypeOfNoteFileName('简报.pdf')).toBe('application/pdf')
+    expect(mediaTypeOfNoteFileName('readme.md')).toBe('text/markdown')
+    expect(mediaTypeOfNoteFileName('shot.PNG')).toBe('image/png')
+  })
+
+  it('不认识或可执行的类型一律 octet-stream（避免在标签页里执行）', () => {
+    expect(mediaTypeOfNoteFileName('evil.html')).toBe('application/octet-stream')
+    expect(mediaTypeOfNoteFileName('evil.svg')).toBe('application/octet-stream')
+    expect(mediaTypeOfNoteFileName('bundle.zip')).toBe('application/octet-stream')
   })
 })

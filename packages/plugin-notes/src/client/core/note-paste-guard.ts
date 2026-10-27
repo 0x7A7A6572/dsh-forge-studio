@@ -53,7 +53,7 @@ export const registerPasteGuard = (() => {
                 const name = (file as Blob & { readonly name?: string }).name ?? "附件";
                 const src = await uploadNoteFile(file, name);
                 editor.chain().focus().insertContent([
-                  { type: "text", text: `📎 ${name}`, marks: [{ type: "link", attrs: { href: src } }] },
+                  { type: "noteFile", attrs: { src, name } },
                   { type: "text", text: " " },
                 ]).run();
               }

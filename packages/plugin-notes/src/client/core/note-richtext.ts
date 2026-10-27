@@ -10,6 +10,7 @@ import { CodeBlockLowlight } from '@tiptap/extension-code-block-lowlight'
 import Image from '@tiptap/extension-image'
 import TaskList from '@tiptap/extension-task-list'
 import TaskItem from '@tiptap/extension-task-item'
+import { Node } from '@tiptap/core'
 import type { AnyExtension } from '@tiptap/core'
 import { Markdown } from 'tiptap-markdown'
 import { createLowlight, common } from 'lowlight'
@@ -91,6 +92,68 @@ export const NoteImage = Image.extend({
   },
 }).configure({ inline: true, allowBase64: true })
 
+export interface NoteFileMarkdownAttrs {
+  readonly src?: string | null
+  readonly name?: string | null
+}
+
+export const NoteFile = Node.create({
+  name: 'noteFile',
+  inline: true,
+  group: 'inline',
+  atom: true,
+  selectable: true,
+  draggable: false,
+  addAttributes() {
+    return {
+      src: { default: null },
+      name: { default: '' },
+    }
+  },
+  parseHTML() {
+    return [
+      {
+        tag: 'span[data-note-file]',
+        getAttrs: (element) => {
+          const html = element as HTMLElement
+          return {
+            src: html.getAttribute('data-note-file'),
+            name: html.getAttribute('data-note-name') ?? html.textContent ?? '',
+          }
+        },
+      },
+      {
+        tag: 'a[href^="notes-file:"]',
+        priority: 60,
+        getAttrs: (element) => {
+          const html = element as HTMLElement
+          return {
+            src: html.getAttribute('href'),
+            name: (html.textContent ?? '').replace(/^\s*📎\s*/u, '').trim(),
+          }
+        },
+      },
+    ]
+  },
+  renderHTML({ node }) {
+    const attrs = node.attrs as NoteFileMarkdownAttrs
+    const name = attrs.name ?? ''
+    return ['span', { 'data-note-file': attrs.src ?? '', 'data-note-name': name }, `📎 ${name}`]
+  },
+  addStorage() {
+    return {
+      markdown: {
+        serialize: (state: MarkdownWriteState, node: { attrs: NoteFileMarkdownAttrs }): void => {
+          const src = node.attrs.src ?? ''
+          const name = node.attrs.name ?? ''
+          const label = escapeMarkdownInline(`📎 ${name}`)
+          state.write(`[${label}](${src.replace(/[()]/g, '\\$&')})`)
+        },
+      },
+    }
+  },
+})
+
 /**
  * 待办清单扩展组。节点名必须是官方 `taskList` / `taskItem`：tiptap-markdown
  * 按扩展名回退找内置规格，改名即丢 `- [ ]` / `- [x]` 存取。
@@ -118,7 +181,7 @@ export function noteLinkExtension(readonly: boolean): AnyExtension {
 }
 
 export function buildNoteRichTextExtensions(
-  opts: { readonly?: boolean; imageNode?: AnyExtension } = {},
+  opts: { readonly?: boolean; imageNode?: AnyExtension; fileNode?: AnyExtension } = {},
 ): AnyExtension[] {
   const readonly = opts.readonly === true
   return [
@@ -126,6 +189,7 @@ export function buildNoteRichTextExtensions(
     CodeBlockLowlight.configure({ lowlight: noteLowlight }),
     Markdown,
     opts.imageNode ?? NoteImage,
+    opts.fileNode ?? NoteFile,
     noteLinkExtension(readonly),
     ...NoteTaskListKit(),
     ...NoteTableKit(),

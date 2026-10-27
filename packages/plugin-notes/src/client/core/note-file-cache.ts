@@ -1,4 +1,5 @@
 import type { NotesRemote } from './notes-remote.ts'
+import { mediaTypeOfNoteFileName } from '../../note-file-ref.ts'
 import { blobToBase64 } from './paste-image.ts'
 
 let remote: NotesRemote | undefined
@@ -23,11 +24,7 @@ export async function uploadNoteFile(blob: Blob, name: string): Promise<string> 
 }
 
 export async function downloadNoteFile(src: string, name: string): Promise<void> {
-  const result = await requireRemote().readFile(src)
-  if (!result.ok) throw new Error(result.error.message)
-  const binary = atob(result.value.data)
-  const bytes = new Uint8Array(binary.length)
-  for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index)
+  const bytes = await readBytes(src)
   const url = URL.createObjectURL(new Blob([bytes], { type: 'application/octet-stream' }))
   try {
     const anchor = document.createElement('a')
@@ -40,4 +37,24 @@ export async function downloadNoteFile(src: string, name: string): Promise<void>
   } finally {
     URL.revokeObjectURL(url)
   }
+}
+
+export async function viewNoteFile(src: string, name: string): Promise<void> {
+  const bytes = await readBytes(src)
+  const url = URL.createObjectURL(new Blob([bytes], { type: mediaTypeOfNoteFileName(name) }))
+  const opened = window.open(url, '_blank', 'noopener,noreferrer')
+  if (opened === null) {
+    URL.revokeObjectURL(url)
+    throw new Error('浏览器拦截了新窗口，可改用下载')
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 5 * 60_000)
+}
+
+async function readBytes(src: string): Promise<Uint8Array> {
+  const result = await requireRemote().readFile(src)
+  if (!result.ok) throw new Error(result.error.message)
+  const binary = atob(result.value.data)
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index)
+  return bytes
 }

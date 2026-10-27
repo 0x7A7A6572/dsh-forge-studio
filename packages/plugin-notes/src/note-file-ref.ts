@@ -32,3 +32,25 @@ export function extensionOfNoteFileName(name: string): string {
     .replace(/[^a-z0-9]/gu, '')
   return extension === '' ? 'bin' : extension.slice(0, 10)
 }
+
+const VIEWABLE_MEDIA_TYPES: Readonly<Record<string, string>> = {
+  pdf: 'application/pdf',
+  txt: 'text/plain',
+  log: 'text/plain',
+  md: 'text/markdown',
+  json: 'application/json',
+  csv: 'text/csv',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  mp4: 'video/mp4',
+  webm: 'video/webm',
+  mp3: 'audio/mpeg',
+  wav: 'audio/wav',
+}
+
+export function mediaTypeOfNoteFileName(name: string): string {
+  return VIEWABLE_MEDIA_TYPES[extensionOfNoteFileName(name)] ?? 'application/octet-stream'
+}

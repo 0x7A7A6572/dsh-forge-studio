@@ -53,6 +53,14 @@
 .editor :global(.ProseMirror) a:hover { text-decoration: underline; text-underline-offset: 2px; }
 .editor :global(.ProseMirror) a[href^="notes-file:"] { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 7px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); font-size: 12.5px; text-decoration: none; }
 .editor :global(.ProseMirror) a[href^="notes-file:"]:hover { text-decoration: none; border-color: var(--dsw-static-deepseek-450); }
+.fileChip { display: inline-flex; align-items: center; gap: 2px; max-width: 260px; padding: 1px 4px 1px 7px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 7px; background: var(--dsw-alias-bg-layer-2); font-size: 12.5px; line-height: 1.5; vertical-align: baseline; }
+.fileChip:hover { border-color: var(--dsw-static-deepseek-450); }
+.fileChipLabel { display: inline-flex; min-width: 0; padding: 0; border: none; background: transparent; color: var(--dsw-alias-label-primary); font: inherit; cursor: pointer; }
+.fileChipName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fileChipActions { display: inline-flex; align-items: center; gap: 1px; width: 0; overflow: hidden; opacity: 0; transition: width 120ms ease, opacity 120ms ease; }
+.fileChip:hover .fileChipActions, .fileChip:focus-within .fileChipActions { width: 40px; opacity: 1; }
+.fileChipButton { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; padding: 0; border: none; border-radius: 5px; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; }
+.fileChipButton:hover { background: var(--dsw-alias-bg-layer-1); color: var(--dsw-static-deepseek-450); }
 /* 只读展示态（.preview）链接默认带下划线，可直接点开（openOnClick）。 */
 .editor.preview :global(.ProseMirror) a { text-decoration: underline; text-underline-offset: 2px; }
 .editor :global(.ProseMirror) img { max-width: 66.67%; height: auto; border-radius: 6px; }

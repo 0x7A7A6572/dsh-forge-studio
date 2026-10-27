@@ -35,10 +35,11 @@ import { fmtCountdown, fmtDateTime, fmtShortDateTime } from "../core/time-text.t
 import { folderNameOf, workspaceSelectOptions } from "../core/workspace-path.ts"
 import { buildNoteRichTextExtensions } from "../core/note-richtext.ts"
 import { NoteImageNode } from "../components/NoteImageView.tsx"
+import { NoteFileNode } from "../components/NoteFileNodeView.tsx"
 import { CODE_LANGUAGES } from "../core/code-languages.ts"
 import { EMPTY_FORMAT, editorMarkdown, formatOf } from "../core/note-format-state.ts"
 import { liveEditors, registerPasteGuard } from "../core/note-paste-guard.ts"
-import { downloadNoteFile } from "../core/note-file-cache.ts"
+import { viewNoteFile } from "../core/note-file-cache.ts"
 
 const AUTO_SAVE_DELAY_MS = 1200;
 const AUTO_SAVE_RETRY_MS = 500;
@@ -204,7 +205,7 @@ export function useNoteEditor(props: NoteEditorProps) {
   const [gridSize, setGridSize] = useState({ cols: 3, rows: 2 });
 
   const editor = useEditor({
-    extensions: buildNoteRichTextExtensions({ imageNode: NoteImageNode }),
+    extensions: buildNoteRichTextExtensions({ imageNode: NoteImageNode, fileNode: NoteFileNode }),
     content: props.initialBody,
   });
   const fmt =
@@ -234,9 +235,9 @@ export function useNoteEditor(props: NoteEditorProps) {
       if (!(anchor instanceof HTMLAnchorElement)) return;
       event.preventDefault();
       const name = (anchor.textContent ?? "").replace(/^\s*📎\s*/u, "").trim() || "附件";
-      void downloadNoteFile(anchor.getAttribute("href") ?? "", name).catch((error) => {
+      void viewNoteFile(anchor.getAttribute("href") ?? "", name).catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
-        setImageError("附件下载失败：" + message);
+        setImageError("附件打开失败：" + message);
       });
     };
     dom.addEventListener("notes-image-error", onImageError);
