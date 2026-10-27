@@ -13,6 +13,7 @@
 
 import { EditorContent, useEditor } from '@tiptap/react';
 import { buildNoteRichTextExtensions } from '../core/note-richtext.ts';
+import { NoteImageNode } from './NoteImageView.tsx';
 import editorStyles from '../styles/notes-editor.module.css';
 
 export interface NoteMarkdownViewProps {
@@ -22,7 +23,7 @@ export interface NoteMarkdownViewProps {
 
 export function NoteMarkdownView(props: NoteMarkdownViewProps): JSX.Element {
   const editor = useEditor({
-    extensions: buildNoteRichTextExtensions({ readonly: true }),
+    extensions: buildNoteRichTextExtensions({ readonly: true, imageNode: NoteImageNode }),
     content: props.markdown,
     editable: false,
   });

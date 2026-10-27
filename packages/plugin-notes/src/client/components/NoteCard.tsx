@@ -14,6 +14,7 @@ import { dueTone, fmtDueChip } from '../core/due-date.ts'
 import { TaskBadge } from './TaskBadge.tsx'
 import { TodoBadge } from './TodoBadge.tsx'
 import { PinnedCornerMark } from './PinnedCornerMark.tsx'
+import { NoteThumbnail } from './NoteThumbnail.tsx'
 import { Archive, ArchiveRestore, Pencil, Pin, Trash2 } from 'lucide-react'
 import styles from '../styles/notes-board.module.css'
 
@@ -64,19 +65,7 @@ export function NoteCard(props: NoteCardProps): JSX.Element {
           {note.lane && <TaskBadge lane={note.lane} />}
           {todo && <TodoBadge done={todo.done} total={todo.total} />}
         </span>
-        {thumb && (
-          <span style={cardThumbWrap}>
-            <img
-              src={thumb}
-              alt=""
-              loading="lazy"
-              decoding="async"
-              draggable={false}
-              style={cardThumbImg}
-              onError={(e) => { e.currentTarget.style.display = 'none' }}
-            />
-          </span>
-        )}
+        {thumb && <NoteThumbnail src={thumb} />}
         {snippet ? (
           <span className={styles.snippet} style={{ ...cardSnippet, color: t.labelSecondary }}>{snippet}</span>
         ) : (
@@ -168,24 +157,6 @@ const cardSnippet: React.CSSProperties = {
   fontSize: 12.5,
   lineHeight: 1.55,
   wordBreak: 'break-word',
-}
-const cardThumbWrap: React.CSSProperties = {
-  flex: 'none',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  maxHeight: 110,
-  overflow: 'hidden',
-  borderRadius: 8,
-  background: t.hoverBg,
-}
-const cardThumbImg: React.CSSProperties = {
-  maxWidth: '100%',
-  maxHeight: 110,
-  height: 'auto',
-  width: 'auto',
-  objectFit: 'contain',
-  borderRadius: 8,
 }
 const cardFooter: React.CSSProperties = {
   display: 'flex',

@@ -34,7 +34,7 @@ import {
 import { fmtCountdown, fmtDateTime, fmtShortDateTime } from "../core/time-text.ts"
 import { folderNameOf, workspaceSelectOptions } from "../core/workspace-path.ts"
 import { buildNoteRichTextExtensions } from "../core/note-richtext.ts"
-import { NoteImageResizable } from "../components/NoteImageResizeView.tsx"
+import { NoteImageNode } from "../components/NoteImageView.tsx"
 import { CODE_LANGUAGES } from "../core/code-languages.ts"
 import { EMPTY_FORMAT, editorMarkdown, formatOf } from "../core/note-format-state.ts"
 import { liveEditors, registerPasteGuard } from "../core/note-paste-guard.ts"
@@ -203,7 +203,7 @@ export function useNoteEditor(props: NoteEditorProps) {
   const [gridSize, setGridSize] = useState({ cols: 3, rows: 2 });
 
   const editor = useEditor({
-    extensions: buildNoteRichTextExtensions({ imageNode: NoteImageResizable }),
+    extensions: buildNoteRichTextExtensions({ imageNode: NoteImageNode }),
     content: props.initialBody,
   });
   const fmt =

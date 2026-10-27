@@ -1,10 +1,10 @@
 /**
- * 便签图片可缩放 NodeView（仅编辑态挂载，见 NoteImageResizable）：
- * - 内联 span 包住 <img> + 右下角拖拽把手；保持图片随正文内联流动；
- * - 选中图片时把手显示，按下把手拖拽 → 按 .ProseMirror 正文宽度换算百分比，
- *   拖动中只改本地 liveWidth（不频繁发事务），松开一次性 updateAttributes 落盘（可撤销）；
- * - 双击把手清空宽度（恢复默认 66.67% 上限）。
- * 只读渲染（note-preview 等）不走本组件：用普通 NoteImage + renderHTML 输出 width 属性。
+ * 便签图片 NodeView：解析 notes-asset 引用后再渲染；编辑态保留拖拽缩放。
+ * 内联 span 包住 <img> + 右下角拖拽把手；保持图片随正文内联流动。
+ * 选中图片时把手显示，按下把手拖拽 → 按 .ProseMirror 正文宽度换算百分比，
+ * 拖动中只改本地 liveWidth，松开一次性 updateAttributes 落盘。
+ * 双击把手清空宽度（恢复默认上限）。
+ * http(s)/data URL 原样渲染；引用读不到时显示「图片已丢失」，只读正文也挂本组件。
  */
 
 import { useRef, useState } from 'react'
@@ -12,6 +12,7 @@ import { NodeViewWrapper, ReactNodeViewRenderer } from '@tiptap/react'
 import type { NodeViewProps } from '@tiptap/react'
 import { MoveDiagonal2 } from 'lucide-react'
 import { NoteImage } from '../core/note-richtext.ts'
+import { useNoteImageSrc } from '../hooks/useNoteImageSrc.ts'
 import {
   clampImageWidthPercent,
   nextImageWidthPercent,
@@ -25,12 +26,14 @@ interface DragState {
   lastPct: number
 }
 
-export function NoteImageResizeView(props: NodeViewProps): JSX.Element {
+export function NoteImageView(props: NodeViewProps): JSX.Element {
   const { node, updateAttributes, editor, selected } = props
   const imgRef = useRef<HTMLImageElement>(null)
   const dragRef = useRef<DragState | null>(null)
-  /** 拖拽中的临时宽度（"NN%"，仅本地渲染）；null = 使用节点已保存的 width。 */
+  /** 拖拽中的临时宽度（"NN%"）；null = 使用节点已保存的 width。 */
   const [liveWidth, setLiveWidth] = useState<string | null>(null)
+  const src = typeof node.attrs.src === 'string' ? node.attrs.src : ''
+  const image = useNoteImageSrc(src)
 
   const savedWidth =
     typeof node.attrs.width === 'string' && node.attrs.width.trim() !== ''
@@ -92,18 +95,28 @@ export function NoteImageResizeView(props: NodeViewProps): JSX.Element {
 
   return (
     <NodeViewWrapper as="span" className={editorStyles.imageWrap}>
-      <img
-        ref={imgRef}
-        src={typeof node.attrs.src === 'string' ? node.attrs.src : ''}
-        alt={typeof node.attrs.alt === 'string' ? node.attrs.alt : ''}
-        title={typeof node.attrs.title === 'string' ? node.attrs.title : undefined}
-        width={shown ?? undefined}
-        draggable={false}
-        onError={(e) => {
-          e.currentTarget.style.display = 'none'
-        }}
-      />
-      {selected && editor.isEditable && (
+      {image.failed && (
+        <span className={editorStyles.imageMissing} role="img" aria-label="图片已丢失">
+          图片已丢失
+          <button type="button" className={editorStyles.imageMissingRetry} onClick={image.retry}>
+            重试
+          </button>
+        </span>
+      )}
+      {image.url === undefined && !image.failed && (
+        <span className={editorStyles.imageLoading} aria-label="图片加载中" />
+      )}
+      {image.url !== undefined && (
+        <img
+          ref={imgRef}
+          src={image.url}
+          alt={typeof node.attrs.alt === 'string' ? node.attrs.alt : ''}
+          title={typeof node.attrs.title === 'string' ? node.attrs.title : undefined}
+          width={shown ?? undefined}
+          draggable={false}
+        />
+      )}
+      {selected && editor.isEditable && image.url !== undefined && (
         <span
           className={editorStyles.imageHandle}
           title="拖拽缩放图片宽度（双击恢复默认）"
@@ -123,11 +136,10 @@ export function NoteImageResizeView(props: NodeViewProps): JSX.Element {
   )
 }
 
-/** 编辑态图片扩展：在 NoteImage 基础上挂拖拽手柄 NodeView，并关闭节点拖拽
- *  （避免与手柄拖拽冲突；图片仍可通过剪贴/方向键调整位置）。 */
-export const NoteImageResizable = NoteImage.extend({
+/** 编辑与只读共用的图片节点：引用解析 + 编辑态拖拽缩放。 */
+export const NoteImageNode = NoteImage.extend({
   draggable: false,
   addNodeView() {
-    return ReactNodeViewRenderer(NoteImageResizeView)
+    return ReactNodeViewRenderer(NoteImageView)
   },
 })

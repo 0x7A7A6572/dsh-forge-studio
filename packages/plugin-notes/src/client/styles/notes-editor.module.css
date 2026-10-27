@@ -57,6 +57,10 @@
 .editor :global(.ProseMirror) img[width] { max-width: 100%; }
 .imageWrap { position: relative; display: inline; }
 .imageWrap img { vertical-align: bottom; }
+.imageLoading { display: inline-block; width: 120px; height: 80px; border-radius: 8px; background: var(--dsw-alias-bg-layer-1); animation: imagePulse 1.2s ease-in-out infinite; }
+.imageMissing { display: inline-flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px dashed var(--dsw-alias-border-l1); border-radius: 8px; color: var(--dsw-alias-label-secondary); font-size: 12px; }
+.imageMissingRetry { border: none; background: transparent; color: var(--dsw-static-deepseek-400); cursor: pointer; font-size: 12px; padding: 0; }
+@keyframes imagePulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
 .imageHandle { position: absolute; right: 2px; bottom: 2px; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; padding: 0; border: none; border-radius: 6px; background: var(--dsw-static-deepseek-450); color: #fff; cursor: nwse-resize; z-index: 5; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28); }
 /* 选中态（主题表面＝只读预览）：宿主 bubble-highlight 是给气泡内标记用的极淡高亮，
    作选区几乎看不见，改用品牌蓝半透明（保留文字原色，明暗主题都清晰）。
