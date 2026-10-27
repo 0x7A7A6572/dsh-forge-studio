@@ -14,9 +14,14 @@ import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type { notesDomain } from './domain.ts'
 import type { TaskLease } from './domain.ts'
 import { DEFAULT_NOTE_COLOR } from './types.ts'
+import { fileNameOfNoteImageSrc, noteImageSrc } from './note-image-ref.ts'
+import type { NoteImageStore } from './note-image-store.ts'
 import type {
   NoteCreateInput,
   NoteId,
+  NoteImageReadResult,
+  NoteImageUploadInput,
+  NoteImageUploadResult,
   NoteLane,
   NoteModelSelection,
   NoteRecord,
@@ -99,6 +104,7 @@ export interface NotesServiceConfig {
   readonly task?: NotesTaskRuntime
   /** 缺省时 webdav* 端点返回结构化失败，不炸端点。 */
   readonly webdav?: WebdavRunner
+  readonly images?: NoteImageStore
 }
 
 export class NotesService extends TypertRemoteService {
@@ -106,6 +112,7 @@ export class NotesService extends TypertRemoteService {
   private readonly leases: KvTable<NoteId, TaskLease>
   private readonly task: NotesServiceConfig['task']
   private readonly webdav: NotesServiceConfig['webdav']
+  private readonly images: NoteImageStore | undefined
   /** 默认 waiting：tools 服务出现后由 index.ts 推进为 installed/failed。 */
   private agentBridge: NotesAgentBridgeState = bridgeWaiting()
   /** notes/watch 每个打开的客户端流一个订阅者。 */
@@ -117,6 +124,7 @@ export class NotesService extends TypertRemoteService {
     this.leases = config.domain.table('leases')
     this.task = config.task
     this.webdav = config.webdav
+    this.images = config.images
   }
 
   getAgentBridgeState(): NotesAgentBridgeState {
@@ -130,6 +138,35 @@ export class NotesService extends TypertRemoteService {
 
   list(): NoteRecord[] {
     return Array.from(this.table.entries(), ([, note]) => note)
+  }
+
+  private async normalizeText(text: string): Promise<string> {
+    if (this.images === undefined || !text.includes('data:image/')) return text
+    try {
+      const result = await this.images.offloadInlineImages(text)
+      return result.text
+    } catch (error) {
+      this.logger().warn('[plugin-notes] image offload failed, keeping inline data url:', error)
+      return text
+    }
+  }
+
+  async saveImage(input: NoteImageUploadInput): Promise<NoteImageUploadResult> {
+    if (this.images === undefined) throw new Error('图片存储未启用（notes-assets 目录不可用）')
+    const fileName = await this.images.saveBase64(input.data, input.mediaType)
+    return { src: noteImageSrc(fileName) }
+  }
+
+  async readImage(src: string): Promise<NoteImageReadResult> {
+    if (this.images === undefined) throw new Error('图片存储未启用（notes-assets 目录不可用）')
+    const fileName = fileNameOfNoteImageSrc(src)
+    if (fileName === null) throw new Error('图片引用非法')
+    return this.images.readBase64(fileName)
+  }
+
+  private logger(): { warn(...args: unknown[]): void } {
+    const logger = (this.ctx as unknown as { logger?: { warn(...args: unknown[]): void } }).logger
+    return logger ?? { warn: () => {} }
   }
 
   /**
@@ -184,10 +221,11 @@ export class NotesService extends TypertRemoteService {
     if (input.schedule !== undefined && schedule === undefined) {
       throw new Error(`schedule 参数非法：mode=${input.schedule.mode} 缺少必填字段`)
     }
+    const text = await this.normalizeText(input.text)
     const note: NoteRecord = {
       id: brandString<NoteId>(randomUUID()),
       title: input.title?.trim() || '新便签',
-      text: input.text,
+      text,
       pinned: false,
       archived: false,
       color: input.color ?? DEFAULT_NOTE_COLOR,
@@ -215,6 +253,7 @@ export class NotesService extends TypertRemoteService {
     const current = this.table.get(id)
     if (!current) return undefined
     const now = Date.now()
+    const nextText = patch.text === undefined ? undefined : await this.normalizeText(patch.text)
     // lane patch：逐字段合并；run 提供即整体替换；空 patch = no-op（不凭空造 lane）。
     // `clear: true` 优先于 status/run，移除任务身份即手动接管。
     let lane: NoteLane | undefined = current.lane
@@ -277,7 +316,7 @@ export class NotesService extends TypertRemoteService {
     const next: NoteRecord = {
       ...currentWithoutLane,
       ...(patch.title !== undefined ? { title: patch.title } : {}),
-      ...(patch.text !== undefined ? { text: patch.text } : {}),
+      ...(nextText !== undefined ? { text: nextText } : {}),
       ...(patch.pinned !== undefined ? { pinned: patch.pinned } : {}),
       archived: patch.archived ?? current.archived ?? false,
       color: patch.color ?? current.color ?? DEFAULT_NOTE_COLOR,
@@ -547,11 +586,32 @@ export class NotesService extends TypertRemoteService {
     return this.webdav.status()
   }
 
+  async migrateInlineImages(): Promise<{ scanned: number; migrated: number }> {
+    if (this.images === undefined) return { scanned: 0, migrated: 0 }
+    let scanned = 0
+    let migrated = 0
+    for (const [id, note] of [...this.table.entries()]) {
+      if (!note.text.includes('data:image/')) continue
+      scanned += 1
+      try {
+        const result = await this.images.offloadInlineImages(note.text)
+        if (!result.changed) continue
+        await this.table.put(id, { ...note, text: result.text, updatedAt: Date.now() })
+        migrated += 1
+      } catch (error) {
+        this.logger().warn('[plugin-notes] image migration skipped one note:', id, error)
+      }
+    }
+    if (migrated > 0) this.broadcastChanged()
+    return { scanned, migrated }
+  }
+
   /** 清空便签与租约两表后按 payload 逐条写入，只给 host 的 WebDAV 恢复流程用。 */
   async replaceAll(notes: readonly NoteRecord[]): Promise<void> {
     for (const [id] of this.table.entries()) await this.table.delete(id)
     for (const [leaseId] of this.leases.entries()) await this.leases.delete(leaseId)
     for (const note of notes) await this.table.put(note.id, note)
+    await this.migrateInlineImages()
     this.broadcastChanged()
   }
 }
@@ -593,6 +653,8 @@ markRemoteMethods(NotesService.prototype, [
   { method: 'taskTargets' },
   { method: 'taskReset' },
   { method: 'watch', mode: 'stream' },
+  { method: 'saveImage' },
+  { method: 'readImage' },
   { method: 'webdavBackup' },
   { method: 'webdavList' },
   { method: 'webdavRestore' },
