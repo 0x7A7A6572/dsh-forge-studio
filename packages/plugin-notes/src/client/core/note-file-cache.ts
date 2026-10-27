@@ -40,14 +40,18 @@ export async function downloadNoteFile(src: string, name: string): Promise<void>
 }
 
 export async function viewNoteFile(src: string, name: string): Promise<void> {
-  const bytes = await readBytes(src)
-  const url = URL.createObjectURL(new Blob([bytes], { type: mediaTypeOfNoteFileName(name) }))
-  const opened = window.open(url, '_blank', 'noopener,noreferrer')
-  if (opened === null) {
-    URL.revokeObjectURL(url)
-    throw new Error('浏览器拦截了新窗口，可改用下载')
+  const tab = window.open('about:blank', '_blank')
+  try {
+    const bytes = await readBytes(src)
+    if (tab === null) throw new Error('浏览器拦截了新窗口，可改用下载')
+    const url = URL.createObjectURL(new Blob([bytes], { type: mediaTypeOfNoteFileName(name) }))
+    setTimeout(() => URL.revokeObjectURL(url), 5 * 60_000)
+    tab.opener = null
+    tab.location.href = url
+  } catch (error) {
+    tab?.close()
+    throw error
   }
-  setTimeout(() => URL.revokeObjectURL(url), 5 * 60_000)
 }
 
 async function readBytes(src: string): Promise<Uint8Array> {
