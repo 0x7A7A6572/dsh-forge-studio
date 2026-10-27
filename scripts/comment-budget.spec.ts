@@ -68,7 +68,7 @@ const OVER30_BUDGET = 247
 const LONG_DOCBLOCK_BUDGET = 184
 
 const MARKDOWN_HEADING = /^#{1,6}\s/
-const EMOJI = /[\u{1F000}-\u{1FAFF}\u26A0\u2705\u274C\u2757\u2753\u2728\u2B50\uFE0F]/u
+const EMOJI = /[\u{1F000}-\u{1FAFF}\u26A0\u2705\u274C\u2757\u2753\u2728\u2B50]/u
 const HAN_CHAR = /[\u4e00-\u9fff]/g
 
 interface CommentLine { line: number; text: string }
@@ -80,7 +80,7 @@ interface CommentAudit {
 }
 
 /**
- * 逐行扫注释。识别 `//`、`/* *​/`、`/** *​/`、JSX 的 `{/* *​/}`；
+ * 逐行扫注释。识别 // 行注释、块注释、Docblock 与 JSX 注释；
  * 「内容行」指剥掉注释符与行首 `*` 之后还有字的行，空行与整行 `*` 不算。
  * 已知盲区：跟在代码后面的行尾块注释不计（仓里只有个别行尾 `//`，且对基线与新增口径一致）。
  */
