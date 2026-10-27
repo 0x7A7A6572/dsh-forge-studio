@@ -993,7 +993,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
       >
         {imageError !== undefined && (
           <span role="alert" style={imageErrorHint} title={imageError}>
-            图片上传失败：{imageError}
+            {imageError}
           </span>
         )}
         {props.autoSave === true && (

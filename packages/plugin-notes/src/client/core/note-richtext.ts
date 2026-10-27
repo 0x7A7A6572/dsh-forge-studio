@@ -112,6 +112,7 @@ export function noteLinkExtension(readonly: boolean): AnyExtension {
     openOnClick: readonly,
     autolink: true,
     linkOnPaste: true,
+    protocols: ['notes-file'],
     HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' },
   })
 }

@@ -1,0 +1,47 @@
+/**
+ * 附件引用与文件名规则：普通文件与图片共用 notes-assets 目录，
+ * 引用前缀必须分开（notes-file:），扩展名只收 ascii 字母数字且限长。
+ */
+import { describe, expect, it } from 'vitest'
+import {
+  extensionOfNoteFileName,
+  fileNameOfNoteFileSrc,
+  isNoteFileSrc,
+  isValidNoteFile,
+  noteFileSrc,
+} from '../packages/plugin-notes/src/note-file-ref.ts'
+
+const FILE = '8a7b6c5d-1234-4abc-9def-0123456789ab.pdf'
+
+describe('附件引用格式', () => {
+  it('uuid + 扩展名才算合法文件名', () => {
+    expect(isValidNoteFile(FILE)).toBe(true)
+    expect(isValidNoteFile('8a7b6c5d-1234-4abc-9def-0123456789ab.bin')).toBe(true)
+    expect(isValidNoteFile('../8a7b6c5d-1234-4abc-9def-0123456789ab.pdf')).toBe(false)
+    expect(isValidNoteFile('8a7b6c5d-1234-4abc-9def-0123456789ab.PDF')).toBe(false)
+    expect(isValidNoteFile('8a7b6c5d-1234-4abc-9def-0123456789ab')).toBe(false)
+  })
+
+  it('前缀与图片前缀互不串味', () => {
+    expect(isNoteFileSrc(noteFileSrc(FILE))).toBe(true)
+    expect(fileNameOfNoteFileSrc(noteFileSrc(FILE))).toBe(FILE)
+    expect(isNoteFileSrc('notes-asset:8a7b6c5d-1234-4abc-9def-0123456789ab.png')).toBe(false)
+    expect(isNoteFileSrc('https://example.com/a.pdf')).toBe(false)
+  })
+})
+
+describe('extensionOfNoteFileName', () => {
+  it('大小写归一、取最后一段扩展名', () => {
+    expect(extensionOfNoteFileName('会议记录.PDF')).toBe('pdf')
+    expect(extensionOfNoteFileName('archive.tar.gz')).toBe('gz')
+  })
+
+  it('无扩展名或非法字符回落 bin', () => {
+    expect(extensionOfNoteFileName('无扩展名')).toBe('bin')
+    expect(extensionOfNoteFileName('a.???')).toBe('bin')
+  })
+
+  it('超长扩展名截断到 10 位', () => {
+    expect(extensionOfNoteFileName('a.abcdefghijklmnop')).toBe('abcdefghij')
+  })
+})

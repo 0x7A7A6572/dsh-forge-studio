@@ -11,7 +11,7 @@ import { createWebdavEngine } from './webdav-backup.ts'
 import { NotesService } from './service.ts'
 import type { NotesServiceConfig } from './service.ts'
 import { configureNotesSettingsPage, webdavConfigOf, type Config } from './settings.ts'
-import { NoteImageStore, resolveNoteImagesRoot } from './note-image-store.ts'
+import { NoteAssetStore, resolveNoteAssetsRoot } from './note-asset-store.ts'
 import { installNotesTools } from './agent/tools.ts'
 import { installTaskRuntime } from './agent/task-dispatch.ts'
 import { installNotesScheduler } from './scheduler.ts'
@@ -44,12 +44,12 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     // 任务执行运行时是可选增强：装配失败只降级，绝不拖垮 NotesService 注册。
     // 用 `new NotesService(ctx, …)` 而非 `ctx.plugin`：前者把 `notes` 服务 provide 在本 fiber 上，
     // 之后的子 fiber 才能沿祖先链读到 `ctx.notes`（`ctx.plugin` 挂到兄弟 fiber，祖先链读不到）。
-    const images = await createImageStoreSafely(ctx)
+    const assets = await createAssetStoreSafely(ctx)
     notesService = new NotesService(ctx, {
       domain,
       task: installTaskRuntimeSafely(ctx),
       webdav,
-      ...(images !== undefined ? { images } : {}),
+      ...(assets !== undefined ? { assets } : {}),
     })
     try {
       const migrated = await notesService.migrateInlineImages()
@@ -75,14 +75,14 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   }
 }
 
-async function createImageStoreSafely(ctx: Context): Promise<NoteImageStore | undefined> {
+async function createAssetStoreSafely(ctx: Context): Promise<NoteAssetStore | undefined> {
   try {
-    const store = new NoteImageStore(resolveNoteImagesRoot())
+    const store = new NoteAssetStore(resolveNoteAssetsRoot())
     await store.prepare()
-    ctx.logger.info('[plugin-notes] image store: ' + store.rootDir)
+    ctx.logger.info('[plugin-notes] asset store: ' + store.rootDir)
     return store
   } catch (error) {
-    ctx.logger.warn('[plugin-notes] image store disabled:', error)
+    ctx.logger.warn('[plugin-notes] asset store disabled:', error)
     return undefined
   }
 }

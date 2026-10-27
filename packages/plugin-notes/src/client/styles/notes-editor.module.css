@@ -51,6 +51,8 @@
 .editor :global(.ProseMirror) hr { border: none; border-top: 1px solid var(--dsw-alias-border-l2); margin: 10px 0; }
 .editor :global(.ProseMirror) a { color: var(--dsw-static-deepseek-450); cursor: pointer; text-decoration: none; }
 .editor :global(.ProseMirror) a:hover { text-decoration: underline; text-underline-offset: 2px; }
+.editor :global(.ProseMirror) a[href^="notes-file:"] { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 7px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); font-size: 12.5px; text-decoration: none; }
+.editor :global(.ProseMirror) a[href^="notes-file:"]:hover { text-decoration: none; border-color: var(--dsw-static-deepseek-450); }
 /* 只读展示态（.preview）链接默认带下划线，可直接点开（openOnClick）。 */
 .editor.preview :global(.ProseMirror) a { text-decoration: underline; text-underline-offset: 2px; }
 .editor :global(.ProseMirror) img { max-width: 66.67%; height: auto; border-radius: 6px; }

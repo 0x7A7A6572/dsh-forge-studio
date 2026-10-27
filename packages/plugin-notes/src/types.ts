@@ -322,6 +322,19 @@ export interface NoteImageReadResult {
   readonly data: string
 }
 
+export interface NoteFileUploadInput {
+  readonly data: string
+  readonly name?: string
+}
+
+export interface NoteFileUploadResult {
+  readonly src: string
+}
+
+export interface NoteFileReadResult {
+  readonly data: string
+}
+
 /**
  * 设置命名空间 = profile 条目 id，须与 cordis.patch.yml 的 id 一致。
  * 另一套 `plugin-*` 前缀只用在 client 侧槽位 id。

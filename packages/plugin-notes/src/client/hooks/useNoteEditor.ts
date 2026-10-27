@@ -38,6 +38,7 @@ import { NoteImageNode } from "../components/NoteImageView.tsx"
 import { CODE_LANGUAGES } from "../core/code-languages.ts"
 import { EMPTY_FORMAT, editorMarkdown, formatOf } from "../core/note-format-state.ts"
 import { liveEditors, registerPasteGuard } from "../core/note-paste-guard.ts"
+import { downloadNoteFile } from "../core/note-file-cache.ts"
 
 const AUTO_SAVE_DELAY_MS = 1200;
 const AUTO_SAVE_RETRY_MS = 500;
@@ -226,10 +227,24 @@ export function useNoteEditor(props: NoteEditorProps) {
       const detail = (event as CustomEvent<{ message?: string }>).detail;
       setImageError(detail?.message ?? "图片上传失败");
     };
+    const onClick = (event: MouseEvent): void => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const anchor = target.closest('a[href^="notes-file:"]');
+      if (!(anchor instanceof HTMLAnchorElement)) return;
+      event.preventDefault();
+      const name = (anchor.textContent ?? "").replace(/^\s*📎\s*/u, "").trim() || "附件";
+      void downloadNoteFile(anchor.getAttribute("href") ?? "", name).catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        setImageError("附件下载失败：" + message);
+      });
+    };
     dom.addEventListener("notes-image-error", onImageError);
+    dom.addEventListener("click", onClick);
     return () => {
       liveEditors.delete(dom);
       dom.removeEventListener("notes-image-error", onImageError);
+      dom.removeEventListener("click", onClick);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor]);
