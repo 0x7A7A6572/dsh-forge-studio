@@ -189,6 +189,7 @@ export function useNoteEditor(props: NoteEditorProps) {
   const runningReadOnly =
     props.initialLane !== undefined && isRunOpen(props.initialLane);
   const [saving, setSaving] = useState(false);
+  const [imageError, setImageError] = useState<string | undefined>(undefined);
   const [runExpanded, setRunExpanded] = useState(false);
   const [scheduleDetailOpen, setScheduleDetailOpen] = useState(false);
 
@@ -221,11 +222,23 @@ export function useNoteEditor(props: NoteEditorProps) {
     if (!dom.classList.contains("ProseMirror")) return;
     liveEditors.set(dom, editor);
     registerPasteGuard();
+    const onImageError = (event: Event): void => {
+      const detail = (event as CustomEvent<{ message?: string }>).detail;
+      setImageError(detail?.message ?? "图片上传失败");
+    };
+    dom.addEventListener("notes-image-error", onImageError);
     return () => {
       liveEditors.delete(dom);
+      dom.removeEventListener("notes-image-error", onImageError);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor]);
+
+  useEffect(() => {
+    if (imageError === undefined) return;
+    const timer = setTimeout(() => setImageError(undefined), 5000);
+    return () => clearTimeout(timer);
+  }, [imageError]);
 
   /** 显式保存（按钮 / Ctrl+Enter）：默认保存并关闭。 */
   async function save(options?: NoteSaveOptions): Promise<void> {
@@ -653,6 +666,7 @@ export function useNoteEditor(props: NoteEditorProps) {
     autoSaver,
     markDirty,
     autoSaveHintText,
+    imageError,
     closeConfirmOpen,
     requestClose,
     requestEscapeClose,

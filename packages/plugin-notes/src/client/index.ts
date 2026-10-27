@@ -25,6 +25,7 @@ import { DEFAULT_NOTES_ENTRY_CONFIG, NOTES_NAMESPACE, notesOpenMode } from '../t
 import { mountNotesRemote, notesOf } from './core/notes-remote.ts'
 import { boardStore } from './core/board-store.ts'
 import { mountNotesStats, mountNotesChangeWatch, refreshNotesStats } from './core/notes-stats.ts'
+import { mountNoteImages } from './core/note-image-cache.ts'
 import {
   NOTES_PANEL_ID,
   NOTES_PANEL_LABEL,
@@ -262,9 +263,11 @@ export function apply(ctx: Context): void {
       try {
         const disposeStats = mountNotesStats(() => notes.list())
         const disposeWatch = mountNotesChangeWatch(notes)
+        const disposeImages = mountNoteImages(notes)
         ctx.effect(() => () => {
           disposeStats()
           disposeWatch()
+          disposeImages()
         }, 'plugin-notes: stats + change watch')
       } catch (error) {
         console.error('[plugin-notes] mount failed:', error)

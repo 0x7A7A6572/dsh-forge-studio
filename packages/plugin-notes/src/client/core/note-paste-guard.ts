@@ -1,12 +1,13 @@
 /**
- * 编辑器粘贴守卫：把「粘贴目标是便签编辑器」的图片文件转成 data URL 内联插入正文。
+ * 编辑器粘贴守卫：把便签编辑器里的图片粘贴先上传到图片仓。
  *
  * 纯浏览器侧胶水（window 捕获层监听 + WeakMap 反查 Editor 实例），不 import react。
  * 编辑器根节点用 data-dsh-part="note-editor" 标识 —— 类名被 CSS Modules 哈希之后
  * 不再是稳定钩子，DOM 查询一律走 data 属性。
  */
 import type { Editor } from '@tiptap/core'
-import { fileToDataUrl, pickImageFiles } from './paste-image.ts'
+import { uploadNoteImage } from './note-image-cache.ts'
+import { pickImageFiles } from './paste-image.ts'
 
 /**
  * 图片粘贴守卫。
@@ -17,7 +18,7 @@ import { fileToDataUrl, pickImageFiles } from './paste-image.ts'
  * stopImmediatePropagation 掐掉，tiptap 侧任何 handlePaste 都收不到。
  *
  * 对策：在同一事件的更早阶段 —— window 捕获层 —— 注册本守卫。它只接管
- * 「粘贴目标是本便签编辑器」的图片文件（转 data URL 内联插入正文），其余
+ * 「粘贴目标是便签编辑器」的图片文件（先上传、再插引用），其余
  * 情况（聊天框等）一律放行，不影响 modlens 在其它输入框的行为。
  */
 export const registerPasteGuard = (() => {
@@ -43,8 +44,13 @@ export const registerPasteGuard = (() => {
         event.stopImmediatePropagation();
         void (async () => {
           for (const file of files) {
-            const src = await fileToDataUrl(file);
-            editor.chain().focus().setImage({ src, alt: "" }).run();
+            try {
+              const src = await uploadNoteImage(file);
+              editor.chain().focus().setImage({ src, alt: "" }).run();
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              pm.dispatchEvent(new CustomEvent("notes-image-error", { bubbles: true, detail: { message } }));
+            }
           }
         })();
       },
