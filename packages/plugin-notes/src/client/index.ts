@@ -92,6 +92,15 @@ export function apply(ctx: Context): void {
         }
       }
 
+      let conversationImage: ((sessionId: string, attachment: unknown) => Promise<string>) | undefined
+      ctx.inject(['uiConversation'], (uiCtx) => {
+        conversationImage = (sessionId, attachment) =>
+          uiCtx.uiConversation.imageUrl(sessionId as never, attachment as never)
+        ctx.effect(() => () => {
+          conversationImage = undefined
+        }, 'plugin-notes: conversation image channel')
+      })
+
       const face: NotesUiFace = {
         notes,
         scope,
@@ -123,6 +132,10 @@ export function apply(ctx: Context): void {
         },
         onCreated: () => {
           void refreshNotesStats()
+        },
+        resolveConversationImage: async (sessionId, attachment) => {
+          if (conversationImage === undefined) throw new Error('当前会话不支持图片导入')
+          return conversationImage(sessionId, attachment)
         },
       }
 
