@@ -63,6 +63,7 @@ export function TaskLaneCard(props: TaskLaneCardProps): JSX.Element {
   // 拖拽不可用/忙时禁用：避免执行中的更新与后续拖放竞争。
   const draggable = !props.busy && !note.archived
   const meta = noteColorMeta(note.color)
+  const folded = note.pinned && !note.archived
   const snippet = note.text ? mdSnippet(note.text, 100) : ''
   const [dragging, setDragging] = useState(false)
   const [dueOpen, setDueOpen] = useState(false)
@@ -102,7 +103,13 @@ export function TaskLaneCard(props: TaskLaneCardProps): JSX.Element {
   }
 
   return (
-    <li>
+    <li
+      className={styles.laneWrap}
+      style={{
+        position: 'relative',
+        ...(folded ? { filter: 'drop-shadow(0 2px 10px rgba(0, 0, 0, 0.1))' } : {}),
+      }}
+    >
       <div
         className={`${styles.laneCard} ${running ? styles.laneRunning : ''}`}
         role="button"
@@ -126,11 +133,23 @@ export function TaskLaneCard(props: TaskLaneCardProps): JSX.Element {
           ...cardStyle,
           backgroundImage: `linear-gradient(327deg, ${meta.ring}, transparent 20%)`,
           opacity: dragging ? 0.45 : 1,
+          ...(folded
+            ? {
+              borderTopRightRadius: 0,
+              boxShadow: 'none',
+              clipPath: 'polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%)',
+            }
+            : {}),
         }}
       >
-        {note.pinned && !note.archived && <PinnedCornerMark color={meta.ring} size={10} />}
-
-        <span className={styles.laneTitle} style={cardTitle} title={note.title || '（无标题）'}>
+        <span
+          className={styles.laneTitle}
+          style={{
+            ...cardTitle,
+            ...(folded ? { paddingRight: 12 } : {}),
+          }}
+          title={note.title || '（无标题）'}
+        >
           {note.title || '（无标题）'}
         </span>
 
@@ -260,6 +279,14 @@ export function TaskLaneCard(props: TaskLaneCardProps): JSX.Element {
           </span>
         </span>
       </div>
+      {!note.archived && (
+        <PinnedCornerMark
+          pinned={note.pinned}
+          color={meta.ring}
+          size={14}
+          onToggle={props.onTogglePin}
+        />
+      )}
     </li>
   )
 }

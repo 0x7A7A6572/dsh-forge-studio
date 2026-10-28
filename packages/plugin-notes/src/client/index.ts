@@ -25,6 +25,8 @@ import { DEFAULT_NOTES_ENTRY_CONFIG, NOTES_NAMESPACE, notesOpenMode } from '../t
 import { mountNotesRemote, notesOf } from './core/notes-remote.ts'
 import { boardStore } from './core/board-store.ts'
 import { mountNotesStats, mountNotesChangeWatch, refreshNotesStats } from './core/notes-stats.ts'
+import { mountNoteImages } from './core/note-image-cache.ts'
+import { mountNoteFiles } from './core/note-file-cache.ts'
 import {
   NOTES_PANEL_ID,
   NOTES_PANEL_LABEL,
@@ -91,6 +93,15 @@ export function apply(ctx: Context): void {
         }
       }
 
+      let conversationImage: ((sessionId: string, attachment: unknown) => Promise<string>) | undefined
+      ctx.inject(['uiConversation'], (uiCtx) => {
+        conversationImage = (sessionId, attachment) =>
+          uiCtx.uiConversation.imageUrl(sessionId as never, attachment as never)
+        ctx.effect(() => () => {
+          conversationImage = undefined
+        }, 'plugin-notes: conversation image channel')
+      })
+
       const face: NotesUiFace = {
         notes,
         scope,
@@ -122,6 +133,10 @@ export function apply(ctx: Context): void {
         },
         onCreated: () => {
           void refreshNotesStats()
+        },
+        resolveConversationImage: async (sessionId, attachment) => {
+          if (conversationImage === undefined) throw new Error('当前会话不支持图片导入')
+          return conversationImage(sessionId, attachment)
         },
       }
 
@@ -262,9 +277,13 @@ export function apply(ctx: Context): void {
       try {
         const disposeStats = mountNotesStats(() => notes.list())
         const disposeWatch = mountNotesChangeWatch(notes)
+        const disposeImages = mountNoteImages(notes)
+        const disposeFiles = mountNoteFiles(notes)
         ctx.effect(() => () => {
           disposeStats()
           disposeWatch()
+          disposeImages()
+          disposeFiles()
         }, 'plugin-notes: stats + change watch')
       } catch (error) {
         console.error('[plugin-notes] mount failed:', error)

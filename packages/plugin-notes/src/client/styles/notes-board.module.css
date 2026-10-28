@@ -152,6 +152,19 @@
     transform 140ms ease;
   animation: noteIn 220ms ease-out backwards;
 }
+.pinCorner { position: absolute; top: 0; right: 0; z-index: 3; display: block; padding: 0; border: none; background: transparent; cursor: pointer; transition: transform 140ms ease; }
+.card:hover ~ .pinCorner { transform: translateY(-1px); }
+.pinFlap { transform-origin: 100% 0%; opacity: 0; transform: scale(0.6); transition: opacity 160ms ease, transform 200ms cubic-bezier(0.22, 0.61, 0.36, 1); }
+.pinCorner[data-pinned="true"] .pinFlap { opacity: 1; transform: scale(1); }
+.pinCorner[data-pinned="true"]:hover .pinFlap { transform: scale(1.05); }
+.pinCorner[data-pinned="false"]:hover .pinFlap,
+.pinCorner[data-pinned="false"]:focus-visible .pinFlap { opacity: 0.42; transform: scale(0.92); }
+.cardWrap,
+.laneWrap { position: relative; }
+.cardWrap:has(.pinCorner:hover) .card,
+.cardWrap:has(.pinCorner:focus-visible) .card,
+.laneWrap:has(.pinCorner:hover) .laneCard,
+.laneWrap:has(.pinCorner:focus-visible) .laneCard { border-top-right-radius: 0 !important; }
 .card:hover {
   box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18);
   transform: translateY(-1px);

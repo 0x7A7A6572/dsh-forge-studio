@@ -55,4 +55,10 @@ export interface NotesUiFace {
   readonly listTaskTargets: () => Promise<TaskTargets>;
   /** 新建成功回调（补刷徽标）。 */
   readonly onCreated: () => void;
+  /**
+   * 会话图片 → 可 fetch 的 URL（blob:）；宿主没装 ui-conversation 时调用会抛。
+   * @param sessionId - 当前会话，由 slot 运行时标准 props 给。
+   * @param attachment - AssistantBlock 里的 ImageAttachmentRef，鸭子类型透传。
+   */
+  readonly resolveConversationImage?: (sessionId: string, attachment: unknown) => Promise<string>;
 }

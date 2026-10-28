@@ -130,6 +130,7 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
     autoSaver,
     markDirty,
     autoSaveHintText,
+    imageError,
     closeConfirmOpen,
     requestClose,
     requestEscapeClose,
@@ -990,6 +991,11 @@ export function NoteEditor(props: NoteEditorProps): JSX.Element {
           justifyContent: "flex-end",
         }}
       >
+        {imageError !== undefined && (
+          <span role="alert" style={imageErrorHint} title={imageError}>
+            {imageError}
+          </span>
+        )}
         {props.autoSave === true && (
           <span
             role="status"
@@ -1259,6 +1265,14 @@ const taskFormHint: React.CSSProperties = {
 const autoSaveHint: React.CSSProperties = {
   fontSize: 11.5,
   color: t.labelTertiary,
+};
+const imageErrorHint: React.CSSProperties = {
+  fontSize: 12,
+  color: t.danger,
+  maxWidth: 320,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
 };
 const scheduleRow: React.CSSProperties = {
   display: "flex",

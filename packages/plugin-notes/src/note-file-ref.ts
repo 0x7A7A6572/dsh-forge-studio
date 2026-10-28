@@ -1,0 +1,70 @@
+export const NOTE_FILE_PREFIX = 'notes-file:'
+
+export const MAX_NOTE_FILE_BYTES = 32 * 1024 * 1024
+
+const FILE_NAME_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]{1,10}$/u
+
+export function noteFileSrc(fileName: string): string {
+  return NOTE_FILE_PREFIX + fileName
+}
+
+export function isValidNoteFile(fileName: string): boolean {
+  return FILE_NAME_RE.test(fileName)
+}
+
+export function fileNameOfNoteFileSrc(src: string): string | null {
+  if (!src.startsWith(NOTE_FILE_PREFIX)) return null
+  const fileName = src.slice(NOTE_FILE_PREFIX.length)
+  return isValidNoteFile(fileName) ? fileName : null
+}
+
+export function isNoteFileSrc(src: string): boolean {
+  return fileNameOfNoteFileSrc(src) !== null
+}
+
+export function extensionOfNoteFileName(name: string): string {
+  const dot = name.lastIndexOf('.')
+  if (dot < 0) return 'bin'
+  const extension = name
+    .slice(dot + 1)
+    .toLowerCase()
+    .replace(/[^a-z0-9]/gu, '')
+  return extension === '' ? 'bin' : extension.slice(0, 10)
+}
+
+const VIEWABLE_MEDIA_TYPES: Readonly<Record<string, string>> = {
+  pdf: 'application/pdf',
+  txt: 'text/plain',
+  log: 'text/plain',
+  md: 'text/markdown',
+  json: 'application/json',
+  csv: 'text/csv',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  mp4: 'video/mp4',
+  webm: 'video/webm',
+  mp3: 'audio/mpeg',
+  wav: 'audio/wav',
+}
+
+export function mediaTypeOfNoteFileName(name: string): string {
+  return VIEWABLE_MEDIA_TYPES[extensionOfNoteFileName(name)] ?? 'application/octet-stream'
+}
+
+export function sanitizeAttachmentOpenName(name: string, extension: string): string {
+  const leaf = name.split(/[\\/]/u).pop() ?? ''
+  const cleaned = [...leaf]
+    .filter((char) => {
+      const code = char.codePointAt(0) ?? 0
+      return code >= 0x20 && !'<>:"/\\|?*'.includes(char)
+    })
+    .join('')
+    .trim()
+  if (cleaned === '') return extension === '' ? 'attachment' : `attachment.${extension}`
+  if (extension !== '' && !cleaned.includes('.')) return `${cleaned}.${extension}`
+  return cleaned
+}

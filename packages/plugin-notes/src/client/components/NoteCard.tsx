@@ -1,7 +1,7 @@
 /**
  * 便签纸卡（grid 视图）：固定 pastel 纸色 + 深色文字，纸色由 note.color 决定。
- * 悬停浮出操作（编辑/置顶/归档或恢复/删除）；归档态显示「恢复」而非「归档」，
- * 且不提供置顶（归档便签不再参与置顶语义）。
+ * 悬停浮出操作（编辑/归档或恢复/删除）；置顶改为点右上角折角，
+ * 归档便签不提供置顶（不再参与置顶语义）。
  * 类选择器样式见 styles/notes-board.module.css 的 .card（各组件导入同一份 CSS Module）。
  */
 
@@ -14,7 +14,8 @@ import { dueTone, fmtDueChip } from '../core/due-date.ts'
 import { TaskBadge } from './TaskBadge.tsx'
 import { TodoBadge } from './TodoBadge.tsx'
 import { PinnedCornerMark } from './PinnedCornerMark.tsx'
-import { Archive, ArchiveRestore, Pencil, Pin, Trash2 } from 'lucide-react'
+import { NoteThumbnail } from './NoteThumbnail.tsx'
+import { Archive, ArchiveRestore, Pencil, Trash2 } from 'lucide-react'
 import styles from '../styles/notes-board.module.css'
 
 export interface NoteCardProps {
@@ -26,14 +27,23 @@ export interface NoteCardProps {
   readonly onRemove: () => void
 }
 
+const FOLD_SIZE = 22
+
 export function NoteCard(props: NoteCardProps): JSX.Element {
   const { note } = props
   const meta = noteColorMeta(note.color)
   const snippet = note.text ? mdSnippet(note.text, 140) : ''
   const thumb = note.text ? firstImageUrl(note.text) : null
   const todo = note.text ? todoProgress(note.text) : null
+  const folded = note.pinned && !note.archived
   return (
-    <li>
+    <li
+      className={styles.cardWrap}
+      style={{
+        position: 'relative',
+        ...(folded ? { filter: 'drop-shadow(0 2px 10px rgba(0, 0, 0, 0.1))' } : {}),
+      }}
+    >
       <div
         className={styles.card}
         role="button"
@@ -53,30 +63,28 @@ export function NoteCard(props: NoteCardProps): JSX.Element {
         style={{
           ...cardStyle,
           backgroundImage: `linear-gradient(327deg, ${meta.ring}, transparent 20%)`,
-          ...(note.pinned && !note.archived ? { borderTopRightRadius: 0 } : {}),
+          ...(folded
+            ? {
+              borderTopRightRadius: 0,
+              boxShadow: 'none',
+              clipPath: `polygon(0 0, calc(100% - ${FOLD_SIZE}px) 0, 100% ${FOLD_SIZE}px, 100% 100%, 0 100%)`,
+            }
+            : {}),
         }}
       >
-        {note.pinned && !note.archived && <PinnedCornerMark color={meta.ring} />}
-        <span style={cardTitleRow}>
+        <span
+          style={{
+            ...cardTitleRow,
+            ...(folded ? { paddingRight: 18 } : {}),
+          }}
+        >
           <span style={cardTitle} title={note.title || '（无标题）'}>
             {note.title || <span style={{ color: t.labelTertiary }}>（无标题）</span>}
           </span>
           {note.lane && <TaskBadge lane={note.lane} />}
           {todo && <TodoBadge done={todo.done} total={todo.total} />}
         </span>
-        {thumb && (
-          <span style={cardThumbWrap}>
-            <img
-              src={thumb}
-              alt=""
-              loading="lazy"
-              decoding="async"
-              draggable={false}
-              style={cardThumbImg}
-              onError={(e) => { e.currentTarget.style.display = 'none' }}
-            />
-          </span>
-        )}
+        {thumb && <NoteThumbnail src={thumb} />}
         {snippet ? (
           <span className={styles.snippet} style={{ ...cardSnippet, color: t.labelSecondary }}>{snippet}</span>
         ) : (
@@ -101,14 +109,6 @@ export function NoteCard(props: NoteCardProps): JSX.Element {
               onClick={(e) => { e.stopPropagation(); props.onEdit() }} style={actionBtn}>
               <Pencil size={13} />
             </button>
-            {!note.archived && (
-              <button type="button" title={note.pinned ? '取消置顶' : '置顶'} aria-label={note.pinned ? '取消置顶' : '置顶'}
-                disabled={props.busy}
-                onClick={(e) => { e.stopPropagation(); props.onTogglePin() }}
-                style={{ ...actionBtn, ...(note.pinned ? { color: meta.ring } : {}) }}>
-                <Pin size={13} />
-              </button>
-            )}
             <button type="button"
               title={note.archived ? '恢复（取消归档）' : '归档'}
               aria-label={note.archived ? '恢复' : '归档'}
@@ -123,6 +123,14 @@ export function NoteCard(props: NoteCardProps): JSX.Element {
           </span>
         </span>
       </div>
+      {!note.archived && (
+        <PinnedCornerMark
+          pinned={note.pinned}
+          color={meta.ring}
+          size={FOLD_SIZE}
+          onToggle={props.onTogglePin}
+        />
+      )}
     </li>
   )
 }
@@ -168,24 +176,6 @@ const cardSnippet: React.CSSProperties = {
   fontSize: 12.5,
   lineHeight: 1.55,
   wordBreak: 'break-word',
-}
-const cardThumbWrap: React.CSSProperties = {
-  flex: 'none',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  maxHeight: 110,
-  overflow: 'hidden',
-  borderRadius: 8,
-  background: t.hoverBg,
-}
-const cardThumbImg: React.CSSProperties = {
-  maxWidth: '100%',
-  maxHeight: 110,
-  height: 'auto',
-  width: 'auto',
-  objectFit: 'contain',
-  borderRadius: 8,
 }
 const cardFooter: React.CSSProperties = {
   display: 'flex',

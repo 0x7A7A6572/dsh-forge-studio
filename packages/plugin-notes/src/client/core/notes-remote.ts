@@ -17,7 +17,15 @@ import { normalizeNoteColor, NOTE_COLORS, SCHEDULE_MODES } from '../../types.ts'
 import type {
   NoteColor,
   NoteCreateInput,
+  NoteFileOpenInput,
+  NoteFileOpenResult,
+  NoteFileReadResult,
+  NoteFileUploadInput,
+  NoteFileUploadResult,
   NoteId,
+  NoteImageReadResult,
+  NoteImageUploadInput,
+  NoteImageUploadResult,
   NoteModelSelection,
   NoteRecord,
   NoteRun,
@@ -257,6 +265,70 @@ const updateInputSchema: TypertSchema<NoteUpdateInput> = {
   },
 }
 
+const imageUploadSchema: TypertSchema<NoteImageUploadInput> = {
+  parse(value) {
+    if (!isRecord(value) || typeof value.data !== 'string' || typeof value.mediaType !== 'string') {
+      throw new Error('expected { data: string; mediaType: string }')
+    }
+    if (value.name !== undefined && typeof value.name !== 'string') {
+      throw new Error('expected name?: string')
+    }
+    return {
+      data: value.data,
+      mediaType: value.mediaType,
+      ...(value.name !== undefined ? { name: value.name } : {}),
+    }
+  },
+}
+
+const imageSrcSchema: TypertSchema<string> = {
+  parse(value) {
+    if (typeof value !== 'string' || !value.startsWith('notes-asset:')) {
+      throw new Error('expected notes-asset:<file> src')
+    }
+    return value
+  },
+}
+
+const fileUploadSchema: TypertSchema<NoteFileUploadInput> = {
+  parse(value) {
+    if (!isRecord(value) || typeof value.data !== 'string') {
+      throw new Error('expected { data: string }')
+    }
+    if (value.name !== undefined && typeof value.name !== 'string') {
+      throw new Error('expected name?: string')
+    }
+    return {
+      data: value.data,
+      ...(value.name !== undefined ? { name: value.name } : {}),
+    }
+  },
+}
+
+const fileSrcSchema: TypertSchema<string> = {
+  parse(value) {
+    if (typeof value !== 'string' || !value.startsWith('notes-file:')) {
+      throw new Error('expected notes-file:<file> src')
+    }
+    return value
+  },
+}
+
+const fileOpenSchema: TypertSchema<NoteFileOpenInput> = {
+  parse(value) {
+    if (!isRecord(value) || typeof value.src !== 'string' || !value.src.startsWith('notes-file:')) {
+      throw new Error('expected { src: notes-file:<file> }')
+    }
+    if (value.name !== undefined && typeof value.name !== 'string') {
+      throw new Error('expected name?: string')
+    }
+    return {
+      src: value.src,
+      ...(value.name !== undefined ? { name: value.name } : {}),
+    }
+  },
+}
+
 const json: TypertCodec = { mode: 'src-json' }
 
 /** 与 host NotesService.taskExecute 的返回值同形状（reason 取值须同步）。 */
@@ -322,6 +394,21 @@ export const notesRemoteContribution: TypertRemoteContribution = {
       { name: 'id', wire: 'id', source: 'json', codec: strict('NoteId', idSchema) },
     ]),
     descriptor('watch', [], { mode: 'stream' }),
+    descriptor('saveImage', [
+      { name: 'input', wire: 'input', source: 'json', codec: strict('NoteImageUploadInput', imageUploadSchema) },
+    ]),
+    descriptor('readImage', [
+      { name: 'src', wire: 'src', source: 'json', codec: strict('NoteImageSrc', imageSrcSchema) },
+    ]),
+    descriptor('saveFile', [
+      { name: 'input', wire: 'input', source: 'json', codec: strict('NoteFileUploadInput', fileUploadSchema) },
+    ]),
+    descriptor('readFile', [
+      { name: 'src', wire: 'src', source: 'json', codec: strict('NoteFileSrc', fileSrcSchema) },
+    ]),
+    descriptor('openFile', [
+      { name: 'input', wire: 'input', source: 'json', codec: strict('NoteFileOpenInput', fileOpenSchema) },
+    ]),
     // WebDAV：网络错误结构化回传，不抛。
     descriptor('webdavBackup', []),
     descriptor('webdavList', []),
@@ -349,6 +436,11 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'notes/listWorkspaces': () => Promise<RemoteResult<readonly string[]>>
     'notes/taskTargets': () => Promise<RemoteResult<TaskTargets>>
     'notes/taskReset': (id: NoteId) => Promise<RemoteResult<TaskResetResult>>
+    'notes/saveImage': (input: NoteImageUploadInput) => Promise<RemoteResult<NoteImageUploadResult>>
+    'notes/readImage': (src: string) => Promise<RemoteResult<NoteImageReadResult>>
+    'notes/saveFile': (input: NoteFileUploadInput) => Promise<RemoteResult<NoteFileUploadResult>>
+    'notes/readFile': (src: string) => Promise<RemoteResult<NoteFileReadResult>>
+    'notes/openFile': (input: NoteFileOpenInput) => Promise<RemoteResult<NoteFileOpenResult>>
     'notes/webdavBackup': () => Promise<RemoteResult<WebdavBackupResult>>
     'notes/webdavList': () => Promise<RemoteResult<WebdavListResult>>
     'notes/webdavStatus': () => Promise<RemoteResult<WebdavStatus>>
@@ -372,6 +464,11 @@ export interface NotesRemote {
   listWorkspaces(): Promise<RemoteResult<readonly string[]>>
   taskTargets(): Promise<RemoteResult<TaskTargets>>
   taskReset(id: NoteId): Promise<RemoteResult<TaskResetResult>>
+  saveImage(input: NoteImageUploadInput): Promise<RemoteResult<NoteImageUploadResult>>
+  readImage(src: string): Promise<RemoteResult<NoteImageReadResult>>
+  saveFile(input: NoteFileUploadInput): Promise<RemoteResult<NoteFileUploadResult>>
+  readFile(src: string): Promise<RemoteResult<NoteFileReadResult>>
+  openFile(input: NoteFileOpenInput): Promise<RemoteResult<NoteFileOpenResult>>
   webdavBackup(): Promise<RemoteResult<WebdavBackupResult>>
   webdavList(): Promise<RemoteResult<WebdavListResult>>
   webdavStatus(): Promise<RemoteResult<WebdavStatus>>

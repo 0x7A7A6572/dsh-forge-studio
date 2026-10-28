@@ -34,10 +34,12 @@ import {
 import { fmtCountdown, fmtDateTime, fmtShortDateTime } from "../core/time-text.ts"
 import { folderNameOf, workspaceSelectOptions } from "../core/workspace-path.ts"
 import { buildNoteRichTextExtensions } from "../core/note-richtext.ts"
-import { NoteImageResizable } from "../components/NoteImageResizeView.tsx"
+import { NoteImageNode } from "../components/NoteImageView.tsx"
+import { NoteFileNode } from "../components/NoteFileNodeView.tsx"
 import { CODE_LANGUAGES } from "../core/code-languages.ts"
 import { EMPTY_FORMAT, editorMarkdown, formatOf } from "../core/note-format-state.ts"
 import { liveEditors, registerPasteGuard } from "../core/note-paste-guard.ts"
+import { viewNoteFile } from "../core/note-file-cache.ts"
 
 const AUTO_SAVE_DELAY_MS = 1200;
 const AUTO_SAVE_RETRY_MS = 500;
@@ -189,6 +191,7 @@ export function useNoteEditor(props: NoteEditorProps) {
   const runningReadOnly =
     props.initialLane !== undefined && isRunOpen(props.initialLane);
   const [saving, setSaving] = useState(false);
+  const [imageError, setImageError] = useState<string | undefined>(undefined);
   const [runExpanded, setRunExpanded] = useState(false);
   const [scheduleDetailOpen, setScheduleDetailOpen] = useState(false);
 
@@ -202,7 +205,7 @@ export function useNoteEditor(props: NoteEditorProps) {
   const [gridSize, setGridSize] = useState({ cols: 3, rows: 2 });
 
   const editor = useEditor({
-    extensions: buildNoteRichTextExtensions({ imageNode: NoteImageResizable }),
+    extensions: buildNoteRichTextExtensions({ imageNode: NoteImageNode, fileNode: NoteFileNode }),
     content: props.initialBody,
   });
   const fmt =
@@ -221,11 +224,37 @@ export function useNoteEditor(props: NoteEditorProps) {
     if (!dom.classList.contains("ProseMirror")) return;
     liveEditors.set(dom, editor);
     registerPasteGuard();
+    const onImageError = (event: Event): void => {
+      const detail = (event as CustomEvent<{ message?: string }>).detail;
+      setImageError(detail?.message ?? "图片上传失败");
+    };
+    const onClick = (event: MouseEvent): void => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const anchor = target.closest('a[href^="notes-file:"]');
+      if (!(anchor instanceof HTMLAnchorElement)) return;
+      event.preventDefault();
+      const name = (anchor.textContent ?? "").replace(/^\s*📎\s*/u, "").trim() || "附件";
+      void viewNoteFile(anchor.getAttribute("href") ?? "", name).catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        setImageError("附件打开失败：" + message);
+      });
+    };
+    dom.addEventListener("notes-image-error", onImageError);
+    dom.addEventListener("click", onClick);
     return () => {
       liveEditors.delete(dom);
+      dom.removeEventListener("notes-image-error", onImageError);
+      dom.removeEventListener("click", onClick);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor]);
+
+  useEffect(() => {
+    if (imageError === undefined) return;
+    const timer = setTimeout(() => setImageError(undefined), 5000);
+    return () => clearTimeout(timer);
+  }, [imageError]);
 
   /** 显式保存（按钮 / Ctrl+Enter）：默认保存并关闭。 */
   async function save(options?: NoteSaveOptions): Promise<void> {
@@ -653,6 +682,7 @@ export function useNoteEditor(props: NoteEditorProps) {
     autoSaver,
     markDirty,
     autoSaveHintText,
+    imageError,
     closeConfirmOpen,
     requestClose,
     requestEscapeClose,
