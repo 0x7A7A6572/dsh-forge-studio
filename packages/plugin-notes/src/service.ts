@@ -52,7 +52,7 @@ import type {
   WebdavStatus,
 } from './types.ts'
 import type { WebdavRunner } from './webdav-backup.ts'
-import { beginRun, settleRun } from './client/core/task-lanes.ts'
+import { beginRun, settleRun, withRunHistory } from './client/core/task-lanes.ts'
 
 /** notes/watch 流推送的变更事件。 */
 export interface NotesChangeEvent {
@@ -350,6 +350,7 @@ export class NotesService extends TypertRemoteService {
       schedule = armed
     }
     if (lane === undefined) schedule = undefined
+    const nextLane = lane === undefined ? undefined : withRunHistory(lane)
     const dueAt: number | undefined =
       patch.dueAt === undefined ? current.dueAt : (patch.dueAt ?? undefined)
     const { lane: _currentLane, schedule: _currentSchedule, workspace: _currentWorkspace, dueAt: _currentDueAt, ...currentWithoutLane } = current
@@ -365,7 +366,7 @@ export class NotesService extends TypertRemoteService {
       updatedAt: now,
       ...(workspace !== undefined ? { workspace } : {}),
       ...(dueAt !== undefined ? { dueAt } : {}),
-      ...(lane !== undefined ? { lane } : {}),
+      ...(nextLane !== undefined ? { lane: nextLane } : {}),
       ...(schedule !== undefined ? { schedule } : {}),
     }
     // 用户侧改状态 / 取消任务 / 归档即接管，撤销租约；同状态不算。
@@ -474,7 +475,7 @@ export class NotesService extends TypertRemoteService {
     const now = Date.now()
     const looping = current.schedule?.enabled === true && current.schedule.mode !== 'once'
     const status: TaskStatus = looping ? 'todo' : ok ? 'done' : 'failed'
-    const lane: NoteLane = { ...settleRun(current.lane, ok, summary, now), status }
+    const lane: NoteLane = withRunHistory({ ...settleRun(current.lane, ok, summary, now), status })
     await this.revokeTaskLease(id)
     // 成败写回日程的失败连击：成功清零、失败累加，到上限自动停用。
     const schedule = current.schedule !== undefined ? applyRunResult(current.schedule, ok, now) : undefined
@@ -579,7 +580,7 @@ export class NotesService extends TypertRemoteService {
     if (!current?.lane) return { ok: false }
     await this.revokeTaskLease(id)
     const now = Date.now()
-    const lane: NoteLane = { ...settleRun(current.lane, false, '用户手动接管', now), status: 'todo' }
+    const lane: NoteLane = withRunHistory({ ...settleRun(current.lane, false, '用户手动接管', now), status: 'todo' })
     const next: NoteRecord = { ...current, lane, updatedAt: now }
     await this.table.put(id, next)
     this.broadcastChanged()

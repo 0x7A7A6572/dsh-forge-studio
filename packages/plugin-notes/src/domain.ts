@@ -61,6 +61,17 @@ export const noteRecordSchema = z.object({
           by: z.enum(['user', 'schedule']).optional(),
         })
         .optional(),
+      runs: z
+        .array(
+          z.object({
+            startedAt: z.number(),
+            finishedAt: z.number().optional(),
+            ok: z.boolean().optional(),
+            summary: z.string().optional(),
+            by: z.enum(['user', 'schedule']).optional(),
+          }),
+        )
+        .optional(),
       agentPreset: z.string().optional(),
       model: z
         .object({

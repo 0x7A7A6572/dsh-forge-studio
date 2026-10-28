@@ -3,15 +3,17 @@ import { t } from '../core/theme-tokens.ts'
 
 export interface NoteThumbnailProps {
   readonly src: string
+  readonly maxHeight?: number
 }
 
 export function NoteThumbnail(props: NoteThumbnailProps): JSX.Element | null {
   const image = useNoteImageSrc(props.src)
+  const maxHeight = props.maxHeight ?? 110
   if (image.url === undefined) return null
   return (
-    <span style={thumbWrap}>
+    <span style={{ ...thumbWrap, maxHeight }}>
       <img
-        style={thumbImg}
+        style={{ ...thumbImg, maxHeight }}
         src={image.url}
         alt=""
         loading="lazy"
@@ -30,7 +32,6 @@ const thumbWrap: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  maxHeight: 110,
   overflow: 'hidden',
   borderRadius: 8,
   background: t.hoverBg,
@@ -38,7 +39,6 @@ const thumbWrap: React.CSSProperties = {
 
 const thumbImg: React.CSSProperties = {
   maxWidth: '100%',
-  maxHeight: 110,
   height: 'auto',
   width: 'auto',
   objectFit: 'contain',

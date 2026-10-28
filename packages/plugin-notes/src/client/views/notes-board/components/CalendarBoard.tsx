@@ -20,10 +20,24 @@ export interface CalendarBoardProps {
 
 const DUE_COLOR = 'var(--dsw-alias-state-business-primary)'
 const SCHEDULE_COLOR = 'var(--dsw-alias-state-success-primary)'
+const RUN_COLOR = 'var(--dsw-alias-state-warn-primary, var(--dsw-alias-state-warn-label))'
+
+function markerColor(kind: string): string {
+  if (kind === 'due') return DUE_COLOR
+  if (kind === 'schedule') return SCHEDULE_COLOR
+  return RUN_COLOR
+}
+
+function eventLabel(kind: string, ok: boolean | undefined): string {
+  if (kind === 'due') return '截止'
+  if (kind === 'schedule') return '定时'
+  return ok === false ? '执行失败' : '执行成功'
+}
 
 export function CalendarBoard(props: CalendarBoardProps): JSX.Element {
   const cal = useCalendarBoard({ notes: props.notes, onEdit: props.onEdit })
   const selectedDate = new Date(`${cal.selectedKey}T00:00:00`)
+  const dense = cal.selectedEvents.length > 4
 
   return (
     <div style={rootStyle}>
@@ -77,7 +91,7 @@ export function CalendarBoard(props: CalendarBoardProps): JSX.Element {
                     key={kind}
                     style={{
                       ...dotStyle,
-                      background: kind === 'due' ? DUE_COLOR : SCHEDULE_COLOR,
+                      background: markerColor(kind),
                     }}
                   />
                 ))}
@@ -94,26 +108,26 @@ export function CalendarBoard(props: CalendarBoardProps): JSX.Element {
           </span>
           <span style={countStyle}>{cal.selectedEvents.length} 项</span>
         </header>
-        <ul style={eventListStyle}>
+        <ul style={{ ...eventListStyle, gap: dense ? 1 : 2 }}>
           {cal.selectedEvents.length === 0 ? (
             <li style={emptyStyle}>这天没有事项</li>
           ) : (
             cal.selectedEvents.map((event) => (
-              <li key={`${event.note.id}:${event.kind}`}>
+              <li key={`${event.note.id}:${event.kind}:${event.at}`}>
                 <button
                   type="button"
                   className={styles.calEventRow}
-                  style={eventRowStyle}
+                  style={dense ? { ...eventRowStyle, padding: '4px 8px' } : eventRowStyle}
                   onClick={() => cal.openNote(event.note)}
                 >
                   <i
                     style={{
                       ...dotStyle,
                       flex: 'none',
-                      background: event.kind === 'due' ? DUE_COLOR : SCHEDULE_COLOR,
+                      background: markerColor(event.kind),
                     }}
                   />
-                  <span style={eventKindStyle}>{event.kind === 'due' ? '截止' : '定时'}</span>
+                  <span style={eventKindStyle}>{eventLabel(event.kind, event.ok)}</span>
                   <span style={eventTitleStyle} title={event.note.title}>
                     {event.note.title || '（无标题）'}
                   </span>
@@ -228,14 +242,15 @@ const dotStyle: React.CSSProperties = {
   display: 'inline-block',
 }
 const panelStyle: React.CSSProperties = {
-  flex: 'none',
-  maxHeight: 168,
+  flex: '0 1 auto',
+  maxHeight: 'min(42%, 320px)',
+  minHeight: 96,
   display: 'flex',
   flexDirection: 'column',
   gap: 6,
   paddingTop: 8,
   borderTop: `1px solid ${t.borderL1}`,
-  minHeight: 0,
+  minWidth: 0,
 }
 const panelHeadStyle: React.CSSProperties = {
   display: 'flex',
