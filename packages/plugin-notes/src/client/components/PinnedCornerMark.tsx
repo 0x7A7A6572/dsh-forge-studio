@@ -3,7 +3,7 @@
  * 未置顶时悬停露出虚影提示，点击切换置顶；卡片主体按同一尺寸切角。
  */
 
-import { useId, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 
 export function PinnedCornerMark(props: {
   readonly pinned: boolean
@@ -23,6 +23,12 @@ export function PinnedCornerMark(props: {
     props.onHoverChange?.(next)
   }
 
+  useEffect(() => {
+    if (props.pinned) return
+    setHovered(false)
+    props.onHoverChange?.(false)
+  }, [props.pinned, props.onHoverChange])
+
   const opacity = props.pinned ? 1 : hovered ? 0.42 : 0
   const scale = props.pinned ? (hovered ? 1.05 : 1) : hovered ? 0.92 : 0.6
 
@@ -35,6 +41,7 @@ export function PinnedCornerMark(props: {
       onClick={(event) => {
         event.preventDefault()
         event.stopPropagation()
+        setHover(false)
         props.onToggle()
       }}
       onPointerDown={(event) => event.stopPropagation()}
