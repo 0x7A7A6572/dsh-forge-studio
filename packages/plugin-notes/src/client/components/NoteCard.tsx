@@ -27,14 +27,22 @@ export interface NoteCardProps {
   readonly onRemove: () => void
 }
 
+const FOLD_SIZE = 22
+
 export function NoteCard(props: NoteCardProps): JSX.Element {
   const { note } = props
   const meta = noteColorMeta(note.color)
   const snippet = note.text ? mdSnippet(note.text, 140) : ''
   const thumb = note.text ? firstImageUrl(note.text) : null
   const todo = note.text ? todoProgress(note.text) : null
+  const folded = note.pinned && !note.archived
   return (
-    <li>
+    <li
+      style={{
+        position: 'relative',
+        ...(folded ? { filter: 'drop-shadow(0 2px 10px rgba(0, 0, 0, 0.1))' } : {}),
+      }}
+    >
       <div
         className={styles.card}
         role="button"
@@ -54,14 +62,19 @@ export function NoteCard(props: NoteCardProps): JSX.Element {
         style={{
           ...cardStyle,
           backgroundImage: `linear-gradient(327deg, ${meta.ring}, transparent 20%)`,
-          ...(note.pinned && !note.archived ? { borderTopRightRadius: 0 } : {}),
+          ...(folded
+            ? {
+              borderTopRightRadius: 0,
+              boxShadow: 'none',
+              clipPath: `polygon(0 0, calc(100% - ${FOLD_SIZE}px) 0, 100% ${FOLD_SIZE}px, 100% 100%, 0 100%)`,
+            }
+            : {}),
         }}
       >
-        {note.pinned && !note.archived && <PinnedCornerMark color={meta.ring} />}
         <span
           style={{
             ...cardTitleRow,
-            ...(note.pinned && !note.archived ? { paddingRight: 24 } : {}),
+            ...(folded ? { paddingRight: 18 } : {}),
           }}
         >
           <span style={cardTitle} title={note.title || '（无标题）'}>
@@ -117,6 +130,7 @@ export function NoteCard(props: NoteCardProps): JSX.Element {
           </span>
         </span>
       </div>
+      {folded && <PinnedCornerMark color={meta.ring} size={FOLD_SIZE} />}
     </li>
   )
 }

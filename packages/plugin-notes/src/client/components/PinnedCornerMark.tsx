@@ -1,6 +1,6 @@
 /**
- * 置顶角标：把卡片右上角画成折起的纸角（容器须 position: relative，
- * 置顶时卡片右上角同步改成直角）。大小随卡片缩放，不参与布局也不拦点击。
+ * 置顶角标：卡片右上角向内折下的纸角。容器须 position: relative；
+ * 卡片本体按同一尺寸用 clip-path 切掉右上三角，这里只画折片、折痕与投影。
  */
 
 import { useId } from 'react'
@@ -9,7 +9,7 @@ export function PinnedCornerMark(props: {
   readonly color: string
   readonly size?: number
 }): JSX.Element {
-  const size = props.size ?? 30
+  const size = props.size ?? 22
   const identity = useId().replace(/:/g, '')
   const gradientId = `fold-${identity}`
   const shadowId = `fold-shadow-${identity}`
@@ -30,29 +30,35 @@ export function PinnedCornerMark(props: {
       }}
     >
       <defs>
-        <linearGradient id={gradientId} x1={size} y1="0" x2="0" y2={size} gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#ffffff" stopOpacity="0.42" />
-          <stop offset="0.45" stopColor="#ffffff" stopOpacity="0.12" />
-          <stop offset="1" stopColor="#000000" stopOpacity="0.16" />
+        <linearGradient
+          id={gradientId}
+          x1={size / 2}
+          y1={size / 2}
+          x2="0"
+          y2={size}
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop offset="0" stopColor="#000000" stopOpacity="0.26" />
+          <stop offset="0.5" stopColor="#000000" stopOpacity="0.1" />
+          <stop offset="1" stopColor="#ffffff" stopOpacity="0.32" />
         </linearGradient>
         <filter id={shadowId} x="-40%" y="-40%" width="180%" height="180%">
-          <feGaussianBlur stdDeviation="1.1" />
+          <feDropShadow dx="-1" dy="1" stdDeviation="1.2" floodColor="#000000" floodOpacity="0.34" />
         </filter>
       </defs>
       <path
-        d={`M0 0 L${size} ${size}`}
-        stroke="#000000"
-        strokeOpacity="0.22"
-        strokeWidth="2.4"
+        d={`M0 0 L0 ${size} L${size} ${size} Z`}
+        fill={`url(#${gradientId})`}
         filter={`url(#${shadowId})`}
       />
-      <path d={`M${size} 0 H0 L${size} ${size} Z`} fill={`url(#${gradientId})`} />
       <path
-        d={`M0 0 L${size} ${size}`}
-        stroke={props.color}
-        strokeOpacity="0.5"
-        strokeWidth="1"
+        d={`M0 0 L0 ${size} L${size} ${size}`}
+        fill="none"
+        stroke="#ffffff"
+        strokeOpacity="0.22"
+        strokeWidth="0.8"
       />
+      <path d={`M0 0 L${size} ${size}`} stroke={props.color} strokeOpacity="0.55" strokeWidth="1" />
     </svg>
   )
 }
