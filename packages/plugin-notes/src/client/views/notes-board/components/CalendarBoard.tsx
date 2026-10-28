@@ -20,7 +20,7 @@ export interface CalendarBoardProps {
 
 const DUE_COLOR = 'var(--dsw-alias-state-business-primary)'
 const SCHEDULE_COLOR = 'var(--dsw-alias-state-success-primary)'
-const RUN_COLOR = 'var(--dsw-alias-state-warning-primary)'
+const RUN_COLOR = 'var(--dsw-alias-state-warn-primary, var(--dsw-alias-state-warn-label))'
 
 function markerColor(kind: string): string {
   if (kind === 'due') return DUE_COLOR
