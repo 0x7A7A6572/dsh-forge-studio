@@ -335,6 +335,15 @@ export interface NoteFileReadResult {
   readonly data: string
 }
 
+export interface NoteFileOpenInput {
+  readonly src: string
+  readonly name?: string
+}
+
+export interface NoteFileOpenResult {
+  readonly opened: boolean
+}
+
 /**
  * 设置命名空间 = profile 条目 id，须与 cordis.patch.yml 的 id 一致。
  * 另一套 `plugin-*` 前缀只用在 client 侧槽位 id。

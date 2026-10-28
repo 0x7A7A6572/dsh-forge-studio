@@ -6,6 +6,9 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { copyFile, mkdtemp } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
@@ -14,11 +17,18 @@ import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type { notesDomain } from './domain.ts'
 import type { TaskLease } from './domain.ts'
 import { DEFAULT_NOTE_COLOR } from './types.ts'
-import { fileNameOfNoteFileSrc, noteFileSrc } from './note-file-ref.ts'
+import {
+  fileNameOfNoteFileSrc,
+  noteFileSrc,
+  sanitizeAttachmentOpenName,
+} from './note-file-ref.ts'
 import { fileNameOfNoteImageSrc, noteImageSrc } from './note-image-ref.ts'
 import type { NoteAssetStore } from './note-asset-store.ts'
+import { openWithSystemApp } from './open-external.ts'
 import type {
   NoteCreateInput,
+  NoteFileOpenInput,
+  NoteFileOpenResult,
   NoteFileReadResult,
   NoteFileUploadInput,
   NoteFileUploadResult,
@@ -179,6 +189,19 @@ export class NotesService extends TypertRemoteService {
     const fileName = fileNameOfNoteFileSrc(src)
     if (fileName === null) throw new Error('附件引用非法')
     return { data: await this.assets.readFileBase64(fileName) }
+  }
+
+  async openFile(input: NoteFileOpenInput): Promise<NoteFileOpenResult> {
+    if (this.assets === undefined) throw new Error('附件存储未启用（notes-assets 目录不可用）')
+    const fileName = fileNameOfNoteFileSrc(input.src)
+    if (fileName === null) throw new Error('附件引用非法')
+    const extension = fileName.slice(fileName.lastIndexOf('.') + 1)
+    const targetName = sanitizeAttachmentOpenName(input.name ?? '', extension)
+    const directory = await mkdtemp(join(tmpdir(), 'dsh-notes-open-'))
+    const target = join(directory, targetName)
+    await copyFile(this.assets.filePath(fileName), target)
+    await openWithSystemApp(target)
+    return { opened: true }
   }
 
   private logger(): { warn(...args: unknown[]): void } {
@@ -674,6 +697,7 @@ markRemoteMethods(NotesService.prototype, [
   { method: 'readImage' },
   { method: 'saveFile' },
   { method: 'readFile' },
+  { method: 'openFile' },
   { method: 'webdavBackup' },
   { method: 'webdavList' },
   { method: 'webdavRestore' },

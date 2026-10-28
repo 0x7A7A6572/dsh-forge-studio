@@ -1,5 +1,4 @@
 import type { NotesRemote } from './notes-remote.ts'
-import { mediaTypeOfNoteFileName } from '../../note-file-ref.ts'
 import { blobToBase64 } from './paste-image.ts'
 
 let remote: NotesRemote | undefined
@@ -40,18 +39,8 @@ export async function downloadNoteFile(src: string, name: string): Promise<void>
 }
 
 export async function viewNoteFile(src: string, name: string): Promise<void> {
-  const tab = window.open('about:blank', '_blank')
-  try {
-    const bytes = await readBytes(src)
-    if (tab === null) throw new Error('浏览器拦截了新窗口，可改用下载')
-    const url = URL.createObjectURL(new Blob([bytes], { type: mediaTypeOfNoteFileName(name) }))
-    setTimeout(() => URL.revokeObjectURL(url), 5 * 60_000)
-    tab.opener = null
-    tab.location.href = url
-  } catch (error) {
-    tab?.close()
-    throw error
-  }
+  const result = await requireRemote().openFile({ src, name })
+  if (!result.ok) throw new Error(result.error.message)
 }
 
 async function readBytes(src: string): Promise<Uint8Array> {

@@ -10,6 +10,7 @@ import {
   isValidNoteFile,
   mediaTypeOfNoteFileName,
   noteFileSrc,
+  sanitizeAttachmentOpenName,
 } from '../packages/plugin-notes/src/note-file-ref.ts'
 
 const FILE = '8a7b6c5d-1234-4abc-9def-0123456789ab.pdf'
@@ -58,5 +59,17 @@ describe('mediaTypeOfNoteFileName', () => {
     expect(mediaTypeOfNoteFileName('evil.html')).toBe('application/octet-stream')
     expect(mediaTypeOfNoteFileName('evil.svg')).toBe('application/octet-stream')
     expect(mediaTypeOfNoteFileName('bundle.zip')).toBe('application/octet-stream')
+  })
+})
+
+describe('sanitizeAttachmentOpenName', () => {
+  it('只留叶子名，去掉路径与非法字符', () => {
+    expect(sanitizeAttachmentOpenName('../../a/b.pdf', 'pdf')).toBe('b.pdf')
+    expect(sanitizeAttachmentOpenName('bad<name>.txt', 'txt')).toBe('badname.txt')
+  })
+
+  it('空名或没有扩展名时用兜底名并补扩展名', () => {
+    expect(sanitizeAttachmentOpenName('', 'pdf')).toBe('attachment.pdf')
+    expect(sanitizeAttachmentOpenName('readme', 'txt')).toBe('readme.txt')
   })
 })

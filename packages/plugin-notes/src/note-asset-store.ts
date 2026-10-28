@@ -80,6 +80,11 @@ export class NoteAssetStore {
     return (await this.read(fileName)).toString('base64')
   }
 
+  filePath(fileName: string): string {
+    if (!isValidNoteFile(fileName)) throw new Error('附件引用非法')
+    return join(this.root, fileName)
+  }
+
   async offloadInlineImages(text: string): Promise<OffloadImagesResult> {
     const matches = findInlineImages(text)
     if (matches.length === 0) return { text, changed: false, saved: 0 }

@@ -54,3 +54,17 @@ const VIEWABLE_MEDIA_TYPES: Readonly<Record<string, string>> = {
 export function mediaTypeOfNoteFileName(name: string): string {
   return VIEWABLE_MEDIA_TYPES[extensionOfNoteFileName(name)] ?? 'application/octet-stream'
 }
+
+export function sanitizeAttachmentOpenName(name: string, extension: string): string {
+  const leaf = name.split(/[\\/]/u).pop() ?? ''
+  const cleaned = [...leaf]
+    .filter((char) => {
+      const code = char.codePointAt(0) ?? 0
+      return code >= 0x20 && !'<>:"/\\|?*'.includes(char)
+    })
+    .join('')
+    .trim()
+  if (cleaned === '') return extension === '' ? 'attachment' : `attachment.${extension}`
+  if (extension !== '' && !cleaned.includes('.')) return `${cleaned}.${extension}`
+  return cleaned
+}

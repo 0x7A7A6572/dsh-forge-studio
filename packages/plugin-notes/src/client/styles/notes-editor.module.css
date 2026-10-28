@@ -57,8 +57,7 @@
 .fileChip:hover { border-color: var(--dsw-static-deepseek-450); }
 .fileChipLabel { display: inline-flex; min-width: 0; padding: 0; border: none; background: transparent; color: var(--dsw-alias-label-primary); font: inherit; cursor: pointer; }
 .fileChipName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fileChipActions { display: inline-flex; align-items: center; gap: 1px; width: 0; overflow: hidden; opacity: 0; transition: width 120ms ease, opacity 120ms ease; }
-.fileChip:hover .fileChipActions, .fileChip:focus-within .fileChipActions { width: 40px; opacity: 1; }
+.fileChipActions { display: inline-flex; align-items: center; gap: 1px; margin-left: 2px; }
 .fileChipButton { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; padding: 0; border: none; border-radius: 5px; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; }
 .fileChipButton:hover { background: var(--dsw-alias-bg-layer-1); color: var(--dsw-static-deepseek-450); }
 /* 只读展示态（.preview）链接默认带下划线，可直接点开（openOnClick）。 */

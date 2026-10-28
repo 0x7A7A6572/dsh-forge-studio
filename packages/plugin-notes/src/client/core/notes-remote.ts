@@ -17,6 +17,8 @@ import { normalizeNoteColor, NOTE_COLORS, SCHEDULE_MODES } from '../../types.ts'
 import type {
   NoteColor,
   NoteCreateInput,
+  NoteFileOpenInput,
+  NoteFileOpenResult,
   NoteFileReadResult,
   NoteFileUploadInput,
   NoteFileUploadResult,
@@ -312,6 +314,21 @@ const fileSrcSchema: TypertSchema<string> = {
   },
 }
 
+const fileOpenSchema: TypertSchema<NoteFileOpenInput> = {
+  parse(value) {
+    if (!isRecord(value) || typeof value.src !== 'string' || !value.src.startsWith('notes-file:')) {
+      throw new Error('expected { src: notes-file:<file> }')
+    }
+    if (value.name !== undefined && typeof value.name !== 'string') {
+      throw new Error('expected name?: string')
+    }
+    return {
+      src: value.src,
+      ...(value.name !== undefined ? { name: value.name } : {}),
+    }
+  },
+}
+
 const json: TypertCodec = { mode: 'src-json' }
 
 /** 与 host NotesService.taskExecute 的返回值同形状（reason 取值须同步）。 */
@@ -389,6 +406,9 @@ export const notesRemoteContribution: TypertRemoteContribution = {
     descriptor('readFile', [
       { name: 'src', wire: 'src', source: 'json', codec: strict('NoteFileSrc', fileSrcSchema) },
     ]),
+    descriptor('openFile', [
+      { name: 'input', wire: 'input', source: 'json', codec: strict('NoteFileOpenInput', fileOpenSchema) },
+    ]),
     // WebDAV：网络错误结构化回传，不抛。
     descriptor('webdavBackup', []),
     descriptor('webdavList', []),
@@ -420,6 +440,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'notes/readImage': (src: string) => Promise<RemoteResult<NoteImageReadResult>>
     'notes/saveFile': (input: NoteFileUploadInput) => Promise<RemoteResult<NoteFileUploadResult>>
     'notes/readFile': (src: string) => Promise<RemoteResult<NoteFileReadResult>>
+    'notes/openFile': (input: NoteFileOpenInput) => Promise<RemoteResult<NoteFileOpenResult>>
     'notes/webdavBackup': () => Promise<RemoteResult<WebdavBackupResult>>
     'notes/webdavList': () => Promise<RemoteResult<WebdavListResult>>
     'notes/webdavStatus': () => Promise<RemoteResult<WebdavStatus>>
@@ -447,6 +468,7 @@ export interface NotesRemote {
   readImage(src: string): Promise<RemoteResult<NoteImageReadResult>>
   saveFile(input: NoteFileUploadInput): Promise<RemoteResult<NoteFileUploadResult>>
   readFile(src: string): Promise<RemoteResult<NoteFileReadResult>>
+  openFile(input: NoteFileOpenInput): Promise<RemoteResult<NoteFileOpenResult>>
   webdavBackup(): Promise<RemoteResult<WebdavBackupResult>>
   webdavList(): Promise<RemoteResult<WebdavListResult>>
   webdavStatus(): Promise<RemoteResult<WebdavStatus>>
