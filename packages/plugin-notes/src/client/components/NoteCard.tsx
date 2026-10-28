@@ -58,7 +58,12 @@ export function NoteCard(props: NoteCardProps): JSX.Element {
         }}
       >
         {note.pinned && !note.archived && <PinnedCornerMark color={meta.ring} />}
-        <span style={cardTitleRow}>
+        <span
+          style={{
+            ...cardTitleRow,
+            ...(note.pinned && !note.archived ? { paddingRight: 24 } : {}),
+          }}
+        >
           <span style={cardTitle} title={note.title || '（无标题）'}>
             {note.title || <span style={{ color: t.labelTertiary }}>（无标题）</span>}
           </span>

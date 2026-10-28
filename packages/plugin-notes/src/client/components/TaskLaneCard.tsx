@@ -126,11 +126,19 @@ export function TaskLaneCard(props: TaskLaneCardProps): JSX.Element {
           ...cardStyle,
           backgroundImage: `linear-gradient(327deg, ${meta.ring}, transparent 20%)`,
           opacity: dragging ? 0.45 : 1,
+          ...(note.pinned && !note.archived ? { borderTopRightRadius: 0 } : {}),
         }}
       >
-        {note.pinned && !note.archived && <PinnedCornerMark color={meta.ring} size={10} />}
+        {note.pinned && !note.archived && <PinnedCornerMark color={meta.ring} size={20} />}
 
-        <span className={styles.laneTitle} style={cardTitle} title={note.title || '（无标题）'}>
+        <span
+          className={styles.laneTitle}
+          style={{
+            ...cardTitle,
+            ...(note.pinned && !note.archived ? { paddingRight: 18 } : {}),
+          }}
+          title={note.title || '（无标题）'}
+        >
           {note.title || '（无标题）'}
         </span>
 
