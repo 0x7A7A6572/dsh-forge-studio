@@ -1,7 +1,7 @@
 /**
  * 便签纸卡（grid 视图）：固定 pastel 纸色 + 深色文字，纸色由 note.color 决定。
- * 悬停浮出操作（编辑/置顶/归档或恢复/删除）；归档态显示「恢复」而非「归档」，
- * 且不提供置顶（归档便签不再参与置顶语义）。
+ * 悬停浮出操作（编辑/归档或恢复/删除）；置顶改为点右上角折角，
+ * 归档便签不提供置顶（不再参与置顶语义）。
  * 类选择器样式见 styles/notes-board.module.css 的 .card（各组件导入同一份 CSS Module）。
  */
 
@@ -15,7 +15,7 @@ import { TaskBadge } from './TaskBadge.tsx'
 import { TodoBadge } from './TodoBadge.tsx'
 import { PinnedCornerMark } from './PinnedCornerMark.tsx'
 import { NoteThumbnail } from './NoteThumbnail.tsx'
-import { Archive, ArchiveRestore, Pencil, Pin, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, Pencil, Trash2 } from 'lucide-react'
 import styles from '../styles/notes-board.module.css'
 
 export interface NoteCardProps {
@@ -109,14 +109,6 @@ export function NoteCard(props: NoteCardProps): JSX.Element {
               onClick={(e) => { e.stopPropagation(); props.onEdit() }} style={actionBtn}>
               <Pencil size={13} />
             </button>
-            {!note.archived && (
-              <button type="button" title={note.pinned ? '取消置顶' : '置顶'} aria-label={note.pinned ? '取消置顶' : '置顶'}
-                disabled={props.busy}
-                onClick={(e) => { e.stopPropagation(); props.onTogglePin() }}
-                style={{ ...actionBtn, ...(note.pinned ? { color: meta.ring } : {}) }}>
-                <Pin size={13} />
-              </button>
-            )}
             <button type="button"
               title={note.archived ? '恢复（取消归档）' : '归档'}
               aria-label={note.archived ? '恢复' : '归档'}
