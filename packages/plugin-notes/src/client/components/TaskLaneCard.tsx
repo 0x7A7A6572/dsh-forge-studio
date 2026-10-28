@@ -7,13 +7,14 @@ import { useEffect, useState } from 'react'
 import type { NoteRecord } from '../../types.ts'
 import { noteColorMeta } from '../core/note-colors.ts'
 import { isRunOpen } from '../core/task-lanes.ts'
-import { mdSnippet, mdToPlainText } from '../core/markdown-text.ts'
+import { firstImageUrl, mdSnippet, mdToPlainText } from '../core/markdown-text.ts'
 import { folderNameOf } from '../core/workspace-path.ts'
 import { t } from '../core/theme-tokens.ts'
 import { fmtDueChip, dueTone, fromDateInputValue, toDateInputValue } from '../core/due-date.ts'
 import { isScheduleBlockedStatus, scheduleBlockTextFor, scheduleLabel } from '../../schedule.ts'
 import { fmtCountdown, fmtDateTime, fmtElapsed, fmtRelative, fmtShortDateTime } from '../core/time-text.ts'
 import { PinnedCornerMark } from './PinnedCornerMark.tsx'
+import { NoteThumbnail } from './NoteThumbnail.tsx'
 import {
   Archive,
   CalendarDays,
@@ -65,6 +66,7 @@ export function TaskLaneCard(props: TaskLaneCardProps): JSX.Element {
   const meta = noteColorMeta(note.color)
   const folded = note.pinned && !note.archived
   const snippet = note.text ? mdSnippet(note.text, 100) : ''
+  const thumb = note.text ? firstImageUrl(note.text) : null
   const [dragging, setDragging] = useState(false)
   const [dueOpen, setDueOpen] = useState(false)
 
@@ -152,6 +154,8 @@ export function TaskLaneCard(props: TaskLaneCardProps): JSX.Element {
         >
           {note.title || '（无标题）'}
         </span>
+
+        {thumb && <NoteThumbnail src={thumb} maxHeight={80} />}
 
         {snippet ? (
           <span className={styles.laneSnippet} style={cardSnippet}>
