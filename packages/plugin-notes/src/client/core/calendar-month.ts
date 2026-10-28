@@ -1,9 +1,10 @@
 /**
  * 日历的纯数据层：月网格（周一起始，恒 6 行）+ 便签摊成「日 → 事项」。
- * 事项来自 dueAt（截止）与 schedule.nextAt（定时）。
+ * 事项来自 dueAt（截止）、日程触发（下一次 + 未来重复）与执行历史（lane.runs）。
  */
 
-import type { NoteRecord } from '../../types.ts'
+import type { NoteRecord, NoteRun } from '../../types.ts'
+import { nextFireAt } from '../../schedule.ts'
 import { dayKey } from './due-date.ts'
 
 export interface MonthCursor {
@@ -21,12 +22,13 @@ export interface CalendarCell {
   readonly today: boolean
 }
 
-export type CalendarEventKind = 'due' | 'schedule'
+export type CalendarEventKind = 'due' | 'schedule' | 'run'
 
 export interface CalendarEvent {
   readonly at: number
   readonly kind: CalendarEventKind
   readonly note: NoteRecord
+  readonly ok?: boolean
 }
 
 /** 月网格行数：固定 6 行，避免月份切换时行高跳动。 */
@@ -70,16 +72,51 @@ export function monthCells(cursor: MonthCursor, now: number): CalendarCell[] {
 /** 周标签（周一起始）。 */
 export const WEEKDAY_LABELS = ['一', '二', '三', '四', '五', '六', '日'] as const
 
-/** 一张便签可能同时产生两条事项（截止 + 定时）。 */
+const PROJECTION_DAYS = 70
+const PROJECTION_MAX = 60
+const DAY_MS = 24 * 60 * 60 * 1000
+
+function pushRunEvent(
+  events: CalendarEvent[],
+  note: NoteRecord,
+  run: NoteRun,
+  seen: Set<string>,
+): void {
+  if (run.finishedAt === undefined) return
+  const key = `${run.startedAt}:${run.finishedAt}`
+  if (seen.has(key)) return
+  seen.add(key)
+  events.push({ note, kind: 'run', at: run.startedAt, ok: run.ok })
+}
+
+/** 一张便签可产生多条事项（截止、下一次 / 未来重复触发、历史执行）。 */
 export function collectEvents(notes: readonly NoteRecord[]): CalendarEvent[] {
   const events: CalendarEvent[] = []
+  const horizon = Date.now() + PROJECTION_DAYS * DAY_MS
   for (const note of notes) {
     if (note.archived) continue
     if (note.dueAt !== undefined) events.push({ note, kind: 'due', at: note.dueAt })
-    const nextAt = note.schedule?.nextAt
-    if (note.schedule?.enabled === true && nextAt !== undefined && nextAt > 0) {
-      events.push({ note, kind: 'schedule', at: nextAt })
+    const schedule = note.schedule
+    if (schedule?.enabled === true) {
+      const nextAt = schedule.nextAt
+      if (nextAt !== undefined && nextAt > 0) {
+        events.push({ note, kind: 'schedule', at: nextAt })
+        if (schedule.mode !== 'interval') {
+          let cursor = Math.max(nextAt, Date.now())
+          for (let i = 0; i < PROJECTION_MAX; i += 1) {
+            const at = nextFireAt(schedule, cursor)
+            if (at === undefined || at > horizon) break
+            if (schedule.endAt !== undefined && at > schedule.endAt) break
+            events.push({ note, kind: 'schedule', at })
+            cursor = at
+          }
+        }
+      }
     }
+    const seen = new Set<string>()
+    for (const run of note.lane?.runs ?? []) pushRunEvent(events, note, run, seen)
+    const currentRun = note.lane?.run
+    if (currentRun !== undefined) pushRunEvent(events, note, currentRun, seen)
   }
   return events.sort((a, b) => a.at - b.at)
 }

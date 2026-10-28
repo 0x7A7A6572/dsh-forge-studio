@@ -56,8 +56,8 @@ export function makeLane(status: TaskStatus): NoteLane {
 }
 
 /** 置 running 并开新帧（重跑时覆盖旧帧）；by 供 host 超时兜底认领定时发起的 run。 */
-export function beginRun(_lane: NoteLane, startedAt: number, by: 'user' | 'schedule' = 'user'): NoteLane {
-  return { status: 'running', run: { startedAt, by } }
+export function beginRun(lane: NoteLane, startedAt: number, by: 'user' | 'schedule' = 'user'): NoteLane {
+  return { ...lane, status: 'running', run: { startedAt, by } }
 }
 
 /** 补 finishedAt/ok/summary；lane 无 run 时先按 at 造帧。 */
@@ -80,6 +80,18 @@ export function settleRun(
 
 export function isRunOpen(lane: NoteLane): boolean {
   return Boolean(lane.run && lane.run.finishedAt === undefined)
+}
+
+export const RUN_HISTORY_LIMIT = 30
+
+export function withRunHistory(lane: NoteLane): NoteLane {
+  const run = lane.run
+  if (!run || run.finishedAt === undefined) return lane
+  const runs = lane.runs ?? []
+  if (runs.some((item) => item.startedAt === run.startedAt && item.finishedAt === run.finishedAt)) {
+    return lane
+  }
+  return { ...lane, runs: [...runs, run].slice(-RUN_HISTORY_LIMIT) }
 }
 
 /** preset 空串 = 用宿主默认预设；model 缺省 = 用宿主默认模型。 */

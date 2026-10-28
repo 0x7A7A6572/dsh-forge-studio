@@ -10,11 +10,14 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  beginRun,
   lanePatchForSave,
   modelKey,
   modelSelectGroups,
   parseModelKey,
+  RUN_HISTORY_LIMIT,
   taskTargetCreateInput,
+  withRunHistory,
 } from '../packages/plugin-notes/src/client/core/task-lanes.ts'
 import type { NoteLane, NoteModelSelection } from '../packages/plugin-notes/src/types.ts'
 
@@ -156,5 +159,43 @@ describe('执行目标 → create 入参（新建路径）', () => {
   it('只给预设 / 只给模型 各落各的', () => {
     expect(taskTargetCreateInput({ agentPreset: 'fast' })).toEqual({ agentPreset: 'fast' })
     expect(taskTargetCreateInput({ agentPreset: '', model: MODEL_A })).toEqual({ model: MODEL_A })
+  })
+})
+
+describe('执行历史（lane.runs）', () => {
+  const finished = { startedAt: 100, finishedAt: 200, ok: true, summary: 'ok' } as const
+
+  it('收尾帧追加进历史，重复收尾幂等', () => {
+    const settled = withRunHistory(lane({ run: finished }))
+    expect(settled.runs).toEqual([finished])
+    expect(withRunHistory(settled).runs).toEqual([finished])
+  })
+
+  it('未收尾的 run 不进历史', () => {
+    expect(withRunHistory(lane({ run: { startedAt: 300 } })).runs).toBeUndefined()
+  })
+
+  it('历史只保留最近 RUN_HISTORY_LIMIT 条', () => {
+    const runs = Array.from({ length: RUN_HISTORY_LIMIT }, (_, index) => ({
+      startedAt: index + 1,
+      finishedAt: index + 2,
+      ok: true,
+    }))
+    const next = { startedAt: 999, finishedAt: 1000, ok: false }
+    const merged = withRunHistory(lane({ run: next, runs })).runs ?? []
+    expect(merged).toHaveLength(RUN_HISTORY_LIMIT)
+    expect(merged[merged.length - 1]).toEqual(next)
+    expect(merged[0]).not.toEqual(runs[0])
+  })
+
+  it('开新 run 保留历史与执行目标', () => {
+    const next = beginRun(
+      { status: 'done', run: finished, runs: [finished], agentPreset: 'fast' },
+      500,
+    )
+    expect(next.status).toBe('running')
+    expect(next.runs).toEqual([finished])
+    expect(next.agentPreset).toBe('fast')
+    expect(next.run).toEqual({ startedAt: 500, by: 'user' })
   })
 })

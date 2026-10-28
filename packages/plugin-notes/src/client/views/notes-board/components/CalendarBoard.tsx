@@ -20,6 +20,19 @@ export interface CalendarBoardProps {
 
 const DUE_COLOR = 'var(--dsw-alias-state-business-primary)'
 const SCHEDULE_COLOR = 'var(--dsw-alias-state-success-primary)'
+const RUN_COLOR = 'var(--dsw-alias-state-warning-primary)'
+
+function markerColor(kind: string): string {
+  if (kind === 'due') return DUE_COLOR
+  if (kind === 'schedule') return SCHEDULE_COLOR
+  return RUN_COLOR
+}
+
+function eventLabel(kind: string, ok: boolean | undefined): string {
+  if (kind === 'due') return '截止'
+  if (kind === 'schedule') return '定时'
+  return ok === false ? '执行失败' : '执行成功'
+}
 
 export function CalendarBoard(props: CalendarBoardProps): JSX.Element {
   const cal = useCalendarBoard({ notes: props.notes, onEdit: props.onEdit })
@@ -77,7 +90,7 @@ export function CalendarBoard(props: CalendarBoardProps): JSX.Element {
                     key={kind}
                     style={{
                       ...dotStyle,
-                      background: kind === 'due' ? DUE_COLOR : SCHEDULE_COLOR,
+                      background: markerColor(kind),
                     }}
                   />
                 ))}
@@ -110,10 +123,10 @@ export function CalendarBoard(props: CalendarBoardProps): JSX.Element {
                     style={{
                       ...dotStyle,
                       flex: 'none',
-                      background: event.kind === 'due' ? DUE_COLOR : SCHEDULE_COLOR,
+                      background: markerColor(event.kind),
                     }}
                   />
-                  <span style={eventKindStyle}>{event.kind === 'due' ? '截止' : '定时'}</span>
+                  <span style={eventKindStyle}>{eventLabel(event.kind, event.ok)}</span>
                   <span style={eventTitleStyle} title={event.note.title}>
                     {event.note.title || '（无标题）'}
                   </span>
