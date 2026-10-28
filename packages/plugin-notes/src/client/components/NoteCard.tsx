@@ -6,6 +6,7 @@
  */
 
 import type { NoteRecord } from '../../types.ts'
+import { useState } from 'react'
 import { noteColorMeta } from '../core/note-colors.ts'
 import { t } from '../core/theme-tokens.ts'
 import { mdSnippet, firstImageUrl, todoProgress } from '../core/markdown-text.ts'
@@ -36,6 +37,7 @@ export function NoteCard(props: NoteCardProps): JSX.Element {
   const thumb = note.text ? firstImageUrl(note.text) : null
   const todo = note.text ? todoProgress(note.text) : null
   const folded = note.pinned && !note.archived
+  const [cornerHover, setCornerHover] = useState(false)
   return (
     <li
       style={{
@@ -68,7 +70,9 @@ export function NoteCard(props: NoteCardProps): JSX.Element {
               boxShadow: 'none',
               clipPath: `polygon(0 0, calc(100% - ${FOLD_SIZE}px) 0, 100% ${FOLD_SIZE}px, 100% 100%, 0 100%)`,
             }
-            : {}),
+            : cornerHover && !note.archived
+              ? { borderTopRightRadius: 0 }
+              : {}),
         }}
       >
         <span
@@ -130,7 +134,15 @@ export function NoteCard(props: NoteCardProps): JSX.Element {
           </span>
         </span>
       </div>
-      {folded && <PinnedCornerMark color={meta.ring} size={FOLD_SIZE} />}
+      {!note.archived && (
+        <PinnedCornerMark
+          pinned={note.pinned}
+          color={meta.ring}
+          size={FOLD_SIZE}
+          onToggle={props.onTogglePin}
+          onHoverChange={setCornerHover}
+        />
+      )}
     </li>
   )
 }
