@@ -37,6 +37,7 @@ function eventLabel(kind: string, ok: boolean | undefined): string {
 export function CalendarBoard(props: CalendarBoardProps): JSX.Element {
   const cal = useCalendarBoard({ notes: props.notes, onEdit: props.onEdit })
   const selectedDate = new Date(`${cal.selectedKey}T00:00:00`)
+  const dense = cal.selectedEvents.length > 4
 
   return (
     <div style={rootStyle}>
@@ -94,7 +95,6 @@ export function CalendarBoard(props: CalendarBoardProps): JSX.Element {
                     }}
                   />
                 ))}
-                {dayEvents.length > 0 && <span style={cellCountStyle}>{dayEvents.length}</span>}
               </span>
             </button>
           )
@@ -108,7 +108,7 @@ export function CalendarBoard(props: CalendarBoardProps): JSX.Element {
           </span>
           <span style={countStyle}>{cal.selectedEvents.length} 项</span>
         </header>
-        <ul style={eventListStyle}>
+        <ul style={{ ...eventListStyle, gap: dense ? 1 : 2 }}>
           {cal.selectedEvents.length === 0 ? (
             <li style={emptyStyle}>这天没有事项</li>
           ) : (
@@ -117,7 +117,7 @@ export function CalendarBoard(props: CalendarBoardProps): JSX.Element {
                 <button
                   type="button"
                   className={styles.calEventRow}
-                  style={eventRowStyle}
+                  style={dense ? { ...eventRowStyle, padding: '4px 8px' } : eventRowStyle}
                   onClick={() => cal.openNote(event.note)}
                 >
                   <i
@@ -241,21 +241,16 @@ const dotStyle: React.CSSProperties = {
   borderRadius: 3,
   display: 'inline-block',
 }
-const cellCountStyle: React.CSSProperties = {
-  fontSize: 10,
-  lineHeight: '10px',
-  color: t.labelTertiary,
-  fontVariantNumeric: 'tabular-nums',
-}
 const panelStyle: React.CSSProperties = {
-  flex: 'none',
-  maxHeight: 168,
+  flex: '0 1 auto',
+  maxHeight: 'min(42%, 320px)',
+  minHeight: 96,
   display: 'flex',
   flexDirection: 'column',
   gap: 6,
   paddingTop: 8,
   borderTop: `1px solid ${t.borderL1}`,
-  minHeight: 0,
+  minWidth: 0,
 }
 const panelHeadStyle: React.CSSProperties = {
   display: 'flex',
