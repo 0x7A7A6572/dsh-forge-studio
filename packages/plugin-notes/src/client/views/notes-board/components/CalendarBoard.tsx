@@ -94,6 +94,7 @@ export function CalendarBoard(props: CalendarBoardProps): JSX.Element {
                     }}
                   />
                 ))}
+                {dayEvents.length > 0 && <span style={cellCountStyle}>{dayEvents.length}</span>}
               </span>
             </button>
           )
@@ -112,7 +113,7 @@ export function CalendarBoard(props: CalendarBoardProps): JSX.Element {
             <li style={emptyStyle}>这天没有事项</li>
           ) : (
             cal.selectedEvents.map((event) => (
-              <li key={`${event.note.id}:${event.kind}`}>
+              <li key={`${event.note.id}:${event.kind}:${event.at}`}>
                 <button
                   type="button"
                   className={styles.calEventRow}
@@ -239,6 +240,12 @@ const dotStyle: React.CSSProperties = {
   height: 5,
   borderRadius: 3,
   display: 'inline-block',
+}
+const cellCountStyle: React.CSSProperties = {
+  fontSize: 10,
+  lineHeight: '10px',
+  color: t.labelTertiary,
+  fontVariantNumeric: 'tabular-nums',
 }
 const panelStyle: React.CSSProperties = {
   flex: 'none',
