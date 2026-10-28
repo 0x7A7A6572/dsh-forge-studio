@@ -1,6 +1,6 @@
 import { NodeViewWrapper, ReactNodeViewRenderer } from '@tiptap/react'
 import type { NodeViewProps } from '@tiptap/react'
-import { Download, Eye } from 'lucide-react'
+import { Download, Eye, Paperclip } from 'lucide-react'
 import { NoteFile } from '../core/note-richtext.ts'
 import { downloadNoteFile, viewNoteFile } from '../core/note-file-cache.ts'
 import styles from '../styles/notes-editor.module.css'
@@ -41,6 +41,7 @@ export function NoteFileNodeView(props: NodeViewProps): JSX.Element {
       data-note-file={src}
     >
       <button type="button" className={styles.fileChipLabel} title={`查看 ${name}`} onClick={view}>
+        <Paperclip size={13} className={styles.fileChipIcon} />
         <span className={styles.fileChipName}>{name}</span>
       </button>
       <span className={styles.fileChipActions}>
