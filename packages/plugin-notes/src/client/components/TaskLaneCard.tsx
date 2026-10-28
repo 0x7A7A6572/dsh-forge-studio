@@ -67,7 +67,6 @@ export function TaskLaneCard(props: TaskLaneCardProps): JSX.Element {
   const snippet = note.text ? mdSnippet(note.text, 100) : ''
   const [dragging, setDragging] = useState(false)
   const [dueOpen, setDueOpen] = useState(false)
-  const [cornerHover, setCornerHover] = useState(false)
 
   const hasWorkspace = note.workspace !== undefined && note.workspace.trim() !== ''
   const lane = note.lane
@@ -105,6 +104,7 @@ export function TaskLaneCard(props: TaskLaneCardProps): JSX.Element {
 
   return (
     <li
+      className={styles.laneWrap}
       style={{
         position: 'relative',
         ...(folded ? { filter: 'drop-shadow(0 2px 10px rgba(0, 0, 0, 0.1))' } : {}),
@@ -139,9 +139,7 @@ export function TaskLaneCard(props: TaskLaneCardProps): JSX.Element {
               boxShadow: 'none',
               clipPath: 'polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%)',
             }
-            : cornerHover && !note.archived
-              ? { borderTopRightRadius: 0 }
-              : {}),
+            : {}),
         }}
       >
         <span
@@ -287,7 +285,6 @@ export function TaskLaneCard(props: TaskLaneCardProps): JSX.Element {
           color={meta.ring}
           size={14}
           onToggle={props.onTogglePin}
-          onHoverChange={setCornerHover}
         />
       )}
     </li>
