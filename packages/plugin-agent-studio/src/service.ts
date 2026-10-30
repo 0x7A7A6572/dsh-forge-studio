@@ -350,6 +350,7 @@ export class AgentStudioService extends TypertRemoteService {
       provider: 'spawn',
       label: profile.displayName,
       delivery: 'parent',
+      signal: new AbortController().signal,
       request: {
         prompt: promptText(this.composePrompt(profile, input.task, 'solo')),
         parent: lead,
@@ -434,7 +435,7 @@ export class AgentStudioService extends TypertRemoteService {
     return lines.join('\n')
   }
 
-  async delegate(caller: RuntimeAgent, input: DelegateInput): Promise<{ childId: string }> {
+  async delegate(caller: RuntimeAgent, input: DelegateInput, signal?: AbortSignal): Promise<{ childId: string }> {
     const profile = this.profileByName(input.agent)
     if (profile === undefined) {
       const names = this.listProfiles().map((item) => item.name).join(', ')
@@ -449,6 +450,7 @@ export class AgentStudioService extends TypertRemoteService {
       provider: 'spawn',
       label: profile.displayName,
       delivery: 'parent',
+      signal: signal ?? new AbortController().signal,
       request: {
         prompt: promptText(this.composePrompt(profile, input.task, 'solo')),
         parent: caller,

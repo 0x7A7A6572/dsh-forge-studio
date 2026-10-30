@@ -33,11 +33,12 @@ export function installAgentStudioTools(ctx: Context, service: AgentStudioServic
         throw new Error(`未知 agent：${args.agent}${names === '' ? '' : `（可用：${names}）`}`)
       }
       const context = args.context ?? profile.context
+      const signal = (exec as { signal?: AbortSignal } | undefined)?.signal
       const result = await service.delegate(agent, {
         agent: profile.name,
         task: args.task,
         context,
-      })
+      }, signal)
       return { childId: result.childId, agent: profile.name, model: profile.model?.model ?? 'inherit' }
     },
     output: {
