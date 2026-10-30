@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import type { AgentProfile, SessionBinding, TeamProfile } from '../../../types.ts'
 import type { AgentStudioRemote } from '../../core/remote.ts'
 import { errorText, unwrap } from '../../core/result.ts'
@@ -9,8 +9,19 @@ export interface AgentStudioChipState {
   anchor: { left: number; bottom: number } | null
   toggle(): void
   close(): void
+  query: string
+  setQuery(value: string): void
   profiles: AgentProfile[]
   teams: TeamProfile[]
+  visibleProfiles: AgentProfile[]
+  visibleTeams: TeamProfile[]
+  matchedProfiles: AgentProfile[]
+  matchedTeams: TeamProfile[]
+  hasMoreProfiles: boolean
+  hasMoreTeams: boolean
+  pickerOpen: boolean
+  openPicker(): void
+  closePicker(): void
   binding: SessionBinding
   label: string
   busy: boolean
@@ -21,11 +32,20 @@ export interface AgentStudioChipState {
 }
 
 const NONE: SessionBinding = { sessionId: '', mode: 'none', updatedAt: 0 }
+const MAX_VISIBLE = 5
+
+function matches(query: string, values: readonly (string | undefined)[]): boolean {
+  const needle = query.trim().toLowerCase()
+  if (needle === '') return true
+  return values.some((value) => value !== undefined && value.toLowerCase().includes(needle))
+}
 
 export function useAgentStudioChip(studio: AgentStudioRemote, sessionId: string): AgentStudioChipState {
   const triggerRef = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
   const [anchor, setAnchor] = useState<{ left: number; bottom: number } | null>(null)
+  const [query, setQuery] = useState('')
+  const [pickerOpen, setPickerOpen] = useState(false)
   const [profiles, setProfiles] = useState<AgentProfile[]>([])
   const [teams, setTeams] = useState<TeamProfile[]>([])
   const [binding, setBinding] = useState<SessionBinding>(NONE)
@@ -48,14 +68,39 @@ export function useAgentStudioChip(studio: AgentStudioRemote, sessionId: string)
     void load().catch((cause: unknown) => setError(errorText(cause)))
   }, [load])
 
+  const matchedProfiles = useMemo(
+    () => profiles.filter((profile) => matches(query, [profile.name, profile.displayName, profile.description])),
+    [profiles, query],
+  )
+  const matchedTeams = useMemo(
+    () => teams.filter((team) => matches(query, [team.name, team.description, ...team.members.map((member) => member.name)])),
+    [teams, query],
+  )
+
   useEffect(() => {
-    if (!open) return
-    const onResize = (): void => setOpen(false)
+    if (!open && !pickerOpen) return
+    const onResize = (): void => { setOpen(false); setPickerOpen(false) }
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
-  }, [open])
+  }, [open, pickerOpen])
+
+  useEffect(() => {
+    if (!open && !pickerOpen) return
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return
+      setOpen(false)
+      setPickerOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open, pickerOpen])
 
   const close = useCallback(() => setOpen(false), [])
+  const closePicker = useCallback(() => setPickerOpen(false), [])
+  const openPicker = useCallback(() => {
+    setOpen(false)
+    setPickerOpen(true)
+  }, [])
   const toggle = useCallback(() => {
     setError('')
     setOpen((value) => {
@@ -80,6 +125,7 @@ export function useAgentStudioChip(studio: AgentStudioRemote, sessionId: string)
       const next = unwrap(await studio.setBinding({ sessionId, ...input }))
       setBinding(next)
       setOpen(false)
+      setPickerOpen(false)
     } catch (cause) {
       setError(errorText(cause))
     } finally {
@@ -95,7 +141,16 @@ export function useAgentStudioChip(studio: AgentStudioRemote, sessionId: string)
 
   return {
     open, triggerRef, anchor, toggle, close,
-    profiles, teams, binding, label, busy, error,
+    query, setQuery,
+    profiles, teams,
+    visibleProfiles: matchedProfiles.slice(0, MAX_VISIBLE),
+    visibleTeams: matchedTeams.slice(0, MAX_VISIBLE),
+    matchedProfiles,
+    matchedTeams,
+    hasMoreProfiles: matchedProfiles.length > MAX_VISIBLE,
+    hasMoreTeams: matchedTeams.length > MAX_VISIBLE,
+    pickerOpen, openPicker, closePicker,
+    binding, label, busy, error,
     selectNone: () => void save({ mode: 'none' }),
     selectProfile: (profile) => void save({ mode: 'solo', profileId: profile.id }),
     selectTeam: (team) => void save({ mode: 'team', teamId: team.id }),

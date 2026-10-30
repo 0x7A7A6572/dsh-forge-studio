@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AgentProfile, AgentStudioModelGroup, AgentStudioPresetRow, TeamProfile } from '../../../types.ts'
 import type { AgentStudioRemote } from '../../core/remote.ts'
 import { errorText, unwrap } from '../../core/result.ts'
@@ -42,23 +42,44 @@ export function useAgentStudioSettings(studio: AgentStudioRemote) {
   const [profileDraft, setProfileDraft] = useState<AgentProfile | null>(null)
   const [teamDraft, setTeamDraft] = useState<TeamProfile | null>(null)
   const [busy, setBusy] = useState(false)
+  const [reloading, setReloading] = useState(false)
   const [error, setError] = useState('')
+  const reloadInFlight = useRef(false)
+  const fetchSeq = useRef(0)
 
   const refresh = useCallback(async () => {
+    const mine = ++fetchSeq.current
     const [p, t, m, pr] = await Promise.all([
       studio.listProfiles(),
       studio.listTeams(),
       studio.listModels(),
       studio.listPresets(),
     ])
-    setProfiles(unwrap(p))
-    setTeams(unwrap(t))
-    setModels(unwrap(m))
-    setPresets(unwrap(pr))
+    if (mine !== fetchSeq.current) return
+    const next = [unwrap(p), unwrap(t), unwrap(m), unwrap(pr)] as const
+    setProfiles(next[0])
+    setTeams(next[1])
+    setModels(next[2])
+    setPresets(next[3])
   }, [studio])
 
   useEffect(() => {
     void refresh().catch((cause: unknown) => setError(errorText(cause)))
+  }, [refresh])
+
+  const reload = useCallback(async () => {
+    if (reloadInFlight.current) return
+    reloadInFlight.current = true
+    setReloading(true)
+    setError('')
+    try {
+      await refresh()
+    } catch (cause) {
+      setError(errorText(cause))
+    } finally {
+      reloadInFlight.current = false
+      setReloading(false)
+    }
   }, [refresh])
 
   useEffect(() => {
@@ -129,10 +150,10 @@ export function useAgentStudioSettings(studio: AgentStudioRemote) {
 
   return {
     tab, setTab,
-    profiles, teams, models, presets, busy, error,
+    profiles, teams, models, presets, busy, reloading, error,
     profileDraft, setProfileDraft,
     teamDraft, setTeamDraft,
-    refresh, saveProfile, removeProfile, saveTeam, removeTeam, addMember, removeMember,
+    reload, saveProfile, removeProfile, saveTeam, removeTeam, addMember, removeMember,
     newProfile: () => setProfileDraft(emptyProfile()),
     newTeam: () => setTeamDraft(emptyTeam()),
     closeEditors: () => { setProfileDraft(null); setTeamDraft(null) },

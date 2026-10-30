@@ -9,13 +9,16 @@ export type StudioIconName =
   | 'x'
   | 'check'
   | 'chevron-down'
+  | 'refresh'
+  | 'search'
 
 export interface StudioIconProps {
   name: StudioIconName
   size?: number
+  className?: string
 }
 
-export function StudioIcon({ name, size = 16 }: StudioIconProps): JSX.Element {
+export function StudioIcon({ name, size = 16, className }: StudioIconProps): JSX.Element {
   const common = {
     width: size,
     height: size,
@@ -25,6 +28,7 @@ export function StudioIcon({ name, size = 16 }: StudioIconProps): JSX.Element {
     strokeWidth: 1.8,
     strokeLinecap: 'round' as const,
     strokeLinejoin: 'round' as const,
+    className,
     'aria-hidden': true,
   }
 
@@ -82,6 +86,20 @@ export function StudioIcon({ name, size = 16 }: StudioIconProps): JSX.Element {
       return (
         <svg {...common}>
           <path d="m6 9 6 6 6-6" />
+        </svg>
+      )
+    case 'refresh':
+      return (
+        <svg {...common}>
+          <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+          <path d="M21 3v6h-6" />
+        </svg>
+      )
+    case 'search':
+      return (
+        <svg {...common}>
+          <circle cx="11" cy="11" r="7" />
+          <path d="m20 20-3.5-3.5" />
         </svg>
       )
   }

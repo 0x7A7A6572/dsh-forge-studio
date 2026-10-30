@@ -31,20 +31,36 @@ export function AgentStudioSettings({ studio }: AgentStudioSettingsProps): JSX.E
           <h2 className={styles.title}>智能体工坊</h2>
           <p className={styles.hint}>定义可复用的单 Agent 与团队。会话里选中后，模型会自己判断何时派活。</p>
         </div>
-        <button className={styles.primary} onClick={s.newProfile}>
-          <StudioIcon name="plus" size={14} />
-          新建 Agent
-        </button>
+        <div className={styles.headerActions}>
+          <button
+            type="button"
+            className={styles.iconButton}
+            aria-label="刷新"
+            title="刷新（重新读取 Agent / 团队 / 模型 / preset）"
+            data-dsh-action="reload"
+            disabled={s.busy}
+            aria-disabled={s.reloading || undefined}
+            aria-busy={s.reloading}
+            onClick={() => { void s.reload() }}
+          >
+            <StudioIcon name="refresh" size={15} className={s.reloading ? styles.spin : undefined} />
+          </button>
+          <span className={styles.srOnly} role="status">{s.reloading ? '正在刷新' : ''}</span>
+          <button className={styles.primary} onClick={s.newProfile}>
+            <StudioIcon name="plus" size={14} />
+            新建 Agent
+          </button>
+        </div>
       </header>
 
-      {s.error !== '' && <p className={styles.error}>{s.error}</p>}
+      {s.error !== '' && <p className={styles.error} role="alert">{s.error}</p>}
 
       <section className={styles.section}>
         <div className={styles.sectionHead}>
           <h3 className={styles.sectionTitle}>智能体</h3>
           <span className={styles.count}>{s.profiles.length}</span>
         </div>
-        {s.profiles.length === 0 && <p className={styles.empty}>还没有 Agent。点右上角新建。</p>}
+        {s.error === '' && s.profiles.length === 0 && <p className={styles.empty}>还没有 Agent。点右上角新建。</p>}
         {s.profiles.map((profile) => (
           <article key={profile.id} className={styles.row}>
             <span className={styles.rowIcon}><StudioIcon name="bot" size={17} /></span>
@@ -77,7 +93,7 @@ export function AgentStudioSettings({ studio }: AgentStudioSettingsProps): JSX.E
             新建团队
           </button>
         </div>
-        {s.teams.length === 0 && <p className={styles.empty}>还没有团队。把 Agent 组合起来即可。</p>}
+        {s.error === '' && s.teams.length === 0 && <p className={styles.empty}>还没有团队。把 Agent 组合起来即可。</p>}
         {s.teams.map((team) => (
           <article key={team.id} className={styles.row}>
             <span className={styles.rowIcon}><StudioIcon name="users" size={17} /></span>
