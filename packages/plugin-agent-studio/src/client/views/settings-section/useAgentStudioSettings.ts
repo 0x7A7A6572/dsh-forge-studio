@@ -41,6 +41,7 @@ export function useAgentStudioSettings(studio: AgentStudioRemote) {
   const [presets, setPresets] = useState<AgentStudioPresetRow[]>([])
   const [profileDraft, setProfileDraft] = useState<AgentProfile | null>(null)
   const [teamDraft, setTeamDraft] = useState<TeamProfile | null>(null)
+  const [memberPickId, setMemberPickId] = useState('')
   const [busy, setBusy] = useState(false)
   const [reloading, setReloading] = useState(false)
   const [error, setError] = useState('')
@@ -133,16 +134,22 @@ export function useAgentStudioSettings(studio: AgentStudioRemote) {
   const addMember = useCallback((profile: AgentProfile) => {
     setTeamDraft((draft) => {
       if (draft === null) return draft
-      const names = new Set(draft.members.map((member) => member.name))
-      let name = profile.name
-      let index = 2
-      while (names.has(name)) {
-        name = `${profile.name}-${index}`
-        index += 1
-      }
-      return { ...draft, members: [...draft.members, { ...profile, id: crypto.randomUUID(), name }] }
+      if (draft.members.some((member) => member.id === profile.id)) return draft
+      return { ...draft, members: [...draft.members, { ...profile }] }
     })
   }, [])
+
+  const availableProfiles = teamDraft === null
+    ? []
+    : profiles.filter((profile) => !teamDraft.members.some((member) => member.id === profile.id))
+
+  const addSelectedMember = useCallback(() => {
+    if (teamDraft === null) return
+    const profile = profiles.find((item) => item.id === memberPickId && !teamDraft.members.some((member) => member.id === item.id))
+    if (profile === undefined) return
+    addMember(profile)
+    setMemberPickId('')
+  }, [addMember, memberPickId, profiles, teamDraft])
 
   const removeMember = useCallback((id: string) => {
     setTeamDraft((draft) => draft === null ? draft : { ...draft, members: draft.members.filter((member) => member.id !== id) })
@@ -153,6 +160,7 @@ export function useAgentStudioSettings(studio: AgentStudioRemote) {
     profiles, teams, models, presets, busy, reloading, error,
     profileDraft, setProfileDraft,
     teamDraft, setTeamDraft,
+    memberPickId, setMemberPickId, availableProfiles, addSelectedMember,
     reload, saveProfile, removeProfile, saveTeam, removeTeam, addMember, removeMember,
     newProfile: () => setProfileDraft(emptyProfile()),
     newTeam: () => setTeamDraft(emptyTeam()),

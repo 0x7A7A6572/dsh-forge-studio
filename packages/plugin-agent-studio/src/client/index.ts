@@ -13,6 +13,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { agentStudioOf, mountAgentStudioRemote } from './core/remote.ts'
 import { AgentStudioSettings } from './views/settings-section/AgentStudioSettings.tsx'
 import { AgentStudioChip } from './views/composer-chip/AgentStudioChip.tsx'
+import { installAgentStudioNavIcon } from './components/SettingsNavIcon.tsx'
 
 export const name = '@zzerx/dsh-plugin-agent-studio/client'
 export const inject = ['slots', 'remote']
@@ -20,6 +21,8 @@ export const inject = ['slots', 'remote']
 export function apply(ctx: Context): void {
   ctx.inject(['slots', 'remote'], async (scoped) => {
     await mountAgentStudioRemote(scoped)
+    // 设置侧栏图标：外壳没有图标入口，只能按 label 打补丁（见 components/SettingsNavIcon.tsx）。失败即降级。
+    scoped.effect(() => installAgentStudioNavIcon())
     scoped.inject(['remote.agentStudio', 'remote', 'slots'], (inner) => {
       const studio = agentStudioOf(inner)
       inner.slots.inject('settings.section', () => inner.slots.register({

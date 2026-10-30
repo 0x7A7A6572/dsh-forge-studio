@@ -216,14 +216,24 @@ export function AgentStudioSettings({ studio }: AgentStudioSettingsProps): JSX.E
                 <textarea rows={2} value={s.teamDraft.description} onChange={(event) => updateTeam({ description: event.target.value })} />
               </label>
               <div className={styles.field}>成员
-                <div className={styles.memberAdd}>
-                  {s.profiles.map((profile) => (
-                    <button key={profile.id} className={styles.secondary} onClick={() => s.addMember(profile)}>
-                      <StudioIcon name="plus" size={13} />
-                      {profile.displayName}
-                    </button>
-                  ))}
+                <div className={styles.memberPicker}>
+                  <select
+                    className={styles.memberSelect}
+                    value={s.memberPickId}
+                    disabled={s.availableProfiles.length === 0}
+                    onChange={(event) => s.setMemberPickId(event.target.value)}
+                  >
+                    <option value="">选择要添加的智能体…</option>
+                    {s.availableProfiles.map((profile) => (
+                      <option key={profile.id} value={profile.id}>{profile.displayName}（{profile.name}）</option>
+                    ))}
+                  </select>
+                  <button className={styles.primary} disabled={s.memberPickId === '' || s.busy} onClick={s.addSelectedMember}>
+                    <StudioIcon name="plus" size={14} />
+                    添加
+                  </button>
                 </div>
+                {s.availableProfiles.length === 0 && <p className={styles.empty}>所有智能体都已在团队里。</p>}
                 <div className={styles.memberList}>
                   {s.teamDraft.members.map((member) => (
                     <div key={member.id} className={styles.memberRow}>
@@ -235,7 +245,7 @@ export function AgentStudioSettings({ studio }: AgentStudioSettingsProps): JSX.E
                       </button>
                     </div>
                   ))}
-                  {s.teamDraft.members.length === 0 && <p className={styles.empty}>还没有成员，从上面添加。</p>}
+                  {s.teamDraft.members.length === 0 && <p className={styles.empty}>还没有成员，从上面选择添加。</p>}
                 </div>
               </div>
             </div>
