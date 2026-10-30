@@ -47,7 +47,7 @@ export function AgentStudioChip({ sessionId, studio }: AgentStudioChipProps): JS
   return (
     <div className={styles.root} data-dsh-part="agent-studio-chip">
       <button ref={chip.triggerRef} className={styles.trigger} onClick={chip.toggle} aria-expanded={chip.open} title="选择当前会话使用的智能体 / 团队">
-        <StudioIcon name={chip.binding.mode === 'team' ? 'blocks' : 'box'} size={15} />
+        <StudioIcon name={chip.binding.mode === 'team' ? 'boxes' : 'box'} size={15} />
         <span className={styles.label}>{chip.label}</span>
         <span className={styles.chevron}><StudioIcon name="chevron-down" size={12} /></span>
       </button>
@@ -103,7 +103,7 @@ export function AgentStudioChip({ sessionId, studio }: AgentStudioChipProps): JS
             )}
             {chip.visibleTeams.map((team) => (
               <button key={team.id} className={styles.option} onClick={() => chip.selectTeam(team)}>
-                <span className={styles.optionIcon}><StudioIcon name="blocks" size={15} /></span>
+                <span className={styles.optionIcon}><StudioIcon name="boxes" size={15} /></span>
                 <span className={styles.optionCopy}>
                   <span className={styles.optionName}>{team.name}</span>
                   <span className={styles.optionMeta}>{team.members.map((member) => member.name).join(' · ')}</span>
@@ -163,7 +163,7 @@ export function AgentStudioChip({ sessionId, studio }: AgentStudioChipProps): JS
                     <div className={styles.pickerList}>
                       {chip.matchedTeams.map((team) => (
                         <button key={team.id} className={styles.option} onClick={() => chip.selectTeam(team)}>
-                          <span className={styles.optionIcon}><StudioIcon name="blocks" size={15} /></span>
+                          <span className={styles.optionIcon}><StudioIcon name="boxes" size={15} /></span>
                           <span className={styles.optionCopy}>
                             <span className={styles.optionName}>{team.name}</span>
                             <span className={styles.optionMeta}>{team.description || team.members.map((member) => member.name).join(' · ')}</span>
