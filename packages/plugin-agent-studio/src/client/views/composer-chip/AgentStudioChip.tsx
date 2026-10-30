@@ -16,14 +16,14 @@ interface SearchBoxProps {
 function SearchBox({ value, onChange }: SearchBoxProps): JSX.Element {
   return (
     <div className={styles.searchRow}>
-      <span className={styles.searchIcon}><StudioIcon name="search" size={14} /></span>
+          <span className={styles.searchIcon}><StudioIcon name="search" size={14} /></span>
       <input
         className={styles.searchInput}
         autoFocus
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        placeholder="搜索 Agent 或团队"
-        aria-label="搜索 Agent 或团队"
+        placeholder="搜索智能体或团队"
+        aria-label="搜索智能体或团队"
       />
       {value !== '' && (
         <button className={styles.searchClear} onClick={() => onChange('')} aria-label="清空搜索">
@@ -46,8 +46,8 @@ export function AgentStudioChip({ sessionId, studio }: AgentStudioChipProps): JS
 
   return (
     <div className={styles.root} data-dsh-part="agent-studio-chip">
-      <button ref={chip.triggerRef} className={styles.trigger} onClick={chip.toggle} aria-expanded={chip.open} title="选择当前会话使用的 Agent / 团队">
-        <StudioIcon name={chip.binding.mode === 'team' ? 'users' : 'bot'} size={15} />
+      <button ref={chip.triggerRef} className={styles.trigger} onClick={chip.toggle} aria-expanded={chip.open} title="选择当前会话使用的智能体 / 团队">
+        <StudioIcon name={chip.binding.mode === 'team' ? 'blocks' : 'box'} size={15} />
         <span className={styles.label}>{chip.label}</span>
         <span className={styles.chevron}><StudioIcon name="chevron-down" size={12} /></span>
       </button>
@@ -64,10 +64,10 @@ export function AgentStudioChip({ sessionId, studio }: AgentStudioChipProps): JS
 
             {chip.query.trim() === '' && (
               <button className={styles.option} onClick={chip.selectNone}>
-                <span className={styles.optionIcon}><StudioIcon name="bot" size={15} /></span>
+                <span className={styles.optionIcon}><StudioIcon name="box" size={15} /></span>
                 <span className={styles.optionCopy}>
                   <span className={styles.optionName}>默认</span>
-                  <span className={styles.optionMeta}>不启用 Agent Studio</span>
+                  <span className={styles.optionMeta}>不启用智能体工坊</span>
                 </span>
                 {chip.binding.mode === 'none' && <span className={styles.check}><StudioIcon name="check" size={14} /></span>}
               </button>
@@ -75,13 +75,13 @@ export function AgentStudioChip({ sessionId, studio }: AgentStudioChipProps): JS
 
             {chip.visibleProfiles.length > 0 && (
               <p className={styles.group}>
-                单人 Agent
+                智能体
                 {chip.matchedProfiles.length > chip.visibleProfiles.length && <span className={styles.groupCount}>{chip.matchedProfiles.length}</span>}
               </p>
             )}
             {chip.visibleProfiles.map((profile) => (
               <button key={profile.id} className={styles.option} onClick={() => chip.selectProfile(profile)}>
-                <span className={styles.optionIcon}><StudioIcon name="bot" size={15} /></span>
+                <span className={styles.optionIcon}><StudioIcon name="box" size={15} /></span>
                 <span className={styles.optionCopy}>
                   <span className={styles.optionName}>{profile.displayName}</span>
                   <span className={styles.optionMeta}>{profile.model?.model ?? '继承模型'}</span>
@@ -91,7 +91,7 @@ export function AgentStudioChip({ sessionId, studio }: AgentStudioChipProps): JS
             ))}
             {chip.hasMoreProfiles && (
               <button className={styles.more} onClick={chip.openPicker}>
-                查看更多 Agent（{chip.matchedProfiles.length}）
+                查看更多智能体（{chip.matchedProfiles.length}）
               </button>
             )}
 
@@ -103,7 +103,7 @@ export function AgentStudioChip({ sessionId, studio }: AgentStudioChipProps): JS
             )}
             {chip.visibleTeams.map((team) => (
               <button key={team.id} className={styles.option} onClick={() => chip.selectTeam(team)}>
-                <span className={styles.optionIcon}><StudioIcon name="users" size={15} /></span>
+                <span className={styles.optionIcon}><StudioIcon name="blocks" size={15} /></span>
                 <span className={styles.optionCopy}>
                   <span className={styles.optionName}>{team.name}</span>
                   <span className={styles.optionMeta}>{team.members.map((member) => member.name).join(' · ')}</span>
@@ -117,11 +117,11 @@ export function AgentStudioChip({ sessionId, studio }: AgentStudioChipProps): JS
               </button>
             )}
 
-            {empty && <p className={styles.status}>没有匹配的 Agent 或团队</p>}
+            {empty && <p className={styles.status}>没有匹配的智能体或团队</p>}
             {chip.busy && <p className={styles.status}>保存中…</p>}
             {chip.error !== '' && <p className={styles.error}>{chip.error}</p>}
             {chip.query.trim() === '' && (
-              <p className={styles.hint}>选中后，模型会根据对话自己决定何时调用 Agent / 创建团队；不需要你填任务。</p>
+              <p className={styles.hint}>选中后，模型会根据对话自己决定何时调用智能体 / 创建团队；不需要你填任务。</p>
             )}
           </div>
         </>
@@ -131,9 +131,9 @@ export function AgentStudioChip({ sessionId, studio }: AgentStudioChipProps): JS
         <>
           <button className={styles.backdrop} onClick={chip.closePicker} aria-label="关闭" />
           <div className={styles.pickerOverlay} onMouseDown={(event) => { if (event.target === event.currentTarget) chip.closePicker() }}>
-            <div className={styles.pickerDialog} role="dialog" aria-modal="true" aria-label="选择 Agent 或团队">
+            <div className={styles.pickerDialog} role="dialog" aria-modal="true" aria-label="选择智能体或团队">
               <header className={styles.pickerHead}>
-                <h3>选择 Agent 或团队</h3>
+                <h3>选择智能体或团队</h3>
                 <button className={styles.closeButton} onClick={chip.closePicker} aria-label="关闭">
                   <StudioIcon name="x" size={16} />
                 </button>
@@ -142,11 +142,11 @@ export function AgentStudioChip({ sessionId, studio }: AgentStudioChipProps): JS
               <div className={styles.pickerBody}>
                 {chip.matchedProfiles.length > 0 && (
                   <>
-                    <p className={styles.group}>单人 Agent</p>
+                    <p className={styles.group}>智能体</p>
                     <div className={styles.pickerList}>
                       {chip.matchedProfiles.map((profile) => (
                         <button key={profile.id} className={styles.option} onClick={() => chip.selectProfile(profile)}>
-                          <span className={styles.optionIcon}><StudioIcon name="bot" size={15} /></span>
+                          <span className={styles.optionIcon}><StudioIcon name="box" size={15} /></span>
                           <span className={styles.optionCopy}>
                             <span className={styles.optionName}>{profile.displayName}</span>
                             <span className={styles.optionMeta}>{profile.description || profile.name}</span>
@@ -163,7 +163,7 @@ export function AgentStudioChip({ sessionId, studio }: AgentStudioChipProps): JS
                     <div className={styles.pickerList}>
                       {chip.matchedTeams.map((team) => (
                         <button key={team.id} className={styles.option} onClick={() => chip.selectTeam(team)}>
-                          <span className={styles.optionIcon}><StudioIcon name="users" size={15} /></span>
+                          <span className={styles.optionIcon}><StudioIcon name="blocks" size={15} /></span>
                           <span className={styles.optionCopy}>
                             <span className={styles.optionName}>{team.name}</span>
                             <span className={styles.optionMeta}>{team.description || team.members.map((member) => member.name).join(' · ')}</span>
@@ -174,7 +174,7 @@ export function AgentStudioChip({ sessionId, studio }: AgentStudioChipProps): JS
                     </div>
                   </>
                 )}
-                {empty && <p className={styles.status}>没有匹配的 Agent 或团队</p>}
+                {empty && <p className={styles.status}>没有匹配的智能体或团队</p>}
                 {chip.busy && <p className={styles.status}>保存中…</p>}
                 {chip.error !== '' && <p className={styles.error}>{chip.error}</p>}
               </div>

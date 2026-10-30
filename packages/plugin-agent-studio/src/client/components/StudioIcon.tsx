@@ -1,6 +1,8 @@
 /** 插件内的小图标集：统一 currentColor 与 1.8 线宽，跟随 DSH token 变色。 */
 
 export type StudioIconName =
+  | 'box'
+  | 'blocks'
   | 'bot'
   | 'users'
   | 'plus'
@@ -33,6 +35,23 @@ export function StudioIcon({ name, size = 16, className }: StudioIconProps): JSX
   }
 
   switch (name) {
+    case 'box':
+      return (
+        <svg {...common}>
+          <path d="m21 8-9-5-9 5 9 5 9-5Z" />
+          <path d="M3 8v8l9 5 9-5V8" />
+          <path d="M12 13v8" />
+        </svg>
+      )
+    case 'blocks':
+      return (
+        <svg {...common}>
+          <rect x="3" y="3" width="7" height="7" rx="1.5" />
+          <rect x="14" y="3" width="7" height="7" rx="1.5" />
+          <rect x="3" y="14" width="7" height="7" rx="1.5" />
+          <rect x="14" y="14" width="7" height="7" rx="1.5" />
+        </svg>
+      )
     case 'bot':
       return (
         <svg {...common}>

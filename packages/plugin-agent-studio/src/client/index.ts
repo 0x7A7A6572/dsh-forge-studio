@@ -3,7 +3,7 @@
  *
  * 1. 挂载 agentStudio 远程命名空间；
  * 2. 设置面板注册「智能体工坊」分区；
- * 3. 输入框左侧注册一个 Agent / 团队选择 chip。
+ * 3. 输入框左侧注册一个智能体 / 团队选择 chip。
  */
 
 import type { Context } from '@deepseek-ai/cordis'

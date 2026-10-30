@@ -165,7 +165,7 @@ describe('刷新按钮（渲染契约）', () => {
 
     expect(button.props.type).toBe('button')
     expect(button.props['aria-label']).toBe('刷新')
-    expect(button.props.title).toBe('刷新（重新读取 Agent / 团队 / 模型 / preset）')
+    expect(button.props.title).toBe('刷新（重新读取智能体 / 团队 / 模型 / preset）')
     expect(button.props['data-dsh-action']).toBe('reload')
     expect(button.props.disabled).toBe(false)
     expect(button.props['aria-disabled']).toBeUndefined()
@@ -207,7 +207,7 @@ describe('刷新按钮（渲染契约）', () => {
     const idle = renderSettings()
     expect(idle).toContain('aria-label="刷新"')
     expect(idle).toContain('data-dsh-action="reload"')
-    expect(idle).toContain('title="刷新（重新读取 Agent / 团队 / 模型 / preset）"')
+    expect(idle).toContain('title="刷新（重新读取智能体 / 团队 / 模型 / preset）"')
     const idleButton = reloadButtonHtml(idle)
     expect(idleButton).not.toMatch(/\sdisabled(=|\s|>)/)
     expect(idleButton).not.toContain('aria-disabled')
@@ -242,17 +242,17 @@ describe('刷新按钮（渲染契约）', () => {
     const failed = renderSettings({ error: '读取失败' })
     expect(failed).toContain('role="alert"')
     expect(failed).toContain('读取失败')
-    expect(failed).not.toContain('还没有 Agent')
+    expect(failed).not.toContain('还没有智能体')
     expect(failed).not.toContain('还没有团队')
 
     const empty = renderSettings()
-    expect(empty).toContain('还没有 Agent。点右上角新建。')
-    expect(empty).toContain('还没有团队。把 Agent 组合起来即可。')
+    expect(empty).toContain('还没有智能体。点右上角新建。')
+    expect(empty).toContain('还没有团队。把智能体组合起来即可。')
 
     const withProfiles = renderSettings({ error: '读取失败', profiles: [profile('reviewer', 'Reviewer')] })
     expect(withProfiles).toContain('role="alert"')
     expect(withProfiles).toContain('Reviewer')
-    expect(withProfiles).not.toContain('还没有 Agent')
+    expect(withProfiles).not.toContain('还没有智能体')
   })
 })
 
@@ -425,11 +425,11 @@ describe('刷新按钮（源码契约）', () => {
       if (!ts.isJsxElement(node)) return
       if (node.openingElement.tagName.getText() !== 'p') return
       const text = jsxTextOf(node)
-      if (!text.includes('还没有 Agent') && !text.includes('还没有团队')) return
+      if (!text.includes('还没有智能体') && !text.includes('还没有团队')) return
       const guard = enclosingJsxExpression(node)
       guards.set(text.trim(), compact(guard?.expression?.getText() ?? ''))
     })
-    expect([...guards.keys()].sort()).toEqual(['还没有团队。把 Agent 组合起来即可。', '还没有 Agent。点右上角新建。'].sort())
+    expect([...guards.keys()].sort()).toEqual(['还没有团队。把智能体组合起来即可。', '还没有智能体。点右上角新建。'].sort())
     for (const [text, guard] of guards) {
       expect(guard, `${text} 的空态没有 s.error === '' 守卫`).toContain("s.error===''")
       expect(guard).toContain('length===0')

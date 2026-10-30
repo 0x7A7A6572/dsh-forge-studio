@@ -29,14 +29,14 @@ export function AgentStudioSettings({ studio }: AgentStudioSettingsProps): JSX.E
       <header className={styles.header}>
         <div>
           <h2 className={styles.title}>智能体工坊</h2>
-          <p className={styles.hint}>定义可复用的单 Agent 与团队。会话里选中后，模型会自己判断何时派活。</p>
+          <p className={styles.hint}>定义可复用的智能体与团队。会话里选中后，模型会自己判断何时派活。</p>
         </div>
         <div className={styles.headerActions}>
           <button
             type="button"
             className={styles.iconButton}
             aria-label="刷新"
-            title="刷新（重新读取 Agent / 团队 / 模型 / preset）"
+            title="刷新（重新读取智能体 / 团队 / 模型 / preset）"
             data-dsh-action="reload"
             disabled={s.busy}
             aria-disabled={s.reloading || undefined}
@@ -48,7 +48,7 @@ export function AgentStudioSettings({ studio }: AgentStudioSettingsProps): JSX.E
           <span className={styles.srOnly} role="status">{s.reloading ? '正在刷新' : ''}</span>
           <button className={styles.primary} onClick={s.newProfile}>
             <StudioIcon name="plus" size={14} />
-            新建 Agent
+            新建智能体
           </button>
         </div>
       </header>
@@ -60,10 +60,10 @@ export function AgentStudioSettings({ studio }: AgentStudioSettingsProps): JSX.E
           <h3 className={styles.sectionTitle}>智能体</h3>
           <span className={styles.count}>{s.profiles.length}</span>
         </div>
-        {s.error === '' && s.profiles.length === 0 && <p className={styles.empty}>还没有 Agent。点右上角新建。</p>}
+        {s.error === '' && s.profiles.length === 0 && <p className={styles.empty}>还没有智能体。点右上角新建。</p>}
         {s.profiles.map((profile) => (
           <article key={profile.id} className={styles.row}>
-            <span className={styles.rowIcon}><StudioIcon name="bot" size={17} /></span>
+            <span className={styles.rowIcon}><StudioIcon name="box" size={17} /></span>
             <span className={styles.rowBody}>
               <span className={styles.rowTitle}>
                 <strong>{profile.displayName}</strong>
@@ -93,10 +93,10 @@ export function AgentStudioSettings({ studio }: AgentStudioSettingsProps): JSX.E
             新建团队
           </button>
         </div>
-        {s.error === '' && s.teams.length === 0 && <p className={styles.empty}>还没有团队。把 Agent 组合起来即可。</p>}
+        {s.error === '' && s.teams.length === 0 && <p className={styles.empty}>还没有团队。把智能体组合起来即可。</p>}
         {s.teams.map((team) => (
           <article key={team.id} className={styles.row}>
-            <span className={styles.rowIcon}><StudioIcon name="users" size={17} /></span>
+            <span className={styles.rowIcon}><StudioIcon name="blocks" size={17} /></span>
             <span className={styles.rowBody}>
               <span className={styles.rowTitle}>
                 <strong>{team.name}</strong>
@@ -119,9 +119,9 @@ export function AgentStudioSettings({ studio }: AgentStudioSettingsProps): JSX.E
 
       {s.profileDraft !== null && (
         <div className={styles.overlay} onMouseDown={(event) => { if (event.target === event.currentTarget) s.setProfileDraft(null) }}>
-          <div className={styles.dialog} role="dialog" aria-modal="true" aria-label="编辑 Agent">
+          <div className={styles.dialog} role="dialog" aria-modal="true" aria-label="编辑智能体">
             <header className={styles.dialogHead}>
-              <h3>{s.profileDraft.id === '' ? '新建 Agent' : '编辑 Agent'}</h3>
+              <h3>{s.profileDraft.id === '' ? '新建智能体' : '编辑智能体'}</h3>
               <button className={styles.iconButton} onClick={() => s.setProfileDraft(null)} aria-label="关闭">
                 <StudioIcon name="x" size={16} />
               </button>
@@ -225,7 +225,7 @@ export function AgentStudioSettings({ studio }: AgentStudioSettingsProps): JSX.E
                 <div className={styles.memberList}>
                   {s.teamDraft.members.map((member) => (
                     <div key={member.id} className={styles.memberRow}>
-                      <span className={styles.memberIcon}><StudioIcon name="bot" size={14} /></span>
+                      <span className={styles.memberIcon}><StudioIcon name="box" size={14} /></span>
                       <span className={styles.memberName}>{member.displayName}<code>{member.name}</code></span>
                       <span className={styles.memberModel}>{member.model?.model ?? '继承模型'}</span>
                       <button className={styles.iconButtonDanger} onClick={() => s.removeMember(member.id)} aria-label="移除">

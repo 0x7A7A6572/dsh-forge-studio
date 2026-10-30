@@ -15,8 +15,8 @@ function renderForAgent(service: AgentStudioService, agent: RuntimeAgent): strin
     const profile = binding.profileId === undefined ? undefined : service.listProfiles().find((item) => item.id === binding.profileId)
     if (profile === undefined) return ''
     return [
-      '## Agent Studio（当前会话）',
-      `当前单人 Agent：${profile.displayName}（${profile.name}）。`,
+      '## 智能体工坊（当前会话）',
+      `当前智能体：${profile.displayName}（${profile.name}）。`,
       `职责：${profile.description}`,
       `当用户的任务适合它时，直接把任务交给它：delegate_agent({ agent: "${profile.name}", task: "你根据对话判断的子任务" })。`,
       '不要自己先做一遍再叫它，也不要要求用户先填写任务文本。',
@@ -27,7 +27,7 @@ function renderForAgent(service: AgentStudioService, agent: RuntimeAgent): strin
   const team = binding.teamId === undefined ? undefined : service.listTeams().find((item) => item.id === binding.teamId)
   if (team === undefined) return ''
   const lines = [
-    '## Agent Studio（当前会话）',
+    '## 智能体工坊（当前会话）',
     `当前团队：${team.name}。`,
     '成员：',
     ...team.members.map((member) => `- ${member.name}：${member.description}`),
