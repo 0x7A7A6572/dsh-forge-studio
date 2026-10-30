@@ -85,6 +85,9 @@ export function validateMemberName(name: string): string | undefined {
 export function validateProfile(profile: AgentProfile): string | undefined {
   if (profile.id.trim() === '') return 'profile id 不能为空'
   if (profile.displayName.trim() === '') return '显示名不能为空'
+  if (profile.model !== null && (profile.model.provider.trim() === '' || profile.model.model.trim() === '')) {
+    return 'model 需要同时填写 provider 与 model'
+  }
   return validateMemberName(profile.name)
 }
 

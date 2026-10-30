@@ -118,6 +118,15 @@ export function useAgentStudioPanel(studio: AgentStudioRemote, sessionId: string
     setMessage('')
     void (async () => {
       try {
+        if (mode !== 'none') {
+          const next = unwrap(await studio.setBinding({
+            sessionId,
+            mode,
+            ...(mode === 'solo' ? { profileId: profileId === '' ? undefined : profileId } : {}),
+            ...(mode === 'team' ? { teamId: teamId === '' ? undefined : teamId } : {}),
+          }))
+          setBinding(next)
+        }
         const result = unwrap(await studio.launch({
           sessionId,
           task,

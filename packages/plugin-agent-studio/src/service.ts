@@ -163,7 +163,10 @@ export class AgentStudioService extends TypertRemoteService {
   }
 
   async saveProfile(input: { profile: AgentProfile }): Promise<AgentProfile> {
-    const profile = { ...input.profile }
+    const profile = {
+      ...input.profile,
+      id: input.profile.id.trim() === '' ? randomUUID() : input.profile.id,
+    }
     const error = validateProfile(profile)
     if (error !== undefined) throw new Error(error)
     const duplicate = this.listProfiles().find((item) => item.name === profile.name && item.id !== profile.id)
