@@ -9,7 +9,6 @@ function profile(overrides: Partial<AgentProfile> = {}): AgentProfile {
     displayName: 'Reviewer',
     description: 'Review code',
     rolePrompt: 'Be strict',
-    defaultTask: 'review',
     presetId: 'preset-review',
     model: { provider: 'provider-a', model: 'model-a' },
     context: 'fresh',

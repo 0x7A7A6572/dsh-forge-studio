@@ -18,8 +18,6 @@ export interface AgentProfile {
   description: string
   /** 角色设定，拼进初始任务。 */
   rolePrompt: string
-  /** 启动对话框的默认任务。 */
-  defaultTask: string
   /** 空 = 继承 Lead（团队）/ 部署默认（solo）。 */
   presetId?: string
   /** null = 继承 Lead。 */
@@ -33,11 +31,16 @@ export interface AgentProfile {
   updatedAt: number
 }
 
+/** 团队成员只保存智能体引用；名字/模型/提示词始终以智能体库当前值为准。 */
+export interface TeamMemberRef {
+  profileId: string
+}
+
 export interface TeamProfile {
   id: string
   name: string
   description: string
-  members: AgentProfile[]
+  members: TeamMemberRef[]
   createdAt: number
   updatedAt: number
 }

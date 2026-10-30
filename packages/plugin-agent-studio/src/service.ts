@@ -74,6 +74,8 @@ export class AgentStudioService extends TypertRemoteService {
     this.teamCache.clear()
     for (const team of Array.from(this.teams.entries(), ([, value]) => value)) {
       this.teamCache.set(team.id, team)
+      // 旧版团队存的是完整 profile 快照；这里写回一次，收敛成 profileId 引用。
+      await this.teams.put(team.id, team)
     }
     this.bindingCache.clear()
     for (const binding of Array.from(this.bindings.entries(), ([, value]) => value)) {
@@ -201,6 +203,9 @@ export class AgentStudioService extends TypertRemoteService {
     const team = { ...input.team }
     const error = validateTeam(team)
     if (error !== undefined) throw new Error(error)
+    for (const ref of team.members) {
+      if (!this.profileCache.has(ref.profileId)) throw new Error(`团队引用的智能体不存在：${ref.profileId}`)
+    }
     const existing = this.teamCache.get(team.id)
     const timestamp = now()
     const saved: TeamProfile = {
@@ -312,13 +317,31 @@ export class AgentStudioService extends TypertRemoteService {
     return this.listProfiles().find((profile) => profile.name === name)
   }
 
+  /** 团队成员是 profileId 引用；这里统一解析成当前智能体库的值。 */
+  private resolveTeamMembers(team: TeamProfile, required: boolean): AgentProfile[] {
+    const members: AgentProfile[] = []
+    for (const ref of team.members) {
+      const profile = this.profileCache.get(ref.profileId)
+      if (profile === undefined) {
+        if (required) throw new Error(`团队 ${team.name} 引用的智能体不存在：${ref.profileId}`)
+        continue
+      }
+      members.push(profile)
+    }
+    return members
+  }
+
+  /** 供提示注入使用：解析团队当前引用的智能体；引用失效时跳过。 */
+  teamMemberProfiles(teamId: string): AgentProfile[] {
+    const team = this.teamCache.get(teamId)
+    if (team === undefined) return []
+    return this.resolveTeamMembers(team, false)
+  }
+
   resolveAssignmentProfile(leadId: string, memberName: string): AgentProfile | undefined {
     const assignment = this.assignmentCache.get(leadId)?.get(memberName)
     if (assignment !== undefined) {
-      // 团队快照优先：团队编辑后不随 agent 库的后续修改漂移。
-      const team = this.teamCache.get(assignment.teamId)
-      const snapshot = team?.members.find((member) => member.name === memberName)
-      if (snapshot !== undefined) return snapshot
+      // 团队成员只是引用；即使有 assignment 也读取当前 profile，保证编辑后生效。
       const direct = this.profileCache.get(assignment.profileId)
       if (direct !== undefined) return direct
     }
@@ -328,7 +351,9 @@ export class AgentStudioService extends TypertRemoteService {
     const binding = this.bindingCache.get(leadId)
     if (binding?.mode === 'team' && binding.teamId !== undefined) {
       const team = this.teamCache.get(binding.teamId)
-      return team?.members.find((member) => member.name === memberName)
+      if (team !== undefined) {
+        return this.resolveTeamMembers(team, false).find((member) => member.name === memberName)
+      }
     }
     if (binding?.mode === 'solo' && binding.profileId !== undefined) {
       const profile = this.profileCache.get(binding.profileId)
@@ -373,8 +398,9 @@ export class AgentStudioService extends TypertRemoteService {
         .map((member) => member.name),
     )
     const max = this.maxMembers()
-    if (existing.size + team.members.length > max) throw new Error(`团队人数超过上限 ${max}`)
-    for (const member of team.members) {
+    const teamMembers = this.resolveTeamMembers(team, true)
+    if (existing.size + teamMembers.length > max) throw new Error(`团队人数超过上限 ${max}`)
+    for (const member of teamMembers) {
       const error = validateMemberName(member.name)
       if (error !== undefined) throw new Error(`${member.name}：${error}`)
       if (existing.has(member.name)) throw new Error(`本会话已使用过名字 ${member.name}，请改名或新开会话`)
@@ -383,7 +409,7 @@ export class AgentStudioService extends TypertRemoteService {
 
     const members: LaunchMemberResult[] = []
     const failed: LaunchMemberResult[] = []
-    for (const member of team.members) {
+    for (const member of teamMembers) {
       const assignmentId = storageKey(lead.id, team.id, member.name)
       await this.assignments.put(assignmentId, {
         id: assignmentId,
@@ -397,7 +423,7 @@ export class AgentStudioService extends TypertRemoteService {
       byName.set(member.name, { profileId: member.id, teamId: team.id })
       this.assignmentCache.set(lead.id, byName)
 
-      const task = input.memberTasks?.[member.name] ?? member.defaultTask ?? input.task
+      const task = input.memberTasks?.[member.name] ?? input.task
       try {
         const row = await this.spawnTeammate(lead, member.name, member.description, this.composePrompt(member, task, 'team'), member.context)
         members.push({ name: member.name, id: row.id, model: row.model, status: row.status })

@@ -12,7 +12,6 @@ export function emptyProfile(): AgentProfile {
     displayName: '新 Agent',
     description: '',
     rolePrompt: '',
-    defaultTask: '',
     model: null,
     context: 'fresh',
     maxDepth: 1,
@@ -134,25 +133,25 @@ export function useAgentStudioSettings(studio: AgentStudioRemote) {
   const addMember = useCallback((profile: AgentProfile) => {
     setTeamDraft((draft) => {
       if (draft === null) return draft
-      if (draft.members.some((member) => member.id === profile.id)) return draft
-      return { ...draft, members: [...draft.members, { ...profile }] }
+      if (draft.members.some((member) => member.profileId === profile.id)) return draft
+      return { ...draft, members: [...draft.members, { profileId: profile.id }] }
     })
   }, [])
 
   const availableProfiles = teamDraft === null
     ? []
-    : profiles.filter((profile) => !teamDraft.members.some((member) => member.id === profile.id))
+    : profiles.filter((profile) => !teamDraft.members.some((member) => member.profileId === profile.id))
 
   const addSelectedMember = useCallback(() => {
     if (teamDraft === null) return
-    const profile = profiles.find((item) => item.id === memberPickId && !teamDraft.members.some((member) => member.id === item.id))
+    const profile = profiles.find((item) => item.id === memberPickId && !teamDraft.members.some((member) => member.profileId === item.id))
     if (profile === undefined) return
     addMember(profile)
     setMemberPickId('')
   }, [addMember, memberPickId, profiles, teamDraft])
 
-  const removeMember = useCallback((id: string) => {
-    setTeamDraft((draft) => draft === null ? draft : { ...draft, members: draft.members.filter((member) => member.id !== id) })
+  const removeMember = useCallback((profileId: string) => {
+    setTeamDraft((draft) => draft === null ? draft : { ...draft, members: draft.members.filter((member) => member.profileId !== profileId) })
   }, [])
 
   return {

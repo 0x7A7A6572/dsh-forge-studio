@@ -13,6 +13,10 @@ export function AgentStudioSettings({ studio }: AgentStudioSettingsProps): JSX.E
   const modelGroup = s.profileDraft?.model === null || s.profileDraft?.model === undefined
     ? undefined
     : s.models.find((group) => group.provider === s.profileDraft?.model?.provider)
+  const profileById = (profileId: string): AgentProfile | undefined =>
+    s.profiles.find((profile) => profile.id === profileId)
+  const teamMemberNames = (team: TeamProfile): string =>
+    team.members.map((member) => profileById(member.profileId)?.name ?? '已删除').join(' · ')
 
   const updateProfile = (patch: Partial<AgentProfile>): void => {
     if (s.profileDraft === null) return
@@ -103,7 +107,7 @@ export function AgentStudioSettings({ studio }: AgentStudioSettingsProps): JSX.E
                 <code>{team.members.length} 人</code>
               </span>
               <span className={styles.rowDescription}>{team.description || '（无描述）'}</span>
-              <span className={styles.rowMeta}>{team.members.map((member) => member.name).join(' · ')}</span>
+              <span className={styles.rowMeta}>{teamMemberNames(team)}</span>
             </span>
             <span className={styles.rowActions}>
               <button className={styles.iconButton} onClick={() => s.setTeamDraft(team)} aria-label="编辑" title="编辑">
@@ -141,9 +145,6 @@ export function AgentStudioSettings({ studio }: AgentStudioSettingsProps): JSX.E
               </label>
               <label className={styles.field}>角色提示词
                 <textarea rows={5} value={s.profileDraft.rolePrompt} onChange={(event) => updateProfile({ rolePrompt: event.target.value })} />
-              </label>
-              <label className={styles.field}>默认任务（可留空，模型根据对话决定）
-                <textarea rows={2} value={s.profileDraft.defaultTask} onChange={(event) => updateProfile({ defaultTask: event.target.value })} />
               </label>
               <label className={styles.field}>Preset
                 <select value={s.profileDraft.presetId ?? ''} onChange={(event) => updateProfile({ presetId: event.target.value === '' ? undefined : event.target.value })}>
@@ -235,16 +236,22 @@ export function AgentStudioSettings({ studio }: AgentStudioSettingsProps): JSX.E
                 </div>
                 {s.availableProfiles.length === 0 && <p className={styles.empty}>所有智能体都已在团队里。</p>}
                 <div className={styles.memberList}>
-                  {s.teamDraft.members.map((member) => (
-                    <div key={member.id} className={styles.memberRow}>
-                      <span className={styles.memberIcon}><StudioIcon name="box" size={14} /></span>
-                      <span className={styles.memberName}>{member.displayName}<code>{member.name}</code></span>
-                      <span className={styles.memberModel}>{member.model?.model ?? '继承模型'}</span>
-                      <button className={styles.iconButtonDanger} onClick={() => s.removeMember(member.id)} aria-label="移除">
-                        <StudioIcon name="trash" size={14} />
-                      </button>
-                    </div>
-                  ))}
+                  {s.teamDraft.members.map((member) => {
+                    const profile = profileById(member.profileId)
+                    return (
+                      <div key={member.profileId} className={styles.memberRow}>
+                        <span className={styles.memberIcon}><StudioIcon name="box" size={14} /></span>
+                        <span className={styles.memberName}>
+                          {profile?.displayName ?? '已删除智能体'}
+                          <code>{profile?.name ?? member.profileId}</code>
+                        </span>
+                        <span className={styles.memberModel}>{profile?.model?.model ?? '继承模型'}</span>
+                        <button className={styles.iconButtonDanger} onClick={() => s.removeMember(member.profileId)} aria-label="移除">
+                          <StudioIcon name="trash" size={14} />
+                        </button>
+                      </div>
+                    )
+                  })}
                   {s.teamDraft.members.length === 0 && <p className={styles.empty}>还没有成员，从上面选择添加。</p>}
                 </div>
               </div>

@@ -56,7 +56,6 @@ function profile(id: string, displayName: string): Record<string, unknown> {
     displayName,
     description: '',
     rolePrompt: '',
-    defaultTask: '',
     model: null,
     context: 'fresh',
     maxDepth: 1,

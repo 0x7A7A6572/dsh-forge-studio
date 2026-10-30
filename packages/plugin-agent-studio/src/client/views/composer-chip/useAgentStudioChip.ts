@@ -73,8 +73,12 @@ export function useAgentStudioChip(studio: AgentStudioRemote, sessionId: string)
     [profiles, query],
   )
   const matchedTeams = useMemo(
-    () => teams.filter((team) => matches(query, [team.name, team.description, ...team.members.map((member) => member.name)])),
-    [teams, query],
+    () => teams.filter((team) => matches(query, [
+      team.name,
+      team.description,
+      ...team.members.map((member) => profiles.find((profile) => profile.id === member.profileId)?.name),
+    ])),
+    [profiles, teams, query],
   )
 
   useEffect(() => {

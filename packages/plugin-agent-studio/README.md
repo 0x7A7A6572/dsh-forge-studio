@@ -6,8 +6,8 @@
 
 ## 功能
 
-- **Agent 库**：名字、显示名、职责、角色提示词、默认任务、preset、provider/model、reasoning effort、fresh/fork、委派深度。
-- **团队模板**：从 Agent 库挑成员组成团队；每个成员保留自己的 preset/model。
+- **智能体库**：名字、显示名、职责、角色提示词、preset、provider/model、reasoning effort、fresh/fork、委派深度。
+- **团队引用**：团队只保存成员的 `profileId`；启动/提示时实时读取智能体库当前值，编辑智能体后团队立即生效。
 - **会话内选择**：输入框底部左侧的 `Agent` chip 选择「默认 / 单人 / 团队」；只切换当前会话的 Agent 阵容，不需要你填任务。
 - **模型自己决定何时调用**：选中单人/团队后，主 Agent 会根据对话判断是否需要 `delegate_agent` 或 `spawn_teammate`，任务文本由模型生成；不需要你在 UI 里预先填写。
 - **团队走官方 Agent Teams**：roster、任务板、消息、interrupt、冷恢复都复用官方能力；插件只通过运行时 seam 把每个成员的 `agentPreset` / `agentOptions` 注入 `spawnTeammate`，不改官方文件。

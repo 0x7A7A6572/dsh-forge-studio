@@ -19,7 +19,6 @@ const agentProfileSchema = z.object({
   displayName: z.string(),
   description: z.string(),
   rolePrompt: z.string(),
-  defaultTask: z.string(),
   presetId: z.string().optional(),
   model: modelChoiceSchema.nullable(),
   context: z.enum(['fresh', 'fork']),
@@ -29,11 +28,20 @@ const agentProfileSchema = z.object({
   updatedAt: z.number(),
 }) as unknown as z.ZodType<AgentProfile>
 
+/** 旧版团队成员是完整 profile 快照；读入时收敛成 profileId 引用。 */
+const legacyTeamMemberSchema = agentProfileSchema
+const teamMemberRefSchema = z.object({ profileId: z.string() })
+const teamMembersSchema = z
+  .array(z.union([teamMemberRefSchema, legacyTeamMemberSchema]))
+  .transform((members) => members.map((member) =>
+    'profileId' in member ? member : { profileId: member.id },
+  ))
+
 const teamProfileSchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string(),
-  members: z.array(agentProfileSchema),
+  members: teamMembersSchema,
   createdAt: z.number(),
   updatedAt: z.number(),
 }) as unknown as z.ZodType<TeamProfile>
@@ -95,12 +103,11 @@ export function validateTeam(team: TeamProfile): string | undefined {
   if (team.id.trim() === '') return 'team id 不能为空'
   if (team.name.trim() === '') return '团队名不能为空'
   if (team.members.length === 0) return '团队至少需要一个成员'
-  const names = new Set<string>()
+  const ids = new Set<string>()
   for (const member of team.members) {
-    const error = validateProfile(member)
-    if (error !== undefined) return `${member.name || member.displayName || '成员'}：${error}`
-    if (names.has(member.name)) return `成员名字重复：${member.name}`
-    names.add(member.name)
+    if (member.profileId.trim() === '') return '成员引用的 profileId 不能为空'
+    if (ids.has(member.profileId)) return `成员引用重复：${member.profileId}`
+    ids.add(member.profileId)
   }
   return undefined
 }

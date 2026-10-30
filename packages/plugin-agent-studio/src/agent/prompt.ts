@@ -26,11 +26,13 @@ function renderForAgent(service: AgentStudioService, agent: RuntimeAgent): strin
 
   const team = binding.teamId === undefined ? undefined : service.listTeams().find((item) => item.id === binding.teamId)
   if (team === undefined) return ''
+  const members = service.teamMemberProfiles(team.id)
+  if (members.length === 0) return ''
   const lines = [
     '## 智能体工坊（当前会话）',
     `当前团队：${team.name}。`,
     '成员：',
-    ...team.members.map((member) => `- ${member.name}：${member.description}`),
+    ...members.map((member) => `- ${member.name}：${member.description}`),
     '当用户任务需要多个角色（设计 / 实现 / 审查 / 测试）时，先按上面的成员名调用 spawn_teammate 创建成员，再把子任务分配给你判断合适的成员；不要自己把所有角色都演一遍。',
     '成员之间可以直接用 send_message 协作；你负责拆任务、同步上下文、验收结果。临时帮手用 delegate_agent({ agent, task })。',
     '不要要求用户先填写任务或手动创建成员。',

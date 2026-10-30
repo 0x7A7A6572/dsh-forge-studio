@@ -1,26 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { storageKey, validateMemberName, validateTeam } from '../packages/plugin-agent-studio/src/domain.ts'
-import type { AgentProfile, TeamProfile } from '../packages/plugin-agent-studio/src/types.ts'
+import type { TeamMemberRef, TeamProfile } from '../packages/plugin-agent-studio/src/types.ts'
 
-function member(overrides: Partial<AgentProfile> = {}): AgentProfile {
-  return {
-    id: 'm1',
-    name: 'reviewer',
-    displayName: 'Reviewer',
-    description: '',
-    rolePrompt: '',
-    defaultTask: '',
-    model: null,
-    context: 'fresh',
-    maxDepth: 1,
-    avatarSeed: 'x',
-    createdAt: 0,
-    updatedAt: 0,
-    ...overrides,
-  }
+function member(profileId: string): TeamMemberRef {
+  return { profileId }
 }
 
-function team(members: AgentProfile[]): TeamProfile {
+function team(members: TeamMemberRef[]): TeamProfile {
   return { id: 't1', name: 'Team', description: '', members, createdAt: 0, updatedAt: 0 }
 }
 
@@ -33,12 +19,12 @@ describe('agent studio domain', () => {
     expect(validateMemberName('')).toBeDefined()
   })
 
-  it('rejects duplicate member names in a team', () => {
-    expect(validateTeam(team([member(), member({ id: 'm2' })]))).toContain('重复')
+  it('rejects duplicate profile references in a team', () => {
+    expect(validateTeam(team([member('m1'), member('m1')]))).toContain('重复')
   })
 
-  it('accepts a team with unique members', () => {
-    expect(validateTeam(team([member(), member({ id: 'm2', name: 'builder' })]))).toBeUndefined()
+  it('accepts a team with unique profile references', () => {
+    expect(validateTeam(team([member('m1'), member('m2')]))).toBeUndefined()
   })
 
   it('produces path-safe storage keys', () => {

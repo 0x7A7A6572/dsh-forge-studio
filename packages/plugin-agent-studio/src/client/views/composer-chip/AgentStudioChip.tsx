@@ -43,6 +43,10 @@ export function AgentStudioChip({ sessionId, studio }: AgentStudioChipProps): JS
     ? chip.teams.find((team) => team.id === chip.binding.teamId)?.id
     : undefined
   const empty = chip.matchedProfiles.length === 0 && chip.matchedTeams.length === 0
+  const teamMemberNames = (team: typeof chip.teams[number]): string =>
+    team.members
+      .map((member) => chip.profiles.find((profile) => profile.id === member.profileId)?.name ?? '已删除')
+      .join(' · ')
 
   return (
     <div className={styles.root} data-dsh-part="agent-studio-chip">
@@ -106,7 +110,7 @@ export function AgentStudioChip({ sessionId, studio }: AgentStudioChipProps): JS
                 <span className={styles.optionIcon}><StudioIcon name="boxes" size={16} /></span>
                 <span className={styles.optionCopy}>
                   <span className={styles.optionName}>{team.name}</span>
-                  <span className={styles.optionMeta}>{team.members.map((member) => member.name).join(' · ')}</span>
+                  <span className={styles.optionMeta}>{teamMemberNames(team)}</span>
                 </span>
                 {selectedTeam === team.id && <span className={styles.check}><StudioIcon name="check" size={14} /></span>}
               </button>
@@ -166,7 +170,7 @@ export function AgentStudioChip({ sessionId, studio }: AgentStudioChipProps): JS
                           <span className={styles.optionIcon}><StudioIcon name="boxes" size={16} /></span>
                           <span className={styles.optionCopy}>
                             <span className={styles.optionName}>{team.name}</span>
-                            <span className={styles.optionMeta}>{team.description || team.members.map((member) => member.name).join(' · ')}</span>
+                            <span className={styles.optionMeta}>{team.description || teamMemberNames(team)}</span>
                           </span>
                           {selectedTeam === team.id && <span className={styles.check}><StudioIcon name="check" size={14} /></span>}
                         </button>
