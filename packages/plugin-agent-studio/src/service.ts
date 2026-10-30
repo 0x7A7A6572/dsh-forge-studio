@@ -314,12 +314,27 @@ export class AgentStudioService extends TypertRemoteService {
 
   resolveAssignmentProfile(leadId: string, memberName: string): AgentProfile | undefined {
     const assignment = this.assignmentCache.get(leadId)?.get(memberName)
-    if (assignment === undefined) return undefined
-    // 团队快照优先：团队编辑后不随 agent 库的后续修改漂移。
-    const team = this.teamCache.get(assignment.teamId)
-    const snapshot = team?.members.find((member) => member.name === memberName)
-    if (snapshot !== undefined) return snapshot
-    return this.profileCache.get(assignment.profileId)
+    if (assignment !== undefined) {
+      // 团队快照优先：团队编辑后不随 agent 库的后续修改漂移。
+      const team = this.teamCache.get(assignment.teamId)
+      const snapshot = team?.members.find((member) => member.name === memberName)
+      if (snapshot !== undefined) return snapshot
+      const direct = this.profileCache.get(assignment.profileId)
+      if (direct !== undefined) return direct
+    }
+
+    // 没有显式 launch 时，模型可能直接按提示里的名字 spawn_teammate；
+    // 从当前会话的绑定里找同名成员/单人 profile。
+    const binding = this.bindingCache.get(leadId)
+    if (binding?.mode === 'team' && binding.teamId !== undefined) {
+      const team = this.teamCache.get(binding.teamId)
+      return team?.members.find((member) => member.name === memberName)
+    }
+    if (binding?.mode === 'solo' && binding.profileId !== undefined) {
+      const profile = this.profileCache.get(binding.profileId)
+      if (profile?.name === memberName) return profile
+    }
+    return undefined
   }
 
   // ── launch ──────────────────────────────────────────────────────────

@@ -18,7 +18,8 @@ function renderForAgent(service: AgentStudioService, agent: RuntimeAgent): strin
       '## Agent Studio（当前会话）',
       `当前单人 Agent：${profile.displayName}（${profile.name}）。`,
       `职责：${profile.description}`,
-      `需要它处理任务时，调用 delegate_agent({ agent: "${profile.name}", task: "..." })。`,
+      `当用户的任务适合它时，直接调用 delegate_agent({ agent: "${profile.name}", task: "你根据对话判断的子任务" })。`,
+      'task 由你决定，不要要求用户先填写任务文本。',
     ].join('\n')
   }
 
@@ -29,7 +30,8 @@ function renderForAgent(service: AgentStudioService, agent: RuntimeAgent): strin
     `当前团队：${team.name}。`,
     '成员：',
     ...team.members.map((member) => `- ${member.name}：${member.description}`),
-    '用 spawn_teammate 创建团队成员；临时帮手用 delegate_agent({ agent, task })。',
+    '当任务需要多人协作时，直接调用 spawn_teammate 按上面的成员名创建成员，并分配你判断合适的任务；临时帮手用 delegate_agent({ agent, task })。',
+    '不要要求用户先填写任务或手动创建成员。',
   ]
   return lines.join('\n')
 }

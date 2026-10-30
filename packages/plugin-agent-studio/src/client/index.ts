@@ -3,7 +3,7 @@
  *
  * 1. 挂载 agentStudio 远程命名空间；
  * 2. 设置面板注册「智能体工坊」分区；
- * 3. 会话头部注册 Studio 选择/启动面板。
+ * 3. 输入框左侧注册一个 Agent / 团队选择 chip。
  */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -12,7 +12,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { agentStudioOf, mountAgentStudioRemote } from './core/remote.ts'
 import { AgentStudioSettings } from './views/settings-section/AgentStudioSettings.tsx'
-import { AgentStudioPanel } from './views/studio-panel/AgentStudioPanel.tsx'
+import { AgentStudioChip } from './views/composer-chip/AgentStudioChip.tsx'
 
 export const name = '@zzerx/dsh-plugin-agent-studio/client'
 export const inject = ['slots', 'remote']
@@ -30,12 +30,12 @@ export function apply(ctx: Context): void {
         inject: () => ({ studio }),
       }, AgentStudioSettings))
 
-      inner.slots.inject('conversation.session.header.actions' as never, () => inner.slots.register({
-        name: 'conversation.session.header.actions',
+      inner.slots.inject('conversation.input.left' as never, () => inner.slots.register({
+        name: 'conversation.input.left',
         id: 'agent-studio',
-        order: 8,
+        order: 12,
         inject: () => ({ studio }),
-      } as never, AgentStudioPanel as never))
+      } as never, AgentStudioChip as never))
     })
   })
 }

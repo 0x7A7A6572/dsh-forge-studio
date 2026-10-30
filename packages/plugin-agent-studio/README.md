@@ -8,7 +8,8 @@
 
 - **Agent 库**：名字、显示名、职责、角色提示词、默认任务、preset、provider/model、reasoning effort、fresh/fork、委派深度。
 - **团队模板**：从 Agent 库挑成员组成团队；每个成员保留自己的 preset/model。
-- **会话内选择**：会话头部 `Studio` 面板选择「不启用 / 单人 / 团队」，保存到该会话；点「启动」才真正派活。
+- **会话内选择**：输入框底部左侧的 `Agent` chip 选择「默认 / 单人 / 团队」；只切换当前会话的 Agent 阵容，不需要你填任务。
+- **模型自己决定何时调用**：选中单人/团队后，主 Agent 会根据对话判断是否需要 `delegate_agent` 或 `spawn_teammate`，任务文本由模型生成；不需要你在 UI 里预先填写。
 - **团队走官方 Agent Teams**：roster、任务板、消息、interrupt、冷恢复都复用官方能力；插件只通过运行时 seam 把每个成员的 `agentPreset` / `agentOptions` 注入 `spawnTeammate`，不改官方文件。
 - **Agent 互相调用**：`delegate_agent({ agent, task, context })` 让 Lead / teammate / solo 按 profile 启动 subagent；`list_agent_profiles` 列出可用名字。
 - **动态提示**：当前会话选了团队/单人时，注入一小段提示，告诉模型当前阵容和可用工具；不选时零注入。
@@ -31,9 +32,9 @@ dsh plugin --profile web add @zzerx/dsh-plugin-agent-studio
 
 1. 设置 → 智能体工坊 → 新建 Agent：填名字、角色提示词、模型/preset。
 2. （可选）新建团队：把 Agent 加进成员列表。
-3. 会话头部点 `Studio` → 选单人/团队 → 保存选择。
-4. 填本次任务 → 启动。
-5. 需要临时帮手时，直接让 Agent 调 `delegate_agent`，或自己用 `list_agent_profiles` 看可用名字。
+3. 会话输入框底部左侧点 `Agent` chip → 选一个单人 Agent 或团队。
+4. 正常聊天即可；主 Agent 判断需要时，会自己调 `delegate_agent` / `spawn_teammate`，任务由它根据对话生成。
+5. 需要临时帮手时，也可以直接让 Agent 调 `delegate_agent`，或用 `list_agent_profiles` 看可用名字。
 
 ## 实现
 
@@ -41,7 +42,7 @@ dsh plugin --profile web add @zzerx/dsh-plugin-agent-studio
 - `src/service.ts`：`ctx.agentStudio`，负责 profiles/teams/bindings/assignments 存储、solo/team launch、roster。
 - `src/agent/tools.ts`：`delegate_agent` / `list_agent_profiles`。
 - `src/agent/prompt.ts`：动态 systemPrompt.context。
-- `src/client/`：设置分区与会话头部面板。
+- `src/client/`：设置分区与输入框左侧的 Agent / 团队 chip。
 
 ## 限制
 
