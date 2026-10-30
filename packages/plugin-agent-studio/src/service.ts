@@ -50,7 +50,7 @@ export class AgentStudioService extends TypertRemoteService {
   private readonly profileCache = new Map<string, AgentProfile>()
   private readonly teamCache = new Map<string, TeamProfile>()
   private readonly bindingCache = new Map<string, SessionBinding>()
-  private readonly assignmentCache = new Map<string, Map<string, string>>()
+  private readonly assignmentCache = new Map<string, Map<string, { profileId: string; teamId: string }>>()
   private seam: SeamResult | null = null
   private readonly configuredMax: number
 
@@ -81,8 +81,8 @@ export class AgentStudioService extends TypertRemoteService {
     }
     this.assignmentCache.clear()
     for (const assignment of Array.from(this.assignments.entries(), ([, value]) => value)) {
-      const byName = this.assignmentCache.get(assignment.leadSessionId) ?? new Map<string, string>()
-      byName.set(assignment.memberName, assignment.profileId)
+      const byName = this.assignmentCache.get(assignment.leadSessionId) ?? new Map<string, { profileId: string; teamId: string }>()
+      byName.set(assignment.memberName, { profileId: assignment.profileId, teamId: assignment.teamId })
       this.assignmentCache.set(assignment.leadSessionId, byName)
     }
   }
@@ -313,16 +313,13 @@ export class AgentStudioService extends TypertRemoteService {
   }
 
   resolveAssignmentProfile(leadId: string, memberName: string): AgentProfile | undefined {
-    const profileId = this.assignmentCache.get(leadId)?.get(memberName)
-    if (profileId === undefined) return undefined
-    const direct = this.profileCache.get(profileId)
-    if (direct !== undefined) return direct
-    // 团队编辑器允许同一 profile 被复制成多个成员（成员 id 独立）；回退到团队快照。
-    for (const team of this.teamCache.values()) {
-      const snapshot = team.members.find((member) => member.id === profileId)
-      if (snapshot !== undefined) return snapshot
-    }
-    return undefined
+    const assignment = this.assignmentCache.get(leadId)?.get(memberName)
+    if (assignment === undefined) return undefined
+    // 团队快照优先：团队编辑后不随 agent 库的后续修改漂移。
+    const team = this.teamCache.get(assignment.teamId)
+    const snapshot = team?.members.find((member) => member.name === memberName)
+    if (snapshot !== undefined) return snapshot
+    return this.profileCache.get(assignment.profileId)
   }
 
   // ── launch ──────────────────────────────────────────────────────────
@@ -380,8 +377,8 @@ export class AgentStudioService extends TypertRemoteService {
         profileId: member.id,
         createdAt: now(),
       })
-      const byName = this.assignmentCache.get(lead.id) ?? new Map<string, string>()
-      byName.set(member.name, member.id)
+      const byName = this.assignmentCache.get(lead.id) ?? new Map<string, { profileId: string; teamId: string }>()
+      byName.set(member.name, { profileId: member.id, teamId: team.id })
       this.assignmentCache.set(lead.id, byName)
 
       const task = input.memberTasks?.[member.name] ?? member.defaultTask ?? input.task
