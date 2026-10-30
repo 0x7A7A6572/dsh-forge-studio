@@ -109,8 +109,8 @@ export function useAgentStudioSettings(studio: AgentStudioRemote) {
   const saveProfile = useCallback(() => {
     if (profileDraft === null) return
     void run(async () => {
-      const saved = unwrap(await studio.saveProfile({ profile: profileDraft }))
-      setProfileDraft(saved)
+      unwrap(await studio.saveProfile({ profile: profileDraft }))
+      setProfileDraft(null)
     })
   }, [profileDraft, run, studio])
 
@@ -121,8 +121,8 @@ export function useAgentStudioSettings(studio: AgentStudioRemote) {
   const saveTeam = useCallback(() => {
     if (teamDraft === null) return
     void run(async () => {
-      const saved = unwrap(await studio.saveTeam({ team: teamDraft }))
-      setTeamDraft(saved)
+      unwrap(await studio.saveTeam({ team: teamDraft }))
+      setTeamDraft(null)
     })
   }, [run, studio, teamDraft])
 

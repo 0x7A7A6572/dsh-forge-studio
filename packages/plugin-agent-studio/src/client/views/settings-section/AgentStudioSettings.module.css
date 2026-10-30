@@ -245,13 +245,20 @@
 
 .primary {
   border-color: transparent;
-  background: var(--dsw-alias-state-business-primary);
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
 }
 
 .primary:hover,
 .primary:focus-visible {
+  background: var(--dsw-alias-button-primary-hover, var(--dsw-alias-button-primary-fill));
   outline: none;
   box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+}
+
+.primary:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 
 .empty {

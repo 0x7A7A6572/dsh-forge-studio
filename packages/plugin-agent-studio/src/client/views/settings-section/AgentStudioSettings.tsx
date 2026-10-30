@@ -127,6 +127,7 @@ export function AgentStudioSettings({ studio }: AgentStudioSettingsProps): JSX.E
               </button>
             </header>
             <div className={styles.dialogBody}>
+              {s.error !== '' && <p className={styles.error} role="alert">{s.error}</p>}
               <div className={styles.row2}>
                 <label className={styles.field}>名字
                   <input autoFocus value={s.profileDraft.name} onChange={(event) => updateProfile({ name: event.target.value })} />
@@ -207,6 +208,7 @@ export function AgentStudioSettings({ studio }: AgentStudioSettingsProps): JSX.E
               </button>
             </header>
             <div className={styles.dialogBody}>
+              {s.error !== '' && <p className={styles.error} role="alert">{s.error}</p>}
               <label className={styles.field}>团队名
                 <input autoFocus value={s.teamDraft.name} onChange={(event) => updateTeam({ name: event.target.value })} />
               </label>
