@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import type { AgentProfile, SessionBinding, TeamProfile } from '../../../types.ts'
 import type { AgentStudioRemote } from '../../core/remote.ts'
 import { errorText, unwrap } from '../../core/result.ts'
 
 export interface AgentStudioChipState {
   open: boolean
+  triggerRef: RefObject<HTMLButtonElement>
+  anchor: { left: number; bottom: number } | null
   toggle(): void
   close(): void
   profiles: AgentProfile[]
@@ -21,7 +23,9 @@ export interface AgentStudioChipState {
 const NONE: SessionBinding = { sessionId: '', mode: 'none', updatedAt: 0 }
 
 export function useAgentStudioChip(studio: AgentStudioRemote, sessionId: string): AgentStudioChipState {
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
+  const [anchor, setAnchor] = useState<{ left: number; bottom: number } | null>(null)
   const [profiles, setProfiles] = useState<AgentProfile[]>([])
   const [teams, setTeams] = useState<TeamProfile[]>([])
   const [binding, setBinding] = useState<SessionBinding>(NONE)
@@ -44,10 +48,25 @@ export function useAgentStudioChip(studio: AgentStudioRemote, sessionId: string)
     void load().catch((cause: unknown) => setError(errorText(cause)))
   }, [load])
 
+  useEffect(() => {
+    if (!open) return
+    const onResize = (): void => setOpen(false)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [open])
+
   const close = useCallback(() => setOpen(false), [])
   const toggle = useCallback(() => {
     setError('')
-    setOpen((value) => !value)
+    setOpen((value) => {
+      if (value) return false
+      const element = triggerRef.current
+      if (element !== null) {
+        const rect = element.getBoundingClientRect()
+        setAnchor({ left: rect.left, bottom: window.innerHeight - rect.top + 6 })
+      }
+      return true
+    })
   }, [])
 
   const save = useCallback(async (input: { mode: SessionBinding['mode']; profileId?: string; teamId?: string }) => {
@@ -69,13 +88,13 @@ export function useAgentStudioChip(studio: AgentStudioRemote, sessionId: string)
   }, [sessionId, studio])
 
   const label = binding.mode === 'solo'
-    ? profiles.find((profile) => profile.id === binding.profileId)?.displayName ?? '单人 Agent'
+    ? profiles.find((profile) => profile.id === binding.profileId)?.displayName ?? '单人'
     : binding.mode === 'team'
       ? teams.find((team) => team.id === binding.teamId)?.name ?? '团队'
-      : 'Agent'
+      : '智能体'
 
   return {
-    open, toggle, close,
+    open, triggerRef, anchor, toggle, close,
     profiles, teams, binding, label, busy, error,
     selectNone: () => void save({ mode: 'none' }),
     selectProfile: (profile) => void save({ mode: 'solo', profileId: profile.id }),

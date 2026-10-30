@@ -1,10 +1,10 @@
 [data-dsh-part='agent-studio-settings'] {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  max-width: 920px;
+  gap: 12px;
+  max-width: 880px;
   color: var(--dsw-alias-label-primary);
-  font-family: inherit;
+  font: inherit;
 }
 
 .header {
@@ -16,8 +16,10 @@
 
 .title {
   margin: 0;
-  font-size: 18px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 16px;
   font-weight: 600;
+  line-height: 24px;
 }
 
 .hint,
@@ -26,32 +28,43 @@
   margin: 4px 0 0;
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
+  line-height: 18px;
 }
 
 .tabs {
   display: flex;
-  gap: 6px;
+  gap: 4px;
 }
 
 .tab,
 .tabActive {
   border: 0;
-  border-radius: 8px;
-  padding: 6px 12px;
-  background: var(--dsw-alias-bg-layer-2);
+  border-radius: var(--dsw-radius-sm);
+  padding: 5px 10px;
+  background: transparent;
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.tab:hover,
+.tab:focus-visible {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+  outline: none;
 }
 
 .tabActive {
-  background: var(--dsw-alias-state-business-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
 }
 
 .columns {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 440px);
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+  gap: 12px;
   align-items: start;
 }
 
@@ -63,9 +76,11 @@
 
 .card,
 .editor {
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 10px;
+  border: 0;
+  border-radius: var(--dsw-radius-md);
   background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-elevation-stroke);
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
   padding: 12px;
 }
 
@@ -73,24 +88,26 @@
   display: flex;
   justify-content: space-between;
   gap: 8px;
+  color: var(--dsw-alias-label-primary);
 }
 
 .cardText {
   margin: 6px 0 0;
   color: var(--dsw-alias-label-secondary);
   font-size: 13px;
+  line-height: 20px;
 }
 
 .code {
-  color: var(--dsw-alias-label-tertiary);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--dsw-alias-label-caption);
   font-size: 11px;
+  line-height: 16px;
 }
 
 .actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
   margin-top: 10px;
 }
 
@@ -105,15 +122,16 @@
 .row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  gap: 8px;
 }
 
 .field {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 12px;
   color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .field input,
@@ -121,12 +139,20 @@
 .field textarea {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 7px;
-  padding: 7px 9px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: var(--dsw-radius-md);
+  padding: 6px 8px;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
   font: inherit;
+}
+
+.field input:focus-visible,
+.field select:focus-visible,
+.field textarea:focus-visible {
+  outline: none;
+  border-color: var(--dsw-alias-state-business-primary);
+  box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
 }
 
 .field textarea {
@@ -136,18 +162,36 @@
 .primary,
 .secondary,
 .danger {
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
-  padding: 6px 12px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: var(--dsw-radius-md);
+  padding: 5px 10px;
   cursor: pointer;
-  background: var(--dsw-alias-bg-layer-2);
+  background: transparent;
   color: var(--dsw-alias-label-primary);
   font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.primary:hover,
+.secondary:hover,
+.danger:hover,
+.primary:focus-visible,
+.secondary:focus-visible,
+.danger:focus-visible {
+  background: var(--dsw-alias-interactive-bg-hover);
+  outline: none;
 }
 
 .primary {
   background: var(--dsw-alias-state-business-primary);
   border-color: transparent;
+  color: var(--dsw-alias-label-primary);
+}
+
+.primary:hover,
+.primary:focus-visible {
+  background: var(--dsw-alias-state-business-primary);
 }
 
 .danger {
@@ -167,6 +211,7 @@
   margin: 0;
   color: var(--dsw-alias-state-error-primary);
   font-size: 12px;
+  line-height: 18px;
 }
 
 @media (max-width: 760px) {
