@@ -1,4 +1,5 @@
 import type { AgentStudioRemote } from '../../core/remote.ts'
+import { StudioIcon } from '../../components/StudioIcon.tsx'
 import { useAgentStudioChip } from './useAgentStudioChip.ts'
 import styles from './AgentStudioChip.module.css'
 
@@ -19,8 +20,9 @@ export function AgentStudioChip({ sessionId, studio }: AgentStudioChipProps): JS
   return (
     <div className={styles.root} data-dsh-part="agent-studio-chip">
       <button ref={chip.triggerRef} className={styles.trigger} onClick={chip.toggle} aria-expanded={chip.open} title="选择当前会话使用的 Agent / 团队">
+        <StudioIcon name={chip.binding.mode === 'team' ? 'users' : 'bot'} size={15} />
         <span className={styles.label}>{chip.label}</span>
-        <span className={styles.chevron}>▾</span>
+        <span className={styles.chevron}><StudioIcon name="chevron-down" size={12} /></span>
       </button>
 
       {chip.open && (
@@ -32,32 +34,35 @@ export function AgentStudioChip({ sessionId, studio }: AgentStudioChipProps): JS
             style={chip.anchor === null ? undefined : { left: chip.anchor.left, bottom: chip.anchor.bottom }}
           >
             <button className={styles.option} onClick={chip.selectNone}>
+              <span className={styles.optionIcon}><StudioIcon name="bot" size={15} /></span>
               <span className={styles.optionCopy}>
                 <span className={styles.optionName}>默认</span>
                 <span className={styles.optionMeta}>不启用 Agent Studio</span>
               </span>
-              {chip.binding.mode === 'none' && <span className={styles.check}>✓</span>}
+              {chip.binding.mode === 'none' && <span className={styles.check}><StudioIcon name="check" size={14} /></span>}
             </button>
 
             {chip.profiles.length > 0 && <p className={styles.group}>单人 Agent</p>}
             {chip.profiles.map((profile) => (
               <button key={profile.id} className={styles.option} onClick={() => chip.selectProfile(profile)}>
+                <span className={styles.optionIcon}><StudioIcon name="bot" size={15} /></span>
                 <span className={styles.optionCopy}>
                   <span className={styles.optionName}>{profile.displayName}</span>
                   <span className={styles.optionMeta}>{profile.model?.model ?? '继承模型'}</span>
                 </span>
-                {selectedProfile === profile.id && <span className={styles.check}>✓</span>}
+                {selectedProfile === profile.id && <span className={styles.check}><StudioIcon name="check" size={14} /></span>}
               </button>
             ))}
 
             {chip.teams.length > 0 && <p className={styles.group}>团队</p>}
             {chip.teams.map((team) => (
               <button key={team.id} className={styles.option} onClick={() => chip.selectTeam(team)}>
+                <span className={styles.optionIcon}><StudioIcon name="users" size={15} /></span>
                 <span className={styles.optionCopy}>
                   <span className={styles.optionName}>{team.name}</span>
                   <span className={styles.optionMeta}>{team.members.map((member) => member.name).join(' · ')}</span>
                 </span>
-                {selectedTeam === team.id && <span className={styles.check}>✓</span>}
+                {selectedTeam === team.id && <span className={styles.check}><StudioIcon name="check" size={14} /></span>}
               </button>
             ))}
 

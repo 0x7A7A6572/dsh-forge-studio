@@ -61,6 +61,17 @@ export function useAgentStudioSettings(studio: AgentStudioRemote) {
     void refresh().catch((cause: unknown) => setError(errorText(cause)))
   }, [refresh])
 
+  useEffect(() => {
+    if (profileDraft === null && teamDraft === null) return
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return
+      setProfileDraft(null)
+      setTeamDraft(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [profileDraft, teamDraft])
+
   const run = useCallback(async (action: () => Promise<void>) => {
     setBusy(true)
     setError('')

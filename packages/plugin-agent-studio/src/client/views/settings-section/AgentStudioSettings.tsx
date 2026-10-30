@@ -1,5 +1,6 @@
-import type { AgentProfile } from '../../../types.ts'
+import type { AgentProfile, TeamProfile } from '../../../types.ts'
 import type { AgentStudioRemote } from '../../core/remote.ts'
+import { StudioIcon } from '../../components/StudioIcon.tsx'
 import { useAgentStudioSettings } from './useAgentStudioSettings.ts'
 import styles from './AgentStudioSettings.module.css'
 
@@ -18,61 +19,114 @@ export function AgentStudioSettings({ studio }: AgentStudioSettingsProps): JSX.E
     s.setProfileDraft({ ...s.profileDraft, ...patch })
   }
 
+  const updateTeam = (patch: Partial<TeamProfile>): void => {
+    if (s.teamDraft === null) return
+    s.setTeamDraft({ ...s.teamDraft, ...patch })
+  }
+
   return (
     <section className={styles.root} data-dsh-part="agent-studio-settings">
       <header className={styles.header}>
         <div>
           <h2 className={styles.title}>智能体工坊</h2>
-          <p className={styles.hint}>定义单 Agent / 团队模板；在会话头部选择并启动。</p>
+          <p className={styles.hint}>定义可复用的单 Agent 与团队。会话里选中后，模型会自己判断何时派活。</p>
         </div>
-        <button className={styles.primary} onClick={() => s.tab === 'profiles' ? s.newProfile() : s.newTeam()}>
-          + 新建{s.tab === 'profiles' ? ' Agent' : '团队'}
+        <button className={styles.primary} onClick={s.newProfile}>
+          <StudioIcon name="plus" size={14} />
+          新建 Agent
         </button>
       </header>
 
-      <div className={styles.tabs}>
-        <button className={s.tab === 'profiles' ? styles.tabActive : styles.tab} onClick={() => s.setTab('profiles')}>Agent</button>
-        <button className={s.tab === 'teams' ? styles.tabActive : styles.tab} onClick={() => s.setTab('teams')}>团队</button>
-      </div>
-
       {s.error !== '' && <p className={styles.error}>{s.error}</p>}
 
-      {s.tab === 'profiles' && (
-        <div className={styles.columns}>
-          <div className={styles.list}>
-            {s.profiles.map((profile) => (
-              <article key={profile.id} className={styles.card}>
-                <div className={styles.cardHead}>
-                  <strong>{profile.displayName}</strong>
-                  <span className={styles.code}>{profile.name}</span>
-                </div>
-                <p className={styles.cardText}>{profile.description || '（无描述）'}</p>
-                <p className={styles.cardMeta}>{profile.model?.model ?? '继承模型'} · {profile.presetId ?? '继承 preset'}</p>
-                <div className={styles.actions}>
-                  <button className={styles.secondary} onClick={() => s.setProfileDraft(profile)}>编辑</button>
-                  <button className={styles.danger} onClick={() => s.removeProfile(profile.id)}>删除</button>
-                </div>
-              </article>
-            ))}
-            {s.profiles.length === 0 && <p className={styles.empty}>还没有 Agent。点右上角新建。</p>}
-          </div>
+      <section className={styles.section}>
+        <div className={styles.sectionHead}>
+          <h3 className={styles.sectionTitle}>智能体</h3>
+          <span className={styles.count}>{s.profiles.length}</span>
+        </div>
+        {s.profiles.length === 0 && <p className={styles.empty}>还没有 Agent。点右上角新建。</p>}
+        {s.profiles.map((profile) => (
+          <article key={profile.id} className={styles.row}>
+            <span className={styles.rowIcon}><StudioIcon name="bot" size={17} /></span>
+            <span className={styles.rowBody}>
+              <span className={styles.rowTitle}>
+                <strong>{profile.displayName}</strong>
+                <code>{profile.name}</code>
+              </span>
+              <span className={styles.rowDescription}>{profile.description || '（无描述）'}</span>
+              <span className={styles.rowMeta}>{profile.model?.model ?? '继承模型'} · {profile.presetId ?? '继承 preset'}</span>
+            </span>
+            <span className={styles.rowActions}>
+              <button className={styles.iconButton} onClick={() => s.setProfileDraft(profile)} aria-label="编辑" title="编辑">
+                <StudioIcon name="pencil" size={15} />
+              </button>
+              <button className={styles.iconButtonDanger} onClick={() => s.removeProfile(profile.id)} aria-label="删除" title="删除">
+                <StudioIcon name="trash" size={15} />
+              </button>
+            </span>
+          </article>
+        ))}
+      </section>
 
-          {s.profileDraft !== null && (
-            <div className={styles.editor}>
-              <label className={styles.field}>名字（lower-kebab）
-                <input value={s.profileDraft.name} onChange={(event) => updateProfile({ name: event.target.value })} />
-              </label>
-              <label className={styles.field}>显示名
-                <input value={s.profileDraft.displayName} onChange={(event) => updateProfile({ displayName: event.target.value })} />
-              </label>
-              <label className={styles.field}>职责描述
+      <section className={styles.section}>
+        <div className={styles.sectionHead}>
+          <h3 className={styles.sectionTitle}>团队</h3>
+          <span className={styles.count}>{s.teams.length}</span>
+          <button className={styles.secondary} onClick={s.newTeam}>
+            <StudioIcon name="plus" size={14} />
+            新建团队
+          </button>
+        </div>
+        {s.teams.length === 0 && <p className={styles.empty}>还没有团队。把 Agent 组合起来即可。</p>}
+        {s.teams.map((team) => (
+          <article key={team.id} className={styles.row}>
+            <span className={styles.rowIcon}><StudioIcon name="users" size={17} /></span>
+            <span className={styles.rowBody}>
+              <span className={styles.rowTitle}>
+                <strong>{team.name}</strong>
+                <code>{team.members.length} 人</code>
+              </span>
+              <span className={styles.rowDescription}>{team.description || '（无描述）'}</span>
+              <span className={styles.rowMeta}>{team.members.map((member) => member.name).join(' · ')}</span>
+            </span>
+            <span className={styles.rowActions}>
+              <button className={styles.iconButton} onClick={() => s.setTeamDraft(team)} aria-label="编辑" title="编辑">
+                <StudioIcon name="pencil" size={15} />
+              </button>
+              <button className={styles.iconButtonDanger} onClick={() => s.removeTeam(team.id)} aria-label="删除" title="删除">
+                <StudioIcon name="trash" size={15} />
+              </button>
+            </span>
+          </article>
+        ))}
+      </section>
+
+      {s.profileDraft !== null && (
+        <div className={styles.overlay} onMouseDown={(event) => { if (event.target === event.currentTarget) s.setProfileDraft(null) }}>
+          <div className={styles.dialog} role="dialog" aria-modal="true" aria-label="编辑 Agent">
+            <header className={styles.dialogHead}>
+              <h3>{s.profileDraft.id === '' ? '新建 Agent' : '编辑 Agent'}</h3>
+              <button className={styles.iconButton} onClick={() => s.setProfileDraft(null)} aria-label="关闭">
+                <StudioIcon name="x" size={16} />
+              </button>
+            </header>
+            <div className={styles.dialogBody}>
+              <div className={styles.row2}>
+                <label className={styles.field}>名字
+                  <input autoFocus value={s.profileDraft.name} onChange={(event) => updateProfile({ name: event.target.value })} />
+                </label>
+                <label className={styles.field}>显示名
+                  <input value={s.profileDraft.displayName} onChange={(event) => updateProfile({ displayName: event.target.value })} />
+                </label>
+              </div>
+              <label className={styles.field}>职责
                 <input value={s.profileDraft.description} onChange={(event) => updateProfile({ description: event.target.value })} />
               </label>
               <label className={styles.field}>角色提示词
                 <textarea rows={5} value={s.profileDraft.rolePrompt} onChange={(event) => updateProfile({ rolePrompt: event.target.value })} />
               </label>
-              <label className={styles.field}>默认任务
-                <textarea rows={3} value={s.profileDraft.defaultTask} onChange={(event) => updateProfile({ defaultTask: event.target.value })} />
+              <label className={styles.field}>默认任务（可留空，模型根据对话决定）
+                <textarea rows={2} value={s.profileDraft.defaultTask} onChange={(event) => updateProfile({ defaultTask: event.target.value })} />
               </label>
               <label className={styles.field}>Preset
                 <select value={s.profileDraft.presetId ?? ''} onChange={(event) => updateProfile({ presetId: event.target.value === '' ? undefined : event.target.value })}>
@@ -80,7 +134,7 @@ export function AgentStudioSettings({ studio }: AgentStudioSettingsProps): JSX.E
                   {s.presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
                 </select>
               </label>
-              <div className={styles.row}>
+              <div className={styles.row2}>
                 <label className={styles.field}>Provider
                   <select
                     value={s.profileDraft.model?.provider ?? ''}
@@ -107,7 +161,7 @@ export function AgentStudioSettings({ studio }: AgentStudioSettingsProps): JSX.E
                   </select>
                 </label>
               </div>
-              <div className={styles.row}>
+              <div className={styles.row2}>
                 <label className={styles.field}>Context
                   <select value={s.profileDraft.context} onChange={(event) => updateProfile({ context: event.target.value === 'fork' ? 'fork' : 'fresh' })}>
                     <option value="fresh">fresh（不带历史）</option>
@@ -118,63 +172,60 @@ export function AgentStudioSettings({ studio }: AgentStudioSettingsProps): JSX.E
                   <input type="number" min={0} max={8} value={s.profileDraft.maxDepth} onChange={(event) => updateProfile({ maxDepth: Number(event.target.value) })} />
                 </label>
               </div>
-              <div className={styles.actions}>
-                <button className={styles.primary} disabled={s.busy} onClick={s.saveProfile}>保存</button>
-                <button className={styles.secondary} onClick={() => s.setProfileDraft(null)}>关闭</button>
-              </div>
             </div>
-          )}
+            <footer className={styles.dialogFoot}>
+              <button className={styles.secondary} onClick={() => s.setProfileDraft(null)}>取消</button>
+              <button className={styles.primary} disabled={s.busy} onClick={s.saveProfile}>保存</button>
+            </footer>
+          </div>
         </div>
       )}
 
-      {s.tab === 'teams' && (
-        <div className={styles.columns}>
-          <div className={styles.list}>
-            {s.teams.map((team) => (
-              <article key={team.id} className={styles.card}>
-                <div className={styles.cardHead}>
-                  <strong>{team.name}</strong>
-                  <span className={styles.code}>{team.members.length} 人</span>
-                </div>
-                <p className={styles.cardText}>{team.description || '（无描述）'}</p>
-                <p className={styles.cardMeta}>{team.members.map((member) => member.name).join(' · ')}</p>
-                <div className={styles.actions}>
-                  <button className={styles.secondary} onClick={() => s.setTeamDraft(team)}>编辑</button>
-                  <button className={styles.danger} onClick={() => s.removeTeam(team.id)}>删除</button>
-                </div>
-              </article>
-            ))}
-            {s.teams.length === 0 && <p className={styles.empty}>还没有团队。点右上角新建。</p>}
-          </div>
-
-          {s.teamDraft !== null && (
-            <div className={styles.editor}>
+      {s.teamDraft !== null && (
+        <div className={styles.overlay} onMouseDown={(event) => { if (event.target === event.currentTarget) s.setTeamDraft(null) }}>
+          <div className={styles.dialog} role="dialog" aria-modal="true" aria-label="编辑团队">
+            <header className={styles.dialogHead}>
+              <h3>{s.teamDraft.id === '' ? '新建团队' : '编辑团队'}</h3>
+              <button className={styles.iconButton} onClick={() => s.setTeamDraft(null)} aria-label="关闭">
+                <StudioIcon name="x" size={16} />
+              </button>
+            </header>
+            <div className={styles.dialogBody}>
               <label className={styles.field}>团队名
-                <input value={s.teamDraft.name} onChange={(event) => s.setTeamDraft({ ...s.teamDraft!, name: event.target.value })} />
+                <input autoFocus value={s.teamDraft.name} onChange={(event) => updateTeam({ name: event.target.value })} />
               </label>
               <label className={styles.field}>描述
-                <textarea rows={3} value={s.teamDraft.description} onChange={(event) => s.setTeamDraft({ ...s.teamDraft!, description: event.target.value })} />
+                <textarea rows={2} value={s.teamDraft.description} onChange={(event) => updateTeam({ description: event.target.value })} />
               </label>
               <div className={styles.field}>成员
-                <div className={styles.actions}>
+                <div className={styles.memberAdd}>
                   {s.profiles.map((profile) => (
-                    <button key={profile.id} className={styles.secondary} onClick={() => s.addMember(profile)}>+ {profile.displayName}</button>
+                    <button key={profile.id} className={styles.secondary} onClick={() => s.addMember(profile)}>
+                      <StudioIcon name="plus" size={13} />
+                      {profile.displayName}
+                    </button>
                   ))}
                 </div>
-                {s.teamDraft.members.map((member) => (
-                  <div key={member.id} className={styles.memberRow}>
-                    <span>{member.displayName}（{member.name}）</span>
-                    <span className={styles.cardMeta}>{member.model?.model ?? '继承模型'}</span>
-                    <button className={styles.danger} onClick={() => s.removeMember(member.id)}>移除</button>
-                  </div>
-                ))}
-              </div>
-              <div className={styles.actions}>
-                <button className={styles.primary} disabled={s.busy} onClick={s.saveTeam}>保存</button>
-                <button className={styles.secondary} onClick={() => s.setTeamDraft(null)}>关闭</button>
+                <div className={styles.memberList}>
+                  {s.teamDraft.members.map((member) => (
+                    <div key={member.id} className={styles.memberRow}>
+                      <span className={styles.memberIcon}><StudioIcon name="bot" size={14} /></span>
+                      <span className={styles.memberName}>{member.displayName}<code>{member.name}</code></span>
+                      <span className={styles.memberModel}>{member.model?.model ?? '继承模型'}</span>
+                      <button className={styles.iconButtonDanger} onClick={() => s.removeMember(member.id)} aria-label="移除">
+                        <StudioIcon name="trash" size={14} />
+                      </button>
+                    </div>
+                  ))}
+                  {s.teamDraft.members.length === 0 && <p className={styles.empty}>还没有成员，从上面添加。</p>}
+                </div>
               </div>
             </div>
-          )}
+            <footer className={styles.dialogFoot}>
+              <button className={styles.secondary} onClick={() => s.setTeamDraft(null)}>取消</button>
+              <button className={styles.primary} disabled={s.busy} onClick={s.saveTeam}>保存</button>
+            </footer>
+          </div>
         </div>
       )}
     </section>
