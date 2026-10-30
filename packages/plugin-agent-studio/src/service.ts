@@ -459,3 +459,42 @@ export class AgentStudioService extends TypertRemoteService {
     }))
   }
 }
+
+/** 手工复刻 @Remote 产物；清单必须与 client 端 descriptors 的 method 名一致。 */
+const REMOTE_METHODS = '@deepseek-ai/dsh-typert-protocol/remote-methods'
+
+function markRemoteMethods(prototype: object, methods: readonly string[]): void {
+  Object.defineProperty(prototype, REMOTE_METHODS, {
+    configurable: true,
+    value: Object.freeze({
+      version: 1,
+      methods: Object.freeze(
+        methods.map((method) =>
+          Object.freeze({ method, invocation: Object.freeze({ kind: 'direct' as const }) }),
+        ),
+      ),
+    }),
+  })
+}
+
+markRemoteMethods(AgentStudioService.prototype, [
+  'listProfiles',
+  'saveProfile',
+  'deleteProfile',
+  'listTeams',
+  'saveTeam',
+  'deleteTeam',
+  'listModels',
+  'listPresets',
+  'getCapabilities',
+  'getBinding',
+  'setBinding',
+  'launch',
+  'listRoster',
+])
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    agentStudio: AgentStudioService
+  }
+}

@@ -16,9 +16,10 @@ export const name = '@zzerx/dsh-plugin-agent-studio'
 export const inject = ['storageDomain']
 
 export async function apply(ctx: Context): Promise<void> {
-  const domain = await ctx.storageDomain.open(agentStudioDomain)
+  let domain: Awaited<ReturnType<typeof ctx.storageDomain.open>> | undefined
   try {
-    ctx.effect(() => () => { void domain.close() })
+    domain = await ctx.storageDomain.open(agentStudioDomain)
+    ctx.effect(() => () => { void domain?.close() })
     const service = new AgentStudioService(ctx, { domain })
     await service.ready()
 
@@ -49,7 +50,7 @@ export async function apply(ctx: Context): Promise<void> {
       }
     })
   } catch (error) {
-    void domain.close()
+    void domain?.close()
     throw error
   }
 }
