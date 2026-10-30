@@ -146,9 +146,9 @@
 .option {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   width: 100%;
-  min-height: 34px;
+  min-height: 40px;
   padding: 5px 7px;
   border: 0;
   border-radius: var(--dsw-radius-md);
@@ -176,7 +176,12 @@
   display: inline-flex;
   flex: none;
   align-items: center;
-  color: var(--dsw-alias-label-caption);
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
 }
 
 .optionName {

@@ -64,7 +64,7 @@ export function AgentStudioChip({ sessionId, studio }: AgentStudioChipProps): JS
 
             {chip.query.trim() === '' && (
               <button className={styles.option} onClick={chip.selectNone}>
-                <span className={styles.optionIcon}><StudioIcon name="box" size={15} /></span>
+                <span className={styles.optionIcon}><StudioIcon name="box" size={16} /></span>
                 <span className={styles.optionCopy}>
                   <span className={styles.optionName}>默认</span>
                   <span className={styles.optionMeta}>不启用智能体工坊</span>
@@ -81,7 +81,7 @@ export function AgentStudioChip({ sessionId, studio }: AgentStudioChipProps): JS
             )}
             {chip.visibleProfiles.map((profile) => (
               <button key={profile.id} className={styles.option} onClick={() => chip.selectProfile(profile)}>
-                <span className={styles.optionIcon}><StudioIcon name="box" size={15} /></span>
+                <span className={styles.optionIcon}><StudioIcon name="box" size={16} /></span>
                 <span className={styles.optionCopy}>
                   <span className={styles.optionName}>{profile.displayName}</span>
                   <span className={styles.optionMeta}>{profile.model?.model ?? '继承模型'}</span>
@@ -103,7 +103,7 @@ export function AgentStudioChip({ sessionId, studio }: AgentStudioChipProps): JS
             )}
             {chip.visibleTeams.map((team) => (
               <button key={team.id} className={styles.option} onClick={() => chip.selectTeam(team)}>
-                <span className={styles.optionIcon}><StudioIcon name="boxes" size={15} /></span>
+                <span className={styles.optionIcon}><StudioIcon name="boxes" size={16} /></span>
                 <span className={styles.optionCopy}>
                   <span className={styles.optionName}>{team.name}</span>
                   <span className={styles.optionMeta}>{team.members.map((member) => member.name).join(' · ')}</span>
@@ -121,7 +121,7 @@ export function AgentStudioChip({ sessionId, studio }: AgentStudioChipProps): JS
             {chip.busy && <p className={styles.status}>保存中…</p>}
             {chip.error !== '' && <p className={styles.error}>{chip.error}</p>}
             {chip.query.trim() === '' && (
-              <p className={styles.hint}>选中后，模型会根据对话自己决定何时调用智能体 / 创建团队；不需要你填任务。</p>
+              <p className={styles.hint}>选中后，模型会根据对话自己决定何时调用智能体 / 创建团队。</p>
             )}
           </div>
         </>
@@ -146,7 +146,7 @@ export function AgentStudioChip({ sessionId, studio }: AgentStudioChipProps): JS
                     <div className={styles.pickerList}>
                       {chip.matchedProfiles.map((profile) => (
                         <button key={profile.id} className={styles.option} onClick={() => chip.selectProfile(profile)}>
-                          <span className={styles.optionIcon}><StudioIcon name="box" size={15} /></span>
+                          <span className={styles.optionIcon}><StudioIcon name="box" size={16} /></span>
                           <span className={styles.optionCopy}>
                             <span className={styles.optionName}>{profile.displayName}</span>
                             <span className={styles.optionMeta}>{profile.description || profile.name}</span>
@@ -163,7 +163,7 @@ export function AgentStudioChip({ sessionId, studio }: AgentStudioChipProps): JS
                     <div className={styles.pickerList}>
                       {chip.matchedTeams.map((team) => (
                         <button key={team.id} className={styles.option} onClick={() => chip.selectTeam(team)}>
-                          <span className={styles.optionIcon}><StudioIcon name="boxes" size={15} /></span>
+                          <span className={styles.optionIcon}><StudioIcon name="boxes" size={16} /></span>
                           <span className={styles.optionCopy}>
                             <span className={styles.optionName}>{team.name}</span>
                             <span className={styles.optionMeta}>{team.description || team.members.map((member) => member.name).join(' · ')}</span>

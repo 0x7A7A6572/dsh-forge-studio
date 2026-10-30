@@ -63,7 +63,7 @@ export function AgentStudioSettings({ studio }: AgentStudioSettingsProps): JSX.E
         {s.error === '' && s.profiles.length === 0 && <p className={styles.empty}>还没有智能体。点右上角新建。</p>}
         {s.profiles.map((profile) => (
           <article key={profile.id} className={styles.row}>
-            <span className={styles.rowIcon}><StudioIcon name="box" size={17} /></span>
+            <span className={styles.rowIcon}><StudioIcon name="box" size={18} /></span>
             <span className={styles.rowBody}>
               <span className={styles.rowTitle}>
                 <strong>{profile.displayName}</strong>
@@ -96,7 +96,7 @@ export function AgentStudioSettings({ studio }: AgentStudioSettingsProps): JSX.E
         {s.error === '' && s.teams.length === 0 && <p className={styles.empty}>还没有团队。把智能体组合起来即可。</p>}
         {s.teams.map((team) => (
           <article key={team.id} className={styles.row}>
-            <span className={styles.rowIcon}><StudioIcon name="boxes" size={17} /></span>
+            <span className={styles.rowIcon}><StudioIcon name="boxes" size={18} /></span>
             <span className={styles.rowBody}>
               <span className={styles.rowTitle}>
                 <strong>{team.name}</strong>
