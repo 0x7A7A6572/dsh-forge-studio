@@ -118,8 +118,10 @@ describe('agent studio wander (卡16 core invariants)', () => {
       expect(isFloorCell(grid, col, row), `seat ${seat.x},${seat.y} target kind`).toBe(true)
       expect(planPath(grid, seat, target!)).not.toBeNull()
     }
-    // 连接通道正向断言：只允许 kind===2 的 carve 格，总代价 ≤2（旧实现横穿 A/C 工位）。
-    expect(WALK_GRID_CONNECTOR_COST).toBeLessThanOrEqual(2)
+    // 连接通道正向断言：只允许 kind===2 的 carve 格，总代价 ≤3（暖沙地板单色判定后
+    // 家具严格 blocked，连通工位边缘口袋需 3 格；超过预算的孤立口袋生成期降级为 blocked，
+    // 不横穿工位内部——旧实现横穿 A/C 工位的问题仍然被卡住）。
+    expect(WALK_GRID_CONNECTOR_COST).toBeLessThanOrEqual(3)
     for (const cell of WALK_GRID_CONNECTOR) {
       expect(grid.kind[cell]).toBe(2)
       expect(grid.blocked[cell]).toBe(0)

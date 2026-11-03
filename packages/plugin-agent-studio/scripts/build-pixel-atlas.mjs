@@ -894,7 +894,7 @@ function resolveWorkerDir() {
   throw new Error('worker layers not found (.agents/tmp/pixel-assets/worker)')
 }
 
-/** 层合成（纯函数）：地板铺满 + 24 行周期下延到 224，其余层按序叠加。 */
+/** 层合成（纯函数）：地板层整幅铺满（自带白墙/墙脚线/地板/底部收白），其余层按序叠加。 */
 function composeWorkerBg() {
   const workerDir = resolveWorkerDir()
   const W = 256
@@ -912,10 +912,6 @@ function composeWorkerBg() {
     }
   }
   blit(decodePng(readFileSync(join(workerDir, '地板.png'))))
-  for (let y = 160; y < H; y++) {
-    const src = (y - 24) * W * 4
-    bg.copy(bg, y * W * 4, src, src + W * 4)
-  }
   for (const name of ['隔断外墙', '机房', 'leader区域', '办公区', '外部摆件']) {
     blit(decodePng(readFileSync(join(workerDir, `${name}.png`))))
   }
@@ -945,7 +941,7 @@ function runComposeBg({ paths }) {
   writeIfChanged(join(scriptDir, 'pixel-office.placement.json'), JSON.stringify(placement, null, 1) + '\n')
   writeSeatsGenerated(placement)
   if (writeIfChanged(join(paths.outDir, 'pixel-office.bg.png'), bgPng)) console.log('[compose-bg] bg written')
-  console.log('[compose-bg] layers composited (floor extended to 224)')
+  console.log('[compose-bg] layers composited (地板整幅：白墙 + 暖沙地板 + 底部收白)')
 }
 
 function buildSeatsGeneratedTs(placement) {
@@ -1049,11 +1045,15 @@ function writeBgVerifyImages(bg, refPng, eraseRects, outDir) {
 const WALK_GRID_CARVE_MAX_STEPS = 6
 /** 单座位出座通道允许的「新增 carve 格」上限。 */
 const WALK_GRID_EXIT_MAX_COST = 2
-/** 连接通道（地板分量之间）允许的「新增 carve 格」总代价上限。 */
-const WALK_GRID_CONNECTOR_MAX_COST = 2
+/** 连接通道（地板分量之间）允许的「新增 carve 格」总代价上限。
+ *  暖沙地板（单色判定）后家具严格 blocked，工位内部走道成为小分量；
+ *  实测需 3 格（右块 C/D 排间走道 2 格 + leader 区右口袋 1 格），仍远小于横穿整排工位。 */
+const WALK_GRID_CONNECTOR_MAX_COST = 3
 
-/** bg 纯地板判定：地板色集合内像素占比 ≥ 阈值（Lead 取证口径）。 */
-const WALK_FLOOR_COLORS = new Set(['41a6f6', '29366f', '73eff7', '34415b', '3b5dc9'])
+/** bg 纯地板判定：地板色集合内像素占比 ≥ 阈值（Lead 取证口径）。
+ *  暖沙水磨石地板（ffcd75 底 + 白/橙碎点）：白墙 f4f4f4 与家具主色都不在集合内，
+ *  墙区/隔断/桌面自然 blocked；碎点稀疏不破 60% 占比。 */
+const WALK_FLOOR_COLORS = new Set(['ffcd75'])
 const WALK_FLOOR_RATIO = 0.6
 /** 地板带起点：canvas 上方是天空/墙/接待台，不参与游走。 */
 const WALK_FLOOR_MIN_Y = 24
@@ -1324,14 +1324,36 @@ function runWalkGrid({ paths, check = false }) {
       console.error(`[walk-grid] FAIL: cannot connect ${comps.length} walkable components`)
       process.exit(1)
     }
-    connectorCost += linked.cost
-    if (connectorCost > WALK_GRID_CONNECTOR_MAX_COST) {
-      console.error(
-        `[walk-grid] FAIL: connector total cost ${connectorCost} > ${WALK_GRID_CONNECTOR_MAX_COST} ` +
-          `(pass ${connectorPass}: cost=${linked.cost} path=${formatPath(linked.path)})`,
+    if (connectorCost + linked.cost > WALK_GRID_CONNECTOR_MAX_COST) {
+      // 预算用尽：把「不含座位的孤立地板口袋」降级为 blocked（pickTarget 按 planPath
+      // 可达性过滤，游走者永远不会选它们），避免为连通口袋而 carve 横穿工位；
+      // 含座位的分量不在降级之列——那种情况仍然 FAIL（座位被困是真问题）。
+      const demoted = []
+      for (let id = 0; id < comps.length; id++) {
+        if (id === mainId) continue
+        if (comps[id].some((k) => kind[k] === WALK_KIND_SEAT)) continue
+        for (const k of comps[id]) {
+          if (kind[k] === WALK_KIND_FLOOR) {
+            kind[k] = WALK_KIND_BLOCKED
+            demoted.push(k)
+          }
+        }
+      }
+      if (demoted.length === 0) {
+        console.error(
+          `[walk-grid] FAIL: connector total cost ${connectorCost + linked.cost} > ${WALK_GRID_CONNECTOR_MAX_COST} ` +
+            `(pass ${connectorPass}: cost=${linked.cost} path=${formatPath(linked.path)})`,
+        )
+        process.exit(1)
+      }
+      ;({ comp, comps } = walkComponents(kind, COLS, ROWS))
+      console.log(
+        `[walk-grid] connector budget reached: demoted ${demoted.length} orphan floor cells ` +
+          `(${formatPath(demoted)}) (components=${comps.length})`,
       )
-      process.exit(1)
+      continue
     }
+    connectorCost += linked.cost
     for (const k of linked.path) {
       if (kind[k] === WALK_KIND_BLOCKED) {
         kind[k] = WALK_KIND_CARVE

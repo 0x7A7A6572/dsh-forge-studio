@@ -4,8 +4,8 @@
   "height": 224,
   "cell": 8
  },
- "bgSha256": "a9ea70826f5a6450213379cd02a8a0e3583cf8cb23a5a57fcc8c7687b4878a8c",
- "layersSha256": "f2644c2ea716a3d788c16f726b3287d247b387914dabc466aeae39d57b6f291e",
+ "bgSha256": "b1a8cc745152c3aa94934d22697f70f5b244b96cd34fc1ccbb4f6f81a0672ac7",
+ "layersSha256": "8633d0d130e434600602f60abeb75cc8481a8aad11a4ab10d9b653da0e55d18e",
  "seats": {
   "A1": {
    "order": 1,
