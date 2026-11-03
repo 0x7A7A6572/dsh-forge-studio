@@ -1,5 +1,7 @@
 import type { AgentStudioRemote } from '../../core/remote.ts'
 import { StudioIcon } from '../../components/StudioIcon.tsx'
+import { PixelAvatar } from '../../components/PixelAvatar.tsx'
+import { assignCharacters, BUILTIN_AVATAR_THEME } from '../../core/pixel/avatar-sprite.ts'
 import { useAgentStudioChip } from './useAgentStudioChip.ts'
 import styles from './AgentStudioChip.module.css'
 
@@ -36,6 +38,18 @@ function SearchBox({ value, onChange }: SearchBoxProps): JSX.Element {
 
 export function AgentStudioChip({ sessionId, studio }: AgentStudioChipProps): JSX.Element {
   const chip = useAgentStudioChip(studio, sessionId ?? '')
+  // 组合去重（§6.6）：按 profile 顺序确定性分配 (char, accent)，相邻不撞。
+  const avatarByProfileId = new Map(
+    assignCharacters(chip.profiles.map((profile) => ({ id: profile.id, seed: profile.avatarSeed }))).map(
+      (assignment) => [
+        assignment.memberId,
+        {
+          entry: BUILTIN_AVATAR_THEME.characters[assignment.charIndex],
+          accent: assignment.accent,
+        },
+      ],
+    ),
+  )
   const selectedProfile = chip.binding.mode === 'solo'
     ? chip.profiles.find((profile) => profile.id === chip.binding.profileId)?.id
     : undefined
@@ -85,7 +99,15 @@ export function AgentStudioChip({ sessionId, studio }: AgentStudioChipProps): JS
             )}
             {chip.visibleProfiles.map((profile) => (
               <button key={profile.id} className={styles.option} onClick={() => chip.selectProfile(profile)}>
-                <span className={styles.optionIcon}><StudioIcon name="box" size={16} /></span>
+                <span className={styles.optionIcon}>
+                  <PixelAvatar
+                    seed={profile.avatarSeed}
+                    fallbackId={profile.id}
+                    size={28}
+                    entry={avatarByProfileId.get(profile.id)?.entry}
+                    accent={avatarByProfileId.get(profile.id)?.accent}
+                  />
+                </span>
                 <span className={styles.optionCopy}>
                   <span className={styles.optionName}>{profile.displayName}</span>
                   <span className={styles.optionMeta}>{profile.model?.model ?? '继承模型'}</span>

@@ -1,0 +1,44 @@
+.layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* 名字 + 状态同行共用一枚药丸：状态文字衬底，避免直接叠在场景上看不清。 */
+.label {
+  position: absolute;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  transform: translate(-50%, -100%);
+  background: color-mix(in srgb, var(--dsw-alias-bg-base) 72%, transparent);
+  border-radius: 3px;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+
+.name {
+  color: var(--dsw-alias-label-primary);
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.state {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 9px;
+  line-height: 14px;
+}
+
+.state[data-state='working'] {
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.state[data-state='error'] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.state[data-state='done'] {
+  color: var(--dsw-alias-state-success-primary);
+}
+

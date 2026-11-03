@@ -1,0 +1,13 @@
+.container {
+  width: 100%;
+  /* 自适应父容器：会话页签由 .scene 限宽 512，右侧栏正文吃满栏宽。 */
+  max-width: 100%;
+  aspect-ratio: 256 / 224;
+}
+
+.canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}

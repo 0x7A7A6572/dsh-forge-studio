@@ -21,6 +21,12 @@ function run(bin, args) {
   })
 }
 
+// node 脚本不能走 shell：process.execPath 含空格，shell 拼接会截断路径。
+execFileSync(process.execPath, [join(root, 'scripts', 'ensure-pixel-assets.mjs')], {
+  cwd: root,
+  stdio: 'inherit',
+})
+
 run('npx', ['tsc', '-p', join(root, 'tsconfig.json')])
 run('npx', ['tsdown'])
 

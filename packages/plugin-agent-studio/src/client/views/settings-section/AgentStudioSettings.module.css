@@ -449,3 +449,14 @@
     padding: 12px;
   }
 }
+
+.seedRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.seedRow canvas,
+.seedRow span {
+  border-radius: 6px;
+}
+

@@ -1,6 +1,7 @@
 import type { AgentProfile, TeamProfile } from '../../../types.ts'
 import type { AgentStudioRemote } from '../../core/remote.ts'
 import { StudioIcon } from '../../components/StudioIcon.tsx'
+import { PixelAvatar } from '../../components/PixelAvatar.tsx'
 import { useAgentStudioSettings } from './useAgentStudioSettings.ts'
 import styles from './AgentStudioSettings.module.css'
 
@@ -67,7 +68,7 @@ export function AgentStudioSettings({ studio }: AgentStudioSettingsProps): JSX.E
         {s.error === '' && s.profiles.length === 0 && <p className={styles.empty}>还没有智能体。点右上角新建。</p>}
         {s.profiles.map((profile) => (
           <article key={profile.id} className={styles.row}>
-            <span className={styles.rowIcon}><StudioIcon name="box" size={18} /></span>
+            <span className={styles.rowIcon}><PixelAvatar seed={profile.avatarSeed} fallbackId={profile.id} size={32} /></span>
             <span className={styles.rowBody}>
               <span className={styles.rowTitle}>
                 <strong>{profile.displayName}</strong>
@@ -189,6 +190,32 @@ export function AgentStudioSettings({ studio }: AgentStudioSettingsProps): JSX.E
                 <label className={styles.field}>委派深度
                   <input type="number" min={0} max={8} value={s.profileDraft.maxDepth} onChange={(event) => updateProfile({ maxDepth: Number(event.target.value) })} />
                 </label>
+              </div>
+              <div className={styles.row2}>
+                <label className={styles.field}>头像种子
+                  <input
+                    value={s.profileDraft.avatarSeed}
+                    onChange={(event) => updateProfile({ avatarSeed: event.target.value })}
+                    placeholder="default = 按 profile.id 生成"
+                  />
+                </label>
+                <div className={styles.field}>
+                  头像预览
+                  <div className={styles.seedRow}>
+                    <PixelAvatar
+                      seed={s.profileDraft.avatarSeed}
+                      fallbackId={s.profileDraft.id === '' ? 'draft' : s.profileDraft.id}
+                      size={32}
+                    />
+                    <button
+                      type="button"
+                      className={styles.secondary}
+                      onClick={() => updateProfile({ avatarSeed: Math.random().toString(36).slice(2, 8) })}
+                    >
+                      随机
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
             <footer className={styles.dialogFoot}>

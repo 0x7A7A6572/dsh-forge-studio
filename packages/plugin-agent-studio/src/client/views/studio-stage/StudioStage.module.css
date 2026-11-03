@@ -1,0 +1,83 @@
+.root {
+  position: relative;
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+  width: 100%;
+  padding: 12px;
+  box-sizing: border-box;
+}
+
+.scene {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  /* 与 canvas 容器同框：覆盖层百分比相对它定位（P1-3）。 */
+  max-width: 512px;
+}
+
+/* 点场景空白关闭详情卡：整块透明按钮垫在热区层之下。 */
+.dismiss {
+  position: absolute;
+  inset: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
+
+.rail {
+  flex: 0 0 auto;
+}
+
+.error {
+  color: var(--dsw-alias-state-error-primary);
+  font-size: var(--dsh-content-font-size);
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 16px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.emptyText {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: var(--dsh-content-font-size);
+}
+
+.refresh {
+  padding: 4px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.refresh:disabled {
+  color: var(--dsw-alias-label-caption);
+  cursor: default;
+}
+
+/* 右侧栏正文：窄栏纵向排布（画布吃满宽度，成员列表落到下方），<768px 全屏也不横向溢出。 */
+.pane {
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+}
+
+.paneScene {
+  max-width: 100%;
+}
+
+.pane aside {
+  width: 100%;
+  max-height: 220px;
+}

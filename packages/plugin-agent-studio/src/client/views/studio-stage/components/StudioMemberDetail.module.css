@@ -1,0 +1,330 @@
+.card {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(300px, calc(100% - 16px));
+  max-height: 80%;
+  overflow: auto;
+  padding: 12px;
+  box-sizing: border-box;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--dsw-alias-bg-base) 55%, transparent);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.name {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 16%, transparent);
+  color: var(--dsw-alias-state-business-primary);
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.close {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 14px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.close:hover {
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+}
+
+.sessionTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-caption);
+  font-size: 11px;
+  line-height: 15px;
+  overflow-wrap: anywhere;
+}
+
+.status {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 15px;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 10px;
+  margin: 0;
+}
+
+.fact {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.fact dt {
+  color: var(--dsw-alias-label-caption);
+  font-size: 10px;
+  line-height: 13px;
+}
+
+.fact dd {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 11px;
+  line-height: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.description {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+
+.error {
+  margin: 0;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 11px;
+  line-height: 15px;
+  overflow-wrap: anywhere;
+}
+
+.muted {
+  margin: 0;
+  color: var(--dsw-alias-label-caption);
+  font-size: 11px;
+  line-height: 15px;
+}
+
+.catalogNotice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.retry {
+  flex: 0 0 auto;
+  padding: 1px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  font-size: 11px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.retry:disabled {
+  color: var(--dsw-alias-label-caption);
+  cursor: default;
+}
+
+.tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+.tasksTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 10px;
+  line-height: 14px;
+  font-weight: 600;
+}
+
+.taskList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.taskItem {
+  border-radius: 6px;
+}
+
+.taskItem:hover {
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.taskButton {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  grid-template-areas:
+    'dot label tokens duration arrow'
+    'dot secondary secondary secondary secondary';
+  align-items: center;
+  gap: 1px 6px;
+  width: 100%;
+  padding: 5px 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.taskButton:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.taskDot {
+  grid-area: dot;
+}
+
+.taskLabel {
+  grid-area: label;
+  color: var(--dsw-alias-label-primary);
+  font-size: 11px;
+  line-height: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.taskSecondary {
+  grid-area: secondary;
+  color: var(--dsw-alias-label-caption);
+  font-size: 10px;
+  line-height: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.taskTokens {
+  grid-area: tokens;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 10px;
+  line-height: 15px;
+  white-space: nowrap;
+}
+
+.taskDuration {
+  grid-area: duration;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 10px;
+  line-height: 15px;
+  white-space: nowrap;
+}
+
+.taskArrow {
+  grid-area: arrow;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+  line-height: 15px;
+}
+
+/* 共享任务行：不可点击（任务不是会话），无 hover 交互，只做信息展示。 */
+.sharedTaskList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sharedTaskItem {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 1px 6px;
+  padding: 4px;
+  border-radius: 6px;
+}
+
+.sharedTaskDot {
+  grid-column: 1;
+  grid-row: 1 / span 3;
+  margin-top: 2px;
+}
+
+.sharedTaskLabel {
+  grid-column: 2;
+  color: var(--dsw-alias-label-primary);
+  font-size: 11px;
+  line-height: 15px;
+  overflow-wrap: anywhere;
+}
+
+.sharedTaskStatus {
+  grid-column: 3;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 10px;
+  line-height: 15px;
+  white-space: nowrap;
+}
+
+.sharedTaskItem[data-status='in_progress'] .sharedTaskStatus {
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.sharedTaskItem[data-status='completed'] .sharedTaskStatus {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.sharedTaskItem[data-status='deleted'] .sharedTaskStatus {
+  color: var(--dsw-alias-label-caption);
+}
+
+.sharedTaskOwner {
+  grid-column: 2;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 10px;
+  line-height: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sharedTaskScopes {
+  grid-column: 2 / -1;
+  color: var(--dsw-alias-label-caption);
+  font-size: 10px;
+  line-height: 13px;
+  overflow-wrap: anywhere;
+}
