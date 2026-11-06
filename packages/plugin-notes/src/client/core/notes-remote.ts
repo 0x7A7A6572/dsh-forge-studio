@@ -481,5 +481,7 @@ export async function mountNotesRemote(ctx: Context): Promise<() => Promise<void
 }
 
 export function notesOf(ctx: Context): NotesRemote {
-  return (ctx.remote as ClientRemote & { notes: NotesRemote }).notes
+  // as unknown as：transitive 类型导入会引入第二份 api-gateway ClientRemote 实例
+  // （agentPresets/commands/llm 等增强键分裂），运行时 faces 一致，TS2352 建议先转 unknown。
+  return (ctx.remote as unknown as ClientRemote & { notes: NotesRemote }).notes
 }
