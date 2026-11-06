@@ -2,6 +2,7 @@
  * 成员详情的纯映射：脚底→覆盖层百分比、catalog 行、角色/状态/工位文案。
  * 与官方 Team 面板同口径；纯函数，不 import react。
  */
+import type { StudioSubagentTarget } from '../capabilities.ts'
 import type { PixelPoint, StudioSlot, StudioVisualState } from './scene-types.ts'
 import {
   SUBAGENT_ACTIVITY_TEXT,
@@ -195,5 +196,48 @@ export function mapCatalogRows(input: StudioCatalogInput): StudioCatalogView {
     ...(phase === 'error' && input.errorMessage !== undefined ? { errorMessage: input.errorMessage } : {}),
     running: rows.some((row) => row.activity === 'running'),
     rows,
+  }
+}
+
+/** 成员会话行的输入：title/tokens/时长由 hook 从 byId 行取好传入。 */
+export interface StudioMemberSessionInput {
+  readonly memberId: string
+  readonly memberName: string
+  readonly isLead: boolean
+  readonly leadId: string
+  readonly title?: string
+  readonly running?: boolean
+  readonly tokensText?: string
+  readonly durationText?: string
+}
+
+/** 固定「成员会话」行：catalog 行形状 + openSession 目标；与 catalog 空态无关。 */
+export type StudioMemberSessionRow = StudioCatalogRow & {
+  readonly target: string | StudioSubagentTarget
+}
+
+/**
+ * 成员卡固定的会话行：成员行 parent=leadId、child=memberId（官方工坊同公式）。
+ * lead 行走官方单参路由：同值对象会被宿主按非 subagent 会话拒成 history error。
+ */
+export function memberSessionRowOf(input: StudioMemberSessionInput): StudioMemberSessionRow {
+  const activity: StudioSubagentActivity = input.running === true ? 'running' : 'inactive'
+  const state = subagentActivityOf(activity, undefined)
+  return {
+    id: input.memberId,
+    label: input.title ?? input.memberName,
+    ...(input.title !== undefined ? { title: input.title } : {}),
+    mode: 'continuable',
+    activity: state,
+    activityText: SUBAGENT_ACTIVITY_TEXT[state],
+    secondary: [subagentModeText('continuable'), SUBAGENT_ACTIVITY_TEXT[state]]
+      .filter((value) => value !== undefined && value !== '')
+      .join(' · '),
+    ...(input.tokensText !== undefined ? { tokensText: input.tokensText } : {}),
+    ...(input.durationText !== undefined ? { durationText: input.durationText } : {}),
+    openable: true,
+    target: input.isLead
+      ? input.leadId
+      : { parentSessionId: input.leadId, childSessionId: input.memberId, mode: 'continuable' },
   }
 }

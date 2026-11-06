@@ -11,6 +11,7 @@ import {
   memberStatusOf,
   subagentDotOf,
   workstationTextOf,
+  type StudioCatalogRow,
   type StudioMemberProfileSnapshot,
 } from '../../../core/pixel/detail-model.ts'
 import {
@@ -30,6 +31,8 @@ export interface StudioMemberDetailProps {
   readonly profile?: StudioMemberProfileSnapshot
   /** lead 会话的共享任务板；成员卡按 ownerName 过滤，lead 卡全量。 */
   readonly tasks?: readonly StudioSharedTaskProjection[]
+  /** lead 会话 id：「成员会话」行的 openSession 目标。 */
+  readonly leadId: string
   readonly hooks: StudioDetailHooks
   readonly capabilities: StudioDetailCapabilities
   /** 成员名 → 头像（profile.id + 配色档）；缺省按 memberId 兜底。 */
@@ -50,6 +53,50 @@ const FOCUSABLE_SELECTOR = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(', ')
 
+/** 任务 / 会话行共用渲染：catalog 行走 openTask，「成员会话」行走 openMemberSession。 */
+function DetailTaskRows(props: {
+  readonly rows: readonly StudioCatalogRow[]
+  readonly canOpen: boolean
+  onOpen(row: StudioCatalogRow): void
+}): JSX.Element {
+  return (
+    <ul className={styles.taskList}>
+      {props.rows.map((row) => {
+        const openable = props.canOpen && row.openable
+        const secondary = props.canOpen
+          ? row.secondary
+          : [row.secondary, OPEN_SESSION_HINT].filter((part) => part !== '').join(' · ')
+        return (
+          <li key={row.id} className={styles.taskItem} data-activity={row.activity}>
+            <button
+              type="button"
+              className={styles.taskButton}
+              disabled={!openable}
+              title={
+                openable
+                  ? `打开 ${row.label}`
+                  : props.canOpen
+                    ? '外部执行没有可打开的本地会话'
+                    : '宿主未提供会话跳转能力'
+              }
+              onClick={() => props.onOpen(row)}
+            >
+              <StateDot state={subagentDotOf(row.activity)} size={10} className={styles.taskDot} />
+              <span className={styles.taskLabel}>{row.label}</span>
+              <span className={styles.taskTokens}>{row.tokensText ?? '—'}</span>
+              <span className={styles.taskDuration}>{row.durationText ?? '—'}</span>
+              <span className={styles.taskArrow} aria-hidden="true">
+                ↗
+              </span>
+              <span className={styles.taskSecondary}>{secondary}</span>
+            </button>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
 export function StudioMemberDetail(props: StudioMemberDetailProps): JSX.Element {
   const { occupant, profile, avatars, onClose } = props
   const isLead = occupant.role === 'lead'
@@ -57,6 +104,7 @@ export function StudioMemberDetail(props: StudioMemberDetailProps): JSX.Element 
     memberId: occupant.memberId,
     memberName: occupant.name,
     isLead,
+    leadId: props.leadId,
     tasks: props.tasks,
     hooks: props.hooks,
     capabilities: props.capabilities,
@@ -157,6 +205,14 @@ export function StudioMemberDetail(props: StudioMemberDetailProps): JSX.Element 
       <p className={styles.description}>{description ?? '暂无角色描述'}</p>
       {occupant.error !== undefined && <p className={styles.error}>{occupant.error}</p>}
       {detail.error !== '' && <p className={styles.error}>{detail.error}</p>}
+      <section className={styles.tasks} aria-label={isLead ? '当前会话' : '成员会话'}>
+        <h3 className={styles.tasksTitle}>{isLead ? '当前会话' : '成员会话'}</h3>
+        <DetailTaskRows
+          rows={[detail.memberSession]}
+          canOpen={detail.canOpen}
+          onOpen={() => detail.openMemberSession()}
+        />
+      </section>
       <section className={styles.tasks} aria-label="共享任务">
         <h3 className={styles.tasksTitle}>共享任务</h3>
         {detail.sharedTasks.length === 0 ? (
@@ -205,40 +261,11 @@ export function StudioMemberDetail(props: StudioMemberDetailProps): JSX.Element 
           <p className={styles.muted}>{isLead ? '还没有成员会话' : '还没有子智能体会话'}</p>
         )}
         {detail.catalog.rows.length > 0 && (
-          <ul className={styles.taskList}>
-            {detail.catalog.rows.map((row) => {
-              const openable = detail.canOpen && row.openable
-              const secondary = detail.canOpen
-                ? row.secondary
-                : [row.secondary, OPEN_SESSION_HINT].filter((part) => part !== '').join(' · ')
-              return (
-                <li key={row.id} className={styles.taskItem} data-activity={row.activity}>
-                  <button
-                    type="button"
-                    className={styles.taskButton}
-                    disabled={!openable}
-                    title={
-                      openable
-                        ? `打开 ${row.label}`
-                        : detail.canOpen
-                          ? '外部执行没有可打开的本地会话'
-                          : '宿主未提供会话跳转能力'
-                    }
-                    onClick={() => detail.openTask(row.id, row.mode)}
-                  >
-                    <StateDot state={subagentDotOf(row.activity)} size={10} className={styles.taskDot} />
-                    <span className={styles.taskLabel}>{row.label}</span>
-                    <span className={styles.taskTokens}>{row.tokensText ?? '—'}</span>
-                    <span className={styles.taskDuration}>{row.durationText ?? '—'}</span>
-                    <span className={styles.taskArrow} aria-hidden="true">
-                      ↗
-                    </span>
-                    <span className={styles.taskSecondary}>{secondary}</span>
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
+          <DetailTaskRows
+            rows={detail.catalog.rows}
+            canOpen={detail.canOpen}
+            onOpen={(row) => detail.openTask(row.id, row.mode)}
+          />
         )}
       </section>
     </section>

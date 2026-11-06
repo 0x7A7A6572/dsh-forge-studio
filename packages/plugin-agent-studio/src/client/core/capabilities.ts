@@ -17,7 +17,8 @@ export interface StudioDetailCapabilities {
   /** uiWorkspace.openSession 是否可用；false 时任务行只能浏览。 */
   readonly hasOpenSession: boolean
   refreshProjections?(sessionId: string): void
-  openSession?(target: StudioSubagentTarget): void
+  /** 宿主 SessionTarget 是 union：单参字符串开 lead 会话，对象开子会话。 */
+  openSession?(target: string | StudioSubagentTarget): void
 }
 
 export const NO_STUDIO_CAPABILITIES: StudioDetailCapabilities = {
@@ -30,7 +31,7 @@ interface StudioSessionsServiceView {
 }
 
 interface StudioWorkspaceServiceView {
-  openSession?(target: StudioSubagentTarget): void
+  openSession?(target: string | StudioSubagentTarget): void
 }
 
 /** client Context 里本面板用到的两个服务。 */
@@ -63,7 +64,7 @@ export function readStudioDetailCapabilities(host: StudioHostServicesView): Stud
       },
     } : {}),
     ...(canOpen ? {
-      openSession(target: StudioSubagentTarget): void {
+      openSession(target: string | StudioSubagentTarget): void {
         try {
           workspace?.openSession?.(target)
         } catch {

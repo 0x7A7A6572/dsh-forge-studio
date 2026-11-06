@@ -63,6 +63,8 @@ export interface StudioStageState {
   readonly selectedProfile: StudioMemberProfileSnapshot | undefined
   /** 成员名 → 头像（profile.id + 配色档），成员列表渲染用。 */
   readonly profileAvatars: Readonly<Record<string, { readonly id: string; readonly color?: number }>>
+  /** lead 会话 id（详情卡「成员会话」行的 openSession 目标）。 */
+  readonly leadId: string
   /** lead 会话的共享任务板（详情卡两块数据之一；另一块是成员子智能体目录）。 */
   readonly tasks: readonly StudioSharedTaskProjection[]
   select(memberId: string, trigger?: HTMLElement): void
@@ -334,6 +336,7 @@ export function useStudioStage(props: StudioStageProps): StudioStageState {
     selected,
     selectedProfile,
     profileAvatars,
+    leadId: roster.leadId,
     tasks: roster.tasks,
     select,
     dismiss,
