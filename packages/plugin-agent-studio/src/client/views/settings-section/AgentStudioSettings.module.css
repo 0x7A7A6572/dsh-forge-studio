@@ -455,6 +455,62 @@
   gap: 6px;
   align-items: center;
 }
+
+/* 工作预览开关行。 */
+.stagePref {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.stagePrefCopy {
+  min-width: 0;
+}
+
+.stagePrefCopy .sectionTitle {
+  margin: 0;
+}
+
+.stagePrefDesc {
+  margin: 2px 0 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.switch {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.switchOn {
+  background: var(--dsw-alias-state-business-primary);
+}
+
+.switchKnob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--dsw-alias-label-primary);
+  transition: transform 0.15s ease;
+}
+
+.switchOn .switchKnob {
+  transform: translateX(14px);
+  background: #fff;
+}
 .swatch {
   width: 18px;
   height: 18px;

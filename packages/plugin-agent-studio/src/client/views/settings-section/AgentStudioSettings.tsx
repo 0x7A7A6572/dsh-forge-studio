@@ -3,6 +3,7 @@ import type { AgentStudioRemote } from '../../core/remote.ts'
 import { StudioIcon } from '../../components/StudioIcon.tsx'
 import { PixelAvatar } from '../../components/PixelAvatar.tsx'
 import { BOT_SCHEME_HEX, BOT_TEAM_FRAME } from '../../core/pixel/bot-avatar.ts'
+import { StagePrefSwitch } from './StagePrefSwitch.tsx'
 import { useAgentStudioSettings } from './useAgentStudioSettings.ts'
 import styles from './AgentStudioSettings.module.css'
 
@@ -60,6 +61,16 @@ export function AgentStudioSettings({ studio }: AgentStudioSettingsProps): JSX.E
       </header>
 
       {s.error !== '' && <p className={styles.error} role="alert">{s.error}</p>}
+
+      <section className={styles.section}>
+        <div className={styles.stagePref}>
+          <div className={styles.stagePrefCopy}>
+            <h3 className={styles.sectionTitle}>工作预览</h3>
+            <p className={styles.stagePrefDesc}>会话头入口与像素办公室实况（团队成员、任务活动）。</p>
+          </div>
+          <StagePrefSwitch />
+        </div>
+      </section>
 
       <section className={styles.section}>
         <div className={styles.sectionHead}>

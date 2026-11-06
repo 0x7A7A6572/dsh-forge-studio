@@ -7,6 +7,7 @@ import { useCallback, useEffect, useSyncExternalStore, useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import { StudioIcon } from '../../components/StudioIcon.tsx'
 import { unwrap } from '../../core/result.ts'
+import { onStageChange, readStageEnabled } from '../../core/stage-pref.ts'
 import type { AgentStudioRemote } from '../../core/remote.ts'
 import {
   STUDIO_STAGE_KIND,
@@ -52,8 +53,10 @@ function labelOf(state: StudioToggleAction, opened: boolean): string {
   return opened ? '聚焦智能体团队' : '打开智能体团队'
 }
 
-export function StudioHeaderButton(props: StudioHeaderButtonProps): JSX.Element {
+export function StudioHeaderButton(props: StudioHeaderButtonProps): JSX.Element | null {
   const { mounted, openTabs } = props
+  // 插件设置里的「工作预览」开关：关闭即隐藏会话头入口（设置页可再打开）。
+  const stageEnabled = useSyncExternalStore(onStageChange, readStageEnabled, readStageEnabled)
   // subscribe/getSnapshot 以方法形式调用，避免把观测值对象的方法解绑。
   const subscribeMounted = useCallback(
     (listener: () => void) => mounted.subscribe(listener),
@@ -106,6 +109,9 @@ export function StudioHeaderButton(props: StudioHeaderButtonProps): JSX.Element 
       window.clearInterval(timer)
     }
   }, [sessionId, props.roster])
+
+  // 开关关闭：入口整体隐藏（所有 hooks 已执行完，符合条件返回）。
+  if (!stageEnabled) return null
 
   return (
     <Button

@@ -2,13 +2,14 @@
  * 智能体团队视图（§6.2 三件套之一）：只编排 JSX，状态与取数全部在 useStudioStage。
  * 成员列表不占版面：底部悬浮药丸按钮，点击向上弹出。
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { AgentStudioRemote } from '../../core/remote.ts'
 import {
   NO_STUDIO_CAPABILITIES,
   type StudioDetailCapabilities,
 } from '../../core/capabilities.ts'
+import { onStageChange, readStageEnabled } from '../../core/stage-pref.ts'
 import { StudioCanvas } from './components/StudioCanvas.tsx'
 import { StudioDebugLayer } from './components/StudioDebugLayer.tsx'
 import { StudioHotspots } from './components/StudioHotspots.tsx'
@@ -39,6 +40,7 @@ function EmptyState({ kind, onRefresh, busy }: { kind: StudioEmptyKind; onRefres
 }
 
 export function StudioStage(props: StudioStageProps): JSX.Element {
+  const stageEnabled = useSyncExternalStore(onStageChange, readStageEnabled, readStageEnabled)
   const state = useStudioStage(props)
   const pane = props.variant === 'pane'
   // 成员列表弹层：默认收起，底部药丸按钮 toggle。
@@ -51,6 +53,15 @@ export function StudioStage(props: StudioStageProps): JSX.Element {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [railOpen])
+  if (!stageEnabled) {
+    return (
+      <div className={pane ? `${styles.root} ${styles.pane}` : styles.root}>
+        <p className={styles.emptyText} role="status">
+          工作预览已在插件设置（智能体工坊）中关闭。
+        </p>
+      </div>
+    )
+  }
   if (state.error !== '') {
     return (
       <div className={styles.root}>

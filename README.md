@@ -10,7 +10,7 @@
 | [`@zzerx/dsh-plugin-daily-log`](packages/plugin-daily-log) | 工作报告，将git提交信息以及agent对话历史总结成报告 | 
 | [`@zzerx/dsh-plugin-memory`](packages/plugin-memory) | 记忆与进化：支持全局/项目记忆 | 
 | [`@zzerx/dsh-plugin-usage-billing`](packages/plugin-usage-billing) | 用量与计费显示 | 
-| [`@zzerx/dsh-plugin-agent-studio`](packages/plugin-agent-studio) | 智能体工坊：自定义单 Agent / 团队 Agent，会话内选择启动，每成员独立 preset/模型 |
+| [`@zzerx/dsh-plugin-agent-studio`](packages/plugin-agent-studio) | 智能体工坊：自定义单 Agent / 团队 Agent，会话内选择启动，每成员独立 preset/模型；像素办公室实时预览团队状态 |
 
 
 
@@ -61,6 +61,7 @@ packages/
   plugin-daily-log/      工作日志
   plugin-memory/         记忆与进化
   plugin-usage-billing/  用量与计费
+  plugin-agent-studio/   智能体工坊（含像素办公室工作预览）
 scripts/
   tsdown.client.mjs      客户端包共享构建预设
   client-bundle-css.spec.ts  样式编译契约与类名门禁
