@@ -106,23 +106,26 @@ function noteText(note: NoteRecord): string {
   return `${note.title || '(untitled)'}\n${note.text || ''}${meta}${laneLine}`
 }
 
+const RUN_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    startedAt: { type: 'number', required: true },
+    finishedAt: { type: 'number' },
+    ok: { type: 'boolean' },
+    summary: { type: 'string' },
+    by: { type: 'string', enum: ['user', 'schedule'] },
+  },
+} as const
+
 /** 与 domain.ts 的 lane 校验一致。 */
 const LANE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   properties: {
     status: { type: 'string', required: true, enum: [...TASK_STATUSES] },
-    run: {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        startedAt: { type: 'number', required: true },
-        finishedAt: { type: 'number' },
-        ok: { type: 'boolean' },
-        summary: { type: 'string' },
-        by: { type: 'string', enum: ['user', 'schedule'] },
-      },
-    },
+    run: RUN_SCHEMA,
+    runs: { type: 'array', items: RUN_SCHEMA },
     // 缺省 = 宿主默认预设 / 默认模型。
     agentPreset: { type: 'string' },
     model: {
@@ -163,7 +166,7 @@ const SCHEDULE_SCHEMA = {
  * 读/写工具的输出值都是整张 NoteRecord；输出校验是 additionalProperties:false，
  * 漏一个字段整次调用即判非法 —— 新增字段只改这一份。
  */
-const NOTE_OUTPUT_SCHEMA = {
+export const NOTE_OUTPUT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   properties: {

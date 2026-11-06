@@ -37,7 +37,7 @@ export interface NoteModelSelection {
 export interface NoteLane {
   readonly status: TaskStatus
   readonly run?: NoteRun
-  readonly runs?: readonly NoteRun[]
+  readonly runs?: NoteRun[]
   /** 缺省 = 宿主默认预设。 */
   readonly agentPreset?: string
   /** 缺省 = 宿主默认模型。 */
