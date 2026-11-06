@@ -39,6 +39,8 @@ export const MEMORY_NEAR_FLOOR = 0.4
 /** 交给模型判定的相似度下限。 */
 export const MEMORY_JUDGE_FLOOR = 0.2
 export const MEMORY_JUDGE_MAX_CANDIDATES = 3
+/** 桶超此数不两两连 related：无处不在的实体是 O(n²)，边落盘每边一文件。 */
+export const MEMORY_RELATED_BUCKET_CAP = 16
 
 function amountOf(value: number | undefined): number {
   return value === undefined || !Number.isFinite(value) ? 0 : Math.max(0, Math.round(value))
@@ -1126,6 +1128,7 @@ export class MemoryService extends TypertRemoteService {
   /**
    * 自动边重算：先算期望集合，再与已有自动边求差集，只写变化的几条。
    * 显式连过的边不被覆盖，也不被清理。
+   * 超限桶不连 related（MEMORY_RELATED_BUCKET_CAP），about / mentions 不受影响。
    */
   private async syncAutoEdges(): Promise<{ added: number; removed: number }> {
     const desired = new Map<string, { from: MemoryNodeRef; to: MemoryNodeRef; relation: MemoryEdgeRelation; weight: number }>()
@@ -1142,9 +1145,10 @@ export class MemoryService extends TypertRemoteService {
         else bucket.push(record.id)
       }
     }
-    // 共现：共享实体的两条记忆连 related，权重 = 共享实体数。
+    // 共现：共享实体的两条记忆连 related，权重 = 参与连边的共享实体数（超限桶不计）。
     const shared = new Map<string, number>()
     for (const ids of byEntity.values()) {
+      if (ids.length > MEMORY_RELATED_BUCKET_CAP) continue
       for (let i = 0; i < ids.length; i += 1) {
         for (let j = i + 1; j < ids.length; j += 1) {
           const id = edgeIdOf({ kind: 'memory', id: ids[i]! }, { kind: 'memory', id: ids[j]! }, 'related')
