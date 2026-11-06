@@ -23,9 +23,10 @@
 智能体与团队是**人可直接编辑的 Markdown**，改文件即生效（设置页与 agent 端读写同一目录）：
 
 ```
-agent_studio.d/
+<DSH_HOME>/storages/agent_studio/
 ├── agents/frontend-architect.md   文件名 = 智能体 id
-└── teams/frontend-squad.md        团队成员按智能体 id 引用
+├── teams/frontend-squad.md        团队成员按智能体 id 引用
+└── bindings/                      会话绑定（storage domain 管理）
 ```
 
 ```markdown

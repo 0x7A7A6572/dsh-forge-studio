@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
+  migrateLegacyRootDir,
   parseAgentMd,
   parseTeamMd,
   readAgentProfilesSync,
@@ -29,9 +30,10 @@ const AGENT: import('../packages/plugin-agent-studio/src/types.ts').AgentProfile
   updatedAt: 1_700_000_001_000,
 }
 
-function tmpPaths(): AgentDirPaths {
-  const root = join(mkdtempSync(join(tmpdir(), 'agent-studio-store-')), 'agent_studio.d')
-  return { root, agents: join(root, 'agents'), teams: join(root, 'teams') }
+/** 临时 DSH_HOME → 经 resolveAgentStudioDir 构造域目录（与生产同口径）。 */
+function tmpHome(): { home: string; paths: AgentDirPaths } {
+  const home = mkdtempSync(join(tmpdir(), 'agent-studio-store-'))
+  return { home, paths: resolveAgentStudioDir({ DSH_HOME: home }, home) }
 }
 
 describe('agent studio file store', () => {
@@ -58,7 +60,7 @@ describe('agent studio file store', () => {
   })
 
   it('lists profiles from disk and skips unparsable files', () => {
-    const paths = tmpPaths()
+    const { paths } = tmpHome()
     writeAgentFile(paths, AGENT)
     writeFileSync(join(paths.agents, 'broken.md'), '---\nname: ""\n---\n\n空名字')
     const { profiles, invalid } = readAgentProfilesSync(paths)
@@ -79,10 +81,25 @@ describe('agent studio file store', () => {
     expect(parsed).toEqual(team)
   })
 
-  it('resolves the directory from DSH_HOME and sanitizes stems', () => {
-    expect(resolveAgentStudioDir({ DSH_HOME: 'X:/home' }, '/home/me').root).toBe(join('X:/home', 'agent_studio.d'))
-    expect(resolveAgentStudioDir({}, '/home/me').root).toBe(join('/home/me', '.dsh', 'agent_studio.d'))
+  it('resolves the directory under storages/<domain> and sanitizes stems', () => {
+    expect(resolveAgentStudioDir({ DSH_HOME: 'X:/home' }, '/home/me').root).toBe(
+      join('X:/home', 'storages', 'agent_studio'),
+    )
+    expect(resolveAgentStudioDir({}, '/home/me').root).toBe(
+      join('/home/me', '.dsh', 'storages', 'agent_studio'),
+    )
     expect(safeStem('a/b:c*.md')).toBe('a-b-c-.md')
     expect(safeStem('   ')).toBe('agent')
+  })
+
+  it('migrates md files from the legacy root dir into the domain dir', () => {
+    const { home, paths } = tmpHome()
+    // 造一个旧版根目录：DSH_HOME/agent_studio.d/agents/legacy.md
+    const legacyAgents = join(home, 'agent_studio.d', 'agents')
+    writeFileSync(join(legacyAgents, 'legacy.md'), '---\nname: 旧档案\n---\n\n旧内容', 'utf8')
+    migrateLegacyRootDir(paths, { DSH_HOME: home })
+    const { profiles } = readAgentProfilesSync(paths)
+    expect(profiles.map((profile) => profile.id)).toEqual(['legacy'])
+    expect(profiles[0].rolePrompt).toBe('旧内容')
   })
 })

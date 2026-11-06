@@ -8,6 +8,7 @@ import { storageKey, validateMemberName, validateProfile, validateTeam } from '.
 import {
   ensureAgentDirs,
   existsMd,
+  migrateLegacyRootDir,
   readAgentProfilesSync,
   readTeamsSync,
   removeAgentFile,
@@ -78,6 +79,7 @@ export class AgentStudioService extends TypertRemoteService {
   /** 载入目录真源 + 绑定缓存；旧 storage 数据一次性迁移成 md；seam 安装前必须 await。 */
   async ready(): Promise<void> {
     ensureAgentDirs(this.dir)
+    migrateLegacyRootDir(this.dir)
     await this.migrateLegacyStorage()
     this.reloadFromDisk()
     this.bindingCache.clear()

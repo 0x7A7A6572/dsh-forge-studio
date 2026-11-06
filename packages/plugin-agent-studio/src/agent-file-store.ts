@@ -16,11 +16,31 @@ export interface AgentDirPaths {
   readonly teams: string
 }
 
+/** 真源目录 = <DSH_HOME>/storages/agent_studio/（与 bindings 同域；md 为纯明文，可手编）。 */
 export function resolveAgentStudioDir(env: NodeJS.ProcessEnv = process.env, home: string = homedir()): AgentDirPaths {
   const configured = env.DSH_HOME?.trim() ?? ''
   const base = configured === '' ? join(home, '.dsh') : configured
-  const root = join(base, 'agent_studio.d')
+  const root = join(base, 'storages', 'agent_studio')
   return { root, agents: join(root, 'agents'), teams: join(root, 'teams') }
+}
+
+/** 旧版根目录 agent_studio.d（v1 曾把 md 放在 DSH_HOME 根下）→ 一次性搬进 storages 域目录。 */
+export function migrateLegacyRootDir(paths: AgentDirPaths, env: NodeJS.ProcessEnv = process.env, home: string = homedir()): void {
+  const configured = env.DSH_HOME?.trim() ?? ''
+  const base = configured === '' ? join(home, '.dsh') : configured
+  const legacy = join(base, 'agent_studio.d')
+  for (const [from, to] of [
+    [join(legacy, 'agents'), paths.agents],
+    [join(legacy, 'teams'), paths.teams],
+  ] as const) {
+    if (!existsSync(from)) continue
+    for (const name of readdirSync(from)) {
+      if (!name.endsWith('.md')) continue
+      const target = join(to, name)
+      if (existsSync(target)) continue
+      writeFileSync(target, readFileSync(join(from, name)))
+    }
+  }
 }
 
 export function ensureAgentDirs(paths: AgentDirPaths): void {
