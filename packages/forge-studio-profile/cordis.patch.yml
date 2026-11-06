@@ -1,0 +1,20 @@
+# The @zzerx/dsh-forge-studio-profile bundle patch: one insert per suite
+# plugin over the base/web layers. Sub-plugins are plain dependencies of this
+# package; their own bundle patches do not apply as transitive deps, so the
+# rows below replicate each plugin's own patch verbatim (same ids, no config).
+# Individual rows can still be disabled from the plugin page via overrides.
+- insert:
+    - id: zzerx-notes
+      name: '@zzerx/dsh-plugin-notes'
+
+    - id: zzerx-memory
+      name: '@zzerx/dsh-plugin-memory'
+
+    - id: usage-billing-zzerx
+      name: '@zzerx/dsh-plugin-usage-billing'
+
+    - id: zzerx-daily-log
+      name: '@zzerx/dsh-plugin-daily-log'
+
+    - id: zzerx-agent-studio
+      name: '@zzerx/dsh-plugin-agent-studio'

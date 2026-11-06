@@ -1,0 +1,44 @@
+{
+  "name": "@zzerx/dsh-forge-studio-profile",
+  "version": "0.1.1",
+  "description": "dsh-forge-studio 全家桶组合包：便签、记忆与进化、用量计费、工作日志、智能体工坊一次装齐，一个开关整体启停。",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "bundle",
+    "plugin-suite",
+    "forge-studio"
+  ],
+  "homepage": "https://github.com/0x7A7A6572/dsh-forge-studio/tree/main/packages/forge-studio-profile#readme",
+  "bugs": {
+    "url": "https://github.com/0x7A7A6572/dsh-forge-studio/issues"
+  },
+  "license": "MIT",
+  "author": "0x7A7A",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0x7A7A6572/dsh-forge-studio.git",
+    "directory": "packages/forge-studio-profile"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "files": [
+    "lib/index.js",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "dsh": ">=0.2.1-alpha.2"
+  },
+  "dependencies": {
+    "@zzerx/dsh-plugin-agent-studio": "^0.2.0",
+    "@zzerx/dsh-plugin-daily-log": "^0.4.4",
+    "@zzerx/dsh-plugin-memory": "^0.4.4",
+    "@zzerx/dsh-plugin-notes": "^0.6.0",
+    "@zzerx/dsh-plugin-usage-billing": "^1.3.1"
+  }
+}
