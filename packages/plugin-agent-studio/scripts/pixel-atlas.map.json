@@ -1,0 +1,82 @@
+{
+ "2,2,16,24": {
+  "id": "char-1-idle",
+  "sheet": "chars"
+ },
+ "21,2,16,24": {
+  "id": "char-1-sit",
+  "sheet": "chars"
+ },
+ "40,2,16,25": {
+  "id": "char-1-walk-1",
+  "sheet": "chars"
+ },
+ "59,2,16,25": {
+  "id": "char-1-walk-2",
+  "sheet": "chars"
+ },
+ "2,32,15,23": {
+  "id": "char-2-idle",
+  "sheet": "chars"
+ },
+ "21,32,15,24": {
+  "id": "char-2-sit",
+  "sheet": "chars"
+ },
+ "41,32,15,25": {
+  "id": "char-2-walk-1",
+  "sheet": "chars"
+ },
+ "59,32,15,25": {
+  "id": "char-2-walk-2",
+  "sheet": "chars"
+ },
+ "2,60,16,25": {
+  "id": "char-3-idle",
+  "sheet": "chars"
+ },
+ "22,60,16,25": {
+  "id": "char-3-sit",
+  "sheet": "chars"
+ },
+ "41,60,16,27": {
+  "id": "char-3-walk-1",
+  "sheet": "chars"
+ },
+ "60,60,16,27": {
+  "id": "char-3-walk-2",
+  "sheet": "chars"
+ },
+ "1,90,17,23": {
+  "id": "char-4-idle",
+  "sheet": "chars"
+ },
+ "20,90,17,25": {
+  "id": "char-4-sit",
+  "sheet": "chars"
+ },
+ "39,90,18,26": {
+  "id": "char-4-walk-1",
+  "sheet": "chars"
+ },
+ "59,90,17,26": {
+  "id": "char-4-walk-2",
+  "sheet": "chars"
+ },
+ "196,23,25,10": {
+  "id": "corgi-1",
+  "sheet": "env"
+ },
+ "225,22,24,11": {
+  "id": "corgi-2",
+  "sheet": "env"
+ },
+ "203,7,16,12": {
+  "id": "cat-1",
+  "sheet": "env"
+ },
+ "230,6,16,13": {
+  "id": "cat-2",
+  "sheet": "env"
+ }
+}

@@ -1,0 +1,167 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { AgentProfile, AgentStudioModelGroup, AgentStudioPresetRow, TeamProfile } from '../../../types.ts'
+import type { AgentStudioRemote } from '../../core/remote.ts'
+import { errorText, unwrap } from '../../core/result.ts'
+
+export type StudioTab = 'profiles' | 'teams'
+
+export function emptyProfile(): AgentProfile {
+  return {
+    id: '',
+    name: 'new-agent',
+    displayName: '新 Agent',
+    description: '',
+    rolePrompt: '',
+    model: null,
+    context: 'fresh',
+    maxDepth: 1,
+    createdAt: 0,
+    updatedAt: 0,
+  }
+}
+
+export function emptyTeam(): TeamProfile {
+  return {
+    id: '',
+    name: '新团队',
+    description: '',
+    members: [],
+    createdAt: 0,
+    updatedAt: 0,
+  }
+}
+
+export function useAgentStudioSettings(studio: AgentStudioRemote) {
+  const [tab, setTab] = useState<StudioTab>('profiles')
+  const [profiles, setProfiles] = useState<AgentProfile[]>([])
+  const [teams, setTeams] = useState<TeamProfile[]>([])
+  const [models, setModels] = useState<AgentStudioModelGroup[]>([])
+  const [presets, setPresets] = useState<AgentStudioPresetRow[]>([])
+  const [profileDraft, setProfileDraft] = useState<AgentProfile | null>(null)
+  const [teamDraft, setTeamDraft] = useState<TeamProfile | null>(null)
+  const [memberPickId, setMemberPickId] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [reloading, setReloading] = useState(false)
+  const [error, setError] = useState('')
+  const reloadInFlight = useRef(false)
+  const fetchSeq = useRef(0)
+
+  const refresh = useCallback(async () => {
+    const mine = ++fetchSeq.current
+    const [p, t, m, pr] = await Promise.all([
+      studio.listProfiles(),
+      studio.listTeams(),
+      studio.listModels(),
+      studio.listPresets(),
+    ])
+    if (mine !== fetchSeq.current) return
+    const next = [unwrap(p), unwrap(t), unwrap(m), unwrap(pr)] as const
+    setProfiles(next[0])
+    setTeams(next[1])
+    setModels(next[2])
+    setPresets(next[3])
+  }, [studio])
+
+  useEffect(() => {
+    void refresh().catch((cause: unknown) => setError(errorText(cause)))
+  }, [refresh])
+
+  const reload = useCallback(async () => {
+    if (reloadInFlight.current) return
+    reloadInFlight.current = true
+    setReloading(true)
+    setError('')
+    try {
+      await refresh()
+    } catch (cause) {
+      setError(errorText(cause))
+    } finally {
+      reloadInFlight.current = false
+      setReloading(false)
+    }
+  }, [refresh])
+
+  useEffect(() => {
+    if (profileDraft === null && teamDraft === null) return
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return
+      setProfileDraft(null)
+      setTeamDraft(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [profileDraft, teamDraft])
+
+  const run = useCallback(async (action: () => Promise<void>) => {
+    setBusy(true)
+    setError('')
+    try {
+      await action()
+      await refresh()
+    } catch (cause) {
+      setError(errorText(cause))
+    } finally {
+      setBusy(false)
+    }
+  }, [refresh])
+
+  const saveProfile = useCallback(() => {
+    if (profileDraft === null) return
+    void run(async () => {
+      unwrap(await studio.saveProfile({ profile: profileDraft }))
+      setProfileDraft(null)
+    })
+  }, [profileDraft, run, studio])
+
+  const removeProfile = useCallback((id: string) => {
+    void run(async () => { unwrap(await studio.deleteProfile(id)) })
+  }, [run, studio])
+
+  const saveTeam = useCallback(() => {
+    if (teamDraft === null) return
+    void run(async () => {
+      unwrap(await studio.saveTeam({ team: teamDraft }))
+      setTeamDraft(null)
+    })
+  }, [run, studio, teamDraft])
+
+  const removeTeam = useCallback((id: string) => {
+    void run(async () => { unwrap(await studio.deleteTeam(id)) })
+  }, [run, studio])
+
+  const addMember = useCallback((profile: AgentProfile) => {
+    setTeamDraft((draft) => {
+      if (draft === null) return draft
+      if (draft.members.some((member) => member.profileId === profile.id)) return draft
+      return { ...draft, members: [...draft.members, { profileId: profile.id }] }
+    })
+  }, [])
+
+  const availableProfiles = teamDraft === null
+    ? []
+    : profiles.filter((profile) => !teamDraft.members.some((member) => member.profileId === profile.id))
+
+  const addSelectedMember = useCallback(() => {
+    if (teamDraft === null) return
+    const profile = profiles.find((item) => item.id === memberPickId && !teamDraft.members.some((member) => member.profileId === item.id))
+    if (profile === undefined) return
+    addMember(profile)
+    setMemberPickId('')
+  }, [addMember, memberPickId, profiles, teamDraft])
+
+  const removeMember = useCallback((profileId: string) => {
+    setTeamDraft((draft) => draft === null ? draft : { ...draft, members: draft.members.filter((member) => member.profileId !== profileId) })
+  }, [])
+
+  return {
+    tab, setTab,
+    profiles, teams, models, presets, busy, reloading, error,
+    profileDraft, setProfileDraft,
+    teamDraft, setTeamDraft,
+    memberPickId, setMemberPickId, availableProfiles, addSelectedMember,
+    reload, saveProfile, removeProfile, saveTeam, removeTeam, addMember, removeMember,
+    newProfile: () => setProfileDraft(emptyProfile()),
+    newTeam: () => setTeamDraft(emptyTeam()),
+    closeEditors: () => { setProfileDraft(null); setTeamDraft(null) },
+  }
+}

@@ -1,0 +1,155 @@
+.root {
+  position: relative;
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+  width: 100%;
+  padding: 12px;
+  box-sizing: border-box;
+}
+
+.scene {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  /* 与 canvas 容器同框：覆盖层百分比相对它定位（P1-3）。 */
+  max-width: 512px;
+}
+
+/* 弹层内的成员列表去掉自带卡片边框：由 .railPop 统一承载边框与滚动。 */
+.railPop aside {
+  width: 100%;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+
+/* 点场景空白关闭详情卡：整块透明按钮垫在热区层之下。 */
+.dismiss {
+  position: absolute;
+  inset: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
+
+.error {
+  color: var(--dsw-alias-state-error-primary);
+  font-size: var(--dsh-content-font-size);
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 16px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.emptyText {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: var(--dsh-content-font-size);
+}
+
+.refresh {
+  padding: 4px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.refresh:disabled {
+  color: var(--dsw-alias-label-caption);
+  cursor: default;
+}
+
+/* 右侧栏正文：窄栏纵向排布（画布吃满宽度），<768px 全屏也不横向溢出。 */
+.pane {
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+}
+
+.paneScene {
+  max-width: 100%;
+}
+
+/* 成员列表入口：贴底梯形凸台（参考图口径：高 20、斜度 Δx/Δy≈1.15、文字两侧留 22px）。 */
+.railTab {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  z-index: 41;
+  display: flex;
+  align-items: stretch;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  font: inherit;
+}
+
+.railSlope {
+  flex: none;
+  width: 23px;
+  height: 20px;
+  fill: var(--dsw-alias-bg-base);
+  transition: fill 0.15s ease;
+}
+
+.railTabLabel {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 22px;
+  background: var(--dsw-alias-bg-base);
+  transition: background 0.15s ease;
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.railTab:hover .railSlope,
+.railTab:hover .railTabLabel,
+.railTab[aria-expanded='true'] .railSlope,
+.railTab[aria-expanded='true'] .railTabLabel {
+  fill: color-mix(in srgb, var(--dsw-alias-bg-base) 80%, var(--dsw-alias-label-primary));
+  background: color-mix(in srgb, var(--dsw-alias-bg-base) 80%, var(--dsw-alias-label-primary));
+}
+
+.railBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 39;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: default;
+}
+
+.railPop {
+  position: absolute;
+  left: 50%;
+  bottom: 26px;
+  transform: translateX(-50%);
+  z-index: 42;
+  width: min(340px, calc(100vw - 48px));
+  max-height: min(320px, 60vh);
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-elevation-prominent);
+}

@@ -1,0 +1,173 @@
+.layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  font-family: Consolas, 'Courier New', monospace;
+}
+
+.canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.strip {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 3px 6px;
+  border: 1px solid rgba(120, 160, 200, 0.4);
+  border-radius: 4px;
+  background: rgba(10, 14, 20, 0.82);
+  pointer-events: auto;
+}
+
+.btn {
+  padding: 1px 7px;
+  border: 1px solid rgba(120, 160, 200, 0.5);
+  border-radius: 3px;
+  background: rgba(30, 40, 52, 0.9);
+  color: #d7e4f0;
+  font: 10px/16px Consolas, monospace;
+  cursor: pointer;
+}
+
+.btn:hover {
+  border-color: rgba(160, 200, 240, 0.8);
+}
+
+.btn:disabled {
+  color: rgba(215, 228, 240, 0.4);
+  cursor: default;
+}
+
+.chk {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+  color: #cfe3f5;
+  font-size: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.chk input {
+  accent-color: #4da3ff;
+  margin: 0;
+}
+
+.hover {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  max-width: 62%;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: rgba(10, 14, 20, 0.82);
+  color: #bfe4ff;
+  font-size: 10px;
+  line-height: 14px;
+  white-space: pre;
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+.hover:empty {
+  display: none;
+}
+
+.panel {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  left: 4px;
+  max-height: 132px;
+  padding: 4px 8px;
+  overflow: auto;
+  border: 1px solid rgba(120, 160, 200, 0.4);
+  border-radius: 4px;
+  background: rgba(10, 14, 20, 0.85);
+  color: #9fb2c5;
+  font-size: 10px;
+  line-height: 15px;
+  white-space: pre-wrap;
+  pointer-events: auto;
+}
+
+.panel > div {
+  color: #9fb2c5;
+}
+
+.panel > div[data-state='working'] {
+  color: #4da3ff;
+}
+
+.sandbox {
+  position: absolute;
+  top: 26px;
+  right: 4px;
+  width: 244px;
+  max-height: 200px;
+  padding: 4px 6px;
+  overflow: auto;
+  border: 1px solid rgba(120, 160, 200, 0.4);
+  border-radius: 4px;
+  background: rgba(10, 14, 20, 0.85);
+  pointer-events: auto;
+}
+
+.sandboxBar {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-bottom: 2px;
+}
+
+.sandboxTitle {
+  margin-right: 2px;
+  color: #8f9dae;
+  font-size: 10px;
+}
+
+.sandboxRow {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+  padding: 1px 0;
+}
+
+.sandboxName {
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: #d7e4f0;
+  font-size: 10px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.sandbox .btn {
+  padding: 0 5px;
+  font-size: 10px;
+  line-height: 15px;
+}
+
+.sandbox .btn[data-active='true'] {
+  border-color: #4da3ff;
+  color: #4da3ff;
+}
+
+.panel > div[data-state='done'] {
+  color: #58d68d;
+}
+
+.panel > div[data-state='error'] {
+  color: #ff6b6b;
+}
+
+.panel > div[data-state='provisioning'] {
+  color: #ffd166;
+}

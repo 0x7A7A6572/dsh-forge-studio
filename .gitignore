@@ -11,3 +11,6 @@ docs/
 .superpowers/
 docs/superpowers/*
 .pnpm-store/*
+
+# agent-studio 像素素材切图产物（授权未确认前不入库）
+packages/plugin-agent-studio/src/client/assets/pixel-office.*.png

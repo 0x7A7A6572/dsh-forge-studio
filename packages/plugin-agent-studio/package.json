@@ -1,0 +1,124 @@
+{
+  "name": "@zzerx/dsh-plugin-agent-studio",
+  "version": "0.1.0",
+  "description": "dsh 智能体工坊插件：自定义单 Agent / 团队 Agent，在会话内选择并启动，每个 Agent 可使用独立 preset 与模型，并可调用合适的 subagent。",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "agent",
+    "agent-team",
+    "multi-agent",
+    "agent-studio"
+  ],
+  "homepage": "https://github.com/0x7A7A6572/dsh-forge-studio/tree/main/packages/plugin-agent-studio#readme",
+  "bugs": {
+    "url": "https://github.com/0x7A7A6572/dsh-forge-studio/issues"
+  },
+  "license": "MIT",
+  "author": "0x7A7A",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0x7A7A6572/dsh-forge-studio.git",
+    "directory": "packages/plugin-agent-studio"
+  },
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "lib/types",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "prepublishOnly": "node scripts/build.mjs",
+    "build": "node scripts/build.mjs",
+    "push:npm": "npm publish --registry=https://registry.npmjs.org",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "dsh": ">=0.2.1-alpha.2"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.4",
+    "@deepseek-ai/dsh-agent": ">=0.2.1-alpha.2 <0.3.0-0",
+    "@deepseek-ai/dsh-brand": ">=0.2.1-alpha.2 <0.3.0-0",
+    "@deepseek-ai/dsh-settings": ">=0.2.1-alpha.2 <0.3.0-0",
+    "@deepseek-ai/dsh-storage-domain": ">=0.2.1-alpha.2 <0.3.0-0",
+    "@deepseek-ai/dsh-system-prompt": ">=0.2.1-alpha.2 <0.3.0-0",
+    "@deepseek-ai/dsh-tools": ">=0.2.1-alpha.2 <0.3.0-0",
+    "@deepseek-ai/dsh-typert-protocol": ">=0.2.1-alpha.2 <0.3.0-0",
+    "@deepseek-ai/schemastery": "^3.18.4"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-agent": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-brand": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-settings": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-system-prompt": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-agent": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-api-gateway": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-api-session-controller": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-brand": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-client-locale": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-client-store": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-client-ui-chat": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-client-ui-conversation": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-client-ui-layout": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-client-ui-renderer": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-client-ui-settings": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-client-ui-slots": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-cordis-client-runner": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-settings": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-storage": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-storage-domain": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-system-prompt": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-tools": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-typert-protocol": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-typert-registry": "0.2.1-rc.3",
+    "@deepseek-ai/schemastery": "3.18.4",
+    "@types/node": "^24.0.0",
+    "@types/react": "18.3.5",
+    "@types/react-dom": "18.3.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "typescript": "5.7.2",
+    "zod": "4.4.3"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": []
+    }
+  }
+}

@@ -1,0 +1,14 @@
+/*
+ * 右侧栏正文容器：宽度自适应侧栏（含 <768px 全屏），高度不足时整体滚动；
+ * 画布尺寸由 StudioCanvas 的 aspect-ratio 决定，不在这里固定像素宽。
+ */
+.aside {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
+  overflow: auto;
+}
