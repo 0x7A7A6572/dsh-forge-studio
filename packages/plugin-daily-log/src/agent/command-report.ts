@@ -69,16 +69,29 @@ export function handleReportCommand(
       text: lead + '，本轮可用 ' + DAILY_LOG_TOOL_NAMES.length + ' 个工具。把需求告诉我即可，例如「生成上周周报」。',
     }
   }
-  return forwarder.forward(invocation.agent, text + '\n\n' + DAILY_LOG_REFERENCE_TEXT)
+  let forwarded: boolean
+  try {
+    forwarded = forwarder.forward(invocation.agent, text + '\n\n' + DAILY_LOG_REFERENCE_TEXT)
+  } catch {
+    forwarded = false
+  }
+  return forwarded
     ? { kind: 'success', text: lead + '，正在按你的要求生成。' }
     : { kind: 'success', text: lead + '，但没能自动继续你的请求 —— 请把需求再说一次。' }
+}
+
+/** agents registry（宿主 agents 服务）的最小视图，仅取 followup 所需。 */
+interface AgentRegistryLike {
+  get(id: string): Agent | undefined
 }
 
 /** 真实续接实现：按 id 取运行时 agent（公开类型只有 id），投一条 user followup。 */
 export function createReportForwarder(ctx: Context): ReportForwarder {
   return {
     forward(agent, text) {
-      const live = ctx.agents.get(agent.id)
+      // 属性读 ctx.agents 未 inject 会抛错；ctx.get 是绕开校验的读取口，取不到返回 undefined。
+      const registry = (ctx as unknown as { get(name: string): AgentRegistryLike | undefined }).get('agents')
+      const live = registry?.get(agent.id)
       if (live === undefined) return false
       try {
         live.followup(createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } }))
