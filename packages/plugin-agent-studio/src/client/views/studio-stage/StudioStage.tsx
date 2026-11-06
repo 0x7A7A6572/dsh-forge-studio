@@ -15,7 +15,6 @@ import { StudioHotspots } from './components/StudioHotspots.tsx'
 import { StudioMemberDetail } from './components/StudioMemberDetail.tsx'
 import { StudioOverlayLabels } from './components/StudioOverlayLabels.tsx'
 import { StudioRosterRail } from './components/StudioRosterRail.tsx'
-import { StudioIcon } from '../../components/StudioIcon.tsx'
 import { useStudioStage, type StudioEmptyKind, type StudioStageProps } from './useStudioStage.ts'
 import styles from './StudioStage.module.css'
 
@@ -104,24 +103,24 @@ export function StudioStage(props: StudioStageProps): JSX.Element {
           />
         )}
       </div>
-      <div className={styles.railDock}>
-        {railOpen && (
-          <div className={styles.railPop}>
-            <StudioRosterRail model={state.model} selectedId={state.selectedId} />
-          </div>
-        )}
-        <button
-          type="button"
-          className={styles.railFab}
-          onClick={() => setRailOpen((value) => !value)}
-          aria-expanded={railOpen}
-          aria-label="团队成员"
-        >
-          <StudioIcon name="users" size={13} />
-          <span className={styles.railFabText}>团队成员</span>
-          <span className={styles.railFabCount}>{memberCount}</span>
-        </button>
-      </div>
+      <div className={styles.railBase} aria-hidden="true" />
+      <button
+        type="button"
+        className={styles.railTab}
+        onClick={() => setRailOpen((value) => !value)}
+        aria-expanded={railOpen}
+        aria-label="团队成员"
+      >
+        <svg className={styles.railTabShape} viewBox="0 0 140 26" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M6 26 C 10 8, 24 3, 40 2.5 L100 2.5 C 116 3, 130 8, 134 26 Z" />
+        </svg>
+        <span className={styles.railTabLabel}>团队成员 · {memberCount}</span>
+      </button>
+      {railOpen && (
+        <div className={styles.railPop}>
+          <StudioRosterRail model={state.model} selectedId={state.selectedId} />
+        </div>
+      )}
     </div>
   )
 }

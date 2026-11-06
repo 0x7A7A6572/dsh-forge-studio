@@ -83,16 +83,54 @@
   max-width: 100%;
 }
 
-/* 成员列表：底部悬浮药丸 + 向上弹层（不占版面）。 */
-.railDock {
+/* 成员列表：底部铁底横带 + 中央圆角梯形凸台（标签），列表从凸台上方弹出。 */
+.railBase {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 20px;
+  z-index: 40;
+  background: var(--dsw-alias-bg-base);
+}
+
+.railTab {
   position: absolute;
   left: 50%;
-  bottom: 14px;
+  bottom: 0;
   transform: translateX(-50%);
-  z-index: 40;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  z-index: 41;
+  min-width: 150px;
+  height: 42px;
+  padding: 0 34px;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  font: inherit;
+}
+
+.railTabShape {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: var(--dsw-alias-bg-base);
+  transition: fill 0.15s ease;
+}
+
+.railTab:hover .railTabShape,
+.railTab[aria-expanded='true'] .railTabShape {
+  fill: color-mix(in srgb, var(--dsw-alias-bg-base) 78%, var(--dsw-alias-label-primary));
+}
+
+.railTabLabel {
+  position: relative;
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+  /* 凸台顶部窄：文字下移贴近铁底，视觉重心与参考图一致。 */
+  transform: translateY(10px);
 }
 
 .railBackdrop {
@@ -105,50 +143,12 @@
   cursor: default;
 }
 
-.railFab {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 999px;
-  background: var(--dsw-alias-bg-layer-2);
-  box-shadow: var(--dsw-elevation-prominent);
-  color: var(--dsw-alias-label-primary);
-  cursor: pointer;
-  font: inherit;
-  font-size: 12px;
-  line-height: 16px;
-}
-
-.railFab:hover {
-  background: var(--dsw-alias-bg-layer-3);
-}
-
-.railFab > svg {
-  color: var(--dsw-alias-label-secondary);
-}
-
-.railFabText {
-  white-space: nowrap;
-}
-
-.railFabCount {
-  min-width: 16px;
-  padding: 0 4px;
-  border-radius: 999px;
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-secondary);
-  font-size: 10px;
-  line-height: 14px;
-  text-align: center;
-}
-
 .railPop {
   position: absolute;
   left: 50%;
-  bottom: calc(100% + 8px);
+  bottom: 52px;
   transform: translateX(-50%);
+  z-index: 42;
   width: min(340px, calc(100vw - 48px));
   max-height: min(320px, 60vh);
   overflow-y: auto;
