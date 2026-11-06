@@ -1,5 +1,5 @@
 /** agent_studio.d 目录真源存取：md 解析/序列化/迁移口径。 */
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -12,7 +12,6 @@ import {
   serializeAgentMd,
   serializeTeamMd,
   writeAgentFile,
-  writeTeamFile,
   type AgentDirPaths,
 } from '../packages/plugin-agent-studio/src/agent-file-store.ts'
 

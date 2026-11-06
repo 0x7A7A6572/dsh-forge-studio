@@ -29,9 +29,13 @@ export function ensureAgentDirs(paths: AgentDirPaths): void {
 }
 
 /** 文件名安全化：Windows 保留字符/控制符 → '-'、空白折叠为 '-'、去首尾连字符；空结果兜底 'agent'。 */
+const BAD_STEM_CHARS = '<>:"/\\|?*'
+
 export function safeStem(id: string): string {
   const stem = id
-    .replace(/[<>:"/\\|?*\x00-\x1f]/g, '-')
+    .split('')
+    .map((ch) => (BAD_STEM_CHARS.includes(ch) || (ch >= '\x00' && ch <= '\x1f') ? '-' : ch))
+    .join('')
     .replace(/\s+/g, '-')
     .replace(/^[-.]+/, '')
     .replace(/-+$/, '')

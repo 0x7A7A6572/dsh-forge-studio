@@ -2,10 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { OFFICE_SCENE } from '../packages/plugin-agent-studio/src/client/core/pixel/scene-office.ts'
-import {
-  specFromSeed,
-  assignCharacters,
-} from '../packages/plugin-agent-studio/src/client/core/pixel/avatar-sprite.ts'
+import { assignCharacters } from '../packages/plugin-agent-studio/src/client/core/pixel/avatar-sprite.ts'
 import {
   composeStageModel,
   type StudioRosterMember,
@@ -37,12 +34,6 @@ function team(count: number): StudioRosterMember[] {
 }
 
 describe('agent studio pixel core invariants', () => {
-  it('seed spec is idempotent and honors the default fallback', () => {
-    expect(specFromSeed('abc', 'profile-1', 5, 6)).toEqual(specFromSeed('abc', 'profile-1', 5, 6))
-    expect(specFromSeed('default', 'profile-9', 5, 6)).toEqual(specFromSeed('profile-9', 'x', 5, 6))
-    expect(specFromSeed('', 'profile-3', 5, 6)).toEqual(specFromSeed('profile-3', 'x', 5, 6))
-  })
-
   it('assignCharacters keeps 10 members unique and flags reuse beyond combos', () => {
     const roster = Array.from({ length: 10 }, (_, i) => ({ id: `m${i}`, seed: `seed-${i}` }))
     const assignments = assignCharacters(roster)

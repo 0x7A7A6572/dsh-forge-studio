@@ -8,8 +8,6 @@ import { storageKey, validateMemberName, validateProfile, validateTeam } from '.
 import {
   ensureAgentDirs,
   existsMd,
-  parseAgentMd,
-  parseTeamMd,
   readAgentProfilesSync,
   readTeamsSync,
   removeAgentFile,
