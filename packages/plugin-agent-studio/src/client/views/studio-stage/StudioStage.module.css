@@ -83,17 +83,7 @@
   max-width: 100%;
 }
 
-/* 成员列表：底部铁底横带 + 中央圆角梯形凸台（标签），列表从凸台上方弹出。 */
-.railBase {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 20px;
-  z-index: 40;
-  background: var(--dsw-alias-bg-base);
-}
-
+/* 成员列表入口：贴底圆角梯形凸台（直斜边、贴底下沿），列表从上方弹出。 */
 .railTab {
   position: absolute;
   left: 50%;
@@ -101,7 +91,7 @@
   transform: translateX(-50%);
   z-index: 41;
   min-width: 150px;
-  height: 42px;
+  height: 30px;
   padding: 0 34px;
   border: 0;
   background: transparent;
@@ -129,8 +119,8 @@
   font-size: 12px;
   line-height: 16px;
   white-space: nowrap;
-  /* 凸台顶部窄：文字下移贴近铁底，视觉重心与参考图一致。 */
-  transform: translateY(10px);
+  /* 凸台高 30、顶边在 y≈2：文字下移居中于梯形里。 */
+  transform: translateY(7px);
 }
 
 .railBackdrop {
@@ -146,7 +136,7 @@
 .railPop {
   position: absolute;
   left: 50%;
-  bottom: 52px;
+  bottom: 36px;
   transform: translateX(-50%);
   z-index: 42;
   width: min(340px, calc(100vw - 48px));
