@@ -1,5 +1,5 @@
 /** agent_studio.d 目录真源存取：md 解析/序列化/迁移口径。 */
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -96,6 +96,7 @@ describe('agent studio file store', () => {
     const { home, paths } = tmpHome()
     // 造一个旧版根目录：DSH_HOME/agent_studio.d/agents/legacy.md
     const legacyAgents = join(home, 'agent_studio.d', 'agents')
+    mkdirSync(legacyAgents, { recursive: true })
     writeFileSync(join(legacyAgents, 'legacy.md'), '---\nname: 旧档案\n---\n\n旧内容', 'utf8')
     migrateLegacyRootDir(paths, { DSH_HOME: home })
     const { profiles } = readAgentProfilesSync(paths)
