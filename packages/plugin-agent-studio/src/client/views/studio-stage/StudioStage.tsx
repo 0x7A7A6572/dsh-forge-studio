@@ -109,6 +109,7 @@ export function StudioStage(props: StudioStageProps): JSX.Element {
             {...(state.selectedProfile !== undefined ? { profile: state.selectedProfile } : {})}
             avatars={state.profileAvatars}
             tasks={state.tasks}
+            leadId={state.leadId}
             hooks={{ useSessions: props.useSessions, useSessionStatus: props.useSessionStatus }}
             capabilities={props.capabilities}
             onClose={state.dismiss}

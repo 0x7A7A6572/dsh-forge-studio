@@ -7,8 +7,10 @@ import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type { StudioDetailCapabilities } from '../core/capabilities.ts'
 import {
   mapCatalogRows,
+  memberSessionRowOf,
   type StudioCatalogEntry,
   type StudioCatalogView,
+  type StudioMemberSessionRow,
 } from '../core/pixel/detail-model.ts'
 import {
   activityDurationMs,
@@ -69,6 +71,8 @@ export interface StudioMemberDetailInput {
   readonly memberName: string
   /** lead 卡显示全部共享任务并标注 owner；成员卡只看自己的。 */
   readonly isLead: boolean
+  /** lead 会话 id：「成员会话」行的 openSession 目标（官方公式 parent=leadId）。 */
+  readonly leadId: string
   /** lead 会话 agentTeam 投影的共享任务板（useStudioStage 从 roster 传入）。 */
   readonly tasks?: readonly StudioSharedTaskProjection[]
   readonly hooks: StudioDetailHooks
@@ -89,9 +93,12 @@ export interface StudioMemberDetailState {
   /** lead 卡才显示任务 owner 列。 */
   readonly showTaskOwner: boolean
   readonly catalog: StudioCatalogView
+  /** 固定「成员会话」行：成员自己的会话，不受 catalog 空态影响。 */
+  readonly memberSession: StudioMemberSessionRow
   readonly canOpen: boolean
   readonly canRetry: boolean
   openTask(taskId: string, mode: StudioCatalogMode): void
+  openMemberSession(): void
   retry(): void
 }
 
@@ -194,6 +201,20 @@ export function useStudioMemberDetail(input: StudioMemberDetailInput): StudioMem
   const model = selection?.model
   const provider = selection?.provider
 
+  const memberSession = useMemo<StudioMemberSessionRow>(
+    () => memberSessionRowOf({
+      memberId,
+      memberName,
+      isLead,
+      leadId: input.leadId,
+      ...(title !== undefined ? { title } : {}),
+      running,
+      ...(tokensText !== undefined ? { tokensText } : {}),
+      ...(durationMs !== undefined ? { durationText: formatDuration(durationMs) } : {}),
+    }),
+    [memberId, memberName, isLead, input.leadId, title, running, tokensText, durationMs],
+  )
+
   const openTask = useCallback((taskId: string, mode: StudioCatalogMode): void => {
     if (!capabilities.hasOpenSession) return
     capabilities.openSession?.({
@@ -202,6 +223,11 @@ export function useStudioMemberDetail(input: StudioMemberDetailInput): StudioMem
       mode: mode === 'continuable' ? 'continuable' : mode === 'one-shot' ? 'one-shot' : 'unknown',
     })
   }, [capabilities, memberId])
+
+  const openMemberSession = useCallback((): void => {
+    if (!capabilities.hasOpenSession) return
+    capabilities.openSession?.(memberSession.target)
+  }, [capabilities, memberSession])
 
   const retry = useCallback((): void => {
     capabilities.refreshProjections?.(memberId)
@@ -219,9 +245,11 @@ export function useStudioMemberDetail(input: StudioMemberDetailInput): StudioMem
     sharedTasks,
     showTaskOwner: isLead,
     catalog,
+    memberSession,
     canOpen: capabilities.hasOpenSession,
     canRetry: capabilities.hasRefreshProjections,
     openTask,
+    openMemberSession,
     retry,
   }
 }
