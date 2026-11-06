@@ -120,7 +120,11 @@ export function StudioStage(props: StudioStageProps): JSX.Element {
       </button>
       {railOpen && (
         <div className={styles.railPop}>
-          <StudioRosterRail model={state.model} selectedId={state.selectedId} />
+          <StudioRosterRail
+            model={state.model}
+            selectedId={state.selectedId}
+            avatars={state.profileAvatars}
+          />
         </div>
       )}
     </div>

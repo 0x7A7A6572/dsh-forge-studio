@@ -61,6 +61,8 @@ export interface StudioStageState {
   readonly selectedId: string | null
   readonly selected: StudioOccupant | null
   readonly selectedProfile: StudioMemberProfileSnapshot | undefined
+  /** 成员名 → 头像（profile.id + 配色档），成员列表渲染用。 */
+  readonly profileAvatars: Readonly<Record<string, { readonly id: string; readonly color?: number }>>
   /** lead 会话的共享任务板（详情卡两块数据之一；另一块是成员子智能体目录）。 */
   readonly tasks: readonly StudioSharedTaskProjection[]
   select(memberId: string, trigger?: HTMLElement): void
@@ -314,6 +316,14 @@ export function useStudioStage(props: StudioStageProps): StudioStageState {
         binding.loading,
         binding.rosterRows !== null,
       )
+  /** 成员名 → 头像（profile.id + 配色档）：roster 列表渲染用；投影只有 name，按 name 映射。 */
+  const profileAvatars = useMemo<Readonly<Record<string, { readonly id: string; readonly color?: number }>>>(
+    () => Object.fromEntries(binding.profiles.map((profile) => [
+      profile.name,
+      { id: profile.id, ...(profile.avatarColor !== undefined ? { color: profile.avatarColor } : {}) },
+    ])),
+    [binding.profiles],
+  )
   return {
     model: empty === null ? model : null,
     empty,
@@ -323,6 +333,7 @@ export function useStudioStage(props: StudioStageProps): StudioStageState {
     selectedId,
     selected,
     selectedProfile,
+    profileAvatars,
     tasks: roster.tasks,
     select,
     dismiss,
