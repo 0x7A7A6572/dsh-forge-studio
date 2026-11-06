@@ -34,6 +34,7 @@ export function migrateLegacyRootDir(paths: AgentDirPaths, env: NodeJS.ProcessEn
     [join(legacy, 'teams'), paths.teams],
   ] as const) {
     if (!existsSync(from)) continue
+    mkdirSync(to, { recursive: true })
     for (const name of readdirSync(from)) {
       if (!name.endsWith('.md')) continue
       const target = join(to, name)
