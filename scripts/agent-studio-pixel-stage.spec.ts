@@ -385,7 +385,7 @@ describe('agent studio frame helpers', () => {
       expect(pivot).toBeDefined()
       const seatX = 46 + c.occupant.seat * c.occupant.slot.anchorStep
       expect(c.dx).toBe(seatX - (pivot?.pivotX ?? 0))
-      expect(c.dy).toBe(151 - (pivot?.pivotY ?? 0) + SIT_FRAME_DROP)
+      expect(c.dy).toBe(171 - (pivot?.pivotY ?? 0) + SIT_FRAME_DROP)
     }
     // 座位朝向：坐姿帧原生朝东——西椅（尾数 1）不镜像，东椅（尾数 2）镜像朝西。
     // 坐姿水平微调：西椅右移 5px，东椅左移 10px（lead/溢出位不微调）。

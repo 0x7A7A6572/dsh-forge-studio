@@ -42,4 +42,4 @@ export const ATLAS_ENTRIES: readonly AtlasMapEntry[] = [
   { id: 'corgi-2', sheet: 'env', x: 57, y: 0, w: 24, h: 11, pivotX: 0, pivotY: 0 },
 ]
 
-export const BG_SHA256 = 'b1a8cc745152c3aa94934d22697f70f5b244b96cd34fc1ccbb4f6f81a0672ac7'
+export const BG_SHA256 = '40bd8cbba063de88bbdc242a5f4ae40ca0b9b61b59d162990d4a42c441db2abc'

@@ -189,7 +189,7 @@ describe('agent studio wander (卡16 core invariants)', () => {
     let model = composeStageModel({ ...base, now: 0 })
     const overflow = model.overflowMembers.find((o) => o.memberId === 'm10')!
     expect(overflow.seat).toBe(1)
-    expect(overflow.foot).toEqual({ x: 61, y: 151 })
+    expect(overflow.foot).toEqual({ x: 61, y: 171 })
     let memo: StudioMemo = model.memo
     for (let frame = 1; frame <= 12; frame++) {
       model = composeStageModel({ ...base, now: frame * FRAME_MS, memo })
@@ -323,10 +323,10 @@ describe('agent studio wander (卡16 core invariants)', () => {
     // overflow 第 2 座：锚点 = 46 + 1×15 = 61，绘制跟随座位偏移。
     const m10 = model.overflowMembers.find((o) => o.memberId === 'm10')!
     const m10Pivot = findAtlasEntry(`${m10.character.entry}-sit`)!
-    expect(m10.foot).toEqual({ x: 61, y: 151 })
+    expect(m10.foot).toEqual({ x: 61, y: 171 })
     const overflow = drawn(model).get('m10')!
     expect(overflow.op.spriteLeft).toBe(61 - m10Pivot.pivotX)
-    expect(overflow.op.spriteTop).toBe(151 - m10Pivot.pivotY + SIT_FRAME_DROP)
+    expect(overflow.op.spriteTop).toBe(171 - m10Pivot.pivotY + SIT_FRAME_DROP)
   })
 
   it('planPath returns null for unreachable targets or a blocked start cell', () => {

@@ -29,22 +29,22 @@ const BG_CHAR_RECTS = [
 ]
 
 // --compose-bg：座位口径（真源；scene-office-slots.generated.ts 由它派生）。
-// 新布局（worker 分层素材）：办公区 2 大块 x2 排 x2 座；椅子常拉出（静态烘焙进 bg），
-// 工作态 = 坐姿人物帧贴到椅面锚点上（无工位区域资产）。
+// 新布局（bg-source 整图，家具整体较旧版下移 20px）：办公区 2 大块 x2 排 x2 座；
+// 椅子常拉出（静态烘焙进 bg），工作态 = 坐姿人物帧贴到椅面锚点上（无工位区域资产）。
 const BG_SEATS = {
-  A1: { order: 1, x: 34, y: 92, station: [23, 73, 39, 30] },
-  A2: { order: 2, x: 94, y: 92, station: [63, 73, 39, 30] },
-  B1: { order: 3, x: 34, y: 121, station: [23, 103, 39, 30] },
-  B2: { order: 4, x: 94, y: 121, station: [63, 103, 39, 30] },
-  C1: { order: 5, x: 168, y: 92, station: [157, 73, 39, 30] },
-  C2: { order: 6, x: 228, y: 92, station: [197, 73, 39, 30] },
-  D1: { order: 7, x: 168, y: 121, station: [157, 103, 39, 30] },
-  D2: { order: 8, x: 228, y: 121, station: [197, 103, 39, 30] },
+  A1: { order: 1, x: 34, y: 112, station: [23, 93, 39, 30] },
+  A2: { order: 2, x: 94, y: 112, station: [63, 93, 39, 30] },
+  B1: { order: 3, x: 34, y: 141, station: [23, 123, 39, 30] },
+  B2: { order: 4, x: 94, y: 141, station: [63, 123, 39, 30] },
+  C1: { order: 5, x: 168, y: 112, station: [157, 93, 39, 30] },
+  C2: { order: 6, x: 228, y: 112, station: [197, 93, 39, 30] },
+  D1: { order: 7, x: 168, y: 141, station: [157, 123, 39, 30] },
+  D2: { order: 8, x: 228, y: 141, station: [197, 123, 39, 30] },
 }
-// lead = leader 区蓝色扶手椅的坐姿位（站姿地板被办公区顶排封死）。
-const BG_LEAD = { order: 0, x: 174, y: 63, station: [157, 43, 43, 30] }
+// lead = leader 区蓝色扶手椅的坐姿位。
+const BG_LEAD = { order: 0, x: 174, y: 83, station: [157, 63, 43, 30] }
 // 溢出 = 底部橙色沙发（坐姿帧）。
-const BG_OVERFLOW = { order: 100, x: 46, y: 151, station: [35, 140, 33, 16], step: 15, capacity: 2 }
+const BG_OVERFLOW = { order: 100, x: 46, y: 171, station: [35, 160, 33, 16], step: 15, capacity: 2 }
 
 // 空态 = 收椅（统一 C2/模板 B 模块）：块带原点 = 左座 (station.x, station.y-2)、
 // 右座 (station.x-39, station.y-2)；compose 的空态贴图与 --check 的豁免区域共用。
@@ -894,42 +894,28 @@ function resolveWorkerDir() {
   throw new Error('worker layers not found (.agents/tmp/pixel-assets/worker)')
 }
 
-/** 层合成（纯函数）：地板层整幅铺满（自带白墙/墙脚线/地板/底部收白），其余层按序叠加。 */
+/** 层合成（纯函数）：bg 整幅来源 = worker/bg-source.png（美术整图，分层管线已退役）。 */
 function composeWorkerBg() {
   const workerDir = resolveWorkerDir()
   const W = 256
   const H = 224
-  const bg = Buffer.alloc(W * H * 4)
-  const blit = (layer) => {
-    for (let y = 0; y < layer.height; y++) {
-      for (let x = 0; x < layer.width; x++) {
-        const s = (y * layer.width + x) * 4
-        if (layer.rgba[s + 3] === 0) continue
-        const o = (y * W + x) * 4
-        bg[o] = layer.rgba[s]; bg[o + 1] = layer.rgba[s + 1]
-        bg[o + 2] = layer.rgba[s + 2]; bg[o + 3] = 255
-      }
-    }
+  const bg = decodePng(readFileSync(join(workerDir, 'bg-source.png')))
+  if (bg.width !== W || bg.height !== H) {
+    throw new Error(`bg-source.png must be ${W}x${H}, got ${bg.width}x${bg.height}`)
   }
-  blit(decodePng(readFileSync(join(workerDir, '地板.png'))))
-  for (const name of ['隔断外墙', '机房', 'leader区域', '办公区', '外部摆件']) {
-    blit(decodePng(readFileSync(join(workerDir, `${name}.png`))))
+  for (let i = 3; i < bg.rgba.length; i += 4) {
+    if (bg.rgba[i] !== 255) throw new Error('bg compose left transparent pixels')
   }
-  for (let i = 3; i < bg.length; i += 4) {
-    if (bg[i] !== 255) throw new Error('bg compose left transparent pixels')
-  }
-  return { bg, W, H, workerDir }
+  return { bg: Buffer.from(bg.rgba), W, H, workerDir }
 }
 
 function runComposeBg({ paths }) {
   const { bg, W, H, workerDir } = composeWorkerBg()
   const bgPng = encodePng(bg, W, H)
   const bgSha = createHash('sha256').update(bgPng).digest('hex')
-  // 素材指纹 = 全部分层文件拼接哈希（任一层改动都会使 placement 过期）。
+  // 素材指纹 = bg 整图来源文件哈希（任一改动都会使 placement 过期）。
   const layerSha = createHash('sha256')
-  for (const name of ['地板', '隔断外墙', '机房', 'leader区域', '办公区', '外部摆件', '人物-动物']) {
-    layerSha.update(readFileSync(join(workerDir, `${name}.png`)))
-  }
+  layerSha.update(readFileSync(join(workerDir, 'bg-source.png')))
   const placement = {
     canvas: { width: W, height: H, cell: 8 },
     bgSha256: bgSha,
@@ -941,7 +927,7 @@ function runComposeBg({ paths }) {
   writeIfChanged(join(scriptDir, 'pixel-office.placement.json'), JSON.stringify(placement, null, 1) + '\n')
   writeSeatsGenerated(placement)
   if (writeIfChanged(join(paths.outDir, 'pixel-office.bg.png'), bgPng)) console.log('[compose-bg] bg written')
-  console.log('[compose-bg] layers composited (地板整幅：白墙 + 暖沙地板 + 底部收白)')
+  console.log('[compose-bg] bg composited from bg-source.png')
 }
 
 function buildSeatsGeneratedTs(placement) {
@@ -1051,9 +1037,9 @@ const WALK_GRID_EXIT_MAX_COST = 2
 const WALK_GRID_CONNECTOR_MAX_COST = 3
 
 /** bg 纯地板判定：地板色集合内像素占比 ≥ 阈值（Lead 取证口径）。
- *  暖沙水磨石地板（ffcd75 底 + 白/橙碎点）：白墙 f4f4f4 与家具主色都不在集合内，
- *  墙区/隔断/桌面自然 blocked；碎点稀疏不破 60% 占比。 */
-const WALK_FLOOR_COLORS = new Set(['ffcd75'])
+ *  bg-source 整图（美术直出）：浅灰紫地板 #c2c2d1（非 Sweetie16，家具/白墙均不含此色，
+ *  主题 LUT 也不会重映射它——地板亮度跨主题恒定）；白墙与家具自然 blocked。 */
+const WALK_FLOOR_COLORS = new Set(['c2c2d1'])
 const WALK_FLOOR_RATIO = 0.6
 /** 地板带起点：canvas 上方是天空/墙/接待台，不参与游走。 */
 const WALK_FLOOR_MIN_Y = 24
