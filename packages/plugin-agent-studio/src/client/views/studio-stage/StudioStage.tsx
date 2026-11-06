@@ -110,10 +110,13 @@ export function StudioStage(props: StudioStageProps): JSX.Element {
         aria-expanded={railOpen}
         aria-label="团队成员"
       >
-        <svg className={styles.railTabShape} viewBox="0 0 140 30" preserveAspectRatio="none" aria-hidden="true">
-          <path d="M16 30 L37 7.5 Q40 2.5 46 2.5 L94 2.5 Q100 2.5 103 7.5 L124 30 Z" />
+        <svg className={styles.railSlope} viewBox="0 0 23 20" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M23 20 V5 Q23 0 18.6 2.8 L0 20 Z" />
         </svg>
         <span className={styles.railTabLabel}>团队成员 · {memberCount}</span>
+        <svg className={styles.railSlope} viewBox="0 0 23 20" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M0 20 V5 Q0 0 4.4 2.8 L23 20 Z" />
+        </svg>
       </button>
       {railOpen && (
         <div className={styles.railPop}>

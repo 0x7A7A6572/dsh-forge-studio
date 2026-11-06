@@ -83,16 +83,17 @@
   max-width: 100%;
 }
 
-/* 成员列表入口：贴底圆角梯形凸台（直斜边、贴底下沿），列表从上方弹出。 */
+/* 成员列表入口：贴底梯形凸台（参考图口径：高 20、斜度 Δx/Δy≈1.15、文字两侧留 22px）。 */
 .railTab {
   position: absolute;
   left: 50%;
   bottom: 0;
   transform: translateX(-50%);
   z-index: 41;
-  min-width: 150px;
-  height: 30px;
-  padding: 0 34px;
+  display: flex;
+  align-items: stretch;
+  height: 20px;
+  padding: 0;
   border: 0;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
@@ -100,27 +101,31 @@
   font: inherit;
 }
 
-.railTabShape {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+.railSlope {
+  flex: none;
+  width: 23px;
+  height: 20px;
   fill: var(--dsw-alias-bg-base);
   transition: fill 0.15s ease;
 }
 
-.railTab:hover .railTabShape,
-.railTab[aria-expanded='true'] .railTabShape {
-  fill: color-mix(in srgb, var(--dsw-alias-bg-base) 78%, var(--dsw-alias-label-primary));
+.railTabLabel {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 22px;
+  background: var(--dsw-alias-bg-base);
+  transition: background 0.15s ease;
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
 }
 
-.railTabLabel {
-  position: relative;
-  font-size: 12px;
-  line-height: 16px;
-  white-space: nowrap;
-  /* 凸台高 30、顶边在 y≈2：文字下移居中于梯形里。 */
-  transform: translateY(7px);
+.railTab:hover .railSlope,
+.railTab:hover .railTabLabel,
+.railTab[aria-expanded='true'] .railSlope,
+.railTab[aria-expanded='true'] .railTabLabel {
+  fill: color-mix(in srgb, var(--dsw-alias-bg-base) 80%, var(--dsw-alias-label-primary));
+  background: color-mix(in srgb, var(--dsw-alias-bg-base) 80%, var(--dsw-alias-label-primary));
 }
 
 .railBackdrop {
@@ -136,7 +141,7 @@
 .railPop {
   position: absolute;
   left: 50%;
-  bottom: 36px;
+  bottom: 26px;
   transform: translateX(-50%);
   z-index: 42;
   width: min(340px, calc(100vw - 48px));
