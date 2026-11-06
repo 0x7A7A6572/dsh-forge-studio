@@ -16,6 +16,34 @@
 1. 装进 profile 后，设置侧栏出现「智能体工坊」：新建智能体，填职责描述、选模型，组成团队。
 2. 会话输入框左下选「智能体」或「团队」绑定到当前会话。
 3. 会话头立方体图标打开像素办公室；立方体线条流动 = 有成员在干活。
+4. 不想要预览时，设置页顶部「工作预览」开关可关闭（默认开启）。
+
+## 配置即文件（真源：`<DSH_HOME>/agent_studio.d/`）
+
+智能体与团队是**人可直接编辑的 Markdown**，改文件即生效（设置页与 agent 端读写同一目录）：
+
+```
+agent_studio.d/
+├── agents/frontend-architect.md   文件名 = 智能体 id
+└── teams/frontend-squad.md        团队成员按智能体 id 引用
+```
+
+```markdown
+---
+displayName: 前端架构师
+description: 负责前端方案评审
+modelProvider: workbuddy
+model: glm-5.3-flash
+context: fresh          # fresh / fork
+maxDepth: 2
+color: 1                # 头像配色档 0..4（可选）
+---
+正文 = 职责描述（rolePrompt）
+```
+
+- 没有 frontmatter 的文件整篇当职责描述，文件名即名字——手写最快路径。
+- 设置页编辑 / 手改文件 / agent 改文件是同一个真源，任何一方改完下一帧生效。
+- 首次运行会把旧 storage 数据自动迁移成 md；`id` 变更需同步引用它的团队文件。
 
 ## 开发
 

@@ -1,11 +1,25 @@
-/** ctx.agentStudio：profile/team 存储、会话绑定、solo/team 启动、delegate 解析。 */
+/** ctx.agentStudio：profile/team 存储（目录真源）、会话绑定、solo/team 启动、delegate 解析。 */
 
-import { randomUUID } from 'node:crypto'
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type { agentStudioDomain } from './domain.ts'
 import { storageKey, validateMemberName, validateProfile, validateTeam } from './domain.ts'
+import {
+  ensureAgentDirs,
+  existsMd,
+  parseAgentMd,
+  parseTeamMd,
+  readAgentProfilesSync,
+  readTeamsSync,
+  removeAgentFile,
+  removeTeamFile,
+  resolveAgentStudioDir,
+  safeStem,
+  writeAgentFile,
+  writeTeamFile,
+  type AgentDirPaths,
+} from './agent-file-store.ts'
 import type { SeamResult } from './seam.ts'
 import {
   serviceOf, type AgentPresetsLike, type AgentRegistryLike, type AgentTeamsLike, type LlmLike,
@@ -42,10 +56,9 @@ function promptText(text: string): { type: 'text'; text: string }[] {
 export class AgentStudioService extends TypertRemoteService {
   private readonly hostCtx: Context
   private readonly domain: Domain<typeof agentStudioDomain>
-  private readonly profiles: KvTable<string, AgentProfile>
-  private readonly teams: KvTable<string, TeamProfile>
   private readonly bindings: KvTable<string, SessionBinding>
   private readonly assignments: KvTable<string, { id: string; leadSessionId: string; teamId: string; memberName: string; profileId: string; createdAt: number }>
+  private readonly dir: AgentDirPaths
 
   private readonly profileCache = new Map<string, AgentProfile>()
   private readonly teamCache = new Map<string, TeamProfile>()
@@ -58,25 +71,17 @@ export class AgentStudioService extends TypertRemoteService {
     super(ctx, 'agentStudio')
     this.hostCtx = ctx
     this.domain = config.domain
-    this.profiles = config.domain.table('profiles')
-    this.teams = config.domain.table('teams')
     this.bindings = config.domain.table('bindings')
     this.assignments = config.domain.table('assignments')
+    this.dir = resolveAgentStudioDir()
     this.configuredMax = config.maxMembers ?? 8
   }
 
-  /** 载入缓存；seam 安装前必须 await。 */
+  /** 载入目录真源 + 绑定缓存；旧 storage 数据一次性迁移成 md；seam 安装前必须 await。 */
   async ready(): Promise<void> {
-    this.profileCache.clear()
-    for (const profile of Array.from(this.profiles.entries(), ([, value]) => value)) {
-      this.profileCache.set(profile.id, profile)
-    }
-    this.teamCache.clear()
-    for (const team of Array.from(this.teams.entries(), ([, value]) => value)) {
-      this.teamCache.set(team.id, team)
-      // 旧版团队存的是完整 profile 快照；这里写回一次，收敛成 profileId 引用。
-      await this.teams.put(team.id, team)
-    }
+    ensureAgentDirs(this.dir)
+    await this.migrateLegacyStorage()
+    this.reloadFromDisk()
     this.bindingCache.clear()
     for (const binding of Array.from(this.bindings.entries(), ([, value]) => value)) {
       this.bindingCache.set(binding.sessionId, binding)
@@ -86,6 +91,34 @@ export class AgentStudioService extends TypertRemoteService {
       const byName = this.assignmentCache.get(assignment.leadSessionId) ?? new Map<string, { profileId: string; teamId: string }>()
       byName.set(assignment.memberName, { profileId: assignment.profileId, teamId: assignment.teamId })
       this.assignmentCache.set(assignment.leadSessionId, byName)
+    }
+  }
+
+  /** 旧版 storage（profiles/teams 表）→ md 文件的一次性迁移：仅当目录里还没有任何 md。 */
+  private async migrateLegacyStorage(): Promise<void> {
+    const legacyProfiles = this.domain.table('profiles')
+    const legacyTeams = this.domain.table('teams')
+    const hasFiles =
+      (existsMd(this.dir.agents) || existsMd(this.dir.teams))
+    if (hasFiles) return
+    for (const profile of Array.from(legacyProfiles.entries(), ([, value]) => value)) {
+      writeAgentFile(this.dir, profile)
+    }
+    for (const team of Array.from(legacyTeams.entries(), ([, value]) => value)) {
+      writeTeamFile(this.dir, team)
+    }
+  }
+
+  /** 每次读写入口都从目录重载：人和 agent 直接改文件即生效。 */
+  private reloadFromDisk(): void {
+    const { profiles, invalid } = readAgentProfilesSync(this.dir)
+    this.profileCache.clear()
+    for (const profile of profiles) this.profileCache.set(profile.id, profile)
+    const { teams, invalid: invalidTeams } = readTeamsSync(this.dir)
+    this.teamCache.clear()
+    for (const team of teams) this.teamCache.set(team.id, team)
+    if (invalid.length > 0 || invalidTeams.length > 0) {
+      console.warn('[plugin-agent-studio] 无法解析的配置文件：', [...invalid, ...invalidTeams].join(', '))
     }
   }
 
@@ -161,67 +194,84 @@ export class AgentStudioService extends TypertRemoteService {
   // ── profiles ────────────────────────────────────────────────────────
 
   listProfiles(): AgentProfile[] {
+    this.reloadFromDisk()
     return Array.from(this.profileCache.values()).sort((a, b) => a.name.localeCompare(b.name))
   }
 
   async saveProfile(input: { profile: AgentProfile }): Promise<AgentProfile> {
-    const profile = {
-      ...input.profile,
-      id: input.profile.id.trim() === '' ? randomUUID() : input.profile.id,
-    }
-    const error = validateProfile(profile)
+    this.reloadFromDisk()
+    const error = validateProfile(input.profile)
     if (error !== undefined) throw new Error(error)
-    const duplicate = this.listProfiles().find((item) => item.name === profile.name && item.id !== profile.id)
-    if (duplicate !== undefined) throw new Error(`已存在同名 agent：${profile.name}`)
-    const existing = this.profileCache.get(profile.id)
+    // id = 文件名（目录真源）；新建未给 id 时按 name 推导，撞名时顺延 -2/-3。
+    const desired = input.profile.id.trim() === '' ? safeStem(input.profile.name) : safeStem(input.profile.id)
+    let stem = desired
+    let suffix = 2
+    while (stem !== input.profile.id && this.profileCache.has(stem)) {
+      stem = `${desired}-${suffix}`
+      suffix += 1
+    }
+    const existing = this.profileCache.get(input.profile.id)
     const timestamp = now()
     const saved: AgentProfile = {
-      ...profile,
-      id: profile.id === '' ? randomUUID() : profile.id,
-      maxDepth: Number.isInteger(profile.maxDepth) ? Math.min(8, Math.max(0, profile.maxDepth)) : 1,
+      ...input.profile,
+      id: stem,
+      maxDepth: Number.isInteger(input.profile.maxDepth) ? Math.min(8, Math.max(0, input.profile.maxDepth)) : 1,
       createdAt: existing?.createdAt ?? timestamp,
       updatedAt: timestamp,
     }
-    await this.profiles.put(saved.id, saved)
-    this.profileCache.set(saved.id, saved)
-    return saved
+    // 改名（id 变化）时移除旧文件，避免留下重复定义。
+    if (input.profile.id.trim() !== '' && input.profile.id !== stem) removeAgentFile(this.dir, input.profile.id)
+    writeAgentFile(this.dir, saved)
+    this.reloadFromDisk()
+    return this.profileCache.get(saved.id) ?? saved
   }
 
   async deleteProfile(id: string): Promise<boolean> {
-    this.profileCache.delete(id)
-    await this.profiles.delete(id)
+    this.reloadFromDisk()
+    removeAgentFile(this.dir, id)
+    this.reloadFromDisk()
     return true
   }
 
   // ── teams ───────────────────────────────────────────────────────────
 
   listTeams(): TeamProfile[] {
+    this.reloadFromDisk()
     return Array.from(this.teamCache.values()).sort((a, b) => a.name.localeCompare(b.name))
   }
 
   async saveTeam(input: { team: TeamProfile }): Promise<TeamProfile> {
-    const team = { ...input.team }
-    const error = validateTeam(team)
+    this.reloadFromDisk()
+    const error = validateTeam(input.team)
     if (error !== undefined) throw new Error(error)
-    for (const ref of team.members) {
+    for (const ref of input.team.members) {
       if (!this.profileCache.has(ref.profileId)) throw new Error(`团队引用的智能体不存在：${ref.profileId}`)
     }
-    const existing = this.teamCache.get(team.id)
+    const desired = input.team.id.trim() === '' ? safeStem(input.team.name) : safeStem(input.team.id)
+    let stem = desired
+    let suffix = 2
+    while (stem !== input.team.id && this.teamCache.has(stem)) {
+      stem = `${desired}-${suffix}`
+      suffix += 1
+    }
+    const existing = this.teamCache.get(input.team.id)
     const timestamp = now()
     const saved: TeamProfile = {
-      ...team,
-      id: team.id === '' ? randomUUID() : team.id,
+      ...input.team,
+      id: stem,
       createdAt: existing?.createdAt ?? timestamp,
       updatedAt: timestamp,
     }
-    await this.teams.put(saved.id, saved)
-    this.teamCache.set(saved.id, saved)
-    return saved
+    if (input.team.id.trim() !== '' && input.team.id !== stem) removeTeamFile(this.dir, input.team.id)
+    writeTeamFile(this.dir, saved)
+    this.reloadFromDisk()
+    return this.teamCache.get(saved.id) ?? saved
   }
 
   async deleteTeam(id: string): Promise<boolean> {
-    this.teamCache.delete(id)
-    await this.teams.delete(id)
+    this.reloadFromDisk()
+    removeTeamFile(this.dir, id)
+    this.reloadFromDisk()
     return true
   }
 
@@ -314,6 +364,7 @@ export class AgentStudioService extends TypertRemoteService {
   // ── profile / team lookup for seam / tools ──────────────────────────
 
   profileByName(name: string): AgentProfile | undefined {
+    this.reloadFromDisk()
     return this.listProfiles().find((profile) => profile.name === name)
   }
 
@@ -333,12 +384,14 @@ export class AgentStudioService extends TypertRemoteService {
 
   /** 供提示注入使用：解析团队当前引用的智能体；引用失效时跳过。 */
   teamMemberProfiles(teamId: string): AgentProfile[] {
+    this.reloadFromDisk()
     const team = this.teamCache.get(teamId)
     if (team === undefined) return []
     return this.resolveTeamMembers(team, false)
   }
 
   resolveAssignmentProfile(leadId: string, memberName: string): AgentProfile | undefined {
+    this.reloadFromDisk()
     const assignment = this.assignmentCache.get(leadId)?.get(memberName)
     if (assignment !== undefined) {
       // 团队成员只是引用；即使有 assignment 也读取当前 profile，保证编辑后生效。
@@ -365,6 +418,7 @@ export class AgentStudioService extends TypertRemoteService {
   // ── launch ──────────────────────────────────────────────────────────
 
   async launchSolo(input: { sessionId: string; profileId: string; task: string }): Promise<{ childId: string }> {
+    this.reloadFromDisk()
     const profile = this.profileCache.get(input.profileId)
     if (profile === undefined) throw new Error('找不到 profile')
     if (input.task.trim() === '') throw new Error('任务不能为空')
@@ -386,6 +440,7 @@ export class AgentStudioService extends TypertRemoteService {
   }
 
   async launchTeam(input: LaunchInput): Promise<LaunchTeamResult> {
+    this.reloadFromDisk()
     const teamId = input.teamId
     if (teamId === undefined) throw new Error('team 模式需要 teamId')
     const team = this.teamCache.get(teamId)
