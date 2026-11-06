@@ -1,0 +1,23 @@
+/* 会话头立方体入口：干活时三条棱线做「流动虚线」动画（dasharray 周期 48，offset 平移无缝循环）。 */
+.cube {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.working svg path {
+  stroke-dasharray: 10 38;
+  animation: cubeFlow 1.2s linear infinite;
+}
+
+@keyframes cubeFlow {
+  to {
+    stroke-dashoffset: -48;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .working svg path {
+    animation: none;
+  }
+}

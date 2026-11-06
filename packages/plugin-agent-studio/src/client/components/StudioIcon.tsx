@@ -3,6 +3,7 @@
 export type StudioIconName =
   | 'box'
   | 'boxes'
+  | 'cube-iso'
   | 'bot'
   | 'users'
   | 'plus'
@@ -67,6 +68,15 @@ export function StudioIcon({ name, size = 16, className }: StudioIconProps): JSX
           <path d="M12 4v4" />
           <circle cx="12" cy="3" r="1" />
           <path d="M9 13h.01M15 13h.01M9 17h6" />
+        </svg>
+      )
+    case 'cube-iso':
+      // 宽扁等距立方体线框（会话头「智能体团队」入口）：顶面菱形 + 左右侧面 + 中棱。
+      return (
+        <svg {...common}>
+          <path d="M12 4 4 9l8 5 8-5-8-5Z" />
+          <path d="M4 9v7.5l8 4.5 8-4.5V9" />
+          <path d="M12 14v7" />
         </svg>
       )
     case 'users':

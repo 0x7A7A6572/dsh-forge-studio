@@ -1,6 +1,8 @@
 /**
  * 智能体团队视图（§6.2 三件套之一）：只编排 JSX，状态与取数全部在 useStudioStage。
+ * 成员列表不占版面：底部悬浮药丸按钮，点击向上弹出。
  */
+import { useEffect, useState } from 'react'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { AgentStudioRemote } from '../../core/remote.ts'
 import {
@@ -13,6 +15,7 @@ import { StudioHotspots } from './components/StudioHotspots.tsx'
 import { StudioMemberDetail } from './components/StudioMemberDetail.tsx'
 import { StudioOverlayLabels } from './components/StudioOverlayLabels.tsx'
 import { StudioRosterRail } from './components/StudioRosterRail.tsx'
+import { StudioIcon } from '../../components/StudioIcon.tsx'
 import { useStudioStage, type StudioEmptyKind, type StudioStageProps } from './useStudioStage.ts'
 import styles from './StudioStage.module.css'
 
@@ -39,6 +42,16 @@ function EmptyState({ kind, onRefresh, busy }: { kind: StudioEmptyKind; onRefres
 export function StudioStage(props: StudioStageProps): JSX.Element {
   const state = useStudioStage(props)
   const pane = props.variant === 'pane'
+  // 成员列表弹层：默认收起，底部药丸按钮 toggle。
+  const [railOpen, setRailOpen] = useState(false)
+  useEffect(() => {
+    if (!railOpen) return
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setRailOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [railOpen])
   if (state.error !== '') {
     return (
       <div className={styles.root}>
@@ -49,8 +62,18 @@ export function StudioStage(props: StudioStageProps): JSX.Element {
   if (state.empty !== null || state.model === null) {
     return <EmptyState kind={state.empty ?? 'loading'} onRefresh={state.refresh} busy={state.refreshBusy} />
   }
+  const memberCount = state.model.occupants.length + state.model.overflowMembers.length + state.model.roamers.length
   return (
     <div className={pane ? `${styles.root} ${styles.pane}` : styles.root}>
+      {railOpen && (
+        <button
+          type="button"
+          className={styles.railBackdrop}
+          tabIndex={-1}
+          aria-label="关闭团队成员列表"
+          onClick={() => setRailOpen(false)}
+        />
+      )}
       <div className={pane ? `${styles.scene} ${styles.paneScene}` : styles.scene}>
         <StudioCanvas model={state.model} paused={props.paused === true} />
         <StudioOverlayLabels model={state.model} />
@@ -81,7 +104,24 @@ export function StudioStage(props: StudioStageProps): JSX.Element {
           />
         )}
       </div>
-      <StudioRosterRail model={state.model} selectedId={state.selectedId} />
+      <div className={styles.railDock}>
+        {railOpen && (
+          <div className={styles.railPop}>
+            <StudioRosterRail model={state.model} selectedId={state.selectedId} />
+          </div>
+        )}
+        <button
+          type="button"
+          className={styles.railFab}
+          onClick={() => setRailOpen((value) => !value)}
+          aria-expanded={railOpen}
+          aria-label="团队成员"
+        >
+          <StudioIcon name="users" size={13} />
+          <span className={styles.railFabText}>团队成员</span>
+          <span className={styles.railFabCount}>{memberCount}</span>
+        </button>
+      </div>
     </div>
   )
 }

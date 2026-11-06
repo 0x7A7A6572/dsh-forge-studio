@@ -211,6 +211,7 @@ export function apply(ctx: Context): void {
                   mounted: right.mounted,
                   openTabs: right.openTabs,
                   readActiveTab: () => right.active(),
+                  roster: studio,
                 }),
               }, StudioHeaderButton)
               headerReady = true
