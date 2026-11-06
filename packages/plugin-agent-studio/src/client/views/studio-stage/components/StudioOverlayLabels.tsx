@@ -1,9 +1,11 @@
 /**
- * L4 DOM 覆盖层（§5.3）：名字与状态文字同行共一枚药丸，按锚点百分比定位，不挡点击。
+ * L4 DOM 覆盖层（§5.3）：头像 + 名字 + 状态文字同行共一枚药丸，按锚点百分比定位，不挡点击。
  * 文字放 DOM 不进 canvas：中文可读、可访问、随宿主字号缩放；状态衬在药丸底上（可读性）。
  */
 import type { StudioOccupant, StudioStageModel } from '../../../core/pixel/scene-types.ts'
 import { labelAnchorOf } from '../../../core/pixel/labels.ts'
+import { PixelAvatar } from '../../../components/PixelAvatar.tsx'
+import type { StudioRailAvatars } from './StudioRosterRail.tsx'
 import styles from './StudioOverlayLabels.module.css'
 
 const STATE_TEXT: Record<StudioOccupant['visual'], string> = {
@@ -14,7 +16,9 @@ const STATE_TEXT: Record<StudioOccupant['visual'], string> = {
   provisioning: '启动中',
 }
 
-export function StudioOverlayLabels({ model }: { model: StudioStageModel }): JSX.Element {
+export function StudioOverlayLabels(
+  { model, avatars }: { model: StudioStageModel; avatars?: StudioRailAvatars | undefined },
+): JSX.Element {
   const { width, height } = model.scene.canvas
   // 溢出容量读 slot.capacity（不硬编码 2）；游走成员随 foot 显示。
   const overflowCapacity = model.overflowMembers[0]?.slot.capacity ?? 0
@@ -28,6 +32,7 @@ export function StudioOverlayLabels({ model }: { model: StudioStageModel }): JSX
       {visible.map((occupant) => {
         // 标签贴实时头顶（公式在 core/pixel/labels.ts）：随游走/归位移动。
         const anchor = labelAnchorOf(occupant)
+        const avatar = avatars?.[occupant.name] ?? { id: occupant.memberId }
         return (
           <div
             key={occupant.memberId}
@@ -37,6 +42,9 @@ export function StudioOverlayLabels({ model }: { model: StudioStageModel }): JSX
               top: `${(anchor.y / height) * 100}%`,
             }}
           >
+            <span className={styles.avatar}>
+              <PixelAvatar id={avatar.id} size={14} color={avatar.color} />
+            </span>
             <span className={styles.name}>{occupant.name}</span>
             <span className={styles.state} data-state={occupant.visual}>
               {STATE_TEXT[occupant.visual]}

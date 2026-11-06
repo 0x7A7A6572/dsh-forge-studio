@@ -75,7 +75,7 @@ export function StudioStage(props: StudioStageProps): JSX.Element {
       )}
       <div className={pane ? `${styles.scene} ${styles.paneScene}` : styles.scene}>
         <StudioCanvas model={state.model} paused={props.paused === true} />
-        <StudioOverlayLabels model={state.model} />
+        <StudioOverlayLabels model={state.model} avatars={state.profileAvatars} />
         {state.selectedId !== null && (
           <button
             type="button"
@@ -96,6 +96,7 @@ export function StudioStage(props: StudioStageProps): JSX.Element {
             key={state.selected.memberId}
             occupant={state.selected}
             {...(state.selectedProfile !== undefined ? { profile: state.selectedProfile } : {})}
+            avatars={state.profileAvatars}
             tasks={state.tasks}
             hooks={{ useSessions: props.useSessions, useSessionStatus: props.useSessionStatus }}
             capabilities={props.capabilities}

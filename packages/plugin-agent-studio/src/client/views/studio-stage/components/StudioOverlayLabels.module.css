@@ -18,6 +18,12 @@
   white-space: nowrap;
 }
 
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
 .name {
   color: var(--dsw-alias-label-primary);
   font-size: 10px;

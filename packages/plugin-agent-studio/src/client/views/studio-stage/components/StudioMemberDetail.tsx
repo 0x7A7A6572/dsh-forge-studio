@@ -21,6 +21,8 @@ import {
   UNASSIGNED_TASK_OWNER_TEXT,
   type StudioSharedTaskProjection,
 } from '../../../core/pixel/task-model.ts'
+import { PixelAvatar } from '../../../components/PixelAvatar.tsx'
+import type { StudioRailAvatars } from './StudioRosterRail.tsx'
 import styles from './StudioMemberDetail.module.css'
 
 export interface StudioMemberDetailProps {
@@ -30,6 +32,8 @@ export interface StudioMemberDetailProps {
   readonly tasks?: readonly StudioSharedTaskProjection[]
   readonly hooks: StudioDetailHooks
   readonly capabilities: StudioDetailCapabilities
+  /** 成员名 → 头像（profile.id + 配色档）；缺省按 memberId 兜底。 */
+  readonly avatars?: StudioRailAvatars | undefined
   onClose(): void
 }
 
@@ -47,7 +51,7 @@ const FOCUSABLE_SELECTOR = [
 ].join(', ')
 
 export function StudioMemberDetail(props: StudioMemberDetailProps): JSX.Element {
-  const { occupant, profile, onClose } = props
+  const { occupant, profile, avatars, onClose } = props
   const isLead = occupant.role === 'lead'
   const detail = useStudioMemberDetail({
     memberId: occupant.memberId,
@@ -113,6 +117,13 @@ export function StudioMemberDetail(props: StudioMemberDetailProps): JSX.Element 
     >
       <header className={styles.header}>
         <StateDot state={status.dot} />
+        <span className={styles.avatar}>
+          <PixelAvatar
+            id={(avatars?.[occupant.name]?.id) ?? occupant.memberId}
+            size={22}
+            color={avatars?.[occupant.name]?.color}
+          />
+        </span>
         <h2 id={titleId} className={styles.name}>{occupant.name}</h2>
         <span className={styles.role}>{memberRoleTextOf(occupant.role)}</span>
         <button ref={closeRef} type="button" className={styles.close} onClick={onClose} aria-label="关闭详情">

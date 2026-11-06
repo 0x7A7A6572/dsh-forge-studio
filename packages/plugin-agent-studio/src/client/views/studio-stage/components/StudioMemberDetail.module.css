@@ -23,6 +23,12 @@
   gap: 6px;
 }
 
+.avatar {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+}
+
 .name {
   margin: 0;
   flex: 1 1 auto;
