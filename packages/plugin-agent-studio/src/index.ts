@@ -7,6 +7,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { agentStudioDomain } from './domain.ts'
+import { migrateLegacyKvRecords, resolveAgentStudioDir } from './agent-file-store.ts'
 import { AgentStudioService } from './service.ts'
 import { installSeam } from './seam.ts'
 import { installAgentStudioTools } from './agent/tools.ts'
@@ -18,6 +19,9 @@ export const inject = ['storageDomain']
 export async function apply(ctx: Context): Promise<void> {
   let domain: Awaited<ReturnType<typeof ctx.storageDomain.open>> | undefined
   try {
+    // 旧 KV 记录（agent_studio 域的 bindings/assignments）先搬进新域名目录，
+    // 必须在 storageDomain.open 之前：后端在 open 时扫描 per-record 文件。
+    migrateLegacyKvRecords(resolveAgentStudioDir())
     domain = await ctx.storageDomain.open(agentStudioDomain)
     ctx.effect(() => () => { void domain?.close() })
     const service = new AgentStudioService(ctx, { domain })

@@ -64,7 +64,8 @@ const launchAssignmentSchema = z.object({
 }) as unknown as z.ZodType<LaunchAssignment>
 
 export const agentStudioDomain = defineDomain({
-  name: 'agent_studio',
+  // 域名带 monorepo 前缀命名空间（UNIT_NAME_RE 只允许 [a-z0-9_]，用下划线分层）。
+  name: 'dsh_forge_studio_agent_studio',
   version: 1,
   layout: 'per-record',
   tables: {

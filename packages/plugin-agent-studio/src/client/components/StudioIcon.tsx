@@ -9,6 +9,7 @@ export type StudioIconName =
   | 'plus'
   | 'pencil'
   | 'trash'
+  | 'folder'
   | 'x'
   | 'check'
   | 'chevron-down'
@@ -105,6 +106,12 @@ export function StudioIcon({ name, size = 16, className }: StudioIconProps): JSX
         <svg {...common}>
           <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" />
           <path d="M10 11v5M14 11v5" />
+        </svg>
+      )
+    case 'folder':
+      return (
+        <svg {...common}>
+          <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
         </svg>
       )
     case 'x':

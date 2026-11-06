@@ -90,6 +90,14 @@ export function AgentStudioSettings({ studio }: AgentStudioSettingsProps): JSX.E
               <span className={styles.rowMeta}>{profile.model?.model ?? '继承模型'} · {profile.presetId ?? '继承 preset'}</span>
             </span>
             <span className={styles.rowActions}>
+              <button
+                className={styles.iconButton}
+                onClick={() => { void studio.openConfigFolder({ kind: 'agent', id: profile.id }).catch(() => {}) }}
+                aria-label="打开配置文件"
+                title="在资源管理器中打开配置文件"
+              >
+                <StudioIcon name="folder" size={15} />
+              </button>
               <button className={styles.iconButton} onClick={() => s.setProfileDraft(profile)} aria-label="编辑" title="编辑">
                 <StudioIcon name="pencil" size={15} />
               </button>
@@ -123,6 +131,14 @@ export function AgentStudioSettings({ studio }: AgentStudioSettingsProps): JSX.E
               <span className={styles.rowMeta}>{teamMemberNames(team)}</span>
             </span>
             <span className={styles.rowActions}>
+              <button
+                className={styles.iconButton}
+                onClick={() => { void studio.openConfigFolder({ kind: 'team', id: team.id }).catch(() => {}) }}
+                aria-label="打开配置文件"
+                title="在资源管理器中打开配置文件"
+              >
+                <StudioIcon name="folder" size={15} />
+              </button>
               <button className={styles.iconButton} onClick={() => s.setTeamDraft(team)} aria-label="编辑" title="编辑">
                 <StudioIcon name="pencil" size={15} />
               </button>

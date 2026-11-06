@@ -68,6 +68,7 @@ export const agentStudioRemoteContribution: TypertRemoteContribution = {
     descriptor('listTeams'),
     descriptor('saveTeam', inputParam),
     descriptor('deleteTeam', idParam),
+    descriptor('openConfigFolder', inputParam),
     descriptor('listModels'),
     descriptor('listPresets'),
     descriptor('getCapabilities'),
@@ -86,6 +87,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'agentStudio/listTeams': () => Promise<RemoteResult<TeamProfile[]>>
     'agentStudio/saveTeam': (input: { team: TeamProfile }) => Promise<RemoteResult<TeamProfile>>
     'agentStudio/deleteTeam': (id: string) => Promise<RemoteResult<boolean>>
+    'agentStudio/openConfigFolder': (input: { kind: 'agent' | 'team'; id: string }) => Promise<RemoteResult<boolean>>
     'agentStudio/listModels': () => Promise<RemoteResult<AgentStudioModelGroup[]>>
     'agentStudio/listPresets': () => Promise<RemoteResult<AgentStudioPresetRow[]>>
     'agentStudio/getCapabilities': () => Promise<RemoteResult<StudioCapabilities>>
@@ -106,6 +108,7 @@ export interface AgentStudioRemote {
   listTeams(): Promise<RemoteResult<TeamProfile[]>>
   saveTeam(input: { team: TeamProfile }): Promise<RemoteResult<TeamProfile>>
   deleteTeam(id: string): Promise<RemoteResult<boolean>>
+  openConfigFolder(input: { kind: 'agent' | 'team'; id: string }): Promise<RemoteResult<boolean>>
   listModels(): Promise<RemoteResult<AgentStudioModelGroup[]>>
   listPresets(): Promise<RemoteResult<AgentStudioPresetRow[]>>
   getCapabilities(): Promise<RemoteResult<StudioCapabilities>>

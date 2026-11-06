@@ -1,5 +1,5 @@
 /**
- * 目录真源存取：`<DSH_HOME>/agent_studio.d/{agents,teams}/<id>.md`。
+ * 目录真源存取：`<DSH_HOME>/storages/dsh_forge_studio_agent_studio/{agents,teams}/<id>.md`。
  * 格式：frontmatter（key: value；含特殊字符的值用 JSON 字符串转义）+ 正文 = rolePrompt。
  * 没有 frontmatter 的文件整篇当 rolePrompt（手写最快路径）。
  * 文件名（去 .md）= profile/team id；frontmatter.name 缺省取文件名。
@@ -14,29 +14,64 @@ export interface AgentDirPaths {
   readonly root: string
   readonly agents: string
   readonly teams: string
+  readonly bindings: string
+  readonly assignments: string
 }
 
-/** 真源目录 = <DSH_HOME>/storages/agent_studio/（与 bindings 同域；md 为纯明文，可手编）。 */
+/**
+ * 真源目录 = `<DSH_HOME>/storages/dsh_forge_studio_agent_studio/`。
+ * 域名带 monorepo 前缀（UNIT_NAME_RE 只允许 [a-z0-9_]，用下划线分层），避免与其他插件撞名；
+ * md（agents/teams）是人可直接编辑的明文文件，bindings/assignments 是 storage 后端的 per-record JSON。
+ */
 export function resolveAgentStudioDir(env: NodeJS.ProcessEnv = process.env, home: string = homedir()): AgentDirPaths {
   const configured = env.DSH_HOME?.trim() ?? ''
   const base = configured === '' ? join(home, '.dsh') : configured
-  const root = join(base, 'storages', 'agent_studio')
-  return { root, agents: join(root, 'agents'), teams: join(root, 'teams') }
+  const root = join(base, 'storages', 'dsh_forge_studio_agent_studio')
+  return {
+    root,
+    agents: join(root, 'agents'),
+    teams: join(root, 'teams'),
+    bindings: join(root, 'bindings'),
+    assignments: join(root, 'assignments'),
+  }
 }
 
-/** 旧版根目录 agent_studio.d（v1 曾把 md 放在 DSH_HOME 根下）→ 一次性搬进 storages 域目录。 */
-export function migrateLegacyRootDir(paths: AgentDirPaths, env: NodeJS.ProcessEnv = process.env, home: string = homedir()): void {
+/** 逐代迁移链：把更早布局里的配置文件搬进当前真源目录（同名以现位置为准）。 */
+export function migrateLegacyAgentDirs(paths: AgentDirPaths, env: NodeJS.ProcessEnv = process.env, home: string = homedir()): void {
   const configured = env.DSH_HOME?.trim() ?? ''
   const base = configured === '' ? join(home, '.dsh') : configured
-  const legacy = join(base, 'agent_studio.d')
-  for (const [from, to] of [
-    [join(legacy, 'agents'), paths.agents],
-    [join(legacy, 'teams'), paths.teams],
-  ] as const) {
+  const legacyDirs = [
+    [join(base, 'agent_studio.d', 'agents'), paths.agents],
+    [join(base, 'agent_studio.d', 'teams'), paths.teams],
+    [join(base, 'storages', 'agent_studio', 'agents'), paths.agents],
+    [join(base, 'storages', 'agent_studio', 'teams'), paths.teams],
+  ] as const
+  for (const [from, to] of legacyDirs) {
     if (!existsSync(from)) continue
     mkdirSync(to, { recursive: true })
     for (const name of readdirSync(from)) {
       if (!name.endsWith('.md')) continue
+      const target = join(to, name)
+      if (existsSync(target)) continue
+      writeFileSync(target, readFileSync(join(from, name)))
+    }
+  }
+}
+
+/** 旧 KV 域（agent_studio 的 bindings/assignments per-record JSON）→ 新域名目录；在 storageDomain.open 之前调用。 */
+export function migrateLegacyKvRecords(paths: AgentDirPaths, env: NodeJS.ProcessEnv = process.env, home: string = homedir()): void {
+  const configured = env.DSH_HOME?.trim() ?? ''
+  const base = configured === '' ? join(home, '.dsh') : configured
+  const legacy = join(base, 'storages', 'agent_studio')
+  for (const [table, to] of [
+    ['bindings', paths.bindings],
+    ['assignments', paths.assignments],
+  ] as const) {
+    const from = join(legacy, table)
+    if (!existsSync(from)) continue
+    mkdirSync(to, { recursive: true })
+    for (const name of readdirSync(from)) {
+      if (!name.endsWith('.json')) continue
       const target = join(to, name)
       if (existsSync(target)) continue
       writeFileSync(target, readFileSync(join(from, name)))

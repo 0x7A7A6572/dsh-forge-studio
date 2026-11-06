@@ -15,6 +15,7 @@ describe('agent studio remote contract', () => {
       'listTeams',
       'saveTeam',
       'deleteTeam',
+      'openConfigFolder',
       'listModels',
       'listPresets',
       'getCapabilities',

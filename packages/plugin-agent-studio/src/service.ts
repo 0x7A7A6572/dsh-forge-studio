@@ -2,13 +2,16 @@
 
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { Context } from '@deepseek-ai/cordis'
+import { spawn } from 'node:child_process'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type { agentStudioDomain } from './domain.ts'
 import { storageKey, validateMemberName, validateProfile, validateTeam } from './domain.ts'
 import {
   ensureAgentDirs,
   existsMd,
-  migrateLegacyRootDir,
+  migrateLegacyAgentDirs,
   readAgentProfilesSync,
   readTeamsSync,
   removeAgentFile,
@@ -76,11 +79,11 @@ export class AgentStudioService extends TypertRemoteService {
     this.configuredMax = config.maxMembers ?? 8
   }
 
-  /** 载入目录真源 + 绑定缓存；旧 storage 数据一次性迁移成 md；seam 安装前必须 await。 */
+  /** 载入目录真源 + 绑定缓存；旧数据（两层旧布局 + storage JSON）逐代迁移；seam 安装前必须 await。 */
   async ready(): Promise<void> {
     ensureAgentDirs(this.dir)
-    migrateLegacyRootDir(this.dir)
-    await this.migrateLegacyStorage()
+    migrateLegacyAgentDirs(this.dir)
+    this.migrateLegacyJson()
     this.reloadFromDisk()
     this.bindingCache.clear()
     for (const binding of Array.from(this.bindings.entries(), ([, value]) => value)) {
@@ -94,18 +97,57 @@ export class AgentStudioService extends TypertRemoteService {
     }
   }
 
-  /** 旧版 storage（profiles/teams 表）→ md 文件的一次性迁移：仅当目录里还没有任何 md。 */
-  private async migrateLegacyStorage(): Promise<void> {
-    const legacyProfiles = this.domain.table('profiles')
-    const legacyTeams = this.domain.table('teams')
-    const hasFiles =
-      (existsMd(this.dir.agents) || existsMd(this.dir.teams))
-    if (hasFiles) return
-    for (const profile of Array.from(legacyProfiles.entries(), ([, value]) => value)) {
-      writeAgentFile(this.dir, profile)
+  /** 旧 storage JSON（storages/agent_studio/{profiles,teams}）→ md；仅当真源目录还没有任何 md。 */
+  private migrateLegacyJson(): void {
+    if (existsMd(this.dir.agents) || existsMd(this.dir.teams)) return
+    const legacy = join(this.dir.root, '..', 'agent_studio')
+    const legacyProfiles = join(legacy, 'profiles')
+    if (existsSync(legacyProfiles)) {
+      for (const name of readdirSync(legacyProfiles)) {
+        if (!name.endsWith('.json')) continue
+        try {
+          const raw = JSON.parse(readFileSync(join(legacyProfiles, name), 'utf8')) as Record<string, unknown>
+          const profile: AgentProfile = {
+            id: String(raw.id ?? ''),
+            name: String(raw.name ?? ''),
+            displayName: String(raw.displayName ?? raw.name ?? ''),
+            description: String(raw.description ?? ''),
+            rolePrompt: String(raw.rolePrompt ?? ''),
+            model: (raw.model ?? null) as AgentProfile['model'],
+            context: raw.context === 'fork' ? 'fork' : 'fresh',
+            maxDepth: Number.isInteger(raw.maxDepth) ? (raw.maxDepth as number) : 1,
+            createdAt: Number(raw.createdAt ?? Date.now()),
+            updatedAt: Number(raw.updatedAt ?? Date.now()),
+          }
+          if (validateProfile(profile) === undefined) writeAgentFile(this.dir, profile)
+        } catch {
+          // 单个损坏文件不阻断迁移。
+        }
+      }
     }
-    for (const team of Array.from(legacyTeams.entries(), ([, value]) => value)) {
-      writeTeamFile(this.dir, team)
+    const legacyTeams = join(legacy, 'teams')
+    if (existsSync(legacyTeams)) {
+      for (const name of readdirSync(legacyTeams)) {
+        if (!name.endsWith('.json')) continue
+        try {
+          const raw = JSON.parse(readFileSync(join(legacyTeams, name), 'utf8')) as Record<string, unknown>
+          const rawMembers = Array.isArray(raw.members) ? raw.members : []
+          const team: TeamProfile = {
+            id: String(raw.id ?? ''),
+            name: String(raw.name ?? ''),
+            description: String(raw.description ?? ''),
+            members: rawMembers.map((member) => {
+              const entry = member as { profileId?: unknown; id?: unknown }
+              return { profileId: String(entry.profileId ?? entry.id ?? '') }
+            }),
+            createdAt: Number(raw.createdAt ?? Date.now()),
+            updatedAt: Number(raw.updatedAt ?? Date.now()),
+          }
+          if (validateTeam(team) === undefined) writeTeamFile(this.dir, team)
+        } catch {
+          // 单个损坏文件不阻断迁移。
+        }
+      }
     }
   }
 
@@ -273,6 +315,27 @@ export class AgentStudioService extends TypertRemoteService {
     removeTeamFile(this.dir, id)
     this.reloadFromDisk()
     return true
+  }
+
+  /** 在系统资源管理器里定位配置文件；文件不存在返回 false。 */
+  openConfigFolder(input: { kind: 'agent' | 'team'; id: string }): boolean {
+    this.reloadFromDisk()
+    const file = input.kind === 'team'
+      ? join(this.dir.teams, `${safeStem(input.id)}.md`)
+      : join(this.dir.agents, `${safeStem(input.id)}.md`)
+    if (!existsSync(file)) return false
+    try {
+      if (process.platform === 'win32') {
+        spawn('explorer.exe', [`/select,${file}`], { detached: true, stdio: 'ignore' }).unref()
+      } else if (process.platform === 'darwin') {
+        spawn('open', ['-R', file], { detached: true, stdio: 'ignore' }).unref()
+      } else {
+        spawn('xdg-open', [this.dir.agents], { detached: true, stdio: 'ignore' }).unref()
+      }
+      return true
+    } catch {
+      return false
+    }
   }
 
   // ── binding ─────────────────────────────────────────────────────────
@@ -582,6 +645,7 @@ markRemoteMethods(AgentStudioService.prototype, [
   'listTeams',
   'saveTeam',
   'deleteTeam',
+  'openConfigFolder',
   'listModels',
   'listPresets',
   'getCapabilities',

@@ -23,11 +23,13 @@
 智能体与团队是**人可直接编辑的 Markdown**，改文件即生效（设置页与 agent 端读写同一目录）：
 
 ```
-<DSH_HOME>/storages/agent_studio/
+<DSH_HOME>/storages/dsh_forge_studio_agent_studio/
 ├── agents/frontend-architect.md   文件名 = 智能体 id
 ├── teams/frontend-squad.md        团队成员按智能体 id 引用
-└── bindings/                      会话绑定（storage domain 管理）
+└── bindings/ assignments/         会话绑定与启动分配（storage 后端管理）
 ```
+
+> 域名带 `dsh_forge_studio_` 前缀命名空间（storage 单元名只允许 `[a-z0-9_]`），避免与其他插件撞名。
 
 ```markdown
 ---
