@@ -151,13 +151,12 @@ export function buildFallbackIcon(charIndex: number): PixelSprite {
   return { width: FALLBACK_ICON_SIZE.width, height: FALLBACK_ICON_SIZE.height, data }
 }
 
-/** seed 的确定性选型（fallback 用）：与 specFromSeed 同公式同 'default' 语义。 */
-export function fallbackSpecFromSeed(seed: string, fallbackId: string): {
+/** id 的确定性选型（fallback 用）。 */
+export function fallbackSpecFromId(id: string): {
   charIndex: number
   accent: number
 } {
-  const effective = seed !== 'default' && seed.trim() !== '' ? seed : fallbackId
-  const hash = fnv1a32(effective)
+  const hash = fnv1a32(id)
   return { charIndex: hash % 5, accent: (hash >>> 8) % 6 }
 }
 

@@ -3,7 +3,7 @@
  */
 import type { AtlasBitmap, DecodedAtlas } from './atlas.ts'
 import type { StagePalette } from './stage-tokens.ts'
-import type { StudioOccupant, StudioVisualState } from './scene-types.ts'
+import type { StudioOccupant } from './scene-types.ts'
 
 export type AnyCanvas = HTMLCanvasElement | OffscreenCanvas
 export type AnyCtx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D

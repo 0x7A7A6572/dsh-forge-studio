@@ -15,7 +15,6 @@ export function emptyProfile(): AgentProfile {
     model: null,
     context: 'fresh',
     maxDepth: 1,
-    avatarSeed: 'default',
     createdAt: 0,
     updatedAt: 0,
   }

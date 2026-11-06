@@ -112,7 +112,9 @@ export function useAgentStudioChip(studio: AgentStudioRemote, sessionId: string)
       const element = triggerRef.current
       if (element !== null) {
         const rect = element.getBoundingClientRect()
-        setAnchor({ left: rect.left, bottom: window.innerHeight - rect.top + 6 })
+        // 菜单宽 320（CSS min(320px, 100vw-32)）：左对齐触发钮，靠右屏边时钳到视口内。
+        const left = Math.max(8, Math.min(rect.left, window.innerWidth - 328))
+        setAnchor({ left, bottom: window.innerHeight - rect.top + 6 })
       }
       return true
     })

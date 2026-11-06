@@ -25,8 +25,8 @@ export interface AgentProfile {
   context: AgentContextMode
   /** delegate_agent 允许的委派深度，默认 1。 */
   maxDepth: number
-  /** 二期像素头像种子。 */
-  avatarSeed: string
+  /** 头像配色档位 0..4；缺省按形状取默认，四个形状默认色互不相同。 */
+  avatarColor?: number
   createdAt: number
   updatedAt: number
 }

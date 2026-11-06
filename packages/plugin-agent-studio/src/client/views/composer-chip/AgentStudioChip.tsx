@@ -1,7 +1,8 @@
+import { createPortal } from 'react-dom'
 import type { AgentStudioRemote } from '../../core/remote.ts'
 import { StudioIcon } from '../../components/StudioIcon.tsx'
 import { PixelAvatar } from '../../components/PixelAvatar.tsx'
-import { assignCharacters, BUILTIN_AVATAR_THEME } from '../../core/pixel/avatar-sprite.ts'
+import { BOT_TEAM_FRAME } from '../../core/pixel/bot-avatar.ts'
 import { useAgentStudioChip } from './useAgentStudioChip.ts'
 import styles from './AgentStudioChip.module.css'
 
@@ -38,18 +39,6 @@ function SearchBox({ value, onChange }: SearchBoxProps): JSX.Element {
 
 export function AgentStudioChip({ sessionId, studio }: AgentStudioChipProps): JSX.Element {
   const chip = useAgentStudioChip(studio, sessionId ?? '')
-  // 组合去重（§6.6）：按 profile 顺序确定性分配 (char, accent)，相邻不撞。
-  const avatarByProfileId = new Map(
-    assignCharacters(chip.profiles.map((profile) => ({ id: profile.id, seed: profile.avatarSeed }))).map(
-      (assignment) => [
-        assignment.memberId,
-        {
-          entry: BUILTIN_AVATAR_THEME.characters[assignment.charIndex],
-          accent: assignment.accent,
-        },
-      ],
-    ),
-  )
   const selectedProfile = chip.binding.mode === 'solo'
     ? chip.profiles.find((profile) => profile.id === chip.binding.profileId)?.id
     : undefined
@@ -70,7 +59,7 @@ export function AgentStudioChip({ sessionId, studio }: AgentStudioChipProps): JS
         <span className={styles.chevron}><StudioIcon name="chevron-down" size={12} /></span>
       </button>
 
-      {chip.open && (
+      {chip.open && createPortal(
         <>
           <button className={styles.backdrop} onClick={chip.close} aria-label="关闭" />
           <div
@@ -100,13 +89,7 @@ export function AgentStudioChip({ sessionId, studio }: AgentStudioChipProps): JS
             {chip.visibleProfiles.map((profile) => (
               <button key={profile.id} className={styles.option} onClick={() => chip.selectProfile(profile)}>
                 <span className={styles.optionIcon}>
-                  <PixelAvatar
-                    seed={profile.avatarSeed}
-                    fallbackId={profile.id}
-                    size={28}
-                    entry={avatarByProfileId.get(profile.id)?.entry}
-                    accent={avatarByProfileId.get(profile.id)?.accent}
-                  />
+                  <PixelAvatar id={profile.id} size={28} />
                 </span>
                 <span className={styles.optionCopy}>
                   <span className={styles.optionName}>{profile.displayName}</span>
@@ -129,7 +112,7 @@ export function AgentStudioChip({ sessionId, studio }: AgentStudioChipProps): JS
             )}
             {chip.visibleTeams.map((team) => (
               <button key={team.id} className={styles.option} onClick={() => chip.selectTeam(team)}>
-                <span className={styles.optionIcon}><StudioIcon name="boxes" size={16} /></span>
+                <span className={styles.optionIcon}><PixelAvatar id={team.id} size={16} overrideFrame={BOT_TEAM_FRAME} /></span>
                 <span className={styles.optionCopy}>
                   <span className={styles.optionName}>{team.name}</span>
                   <span className={styles.optionMeta}>{teamMemberNames(team)}</span>
@@ -151,9 +134,9 @@ export function AgentStudioChip({ sessionId, studio }: AgentStudioChipProps): JS
             )}
           </div>
         </>
-      )}
+      , document.body)}
 
-      {chip.pickerOpen && (
+      {chip.pickerOpen && createPortal(
         <>
           <button className={styles.backdrop} onClick={chip.closePicker} aria-label="关闭" />
           <div className={styles.pickerOverlay} onMouseDown={(event) => { if (event.target === event.currentTarget) chip.closePicker() }}>
@@ -189,7 +172,7 @@ export function AgentStudioChip({ sessionId, studio }: AgentStudioChipProps): JS
                     <div className={styles.pickerList}>
                       {chip.matchedTeams.map((team) => (
                         <button key={team.id} className={styles.option} onClick={() => chip.selectTeam(team)}>
-                          <span className={styles.optionIcon}><StudioIcon name="boxes" size={16} /></span>
+                          <span className={styles.optionIcon}><PixelAvatar id={team.id} size={16} overrideFrame={BOT_TEAM_FRAME} /></span>
                           <span className={styles.optionCopy}>
                             <span className={styles.optionName}>{team.name}</span>
                             <span className={styles.optionMeta}>{team.description || teamMemberNames(team)}</span>
@@ -207,7 +190,7 @@ export function AgentStudioChip({ sessionId, studio }: AgentStudioChipProps): JS
             </div>
           </div>
         </>
-      )}
+      , document.body)}
     </div>
   )
 }

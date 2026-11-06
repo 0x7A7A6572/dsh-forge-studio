@@ -125,7 +125,7 @@ export function useStudioStage(props: StudioStageProps): StudioStageState {
   const roster = useStudioRoster(sessionId, sessionHooks)
   const binding = useStudioBinding(studio, roster.leadId)
 
-  // avatarSeed 桥（§6.3）：投影只有 name，用 name → profile 一对一映射补 seed/model。
+  // 投影只有 name，用 name → profile 一对一映射补 model。
   const effectiveMembers = useMemo(() => {
     if (roster.projection !== 'ready') {
       return binding.rosterRows !== null ? membersFromRows(binding.rosterRows) : []
@@ -137,7 +137,6 @@ export function useStudioStage(props: StudioStageProps): StudioStageState {
         ...(profile?.model !== undefined && profile.model !== null
           ? { model: profile.model.model }
           : {}),
-        ...(profile !== undefined ? { avatarSeed: profile.avatarSeed } : {}),
       }
     })
   }, [roster.projection, roster.members, binding.profiles, binding.rosterRows])

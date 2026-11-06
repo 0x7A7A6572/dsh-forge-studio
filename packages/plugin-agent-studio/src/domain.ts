@@ -23,7 +23,7 @@ const agentProfileSchema = z.object({
   model: modelChoiceSchema.nullable(),
   context: z.enum(['fresh', 'fork']),
   maxDepth: z.number().int().min(0).max(8).default(1),
-  avatarSeed: z.string(),
+  avatarColor: z.number().int().min(0).max(4).optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
 }) as unknown as z.ZodType<AgentProfile>

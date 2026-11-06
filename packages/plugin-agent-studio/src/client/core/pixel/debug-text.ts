@@ -133,7 +133,6 @@ export function debugMemberLines(frame: StudioDebugFrame): readonly DebugPanelLi
 }
 
 export function debugGlobalLines(frame: StudioDebugFrame): readonly string[] {
-  const overflowCapacity = frame.model.overflowMembers[0]?.slot.capacity ?? 0
   const visible = visibleOccupants(frame).length
   return [
     `tick=${frame.tick}  主题=${frame.themeKey}  减动效=${frame.reducedMotion ? '是' : '否'}` +

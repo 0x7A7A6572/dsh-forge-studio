@@ -83,7 +83,7 @@ function withFallbacks(model: StudioStageModel, available: boolean): StudioStage
           character: {
             ...occupant.character,
             // seed 不可知时用 memberId 兜底（与 avatar-sprite 的确定性一致）。
-            fallback: composeAvatar(occupant.memberId, occupant.memberId),
+            fallback: composeAvatar(occupant.memberId),
           },
         }
   return {

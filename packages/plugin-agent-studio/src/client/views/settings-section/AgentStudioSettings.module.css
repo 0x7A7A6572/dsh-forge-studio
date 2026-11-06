@@ -450,13 +450,20 @@
   }
 }
 
-.seedRow {
+.swatchRow {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
 }
-.seedRow canvas,
-.seedRow span {
-  border-radius: 6px;
+.swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 2px solid transparent;
+  padding: 0;
+  cursor: pointer;
+}
+.swatchActive {
+  border-color: var(--dsw-alias-state-business-primary);
 }
 

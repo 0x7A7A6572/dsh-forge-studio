@@ -1,8 +1,7 @@
 /**
- * roster + 场景包 → StudioStageModel（§6.4）：纯函数，不 import react。
+ * roster + 场景包 → StudioStageModel：纯函数，不 import react。
  * 工位共享口径：非 idle 才占工位（工位数 = 并发干活上限），idle 自由游走不占位；
  * 同一次干活期间不挪窝，新一次干活就近取空闲工位，满了进候客区。
- * binding 只决定空态文案，由视图层处理；avatarSeed 解析由 hooks 层完成后传入。
  */
 import type {
   CharacterSprite,
@@ -24,7 +23,7 @@ import {
 } from './avatar-sprite.ts'
 import { advanceWander, walkGrid } from './wander.ts'
 
-/** 模型输入的成员行：投影字段 + hooks 层解析好的 avatarSeed。 */
+/** 模型输入的成员行：投影字段。 */
 export interface StudioRosterMember {
   readonly id: string
   readonly name: string
@@ -33,7 +32,6 @@ export interface StudioRosterMember {
   readonly running?: boolean
   readonly error?: string
   readonly model?: string
-  readonly avatarSeed?: string
 }
 
 export interface StudioModelInput {
@@ -46,11 +44,6 @@ export interface StudioModelInput {
   readonly memo?: StudioMemo
   /** 减动效：完全不游走（foot = 座位锚点，常坐）。 */
   readonly reducedMotion?: boolean
-}
-
-function effectiveSeed(member: StudioRosterMember): string {
-  const seed = member.avatarSeed ?? ''
-  return seed !== 'default' && seed.trim() !== '' ? seed : member.id
 }
 
 /** 空闲游走成员的伪槽位：无工位无坐姿区域；不进 scene.slots。 */
@@ -102,11 +95,11 @@ function characterFor(
       sheet: 'chars',
       entry: LEADER_ENTRY,
       accent: 0,
-      ...(atlasAvailable ? {} : { fallback: composeAvatar(effectiveSeed(member), member.id) }),
+      ...(atlasAvailable ? {} : { fallback: composeAvatar(member.id) }),
     }
   }
   const entry = theme.characters[assignment.charIndex % theme.characters.length]
-  const fallback = atlasAvailable ? undefined : composeAvatar(effectiveSeed(member), member.id)
+  const fallback = atlasAvailable ? undefined : composeAvatar(member.id)
   return {
     sheet: 'chars',
     entry,
@@ -247,7 +240,7 @@ export function composeStageModel(input: StudioModelInput): StudioStageModel {
 
   const assignments = new Map(
     assignCharacters(
-      roster.map((m) => ({ id: m.id, seed: effectiveSeed(m) })),
+      roster.map((m) => ({ id: m.id })),
       theme,
     ).map((a) => [a.memberId, a]),
   )
