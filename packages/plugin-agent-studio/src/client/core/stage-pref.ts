@@ -1,5 +1,5 @@
 /**
- * 工作预览开关（插件设置里的偏好项）：localStorage 持久化，默认开启。
+ * 工作预览开关（插件设置里的偏好项）：localStorage 持久化，默认关闭（实验功能）。
  * 关闭后会话头入口隐藏、舞台页显示关闭提示；设置里切换即时生效（onStageChange 通知）。
  */
 const STORAGE_KEY = 'agentStudio.stageEnabled'
@@ -8,13 +8,13 @@ let enabled = loadEnabled()
 const listeners = new Set<() => void>()
 
 function loadEnabled(): boolean {
-  if (typeof localStorage === 'undefined') return true
+  if (typeof localStorage === 'undefined') return false
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    return raw === null ? true : JSON.parse(raw) !== false
+    return raw === null ? false : JSON.parse(raw) !== false
   } catch {
     // 存储不可用（隐私模式等）时用默认值。
-    return true
+    return false
   }
 }
 

@@ -63,16 +63,6 @@ export function AgentStudioSettings({ studio }: AgentStudioSettingsProps): JSX.E
       {s.error !== '' && <p className={styles.error} role="alert">{s.error}</p>}
 
       <section className={styles.section}>
-        <div className={styles.stagePref}>
-          <div className={styles.stagePrefCopy}>
-            <h3 className={styles.sectionTitle}>工作预览</h3>
-            <p className={styles.stagePrefDesc}>会话头入口与像素办公室实况（团队成员、任务活动）。</p>
-          </div>
-          <StagePrefSwitch />
-        </div>
-      </section>
-
-      <section className={styles.section}>
         <div className={styles.sectionHead}>
           <h3 className={styles.sectionTitle}>智能体</h3>
           <span className={styles.count}>{s.profiles.length}</span>
@@ -148,6 +138,16 @@ export function AgentStudioSettings({ studio }: AgentStudioSettingsProps): JSX.E
             </span>
           </article>
         ))}
+      </section>
+
+      <section className={styles.section}>
+        <div className={styles.stagePref}>
+          <div className={styles.stagePrefCopy}>
+            <h3 className={styles.sectionTitle}>工作预览（实验）</h3>
+            <p className={styles.stagePrefDesc}>会话头入口与像素办公室实况（团队成员、任务活动）。默认关闭。</p>
+          </div>
+          <StagePrefSwitch />
+        </div>
       </section>
 
       {s.profileDraft !== null && (

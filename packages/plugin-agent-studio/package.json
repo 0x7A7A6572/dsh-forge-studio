@@ -1,6 +1,6 @@
 {
   "name": "@zzerx/dsh-plugin-agent-studio",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "dsh 智能体工坊插件：自定义单 Agent / 团队 Agent，在会话内选择并启动，每个 Agent 可使用独立 preset 与模型，并可调用合适的 subagent。",
   "keywords": [
     "dsh",

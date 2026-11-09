@@ -57,7 +57,7 @@ export function StudioStage(props: StudioStageProps): JSX.Element {
     return (
       <div className={pane ? `${styles.root} ${styles.pane}` : styles.root}>
         <p className={styles.emptyText} role="status">
-          工作预览已在插件设置（智能体工坊）中关闭。
+          工作预览（实验）已在插件设置（智能体工坊）中关闭。
         </p>
       </div>
     )
