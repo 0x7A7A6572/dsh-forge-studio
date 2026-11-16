@@ -1,6 +1,6 @@
 {
   "name": "@zzerx/dsh-forge-studio-profile",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "dsh-forge-studio 全家桶组合包：便签、记忆与进化、用量计费、工作日志、智能体工坊一次装齐，一个开关整体启停。",
   "keywords": [
     "dsh",
@@ -32,7 +32,7 @@
     "access": "public"
   },
   "engines": {
-    "dsh": ">=0.2.1-alpha.2"
+    "dsh": ">=0.2.1-alpha.2 <0.3.0-0"
   },
   "dependencies": {
     "@zzerx/dsh-plugin-agent-studio": "^0.2.0",
